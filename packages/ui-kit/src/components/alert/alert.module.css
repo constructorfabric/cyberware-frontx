@@ -34,7 +34,12 @@
 
 .variantDestructive {
   background-color: var(--card);
-  color: var(--destructive);
+  /* --danger, not --destructive: this is 14px body text over --card, and
+   * --destructive is only verified as a solid fill under
+   * --destructive-foreground, not as text on --card (3.80:1 dark, under
+   * the 4.5:1 floor) — --danger is the token theme.css corrected for
+   * exactly this seat. */
+  color: var(--danger);
 }
 
 /*

@@ -359,7 +359,10 @@
    * is the extra step upstream gives it so a validation message reads as a
    * response to the block above rather than another field in it. */
   margin: var(--space-2) 0 0;
-  color: var(--destructive);
+  /* --danger, not --destructive — see field.module.css's --fieldError
+   * comment: --destructive is only verified as a solid fill under
+   * --destructive-foreground, not as text on the page/card. */
+  color: var(--danger);
   font-size: var(--text-body-size);
   line-height: var(--text-body-line-height);
   font-weight: var(--text-body-weight);

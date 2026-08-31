@@ -490,6 +490,34 @@ Architecture's build bullet).
    per-component weight question for the components pass, since label
    also dresses menus, tooltips and table headers.
 
+   **Post-review contrast pass (2026-08-31, PR #604 review).** The review
+   found the rebrand audit had measured resting token pairs only; the
+   fixes extend the same WCAG ruling to interactive and foreground seats:
+   - `--destructive` is a FILL token, verified only under
+     `--destructive-foreground` — every component that painted it as
+     TEXT (FieldError, destructive Alert/Bubble/Attachment/Toast icon,
+     QuestionnaireError) moved to the AA-corrected `--danger`;
+   - new `--destructive-hover` token (`#be123c` both modes): Badge's
+     destructive hover previously mixed the fill toward `--foreground`,
+     which darkens in light mode but LIGHTENS in dark (foreground flips
+     to white), dropping the white label to ~3.9:1;
+   - Badge tone hovers underline instead of recoloring the fill — the
+     tone labels sit at 4.5–4.67:1 with almost no headroom, so any
+     darkening mix breaks the floor;
+   - Badge focus gained an outside outline (Button's idiom): light
+     `--ring` equals `--primary`, so the inset-only ring on a default
+     link Badge painted blue over blue and vanished;
+   - the remaining `--primary`-as-text-link hovers
+     (Field/Empty/ItemDescription) moved to `--link-foreground`;
+   - `@gears-frontx/ui-kit` bumped to 0.4.0-alpha.2 with the template
+     pins (the version-bump-on-change CI gate);
+   - guards added so none of this regresses silently: tokens.test.ts now
+     asserts the status-label matrix (each status color vs its -soft
+     fill, page, surface, card, popover), the accent pair, the
+     solid-fill on-colors at rest and hover, and link text on
+     surface/card; badge.test.tsx asserts the outside outline and its
+     3:1 tone, mirroring button.test.tsx.
+
    Still NOT part of the rebrand: the elevation scale beyond the popover
    shadow (Elevation/100/300/Dock top have no kit consumer yet). Open
    designer questions: pin AA-passing status values in the Figma file

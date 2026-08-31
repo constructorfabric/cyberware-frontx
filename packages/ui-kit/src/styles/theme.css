@@ -40,14 +40,15 @@
  * carried below.)
  *
  * The line is namespace, not "is a component reading it today": a few groups
- * here (Sidebar Navigation, the code pair, --blue, --scenario-canvas,
- * --artifact-accent-icon) are unread by any current component. They are part
- * of the collection's unprefixed palette and are carried so a consumer
- * painting a page around the kit — or a later kit component — brands them
- * from the same surface as everything else, instead of finding a hole. Each
- * such group says so at its own declaration; app LAYOUT itself stays a
- * non-goal (see design-notes), so the sidebar tokens are colors for a
- * consumer's own chrome, not a promise beyond the shipped Sidebar parts.
+ * here (the code pair, --blue, --scenario-canvas, --artifact-accent-icon)
+ * are unread by any current component. They are part of the collection's
+ * unprefixed palette and are carried so a consumer painting a page around
+ * the kit — or a later kit component — brands them from the same surface as
+ * everything else, instead of finding a hole. Each such group says so at
+ * its own declaration. The Sidebar Navigation block is NOT one of them:
+ * sidebar.module.css consumes all five --sidebar-* tokens, so that group is
+ * component-consumed like any other pair — it merely doubles as the
+ * branding surface for a consumer's own navigation chrome.
  *
  * Basic branding happens on the consumer side by overriding these variables.
  * Dark mode: set data-theme="dark" on <html>/<body> for explicit control, or
@@ -343,6 +344,15 @@
    * that moved --danger does not apply to it. */
   --destructive: #e11d48;
   --destructive-foreground: #ffffff;
+  /* Badge's destructive-variant hover tone (see badge.module.css) — darker
+   * than --destructive so white text never drops under 4.5:1 on hover. Same
+   * hex both modes on purpose: a hover recipe that darkens by mixing toward
+   * --foreground works in light (foreground is dark) but LIGHTENS in dark
+   * mode instead (foreground flips to white there), so this token sidesteps
+   * that by not depending on --foreground at all. #be123c is the same
+   * literal --destructive-ring/--danger already carry — white on it
+   * measures 6.29:1 in both modes. */
+  --destructive-hover: #be123c;
   /* Button destructive variant's focus-ring tone, measured against
    * --background: 5.74:1 light / 7.89:1 dark. Literal hexes, not var()
    * aliases, for the same reason as --primary-ring above: the contrast
@@ -482,6 +492,7 @@
   --selection-subtle: #26384b;
   --destructive: #e11d48;
   --destructive-foreground: #ffffff;
+  --destructive-hover: #be123c;
   --destructive-ring: #f87f8f;
   --link-foreground: #6ba5f0;
   --success: #34d399;
@@ -538,6 +549,7 @@
     --selection-subtle: #26384b;
     --destructive: #e11d48;
     --destructive-foreground: #ffffff;
+    --destructive-hover: #be123c;
     --destructive-ring: #f87f8f;
     --link-foreground: #6ba5f0;
     --success: #34d399;

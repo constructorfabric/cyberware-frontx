@@ -179,10 +179,10 @@ Every part carries data attributes you can key CSS off:
   English strings that would need translating.
 - **Token-scale spacing.** The kit's spacing scale has no 10px step, so
   upstream's `gap-2.5`/`py-2.5` inside a choice row land on `--space-2`
-  (8px) here; the shortcut cap uses the kit's 11px `--text-mono-size`
-  rather than upstream's 10px. Every other measurement (44px row,
-  8px radius, 16px indicator, 20px cap, 8px choice gap, 16px item and root
-  gaps) matches upstream exactly.
+  (8px) here; the shortcut cap uses the kit's `--text-mono-size`, which
+  the Studio blue rebrand moved to 10px — the same size upstream draws.
+  Every other measurement (44px row, 8px radius, 16px indicator, 20px cap,
+  8px choice gap, 16px item and root gaps) matches upstream exactly.
 - **Focus is the kit's field ring.** Upstream draws a 3px translucent halo
   outside the row; the kit's field idiom (`input.module.css`) is a
   recolored border plus an inset ring, so the choice row wears that

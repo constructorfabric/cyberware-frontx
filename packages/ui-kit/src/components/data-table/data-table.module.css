@@ -94,7 +94,7 @@
 }
 
 /* --icon-size-xs, not the sm every other Button icon takes: the frame draws
- * the sort indicator's glyph at 12px, and next to an 11px Mono label a 16px
+ * the sort indicator's glyph at 12px, and next to a 10px Mono label a 16px
  * one both overshoots the drawing and reads as raised — its ink box is
  * taller than the label's, so centering the two boxes leaves the glyph
  * looking lifted off the baseline it should share. */
@@ -132,7 +132,7 @@
 }
 
 /* Meta, matching the cells above it — the frame sets the whole bar in the
- * table's own 12px text, not the 15px page Body the recipe's utilities
+ * table's own 12px text, not the 14px page Body the recipe's utilities
  * left it at. */
 .selectedCount {
   flex: 1;

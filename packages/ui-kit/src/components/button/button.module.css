@@ -206,7 +206,7 @@
  * is what promotes it to --foreground) — measured against the page
  * background it actually sits on, since ghost has no fill of its own:
  * 4.55:1 light / 6.62:1 dark, both clearing the 4.5:1 AA floor for this
- * 13px label text, so the alignment carries no WCAG cost.
+ * 12px label text, so the alignment carries no WCAG cost.
  */
 .variantGhost {
   background-color: var(--button-bg, transparent);

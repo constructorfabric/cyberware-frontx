@@ -213,7 +213,7 @@
 }
 
 .itemDescription a:hover {
-  color: var(--primary);
+  color: var(--link-foreground);
 }
 
 .sizeXs .itemDescription {

@@ -99,7 +99,7 @@
 }
 
 .emptyDescription a:hover {
-  color: var(--primary);
+  color: var(--link-foreground);
 }
 
 .emptyContent {

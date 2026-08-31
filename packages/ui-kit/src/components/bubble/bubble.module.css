@@ -234,7 +234,11 @@
  */
 .bubble.variantDestructive > .bubbleContent {
   background-color: color-mix(in oklab, var(--destructive) 10%, transparent);
-  color: var(--destructive);
+  /* --danger, not --destructive — the same foreground-vs-fill distinction
+   * theme.css draws between the two tokens; this text sits on a tint of
+   * --destructive close to --card/--background, not under
+   * --destructive-foreground. */
+  color: var(--danger);
 }
 
 .bubble.variantDestructive > .bubbleContent:is(button, a):hover {

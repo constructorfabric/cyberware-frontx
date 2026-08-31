@@ -69,14 +69,22 @@
 }
 
 /*
- * Focus ring: the same inset idiom as Input/Textarea (border color swap +
- * inset box-shadow, geometry-stable — see input.module.css), not Button's
- * outside outline — Badge is a bordered pill, not Button's shape. Only
- * reachable at all once rendered as a link via `render`; a plain span is
- * never in the tab order.
+ * Focus ring: the inset border/box-shadow idiom Input/Textarea use (color
+ * swap + inset box-shadow, geometry-stable — see input.module.css), PLUS an
+ * outside outline in the same tone, Button's own idiom (see
+ * button.module.css). The inset half alone isn't enough here: it borders
+ * the badge's own FILL, not just the page, and --ring equals --primary in
+ * light mode — a default-variant link Badge's inset ring then paints the
+ * exact color it's already sitting on and disappears. The outline sits
+ * clear of the fill (offset outside the border box), so its only WCAG
+ * 1.4.11 neighbor is ever the page/card background, never the badge's own
+ * color, the same guarantee button.module.css documents for its own ring.
+ * Only reachable at all once rendered as a link via `render`; a plain span
+ * is never in the tab order.
  */
 .badge:focus-visible {
-  outline: none;
+  outline: var(--border-width-focus) solid var(--ring);
+  outline-offset: 2px;
   border-color: var(--ring);
   box-shadow: inset 0 0 0 var(--ring-inset) var(--ring);
 }
@@ -123,13 +131,16 @@ a.variantSecondary:hover {
 }
 
 /*
- * Mixes toward --foreground rather than a flat opacity fade — same
- * reasoning and idiom as button.module.css's destructive hover: fading an
- * already-marginal fill toward the page pulls it *toward* the label it has
- * to contrast with.
+ * --destructive-hover, not a color-mix toward --foreground: that recipe
+ * (still what button.module.css's own destructive hover uses) darkens
+ * correctly in light mode, where --foreground is dark, but LIGHTENS in dark
+ * mode instead, since --foreground flips near-white there — against the
+ * fixed --destructive-foreground label, that drops dark-mode hover
+ * to about 3.91:1. --destructive-hover is a literal, same hex both modes
+ * (see theme.css), so the direction never depends on which theme is active.
  */
 a.variantDestructive:hover {
-  background-color: color-mix(in oklab, var(--destructive) 90%, var(--foreground) 10%);
+  background-color: var(--destructive-hover);
 }
 
 .variantOutline {
@@ -188,11 +199,17 @@ a.variantLink:hover {
  * --secondary. Nothing here needed a local literal, which is the point of
  * fixing the pair where it is defined.
  *
- * Hover is the color-mix-toward-foreground idiom `a.variantDestructive`
- * uses above, for the same reason: fading a tint toward transparent pulls
- * it toward the label it has to contrast with. The mockup draws no badge
- * hover state, so this is the file's own existing recipe applied for
- * consistency, not a drawn spec.
+ * Hover used to mix the fill toward --foreground, the same idiom
+ * `a.variantDestructive` uses above — wrong here for a different reason
+ * than that one's dark-mode flip: these labels sit on their own tint at a
+ * bare 4.5:1–4.67:1 (warning has 0.17 of headroom), so ANY darkening of the
+ * fill toward the label's own darker luminance shrinks that margin, and
+ * standard OKLab interpolation puts every one of them under the floor
+ * (light success 3.97:1, warning 3.70:1, info 3.65:1, accent 3.72:1) well
+ * before the mix reaches 10%. Recoloring the fill on hover isn't safe at
+ * this headroom, so hover instead underlines the label — the mockup draws
+ * no badge hover state, and Link's own hover (above) already establishes
+ * underline as this file's affordance for "hover, no color change".
  */
 .variantSuccess {
   background-color: var(--success-soft);
@@ -200,7 +217,7 @@ a.variantLink:hover {
 }
 
 a.variantSuccess:hover {
-  background-color: color-mix(in oklab, var(--success-soft) 90%, var(--foreground) 10%);
+  text-decoration: underline;
 }
 
 .variantWarning {
@@ -209,7 +226,7 @@ a.variantSuccess:hover {
 }
 
 a.variantWarning:hover {
-  background-color: color-mix(in oklab, var(--warning-soft) 90%, var(--foreground) 10%);
+  text-decoration: underline;
 }
 
 .variantDanger {
@@ -218,7 +235,7 @@ a.variantWarning:hover {
 }
 
 a.variantDanger:hover {
-  background-color: color-mix(in oklab, var(--danger-soft) 90%, var(--foreground) 10%);
+  text-decoration: underline;
 }
 
 .variantInfo {
@@ -227,7 +244,7 @@ a.variantDanger:hover {
 }
 
 a.variantInfo:hover {
-  background-color: color-mix(in oklab, var(--info-soft) 90%, var(--foreground) 10%);
+  text-decoration: underline;
 }
 
 .variantAccent {
@@ -236,5 +253,5 @@ a.variantInfo:hover {
 }
 
 a.variantAccent:hover {
-  background-color: color-mix(in oklab, var(--accent) 90%, var(--foreground) 10%);
+  text-decoration: underline;
 }
