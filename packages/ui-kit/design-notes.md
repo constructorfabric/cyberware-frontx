@@ -91,8 +91,13 @@ the `sidebar` / `data-table` exclusions above intact.
   weight/tracking, `--text-<role>-*` for display/heading-1/heading-2/body/
   label/meta/mono; see step 4 below), light/dark via `data-theme` /
   `prefers-color-scheme`; shadcn-style token structure carrying the Studio
-  palette from the F-mockups Figma file (variable collection "Studio /
-  shadcn"). Component CSS consumes only these variables — the theme file is
+  BLUE palette from the mockups' token spec frame "02 · Tokens, type &
+  elevation" (node 40001232:5254), which superseded the original violet
+  "Studio / shadcn" collection — see the "Studio blue rebrand" entry in
+  step 4 below. The token NAMES stay unprefixed per the shadcn convention
+  even though that frame labels its WEB syntax `var(--color-*)`: renaming
+  the public token surface would break every consumer for zero semantic
+  gain (a standing ruling, recorded in theme.css's header). Component CSS consumes only these variables — the theme file is
   the single seam between kit styles and consumer brand. The theme file
   also paints the page surface itself (`body`/`[data-theme]` background and
   color, plus `color-scheme`), not just the tokens: a bare consumer page
@@ -198,9 +203,11 @@ agent asked to "update <component> from shadcn" follows this):
    and `llms.txt` synced with any contract change.
 
 Hard constraints that always apply: existing theme.css token values are
-frozen (additive only, all theme blocks); no raw values in module.css
-including comments; icons via direct `lucide-react` imports; CSS Modules +
-CVA; Base UI primitives only.
+frozen FOR UPSTREAM SYNCS (additive only, all theme blocks) — an upstream
+shadcn change never moves a token value; only an explicit design-source
+ruling does (the 2026-08-31 Studio blue rebrand is the precedent, see step
+4); no raw values in module.css including comments; icons via direct
+`lucide-react` imports; CSS Modules + CVA; Base UI primitives only.
 
 ## Testing and acceptance
 
@@ -411,6 +418,84 @@ Architecture's build bullet).
      by hand). None replace an existing consumer-facing token; a consumer
      overriding theme.css wholesale (rather than layering on top of it)
      should add these four to stay in sync.
+
+   **Studio blue rebrand (2026-08-31).** The design moved from the violet
+   "Studio / shadcn" collection to the blue Studio palette recorded on the
+   mockups' token spec frame "02 · Tokens, type & elevation" (node
+   40001232:5254). theme.css adopted the frame's semantic color values in
+   both modes wholesale — brand axis onto the blue ramp (primary
+   `#0065e3`, hover/accent-foreground `#2668c5`, accent tint `#e6effa`),
+   the light page onto slate-50 `#f1f5f9`, the dark mode onto the slate
+   ramp (surfaces `#0f172a`, borders `#334155`, foreground pure white) —
+   including two collapses the frame itself draws (dark
+   surface = surface-elevated, dark border = border-strong) and the
+   frame's own resolution of the old `--subtle-foreground` AA question
+   (its new drawn values pass: 10.35:1 light / 6.96:1 dark). Undrawn
+   entries were re-derived per theme.css's `derived:` convention
+   (card/popover mirror surface; secondary stepped one neutral away from
+   the now-page-equal muted in each mode; sidebar/code blocks follow their
+   same-role tokens; ring family and `--link-foreground` from the brand
+   ramp — ratios at each token). `--popover-shadow` adopted the frame's
+   Studio/Elevation/200 geometry (0 8 24 @ 12% foreground); new
+   palette-only entries `--scenario-canvas` (moved into the color/
+   namespace by the rebrand) and `--artifact-accent-icon`.
+
+   Per the user ruling that a drawn value failing WCAG gets corrected in
+   code (the same standing instruction as the accessibility pass above),
+   the rebrand deviates from the frame in exactly four status colors, all
+   12px label text over their own -soft fills (worst-case ratios across
+   soft/card/page):
+
+   | token | drawn | shipped | worst case |
+   |---|---|---|---|
+   | light `--success` | `#059669` (3.43:1) | `#047857` | 5.00:1 |
+   | light `--warning` | `#f59e0b` (1.96:1) | `#b45309` | 4.58:1 |
+   | light `--danger`  | `#e11d48` (4.28:1) | `#be123c` | 5.72:1 |
+   | dark `--danger`   | `#e11d48` (3.63:1) | `#fb7185` | 6.34:1 |
+
+   Light `--info` (`#2563eb`, 4.59:1 worst case) passes as drawn and was
+   kept. `--destructive` tracks the DRAWN red (`#e11d48` both modes — its
+   text is the on-color, 4.70:1, not the token itself), so the one-red
+   alias now diverges from the corrected `--danger` by design. Component
+   fallout, same ruling: Avatar's `solid` treatment labels each status
+   tone with that tone's own `-soft` value instead of the mockup's
+   all-white `--primary-foreground` binding (which fails at ~1.5–2:1 on
+   the light dark-mode tones); Badge's `link` variant moved onto
+   `--link-foreground` (dark `--primary` is 3.72:1 on the page); Badge's
+   tone-label contrast debt (previously "raised for a design decision") is
+   resolved by the token corrections — every pair now clears 4.5:1, per
+   the recomputed table in badge.module.css. Contrast guards
+   (tokens.test.ts floors, button.test.tsx ring cases) recompute from the
+   live CSS and pass.
+
+   **Typography follow-up (same rebrand, second pass).** The frame's
+   "Studio/Type" ramp was adopted onto the existing `--text-*` role names
+   (the roles are the public API; values moved, names didn't): display
+   28/34 → 26/32 (Page Title), body 15/20 → 14/20 (UI Primary Regular),
+   label 13/16 → 12/16 medium (UI Secondary Medium), mono 11/16 → 10/14
+   (System Micro), every role's tracking normalized to the ramp's 0;
+   heading-2 was already Section Title's 16/24 and meta already UI
+   Secondary Regular's 12/16. Evidence, since most first-generation spec
+   frames are already deleted from the design file: the ramp sheet itself,
+   plus the live "Phase 3 / Remaining core controls" frame (40001414:5973)
+   whose drawn Tabs trigger binds UI Secondary Medium, drawn compact
+   Button binds UI Secondary Semi Bold, and drawn Badge sits on UI
+   Secondary Medium — the metrics Badge already had via its
+   meta-size + label-weight mix. Deliberate residue: heading-1 (20/28)
+   kept as a kit interpolation (the new ramp has no slot between 16 and
+   26, and collapsing it into heading-2 would merge two heading levels);
+   Display Metric 36/40, Foundation Hero 56/64 and Avatar Micro 10/14
+   carried nowhere (no kit consumer at those slots); Button stays on
+   label's 500 weight although the drawn compact button's cut is 600 — a
+   per-component weight question for the components pass, since label
+   also dresses menus, tooltips and table headers.
+
+   Still NOT part of the rebrand: the elevation scale beyond the popover
+   shadow (Elevation/100/300/Dock top have no kit consumer yet). Open
+   designer questions: pin AA-passing status values in the Figma file
+   (the four deviations above), confirm the dark surface/border collapses
+   are intent rather than spec-sheet shorthand, and rule the button label
+   weight (500 vs the drawn 600).
 5. The twelve gap components, mockups-first: `popover`, `alert`, `avatar`,
    `empty` are in both the mockups and the `insight-front` set and go first;
    `pagination` and `breadcrumb` are the mockups-only additions;

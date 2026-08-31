@@ -39,7 +39,7 @@ import { Row, Section } from '../shared';
  * hold for one theme.
  */
 const PALETTE = {
-  violet: 'var(--primary)',
+  brand: 'var(--primary)',
   blue: 'var(--info)',
   green: 'var(--success)',
   amber: 'var(--warning)',
@@ -72,7 +72,7 @@ const stageConfig = {
   prospect: { label: 'Prospect', color: PALETTE.blue },
   engaged: { label: 'Engaged', color: PALETTE.green },
   customer: { label: 'Customer', color: PALETTE.amber },
-  'at-risk': { label: 'At risk', color: PALETTE.violet },
+  'at-risk': { label: 'At risk', color: PALETTE.brand },
   churned: { label: 'Churned', color: PALETTE.rose },
 } satisfies ChartConfig;
 
@@ -189,7 +189,7 @@ const recordsCreated = [
 
 const newContactsConfig = {
   inbound: { label: 'Inbound', color: PALETTE.blue },
-  total: { label: 'Total', color: PALETTE.violet },
+  total: { label: 'Total', color: PALETTE.brand },
 } satisfies ChartConfig;
 
 const newContacts = [
@@ -255,7 +255,7 @@ function AreaSparkline() {
 /* ------------------------------------------------------------------ */
 
 const trafficConfig = {
-  visits: { label: 'Visits', color: PALETTE.violet },
+  visits: { label: 'Visits', color: PALETTE.brand },
 } satisfies ChartConfig;
 
 const traffic = [

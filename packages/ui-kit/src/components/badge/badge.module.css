@@ -151,8 +151,16 @@ a.variantGhost:hover {
   color: var(--accent-foreground);
 }
 
+/*
+ * --link-foreground, not --primary, for the same reason as Button's link
+ * variant (see button.module.css): this is 12px text sitting directly on
+ * the page/card, and the dark --primary misses the 4.5:1 AA floor there
+ * (3.72:1 against --background) while --link-foreground is the text-safe
+ * token theme.css carries for exactly this seat (4.95:1 light / 7.75:1
+ * dark).
+ */
 .variantLink {
-  color: var(--primary);
+  color: var(--link-foreground);
   text-underline-offset: 4px;
 }
 
@@ -168,14 +176,17 @@ a.variantLink:hover {
  * them". This is that surface. Accent is the same shape over the
  * --accent/--accent-foreground pair, matching the mockup's Accent badge.
  *
- * KNOWN CONTRAST DEBT, not an oversight: at 12px/500 these labels need
- * 4.5:1 (WCAG 1.4.3) and four pairs miss it — light success 3.43:1,
- * warning 2.90:1, danger 4.28:1, info 3.73:1, and dark danger 3.80:1.
- * The shortfall is in the token pairs themselves, which the mockup defines
- * and this file may not redefine, so it is raised for a design decision
- * rather than papered over with a local literal. Every other pair clears
- * AA (light accent 6.02:1, dark success 8.05:1 / warning 9.16:1 /
- * info 8.80:1 / accent 12.83:1), as does Neutral via --secondary.
+ * Contrast: at 12px/500 these labels need 4.5:1 (WCAG 1.4.3). The debt
+ * this comment used to record ("four pairs miss it, raised for a design
+ * decision") was resolved BY that decision, at the token level: the Studio
+ * blue rebrand ruled that a drawn status color failing AA gets a corrected
+ * value in theme.css (see its header and the --success/--warning/--danger
+ * comments there), so every pair this file paints now clears the floor on
+ * its own fill — light success 5.00:1 / warning 4.67:1 / danger 5.72:1 /
+ * info 4.59:1 / accent 4.68:1, dark success 8.05:1 / warning 10.03:1 /
+ * danger 6.34:1 / info 6.62:1 / accent 13.77:1 — as does Neutral via
+ * --secondary. Nothing here needed a local literal, which is the point of
+ * fixing the pair where it is defined.
  *
  * Hover is the color-mix-toward-foreground idiom `a.variantDestructive`
  * uses above, for the same reason: fading a tint toward transparent pulls

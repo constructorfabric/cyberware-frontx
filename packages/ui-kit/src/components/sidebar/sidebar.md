@@ -228,8 +228,8 @@ Tailwind utility strings, re-expressed on the kit's token scales
 (`p-2` → `--space-2`, `h-8` → `--control-height-sm`, `w-5` → `--space-5`,
 `size-4` → `--icon-size-sm`). Rows are 28/32/48px for `sm`/`default`/`lg`,
 sub-rows 28px at both sizes, badges and actions 20px squares centred on
-their row. The type ramp is the kit's, so body text is 15px where
-upstream's `text-sm` is 14px.
+their row. The type ramp is the kit's — since the Studio blue rebrand its
+body role is 14/20, which happens to coincide with upstream's `text-sm`.
 
 - **Cookie read happens after mount, not during render.** Upstream's own
   model reads the `sidebar_state` cookie in a Next.js Server Component and
