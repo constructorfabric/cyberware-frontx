@@ -447,7 +447,7 @@
    * --muted-foreground, the active-item fill takes --surface (light) /
    * --selection-subtle's value (dark), its foreground follows --foreground,
    * and the border follows --border. */
-  --sidebar: #f1f5f9;
+  --sidebar: #e2e8f0;
   --sidebar-foreground: #334155;
   --sidebar-accent: #ffffff;
   --sidebar-accent-foreground: #0f172a;
@@ -516,7 +516,7 @@
   --border-strong: #334155;
   --input: #334155;
   --ring: #6ba5f0;
-  --sidebar: #0f172a;
+  --sidebar: #1e293b;
   --sidebar-foreground: #94a3b8;
   --sidebar-accent: #26384b;
   --sidebar-accent-foreground: #ffffff;
@@ -569,7 +569,7 @@
     --border-strong: #334155;
     --input: #334155;
     --ring: #6ba5f0;
-    --sidebar: #0f172a;
+    --sidebar: #1e293b;
     --sidebar-foreground: #94a3b8;
     --sidebar-accent: #26384b;
     --sidebar-accent-foreground: #ffffff;

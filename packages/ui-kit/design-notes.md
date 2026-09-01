@@ -535,7 +535,12 @@ Architecture's build bullet).
      dark `#0f172a → #1e293b` (1.22:1 vs card). Every text seat re-checked
      (muted-foreground on the new fill 8.40:1 light / 5.71:1 dark);
      tokens.test.ts pins the separation at ≥ 1.1:1 so a later palette move
-     cannot silently re-collapse it. This is a fifth deviation from the
+     cannot silently re-collapse it. `--sidebar` follows per its documented
+     derivation (it carries muted's value in both modes — CodeRabbit
+     caught the light half going stale), restoring the pre-rebrand
+     tinted-panel-on-lighter-page relationship; the light active item
+     improves (1.07:1 → 1.23:1 vs the panel) and every sidebar text seat
+     re-measures clear. This is a fifth deviation from the
      drawn frame — visibility, not WCAG-text, so it sits outside the
      status-token table above — and joins the open designer question on
      whether the drawn collapses are intent.
