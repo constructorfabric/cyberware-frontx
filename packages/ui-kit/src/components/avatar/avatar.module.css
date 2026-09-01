@@ -132,7 +132,7 @@
  * and dark ink on light fills / light ink on dark fills by construction in
  * both themes (worst case 4.59:1, light info; the rest measure
  * 4.67–10.03:1). `neutral` inverts its borrowed pair the same way (--muted
- * on --muted-foreground, 11.5:1 light / 6.6:1 dark). `accent` alone keeps
+ * on --muted-foreground, 8.40:1 light / 5.71:1 dark). `accent` alone keeps
  * the mockup's binding: --primary-foreground on --primary measures 5.29:1
  * in both modes, so the drawn pair passes as-is.
  *

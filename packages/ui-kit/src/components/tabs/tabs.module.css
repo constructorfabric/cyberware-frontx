@@ -105,8 +105,8 @@
   /*
    * The plain token is enough now: with the --muted track gone (see
    * .variantDefault), inactive labels sit on the page surfaces, where
-   * --muted-foreground clears AA in both themes — measured 4.55:1 on
-   * --background / 4.76:1 on --card in light, 6.62:1 / 6.04:1 in dark.
+   * --muted-foreground clears AA in both themes — measured 9.45:1 on
+   * --background / 10.35:1 on --card in light, 7.68:1 / 6.96:1 in dark.
    * The old translation needed a foreground/muted mix here only because
    * its own track was the backdrop; that reasoning left with the track.
    */

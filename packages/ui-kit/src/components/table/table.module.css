@@ -295,7 +295,7 @@
   /*
    * Source: text-muted-foreground, against --background (a caption sits
    * outside any row tint, so no mixed-tint approximation is needed):
-   * 4.73:1 light, 7.63:1 dark — clears the 4.5:1 AA floor for normal text
+   * 9.45:1 light, 7.68:1 dark — clears the 4.5:1 AA floor for normal text
    * in both themes.
    */
   color: var(--muted-foreground);

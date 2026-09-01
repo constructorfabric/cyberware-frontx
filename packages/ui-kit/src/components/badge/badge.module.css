@@ -50,6 +50,10 @@
   font-weight: var(--text-label-weight);
   letter-spacing: var(--text-meta-tracking);
   white-space: nowrap;
+  /* One offset for every underline this file draws (link's rest style and
+   * the tone hovers alike), so hover underlines sit at the same height
+   * across variants. */
+  text-underline-offset: 4px;
   /*
    * Colour and box-shadow crossfades only, no transform/geometry — not
    * motion under WCAG 2.3.3, so deliberately left unguarded under
@@ -132,11 +136,11 @@ a.variantSecondary:hover {
 
 /*
  * --destructive-hover, not a color-mix toward --foreground: that recipe
- * (still what button.module.css's own destructive hover uses) darkens
- * correctly in light mode, where --foreground is dark, but LIGHTENS in dark
- * mode instead, since --foreground flips near-white there — against the
- * fixed --destructive-foreground label, that drops dark-mode hover
- * to about 3.91:1. --destructive-hover is a literal, same hex both modes
+ * (which button.module.css's destructive hover shared until the same fix)
+ * darkens correctly in light mode, where --foreground is dark, but LIGHTENS
+ * in dark mode instead, since --foreground flips near-white there — against
+ * the fixed --destructive-foreground label, that drops dark-mode hover
+ * to about 3.90:1. --destructive-hover is a literal, same hex both modes
  * (see theme.css), so the direction never depends on which theme is active.
  */
 a.variantDestructive:hover {
@@ -172,7 +176,6 @@ a.variantGhost:hover {
  */
 .variantLink {
   color: var(--link-foreground);
-  text-underline-offset: 4px;
 }
 
 a.variantLink:hover {
@@ -199,11 +202,12 @@ a.variantLink:hover {
  * --secondary. Nothing here needed a local literal, which is the point of
  * fixing the pair where it is defined.
  *
- * Hover used to mix the fill toward --foreground, the same idiom
- * `a.variantDestructive` uses above — wrong here for a different reason
- * than that one's dark-mode flip: these labels sit on their own tint at a
- * bare 4.5:1–4.67:1 (warning has 0.17 of headroom), so ANY darkening of the
- * fill toward the label's own darker luminance shrinks that margin, and
+ * Hover used to mix the fill toward --foreground, the idiom
+ * `a.variantDestructive` above once used — wrong here for a different
+ * reason than that one's dark-mode flip: the tightest of these labels sit
+ * on their own tint at a bare 4.59:1–4.68:1 (info has 0.09 of headroom,
+ * warning 0.17), so ANY darkening of the fill toward the label's own
+ * darker luminance shrinks that margin, and
  * standard OKLab interpolation puts every one of them under the floor
  * (light success 3.97:1, warning 3.70:1, info 3.65:1, accent 3.72:1) well
  * before the mix reaches 10%. Recoloring the fill on hover isn't safe at

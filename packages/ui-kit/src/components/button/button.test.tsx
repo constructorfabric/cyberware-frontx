@@ -359,6 +359,25 @@ describe('Button focus-ring contrast', () => {
 });
 
 /*
+ * Guards the destructive hover fill recipe. The old recipe mixed
+ * --destructive toward --foreground, which darkens in light mode but
+ * LIGHTENS in dark (the token flips near-white there) and dropped the
+ * fixed white label to ~3.90:1 — under the 4.5:1 floor. The fix is the
+ * --destructive-hover token (tokens.test.ts holds the label to 4.5:1 on
+ * it in both themes), so the guard here is that this rule actually paints
+ * the token rather than re-deriving a theme-dependent mix.
+ */
+describe('Button destructive hover fill', () => {
+  it('paints --destructive-hover, not a mix toward --foreground', () => {
+    const hover = rules.find((rule) => rule.selector === '.variantDestructive:hover');
+    expect(hover, '.variantDestructive:hover rule missing').toBeDefined();
+    const background = declarationMap(hover?.body ?? '').get('background-color');
+    expect(background).toContain('var(--destructive-hover)');
+    expect(background).not.toContain('color-mix');
+  });
+});
+
+/*
  * Guards the custom-color override API: every variant's rest and hover
  * colors must route through the documented --button-* hooks (with the
  * variant's own token as the var() fallback), so a consumer class setting

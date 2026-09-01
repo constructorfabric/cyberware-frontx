@@ -97,7 +97,8 @@ the `sidebar` / `data-table` exclusions above intact.
   step 4 below. The token NAMES stay unprefixed per the shadcn convention
   even though that frame labels its WEB syntax `var(--color-*)`: renaming
   the public token surface would break every consumer for zero semantic
-  gain (a standing ruling, recorded in theme.css's header). Component CSS consumes only these variables — the theme file is
+  gain (a standing ruling, recorded in theme.css's header). Component CSS
+  consumes only these variables — the theme file is
   the single seam between kit styles and consumer brand. The theme file
   also paints the page surface itself (`body`/`[data-theme]` background and
   color, plus `color-scheme`), not just the tokens: a bare consumer page
@@ -296,7 +297,10 @@ Architecture's build bullet).
    Overlay options' muted/active color language (a component-phase item,
    not a token one).
 
-   **Accessibility + spec-alignment pass.** A pass over the reskin found
+   **Accessibility + spec-alignment pass.** (Predates the Studio blue
+   rebrand below — palette words like "violet" and the measured ratios in
+   this entry describe the pre-rebrand theme; the tests named here
+   recompute against the live values.) A pass over the reskin found
    WCAG failures and undocumented deviations from the drawn spec; all
    resolved as rulings rather than left flagged, per the standing
    instruction that a color failing WCAG gets a new color, not a "kept as
@@ -436,9 +440,10 @@ Architecture's build bullet).
    the now-page-equal muted in each mode; sidebar/code blocks follow their
    same-role tokens; ring family and `--link-foreground` from the brand
    ramp — ratios at each token). `--popover-shadow` adopted the frame's
-   Studio/Elevation/200 geometry (0 8 24 @ 12% foreground); new
-   palette-only entries `--scenario-canvas` (moved into the color/
-   namespace by the rebrand) and `--artifact-accent-icon`.
+   Studio/Elevation/200 geometry (0 8 24 @ 12% foreground). The frame's
+   `color/scenario-canvas` and `color/artifact-accent-icon` entries were
+   briefly carried as new tokens on the namespace argument, then removed
+   before merge — see the inline-review pass below.
 
    Per the user ruling that a drawn value failing WCAG gets corrected in
    code (the same standing instruction as the accessibility pass above),
@@ -502,8 +507,8 @@ Architecture's build bullet).
      which darkens in light mode but LIGHTENS in dark (foreground flips
      to white), dropping the white label to ~3.9:1;
    - Badge tone hovers underline instead of recoloring the fill — the
-     tone labels sit at 4.5–4.67:1 with almost no headroom, so any
-     darkening mix breaks the floor;
+     tightest tone labels sit at 4.59–4.68:1 on their own fills with
+     almost no headroom, so any darkening mix breaks the floor;
    - Badge focus gained an outside outline (Button's idiom): light
      `--ring` equals `--primary`, so the inset-only ring on a default
      link Badge painted blue over blue and vanished;
@@ -518,12 +523,60 @@ Architecture's build bullet).
      surface/card; badge.test.tsx asserts the outside outline and its
      3:1 tone, mirroring button.test.tsx.
 
+   **Inline-review pass (2026-09-01, PR #604 second review).** A reviewer
+   pass over the rebrand diff itself; every numeric claim was re-measured
+   before acting. Two substantive fixes and one demo fix:
+   - **`--muted` stepped off its backdrops.** The frame draws muted AT the
+     light page value and AT the dark card value — a 1.00:1 fill that
+     makes Skeleton, outline/ghost Button hover and the other muted
+     consumers vanish. Same one-step correction --secondary already took;
+     muted now lands ON secondary's value in both modes (upstream shadcn's
+     own default arrangement): light `#f1f5f9 → #e2e8f0` (1.13:1 vs page),
+     dark `#0f172a → #1e293b` (1.22:1 vs card). Every text seat re-checked
+     (muted-foreground on the new fill 8.40:1 light / 5.71:1 dark);
+     tokens.test.ts pins the separation at ≥ 1.1:1 so a later palette move
+     cannot silently re-collapse it. This is a fifth deviation from the
+     drawn frame — visibility, not WCAG-text, so it sits outside the
+     status-token table above — and joins the open designer question on
+     whether the drawn collapses are intent.
+   - **The last two `--destructive`-mix seats moved onto the corrected
+     tokens.** Button's destructive hover still mixed the fill toward
+     `--foreground` (3.90:1 under the white label in dark — the exact
+     failure the Badge fix above removed) and both menus' destructive
+     items painted mix-derived text/highlights that landed under 4.5:1
+     highlighted in dark. Button now paints `--destructive-hover` like
+     Badge; the menu items paint `--danger` over `--danger-soft`, the
+     token pair the status matrix already guards. Per-file CSS guards
+     added (button.test.tsx, dropdown-menu.test.tsx,
+     context-menu.test.tsx) so a theme-dependent mix cannot come back.
+   - **The demo chart palette lost its `--info` slot**: after the rebrand
+     `--primary` and `--info` are ~1.02:1 apart in light mode, and two
+     demo configs drew both in one chart — two indistinguishable series.
+     The fifth palette slot is the theme's neutral slate now.
+   - **`--scenario-canvas`/`--artifact-accent-icon` removed** before they
+     ever published (added by the rebrand commit, consumed by nothing,
+     absent from every released version). The rebrand admitted them
+     because the Figma variables moved into the `color/` namespace; the
+     review challenged that, and the ruling is ownership over namespace:
+     they name one consumer's workflow surfaces (Studio's scenario
+     canvas, its artifact cards), which the FrontX handoff contract
+     classifies as Studio-only — product-domain names do not enter the
+     kit's public token API on a folder move alone. theme.css's header
+     now records the rule.
+   - Doc/comment sync from the same review: badge.md's tone-contrast
+     caveat replaced with the resolution it had already received; stale
+     pre-rebrand ratios refreshed in button/tabs/table/avatar comments;
+     the two pre-rebrand entries above marked as historical; review
+     finding codes (F-00x) replaced with self-contained references, since
+     the offline review file is not in the repo.
+
    Still NOT part of the rebrand: the elevation scale beyond the popover
    shadow (Elevation/100/300/Dock top have no kit consumer yet). Open
    designer questions: pin AA-passing status values in the Figma file
    (the four deviations above), confirm the dark surface/border collapses
-   are intent rather than spec-sheet shorthand, and rule the button label
-   weight (500 vs the drawn 600).
+   are intent rather than spec-sheet shorthand (now also load-bearing for
+   the `--muted` step-off above), and rule the button label weight (500 vs
+   the drawn 600).
 5. The twelve gap components, mockups-first: `popover`, `alert`, `avatar`,
    `empty` are in both the mockups and the `insight-front` set and go first;
    `pagination` and `breadcrumb` are the mockups-only additions;

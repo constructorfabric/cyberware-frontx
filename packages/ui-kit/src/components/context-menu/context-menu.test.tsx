@@ -1,5 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { declarationMap, extractRules } from '../../__test-utils__/css-rules';
 
 import {
   ContextMenu,
@@ -237,5 +243,35 @@ describe('ContextMenu', () => {
     expect(screen.getByRole('menuitem', { name: 'More tools' }).getAttribute('data-inset')).toBe(
       'true',
     );
+  });
+});
+
+/*
+ * Guards the destructive item's paint — same seat, same fix and same
+ * reasoning as dropdown-menu.test.tsx's copy of this guard: --danger is
+ * the text red, --danger-soft the highlight fill, both pairs held to
+ * 4.5:1 by tokens.test.ts's status matrix; a --destructive mix must not
+ * come back.
+ */
+describe('ContextMenu destructive item paint', () => {
+  const css = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'context-menu.module.css'),
+    'utf8',
+  );
+  const menuRules = extractRules(css);
+
+  it('paints --danger text and a --danger-soft highlight, no destructive mixes', () => {
+    const rest = menuRules.find((rule) => rule.selector === '.variantDestructive');
+    expect(rest, '.variantDestructive rule missing').toBeDefined();
+    expect(declarationMap(rest?.body ?? '').get('color')).toBe('var(--danger)');
+
+    const highlighted = menuRules.find((rule) =>
+      rule.selector.replace(/\s+/g, ' ').includes('.variantDestructive[data-highlighted]'),
+    );
+    expect(highlighted, 'highlighted .variantDestructive rule missing').toBeDefined();
+    const decls = declarationMap(highlighted?.body ?? '');
+    expect(decls.get('background-color')).toBe('var(--danger-soft)');
+    expect(decls.get('color')).toBe('var(--danger)');
+    expect(highlighted?.body).not.toContain('color-mix');
   });
 });

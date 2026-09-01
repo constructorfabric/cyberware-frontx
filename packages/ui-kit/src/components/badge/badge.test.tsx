@@ -78,7 +78,8 @@ describe('Badge', () => {
 
 /*
  * Guards the fix for the invisible focus ring on a default-variant link
- * Badge (the PR #604 review's F-005): light --ring equals --primary, and the
+ * Badge (design-notes.md's "Post-review contrast pass" entry records the
+ * finding): light --ring equals --primary, and the
  * inset half of Badge's focus idiom recolors chrome sitting ON the badge's
  * own fill — on the default variant that painted blue over blue and
  * vanished. What makes focus visible regardless of the fill is the OUTSIDE

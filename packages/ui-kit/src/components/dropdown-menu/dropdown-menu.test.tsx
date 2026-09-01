@@ -1,5 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { declarationMap, extractRules } from '../../__test-utils__/css-rules';
 
 import {
   DropdownMenu,
@@ -261,5 +267,38 @@ describe('DropdownMenu', () => {
     const menu = screen.getByRole('menu');
     expect(container.contains(menu)).toBe(true);
     container.remove();
+  });
+});
+
+/*
+ * Guards the destructive item's paint. --destructive is the kit's FILL
+ * red, verified only under --destructive-foreground; as menu TEXT it needs
+ * the AA-corrected --danger, and the highlighted fill needs --danger-soft —
+ * the pair tokens.test.ts's status matrix already holds to 4.5:1 (against
+ * each other AND against --popover). The old recipe mixed --destructive
+ * toward --foreground, which lightens in dark mode and fell under the
+ * floor; this guard notices if a mix ever comes back. Reads the raw module
+ * CSS (jsdom computes no styles), same as badge.test.tsx.
+ */
+describe('DropdownMenu destructive item paint', () => {
+  const css = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'dropdown-menu.module.css'),
+    'utf8',
+  );
+  const menuRules = extractRules(css);
+
+  it('paints --danger text and a --danger-soft highlight, no destructive mixes', () => {
+    const rest = menuRules.find((rule) => rule.selector === '.variantDestructive');
+    expect(rest, '.variantDestructive rule missing').toBeDefined();
+    expect(declarationMap(rest?.body ?? '').get('color')).toBe('var(--danger)');
+
+    const highlighted = menuRules.find((rule) =>
+      rule.selector.replace(/\s+/g, ' ').includes('.variantDestructive[data-highlighted]'),
+    );
+    expect(highlighted, 'highlighted .variantDestructive rule missing').toBeDefined();
+    const decls = declarationMap(highlighted?.body ?? '');
+    expect(decls.get('background-color')).toBe('var(--danger-soft)');
+    expect(decls.get('color')).toBe('var(--danger)');
+    expect(highlighted?.body).not.toContain('color-mix');
   });
 });

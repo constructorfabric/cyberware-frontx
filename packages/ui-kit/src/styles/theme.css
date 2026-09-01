@@ -32,19 +32,21 @@
  *
  * Deliberately not here: the `--studio-color-*` entries the same frame
  * draws (progress-value/track, icon-subtle/icon-selected, and the studio
- * copy of selection-subtle). Figma exports them under its own `--studio-*`
- * namespace, which is the line this file follows — they name one consumer's
- * workflow surfaces rather than any kit semantic, and belong to that app's
- * own stylesheet. (`scenario-canvas`, previously excluded on the same
- * ground, moved INTO the `color/` namespace with the rebrand and is now
- * carried below.)
+ * copy of selection-subtle), plus `scenario-canvas` and
+ * `artifact-accent-icon`. The first group Figma exports under its own
+ * `--studio-*` namespace; the last two sit in the `color/` namespace since
+ * the rebrand, but all of them name one consumer's workflow surfaces
+ * (Studio's scenario canvas, its artifact cards) rather than any kit
+ * semantic, and belong to that app's own stylesheet. Ownership, not
+ * namespace, is what admits a token here — a Figma folder move alone does
+ * not put a product-domain name into the kit's public API.
  *
- * The line is namespace, not "is a component reading it today": a few groups
- * here (the code pair, --blue, --scenario-canvas, --artifact-accent-icon)
- * are unread by any current component. They are part of the collection's
- * unprefixed palette and are carried so a consumer painting a page around
- * the kit — or a later kit component — brands them from the same surface as
- * everything else, instead of finding a hole. Each such group says so at
+ * Being unread is NOT what excludes them, though: a few groups here (the
+ * code pair, --blue) are unread by any current component. They are part of
+ * the collection's unprefixed palette, carry kit-generic names, and are
+ * kept so a consumer painting a page around the kit — or a later kit
+ * component — brands them from the same surface as everything else,
+ * instead of finding a hole. Each such group says so at
  * its own declaration. The Sidebar Navigation block is NOT one of them:
  * sidebar.module.css consumes all five --sidebar-* tokens, so that group is
  * component-consumed like any other pair — it merely doubles as the
@@ -293,11 +295,23 @@
    * the page would vanish. One step down the frame's neutral ramp
    * (neutral-100) keeps it a visible fill (1.13:1 against the page) the
    * way the old value was against the old page. Dark mirrors the move one
-   * step the OTHER way from its (also page-equal) muted — see the dark
+   * step the OTHER way from its (card-equal) drawn muted — see the dark
    * block. */
   --secondary: #e2e8f0;
   --secondary-foreground: #0f172a;
-  --muted: #f1f5f9;
+  /* derived: the frame draws muted at slate-50 — the exact value the
+   * rebrand made the page itself — and its dark muted at the card surface.
+   * Muted is the kit's workhorse FILL (Skeleton, outline/ghost Button
+   * hover, Calendar's outside days, a dozen more), and a fill equal to its
+   * own backdrop vanishes: the same argument --secondary above already
+   * applies, so muted takes the same one-step correction and lands ON
+   * secondary's value — which is also upstream shadcn's own arrangement
+   * (its default theme ships muted == secondary). 1.13:1 against the page
+   * / 1.23:1 against the card in light, 1.22 / 1.35 in dark; every text
+   * seat stays clear (--muted-foreground on this fill is 8.40:1 light /
+   * 5.71:1 dark). tokens.test.ts pins the separation so a later value
+   * move cannot silently re-collapse it. */
+  --muted: #e2e8f0;
   /* The frame collapses muted-foreground, subtle-foreground and
    * code-foreground onto one slate-600 in light (and one slate-400 in
    * dark). Adopted as drawn — the collapse is the design's own, and every
@@ -448,14 +462,6 @@
   --code-background: #f1f5f9;
   --code-foreground: #334155;
 
-  /* Palette-only, new with the rebrand (no kit consumer yet): the workflow
-   * scenario canvas fill — previously a `--studio-*` export, moved into
-   * the collection's color/ namespace by the rebrand, which is the line
-   * that admits it here (see header) — and the accent tone artifact cards
-   * draw their icon with. */
-  --scenario-canvas: #e2e8f0;
-  --artifact-accent-icon: #2668c5;
-
   /*
    * Hands UA-owned surfaces (scrollbar, spellcheck underline, <input>
    * autofill, form-control chrome) the light palette. The dark blocks below
@@ -484,7 +490,7 @@
   --primary-ring: #6ba5f0;
   --secondary: #1e293b;
   --secondary-foreground: #ffffff;
-  --muted: #0f172a;
+  --muted: #1e293b;
   --muted-foreground: #94a3b8;
   --subtle-foreground: #94a3b8;
   --accent: #00204d;
@@ -517,8 +523,6 @@
   --sidebar-border: #334155;
   --code-background: #090b10;
   --code-foreground: #e2e8f0;
-  --scenario-canvas: #0f172a;
-  --artifact-accent-icon: #6ba5f0;
 
   /* See the light block's color-scheme comment above for why this exists. */
   color-scheme: dark;
@@ -541,7 +545,7 @@
     --primary-ring: #6ba5f0;
     --secondary: #1e293b;
     --secondary-foreground: #ffffff;
-    --muted: #0f172a;
+    --muted: #1e293b;
     --muted-foreground: #94a3b8;
     --subtle-foreground: #94a3b8;
     --accent: #00204d;
@@ -572,8 +576,6 @@
     --sidebar-border: #334155;
     --code-background: #090b10;
     --code-foreground: #e2e8f0;
-    --scenario-canvas: #0f172a;
-    --artifact-accent-icon: #6ba5f0;
 
     /* See the light block's color-scheme comment above for why this exists. */
     color-scheme: dark;
