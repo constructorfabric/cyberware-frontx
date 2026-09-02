@@ -312,9 +312,10 @@ extensions = [".ts"]
 # ADR-0017, ADR-0018 and ADR-0033 - never the templates' own file contents, which the domain-model
 # mapping (architecture/explorations/2026-09-02-workspace-template-domain-mapping.md) carries.
 # FEATURE is deliberately undeclared rather than declared `required = false`: DECOMPOSITION and
-# FEATURE are explicitly deferred by team agreement pending the PRD/DESIGN reaching a settled
-# state first, and an undeclared kind is unenforced, the same convention CLI's own ADR comment
-# above documents.
+# FEATURE are explicitly deferred by team decision of 2026-09-02, stated in the PRD itself
+# (workspace-templates PRD §4.2) with the maintainer's acceptance of the PRD/DESIGN pair as the
+# resumption trigger, and an undeclared kind is unenforced, the same convention CLI's own ADR
+# comment above documents.
 [[systems.children]]
 name = "Workspace Template Family"
 slug = "workspace-templates"
