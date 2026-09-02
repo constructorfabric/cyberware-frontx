@@ -540,7 +540,13 @@ Architecture's build bullet).
      caught the light half going stale), restoring the pre-rebrand
      tinted-panel-on-lighter-page relationship; the light active item
      improves (1.07:1 → 1.23:1 vs the panel) and every sidebar text seat
-     re-measures clear. This is a fifth deviation from the
+     re-measures clear. A follow-up review round then caught the knock-on:
+     `--sidebar-border` derived from `--border`, whose light value IS the
+     new panel fill — separators, the menu-sub rail and the floating
+     outline vanished at 1.00:1. The border now derives from
+     `--border-strong` (1.20:1 light / 1.41:1 dark against the panel;
+     dark's collapsed border family already was border-strong), and
+     tokens.test.ts pins the pair alongside the muted guard. This is a fifth deviation from the
      drawn frame — visibility, not WCAG-text, so it sits outside the
      status-token table above — and joins the open designer question on
      whether the drawn collapses are intent.
@@ -550,14 +556,23 @@ Architecture's build bullet).
      failure the Badge fix above removed) and both menus' destructive
      items painted mix-derived text/highlights that landed under 4.5:1
      highlighted in dark. Button now paints `--destructive-hover` like
-     Badge; the menu items paint `--danger` over `--danger-soft`, the
-     token pair the status matrix already guards. Per-file CSS guards
-     added (button.test.tsx, dropdown-menu.test.tsx,
-     context-menu.test.tsx) so a theme-dependent mix cannot come back.
+     Badge; the menu items paint `--danger` text with a popover-anchored
+     12% danger tint as the highlight (first shipped as `--danger-soft`,
+     which the follow-up round measured too faint for the only focus cue —
+     1.10:1/1.05:1 vs the popover against the sibling accent highlight's
+     1.16/1.12; the tint measures 1.20/1.17 with the text clear at
+     5.26/5.68). Unlike the removed recipe the tint is anchored to
+     `--popover`, so its direction never flips with the theme. Per-file
+     CSS guards added (button.test.tsx, dropdown-menu.test.tsx,
+     context-menu.test.tsx) so a foreground-anchored mix cannot come back.
    - **The demo chart palette lost its `--info` slot**: after the rebrand
      `--primary` and `--info` are ~1.02:1 apart in light mode, and two
      demo configs drew both in one chart — two indistinguishable series.
-     The fifth palette slot is the theme's neutral slate now.
+     The neutral fifth slot is `--foreground` (first landed as
+     `--muted-foreground`, which the follow-up round pointed out is the
+     charts' own chrome color — axes, ticks and legend labels — so a
+     series in it read as furniture; ink separates from that chrome at
+     1.72:1 light / 2.56:1 dark).
    - **`--scenario-canvas`/`--artifact-accent-icon` removed** before they
      ever published (added by the rebrand commit, consumed by nothing,
      absent from every released version). The rebrand admitted them

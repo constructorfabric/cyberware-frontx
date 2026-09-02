@@ -40,12 +40,16 @@ import { Row, Section } from '../shared';
  *
  * No --info slot: after the rebrand --primary and --info are near-identical
  * blues in light mode (~1.02:1 apart), so a palette carrying both would let
- * one chart draw two indistinguishable series. The fifth slot is the
- * theme's neutral slate instead, which every other slot separates from.
+ * one chart draw two indistinguishable series. The neutral fifth slot is
+ * --foreground, NOT --muted-foreground: the latter is the charts' own
+ * chrome color (axes, ticks, legend and tooltip labels — see
+ * chart.module.css), and a data series in the chrome color reads as
+ * furniture. Ink separates from that chrome in both themes (1.72:1 light /
+ * 2.56:1 dark) and from every other slot.
  */
 const PALETTE = {
   brand: 'var(--primary)',
-  slate: 'var(--muted-foreground)',
+  ink: 'var(--foreground)',
   green: 'var(--success)',
   amber: 'var(--warning)',
   rose: 'var(--destructive)',
@@ -74,7 +78,7 @@ const data = [
 /* ------------------------------------------------------------------ */
 
 const stageConfig = {
-  prospect: { label: 'Prospect', color: PALETTE.slate },
+  prospect: { label: 'Prospect', color: PALETTE.ink },
   engaged: { label: 'Engaged', color: PALETTE.green },
   customer: { label: 'Customer', color: PALETTE.amber },
   'at-risk': { label: 'At risk', color: PALETTE.brand },
@@ -154,7 +158,7 @@ function DonutChartExample() {
 /* ------------------------------------------------------------------ */
 
 const resolvedConfig = {
-  chat: { label: 'Chat', color: PALETTE.slate },
+  chat: { label: 'Chat', color: PALETTE.ink },
   mail: { label: 'Mail', color: PALETTE.green },
   tasks: { label: 'Tasks', color: PALETTE.amber },
 } satisfies ChartConfig;
@@ -174,7 +178,7 @@ const resolvedPerDay = [
 /* ------------------------------------------------------------------ */
 
 const recordsConfig = {
-  companies: { label: 'Companies', color: PALETTE.slate },
+  companies: { label: 'Companies', color: PALETTE.ink },
   opportunities: { label: 'Opportunities', color: PALETTE.amber },
   people: { label: 'People', color: PALETTE.green },
 } satisfies ChartConfig;
@@ -193,7 +197,7 @@ const recordsCreated = [
 /* ------------------------------------------------------------------ */
 
 const newContactsConfig = {
-  inbound: { label: 'Inbound', color: PALETTE.slate },
+  inbound: { label: 'Inbound', color: PALETTE.ink },
   total: { label: 'Total', color: PALETTE.brand },
 } satisfies ChartConfig;
 

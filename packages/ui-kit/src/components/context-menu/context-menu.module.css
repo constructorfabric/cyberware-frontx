@@ -196,11 +196,12 @@
 }
 
 /*
- * --danger over --danger-soft, not --destructive-based mixes — same seat,
- * same fix, same reasoning as dropdown-menu.module.css's destructive item
- * (see the full rationale there): --destructive is the fill red, --danger
- * the AA-corrected text red, and tokens.test.ts's status matrix guards
- * --danger against both --danger-soft and --popover in both themes.
+ * --danger text over a 12% --danger tint of --popover — same seat, same
+ * fix, same reasoning and same measured ratios as
+ * dropdown-menu.module.css's destructive item (see the full rationale
+ * there): --destructive is the fill red, --danger the AA-corrected text
+ * red, and the popover-anchored tint is the focus cue --danger-soft was
+ * too faint to carry.
  */
 .variantDestructive {
   color: var(--danger);
@@ -208,7 +209,7 @@
 
 .variantDestructive:focus,
 .variantDestructive[data-highlighted] {
-  background-color: var(--danger-soft);
+  background-color: color-mix(in oklab, var(--danger) 12%, var(--popover));
   color: var(--danger);
 }
 

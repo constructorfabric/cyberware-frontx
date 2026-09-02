@@ -684,6 +684,23 @@ describe('theme tokens', () => {
           }
         }
       });
+
+      // Same visibility floor for the sidebar's own hairline: --sidebar
+      // follows --muted (see theme.css), and the first derivation of the
+      // block put --border's value on --sidebar-border — which is the
+      // panel fill itself in light mode, erasing SidebarSeparator, the
+      // menu-sub rail and the floating variant's outline at 1.00:1. The
+      // border now follows --border-strong (1.20 light / 1.41 dark against
+      // the panel); this pins the pair the way the muted guard above pins
+      // muted against its backdrops.
+      it('the sidebar border stays visibly separate from the sidebar panel', () => {
+        for (const [themeName, tokens] of themes) {
+          expect(
+            contrastRatio(token(tokens, '--sidebar-border'), token(tokens, '--sidebar')),
+            `${themeName} --sidebar-border on --sidebar`,
+          ).toBeGreaterThanOrEqual(1.1);
+        }
+      });
     });
   });
 });
