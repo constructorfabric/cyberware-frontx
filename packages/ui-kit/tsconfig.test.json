@@ -1,10 +1,28 @@
+// Type-checks the test files themselves, which tsconfig.src.json excludes
+// because vite-plugin-dts reads that project to decide what lands in dist/.
+// `rootDir: "."` (not ./src) because a test may import from scripts/ - the
+// contract tests do exactly that - which sits outside src/.
+// `include` re-lists css-modules.d.ts: a component test pulls in a .tsx that
+// imports its .module.css, and an include-scoped project without that ambient
+// declaration reports the import as untyped.
 {
-  "extends": "./tsconfig.json",
+  "extends": "./tsconfig.src.json",
   "compilerOptions": {
     "noEmit": true,
     "rootDir": ".",
     "types": ["vitest/globals", "node"]
   },
-  "include": ["src/**/*"],
+  "include": [
+    "__tests__/**/*.test.ts",
+    "__tests__/**/*.test.tsx",
+    "__tests__/**/*.spec.ts",
+    "__tests__/**/*.spec.tsx",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.spec.ts",
+    "src/**/*.spec.tsx",
+    "src/__test-utils__/**/*.ts",
+    "src/css-modules.d.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

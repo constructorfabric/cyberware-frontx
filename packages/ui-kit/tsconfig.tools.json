@@ -1,8 +1,10 @@
-// Type-checks the build tooling itself — vite.config.ts and scripts/ — which
-// the main tsconfig deliberately leaves out: its `include` is scoped to
-// `src/**/*` with `rootDir: ./src`, because vite-plugin-dts reads that project
-// to decide which declarations to emit, and pulling the tooling in would emit
-// declarations for it into dist/.
+// Type-checks the build tooling itself - vite.config.ts, vitest.config.ts and
+// scripts/ - which tsconfig.src.json deliberately leaves out: its `include` is
+// scoped to `src/**/*` with `rootDir: ./src`, because vite-plugin-dts reads
+// that project to decide which declarations to emit, and pulling the tooling
+// in would emit declarations for it into dist/. This project extends
+// tsconfig.src.json for the compiler settings and widens `rootDir` to the
+// package root instead.
 //
 // Without this project those files were checked by nothing: `npm run
 // type-check` skipped them, and an editor fell back to compiler defaults
@@ -10,8 +12,10 @@
 // that is fine under the ES2022 target this package actually builds with.
 // The build is now considerably more code than tsup's single config object,
 // and it is the code that decides what ships, so it gets checked.
+// vitest.config.ts is listed alongside vite.config.ts because it was the one
+// remaining config file no project covered.
 {
-  "extends": "./tsconfig.json",
+  "extends": "./tsconfig.src.json",
   "compilerOptions": {
     "noEmit": true,
     "declaration": false,
@@ -20,6 +24,6 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "scripts/**/*.ts"],
+  "include": ["vite.config.ts", "vitest.config.ts", "scripts/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

@@ -1,25 +1,19 @@
+// Navigation-only solution file. `files: []` means it compiles nothing itself:
+// `tsc -p tsconfig.json` checks NOTHING, so use the package's type-check
+// scripts (type-check, type-check:tools, type-check:test) for CLI checking.
+// What it does buy: the TS language server routes each open file to the first
+// referenced project whose `include` covers it, so sources, tooling
+// (vite/vitest config, scripts/) and colocated tests each get a real editor
+// project with this package's real compiler settings instead of an inferred
+// one on compiler defaults. Reference order matters - sources stay first, so a
+// src file that is not a test resolves against the project vite-plugin-dts
+// reads. `composite` is deliberately absent: it is required only for `tsc -b`,
+// which this package does not use, and editor routing works without it.
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "jsx": "react-jsx",
-    "strict": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "noImplicitAny": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "isolatedModules": true
-  },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/**/*.test.tsx"]
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.src.json" },
+    { "path": "./tsconfig.tools.json" },
+    { "path": "./tsconfig.test.json" }
+  ]
 }

@@ -1,0 +1,85 @@
+# Semantic overlay for Button - the hand-written half of the contract.
+#
+# Machine-extractable facts (axis names, axis values, defaults, prop list)
+# do NOT belong here: the compiler takes those from button.tsx, and rejects
+# an overlay that tries to restate them - one fact, one owner. This file
+# carries only what the code cannot express: intent, boundaries, invariants.
+component: button
+
+# One sentence, the selection-card headline.
+intent: Trigger a single action in the current context.
+
+use_when:
+  - A one-off action with an immediate effect (submit, confirm, open a dialog)
+  - An icon-only action that has an accessible name (pass aria-label)
+
+# Each entry names the alternative - "don't" without "instead" is banned.
+# `instead` is a GTS component type id, not a display name: a name is a string
+# nothing can resolve, an id is checked against what the kit actually ships.
+# GTS tokens are snake_case, kit directories kebab-case (navigation_menu ->
+# src/components/navigation-menu).
+dont_use_when:
+  # This kit has no standalone Link component; NavigationMenuLink is where its
+  # anchor semantics live, so the navigation menu is the honest target.
+  - rule: Navigation between routes or pages
+    instead: gts.frontx.uikit.component.navigation_menu.v1~ # NavigationMenu
+  - rule: Toggling a persistent on/off state
+    instead: gts.frontx.uikit.component.switch.v1~ # Switch
+
+composition:
+  children:
+    kinds: [text]
+    # Icons go through the `icon` prop, never through children: the slot is
+    # what gets sized, spaced, hidden during `loading` and marked decorative.
+    icons_via: icon
+
+invariants:
+  - id: icon-only-needs-label
+    text: >-
+      With `icon` set and no children the button renders icon-only and carries
+      no accessible name of its own - `aria-label` is required.
+  - id: loading-is-not-native-disabled
+    text: >-
+      While `loading`, the button stays in the tab order and reports
+      `aria-disabled`/`aria-busy`; it never becomes natively `disabled`, so
+      `:disabled` selectors and the `disabled` DOM property do not see it.
+
+anti_patterns:
+  - dont: Render a spinner next to the label by hand
+    instead: Use `loading` - it preserves the button's width and accessible name
+  - dont: Pass an icon element through children
+    instead: Use the `icon` prop
+
+# None yet. Shape when one appears:
+#   props:
+#     tone: { since: "0.5.0", replacement: "variant", hint: "tone=X maps to variant=X" }
+deprecations: {}
+
+# "verified: no" and "not described" are different answers - say which.
+coverage:
+  a11y: verified # focus, aria-busy and disabled semantics come from Base UI plus the loading contract above
+  rtl: not-described
+
+# Canonical snippets. `good` is what to copy, `bad` is what generation
+# actually produces when it guesses; every `bad` states why, because a
+# counter-example without its reason teaches the shape, not the rule.
+examples:
+  good:
+    - title: Variant and size on a plain action
+      code: <Button variant="destructive" size="sm" onClick={handleDelete}>Delete</Button>
+    - title: Icon-only, named for assistive tech
+      code: <Button variant="ghost" icon={<TrashIcon />} aria-label="Delete item" />
+  bad:
+    - title: Icon passed through children
+      code: <Button variant="ghost"><TrashIcon /> Delete</Button>
+      why: >-
+        Children are text only. An icon in children misses the slot that sizes
+        it, spaces it, hides it while `loading` and marks it `aria-hidden`, so
+        it is announced as part of the accessible name.
+    - title: Spinner rendered by hand
+      code: <Button disabled={saving}>{saving && <Spinner />}Save</Button>
+      why: >-
+        `loading` exists for this: it keeps the button's width, keeps the
+        accessible name and reports `aria-busy` while staying focusable. A
+        native `disabled` blurs the button the instant it lands, so the busy
+        state is announced to nobody.

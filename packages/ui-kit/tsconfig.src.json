@@ -1,0 +1,41 @@
+// The shipping-sources project: `include` is scoped to src/**/* with
+// `rootDir: ./src`, and vite-plugin-dts reads THIS project (see
+// scripts/buildPlugin.ts) to decide which declarations to emit into dist/ -
+// which is why tests, spec files and src/__test-utils__/ stay excluded here,
+// and why nothing outside src/ may be added to this project's `include`.
+// Editor routing for the files this project excludes is not its job: that
+// lives in the solution-style tsconfig.json, which references this project
+// first and then the tooling and test ones.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "isolatedModules": true
+  },
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.spec.ts",
+    "src/**/*.spec.tsx",
+    "src/__test-utils__/**"
+  ]
+}

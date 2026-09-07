@@ -1,0 +1,133 @@
+{
+  "$id": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit button contract",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "gts://gts.frontx.uikit.base.component.v1~"
+    },
+    {
+      "$ref": "gts://gts.frontx.uikit.passthrough.dom_button.v1~"
+    }
+  ],
+  "properties": {
+    "variant": {
+      "type": "string",
+      "enum": [
+        "default",
+        "destructive",
+        "outline",
+        "secondary",
+        "ghost",
+        "link"
+      ],
+      "default": "default"
+    },
+    "size": {
+      "type": "string",
+      "enum": [
+        "default",
+        "sm",
+        "lg"
+      ],
+      "default": "default"
+    },
+    "icon": {
+      "description": "Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
+    },
+    "loading": {
+      "type": "boolean"
+    },
+    "focusableWhenDisabled": {
+      "type": "boolean"
+    }
+  },
+  "unevaluatedProperties": false,
+  "x-uikit": {
+    "metamodel": "0.1.0-demo",
+    "intent": "Trigger a single action in the current context.",
+    "use_when": [
+      "A one-off action with an immediate effect (submit, confirm, open a dialog)",
+      "An icon-only action that has an accessible name (pass aria-label)"
+    ],
+    "dont_use_when": [
+      {
+        "rule": "Navigation between routes or pages",
+        "instead": "gts.frontx.uikit.component.navigation_menu.v1~"
+      },
+      {
+        "rule": "Toggling a persistent on/off state",
+        "instead": "gts.frontx.uikit.component.switch.v1~"
+      }
+    ],
+    "composition": {
+      "children": {
+        "kinds": [
+          "text"
+        ],
+        "icons_via": "icon"
+      }
+    },
+    "invariants": [
+      {
+        "id": "icon-only-needs-label",
+        "text": "With `icon` set and no children the button renders icon-only and carries no accessible name of its own - `aria-label` is required."
+      },
+      {
+        "id": "loading-is-not-native-disabled",
+        "text": "While `loading`, the button stays in the tab order and reports `aria-disabled`/`aria-busy`; it never becomes natively `disabled`, so `:disabled` selectors and the `disabled` DOM property do not see it."
+      }
+    ],
+    "anti_patterns": [
+      {
+        "dont": "Render a spinner next to the label by hand",
+        "instead": "Use `loading` - it preserves the button's width and accessible name"
+      },
+      {
+        "dont": "Pass an icon element through children",
+        "instead": "Use the `icon` prop"
+      }
+    ],
+    "deprecations": {},
+    "coverage": {
+      "a11y": "verified",
+      "rtl": "not-described"
+    },
+    "examples": {
+      "good": [
+        {
+          "title": "Variant and size on a plain action",
+          "code": "<Button variant=\"destructive\" size=\"sm\" onClick={handleDelete}>Delete</Button>"
+        },
+        {
+          "title": "Icon-only, named for assistive tech",
+          "code": "<Button variant=\"ghost\" icon={<TrashIcon />} aria-label=\"Delete item\" />"
+        }
+      ],
+      "bad": [
+        {
+          "title": "Icon passed through children",
+          "code": "<Button variant=\"ghost\"><TrashIcon /> Delete</Button>",
+          "why": "Children are text only. An icon in children misses the slot that sizes it, spaces it, hides it while `loading` and marks it `aria-hidden`, so it is announced as part of the accessible name."
+        },
+        {
+          "title": "Spinner rendered by hand",
+          "code": "<Button disabled={saving}>{saving && <Spinner />}Save</Button>",
+          "why": "`loading` exists for this: it keeps the button's width, keeps the accessible name and reports `aria-busy` while staying focusable. A native `disabled` blurs the button the instant it lands, so the busy state is announced to nobody."
+        }
+      ]
+    },
+    "slots": {
+      "icon": {
+        "typeText": "ReactNode",
+        "optional": true
+      }
+    },
+    "passthrough": [
+      "Omit<ButtonPrimitive.Props, 'className'>",
+      "VariantProps<typeof buttonVariants>"
+    ],
+    "cannot_extract": []
+  }
+}

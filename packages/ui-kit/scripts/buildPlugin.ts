@@ -35,12 +35,13 @@ export function buildPlugin(): PluginOption[] {
     dts({
       outDir: 'dist',
       entryRoot: 'src',
-      // tsconfig.json already excludes *.test.ts(x) and sets rootDir/outDir/
-      // declaration for this package (see tsconfig.json) — no separate build
-      // tsconfig needed, unlike react-kit's tsconfig.build.json, because this
-      // package has no dev-server/Storybook config sharing tsconfig.json
-      // with incompatible settings.
-      tsconfigPath: 'tsconfig.json',
+      // tsconfig.src.json already excludes *.test.ts(x)/*.spec.ts(x) and sets
+      // rootDir/outDir/declaration for this package (see tsconfig.src.json),
+      // so it doubles as the build project - no separate tsconfig.build.json
+      // like react-kit's, because nothing else (dev server, Storybook) shares
+      // it with incompatible settings. The root tsconfig.json is a
+      // references-only solution file that carries none of these options.
+      tsconfigPath: 'tsconfig.src.json',
       // *.test.*/*.spec.* keep test files themselves out of dist/; separately,
       // __test-utils__ (vitest setup, not a build entry, not test-file-named)
       // isn't caught by that pattern and shipped in the tarball until this was

@@ -1,0 +1,8 @@
+{
+  "$id": "gts://gts.frontx.uikit.base.component.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit base component",
+  "description": "Abstract base type every kit component's props schema derives from. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which belongs to the per-element-kind passthrough type, because a base shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar.",
+  "type": "object",
+  "$comment": "No additionalProperties/unevaluatedProperties here on purpose. gts-ts's validateSchemaAgainstParent rejects a derived schema that adds properties when the base sets additionalProperties: false, and closing the base would mean every component had to restate it. Closure is the DERIVED type's job (unevaluatedProperties: false), where the full property set is finally known."
+}

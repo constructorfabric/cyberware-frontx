@@ -1,0 +1,37 @@
+{
+  "$id": "gts://gts.frontx.uikit.passthrough.dom_button.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit DOM button passthrough",
+  "description": "The props a kit component forwards to an underlying <button> element (directly or through Base UI), described once per element kind instead of once per component. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. One passthrough type per element kind: a link-like component chains a dom_anchor type instead, and neither has to restate the other's attributes.",
+  "type": "object",
+  "properties": {
+    "className": {
+      "type": "string",
+      "description": "Owned here, not by the component: every kit component forwards it and none of them constrains it. A component that re-declares className in its own Props interface (Button does, because Base UI's Props omits it) still leaves the fact here - one prop, one owner."
+    },
+    "id": { "type": "string" },
+    "disabled": { "type": "boolean" },
+    "tabIndex": { "type": "integer" },
+    "type": {
+      "type": "string",
+      "enum": ["button", "submit", "reset"],
+      "description": "The native button type attribute, not a GTS type id."
+    },
+    "onClick": {
+      "description": "A React event handler - a function, which JSON Schema has no type for. Declared with an empty schema so the prop is evaluated (and therefore allowed) while its shape stays TypeScript's business.",
+      "$comment": "Same reasoning applies to children: unrepresentable here, checked by tsc."
+    },
+    "children": {
+      "description": "ReactNode. Empty schema for the same reason as onClick - present and allowed, shape checked by tsc. Listed here rather than per component because every DOM-element-backed component forwards it."
+    }
+  },
+  "patternProperties": {
+    "^aria-": {
+      "description": "Any ARIA attribute passes. Enumerating the WAI-ARIA set here would go stale against the spec and buy nothing: a contract's job is to stop typos in KIT props, and the a11y rules that actually matter (icon-only needs aria-label) are invariants, not a property list."
+    },
+    "^data-": {
+      "description": "Any data attribute passes: they are open by construction, and consumers add their own (data-testid being the common one)."
+    }
+  },
+  "$comment": "Intentionally NOT closed (no unevaluatedProperties/additionalProperties): this is one of several in-place applicators a component composes, so it cannot know what the others contribute. Closure happens once, in the derived component type."
+}
