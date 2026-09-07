@@ -1,10 +1,11 @@
 // Conformance: the compiled contract may never disagree with the code.
 //
-// In CI this test recompiles the contract from source and diffs it against
-// the shipped dist/contracts copy (freshness); the demo compiles in-memory
-// and checks the invariants that make the contract trustworthy: axes and
-// defaults mirror the cva() call exactly, the overlay only references props
-// that exist, and the $id obeys the GTS segment grammar.
+// assertContractFreshness (below) recompiles the contract from source and
+// diffs it against the committed button.contract.json/.instance.json copy
+// (freshness); everything else in this file compiles in-memory and checks
+// the invariants that make the contract trustworthy: axes and defaults
+// mirror the cva() call exactly, the overlay only references props that
+// exist, and the $id obeys the GTS segment grammar.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -21,7 +22,6 @@ import { describe, expect, it } from 'vitest';
 import {
   BASE_TYPE_ID,
   buildMetamodel,
-  buildPassthroughSchema,
   buildPropsAndRequired,
   compileContract,
   compileInstance,
@@ -33,6 +33,14 @@ import {
 } from '../../../scripts/contracts/compile';
 import type { ComponentExtraction } from '../../../scripts/contracts/extract';
 import { componentTypeRefPattern, instanceIdPattern, METAMODEL_VERSION, passthroughTypeId } from '../../../scripts/contracts/ids';
+import { assertContractFreshness } from '../../../scripts/contracts/testing';
+
+// Freshness: the committed button.contract.json, button.contract.instance.json
+// and generated/passthrough.button.json must equal a fresh compile. Every
+// other suite below compiles fresh in memory and never touches the committed
+// copy, so this is the one check standing between "the code is right" and
+// "what shipped is right" - see testing.ts.
+assertContractFreshness('button');
 
 const contract = compileContract('button');
 const instance = compileInstance('button');
@@ -181,15 +189,6 @@ describe('button contract conformance', () => {
     expect(extraction.ownProps.map((p) => p.name)).toContain('className');
     expect(passthroughSchema.properties).not.toHaveProperty('className');
     expect(contract.properties.className).toEqual({ type: 'string' });
-  });
-
-  it('is fresh: a recompile of the generated passthrough type matches the committed copy', () => {
-    // The generated/passthrough.button.json committed alongside the
-    // contract must be exactly what a fresh extraction produces - the same
-    // freshness guarantee button.contract.json itself carries (see T4),
-    // pulled forward here because T3 is what made the file generated at all.
-    const fresh = buildPassthroughSchema('button', extraction.inheritedProps);
-    expect(passthroughSchema).toEqual(fresh);
   });
 });
 

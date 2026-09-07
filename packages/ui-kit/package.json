@@ -40,7 +40,9 @@
     "type-check:demo": "tsc -p demo/tsconfig.json",
     "predemo": "npm run build",
     "demo": "vite demo",
-    "contracts:compile": "tsx scripts/contracts/compile.ts"
+    "contracts:compile": "tsx scripts/contracts/compile.ts",
+    "contracts:check": "tsx scripts/contracts/check.ts",
+    "contracts:coverage": "tsx scripts/contracts/check.ts coverage"
   },
   "dependencies": {
     "@base-ui/react": "1.6.0",
