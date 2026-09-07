@@ -14,9 +14,11 @@
 //
 // A component's props schema is not a standalone schema that happens to look
 // like its neighbours: it derives from base.component.json and composes one
-// GENERATED passthrough type per element kind (passthrough.button.json for
-// anything backed by a <button>, one file per kind under
-// scripts/contracts/generated/). base.component.json is hand-written source -
+// GENERATED passthrough type per ORIGIN of inherited props (a Base UI
+// primitive part, or a plain DOM element type - passthrough.base_ui_button.json
+// for Button's own Base UI primitive, one file per origin under
+// scripts/contracts/generated/; see extract.ts's ComponentExtraction.passthroughOrigin
+// for why origin, not DOM tag, is the key). base.component.json is hand-written source -
 // it describes no component's code, so there is nothing to extract for it.
 // The passthrough types are compiled output: they are built from a
 // component's own INHERITED props (extract.ts's ComponentExtraction), the
@@ -48,7 +50,7 @@
 // Usage: npm run contracts:compile -- <component> [outPath]
 //        The instance path is outPath with `.json` swapped for
 //        `.instance.json`; both files are written together, and the
-//        component's generated passthrough.<kind>.json alongside them.
+//        component's generated passthrough.<origin>.json alongside them.
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -70,7 +72,6 @@ import {
   BASE_TYPE_ID,
   componentTypeRefPattern,
   CONTRACT_MAJOR,
-  gtsToken,
   instanceId,
   instanceIdPattern,
   METAMODEL_TYPE_ID,
@@ -257,13 +258,13 @@ export function loadBaseSchema(): Record<string, unknown> {
   return JSON.parse(readFileSync(join(SCHEMA_DIR, 'base.component.json'), 'utf8')) as Record<string, unknown>;
 }
 
-// The generated per-element-kind passthrough type this component's inherited
+// The generated per-origin passthrough type this component's inherited
 // props were compiled into (see buildPassthroughSchema). Reads the
 // COMMITTED copy - the same file the freshness check in T4 diffs a fresh
 // compile against - not a value kept only in memory, so a stale copy is
 // something CI can catch instead of something only the compiler ever sees.
-export function loadPassthroughSchema(kind: string): Record<string, unknown> {
-  const path = join(GENERATED_DIR, `passthrough.${kind}.json`);
+export function loadPassthroughSchema(originKey: string): Record<string, unknown> {
+  const path = join(GENERATED_DIR, `passthrough.${originKey}.json`);
   return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
 }
 
@@ -303,27 +304,6 @@ function classifyProviderSafeType(typeText: string): ContractProperty | undefine
   return undefined;
 }
 
-// Storage/id key for a generated passthrough type, distinct from the DOM tag
-// it describes. Sharing ONE file per element kind kit-wide assumed every
-// component of a kind forwards the same inherited-prop set; T5's Accordion
-// broke that assumption twice over - AccordionTrigger's `button` kind is not
-// Button's (own-vs-inherited is a per-component split by declaration file,
-// and a probe compiling both showed even the NATIVE <button> attribute
-// union prints in a different member order depending which program compiled
-// it), and Accordion/AccordionItem/AccordionContent all resolve to `div` but
-// forward genuinely different sets (the root alone forwards `value`,
-// `multiple`, `onValueChange`, ...). So a compound directory's parts each
-// get their own scoped key (`<kind>_<stem>`, one token - gtsToken keeps the
-// GTS segment grammar's token count intact); an ordinary single-export
-// directory (Button, and every component through T4) keeps the plain `kind`
-// key, unchanged. This does not close the kit-wide gap for two SEPARATE
-// single-export directories that happen to resolve to the same kind with
-// different inherited props - that risk predates T5 and is out of scope
-// here; see PILOT-NOTES.md.
-export function resolvePassthroughKindKey(directory: string, exportStem: string, domTag: string): string {
-  return exportStem === directory ? domTag : `${domTag}_${gtsToken(exportStem)}`;
-}
-
 // Generates a passthrough type from a component's inherited (non-own) props.
 // `key`/`ref` are React/JSX machinery, not props a consumer sets, so neither
 // belongs in a props contract. Individual `aria-*` names are excluded the
@@ -335,11 +315,12 @@ export function resolvePassthroughKindKey(directory: string, exportStem: string,
 // nothing to exclude there beyond keeping the same `^data-` pattern property
 // as before.
 //
-// `kindKey` (see resolvePassthroughKindKey above) is the storage/id identity
-// - what the $id and the generated filename use; `domTag` is the real HTML
-// tag this describes, kept separate so the human-readable title/description
-// always name a real element even when the key is scoped per export.
-export function buildPassthroughSchema(kindKey: string, domTag: string, inheritedProps: ExtractedProp[]): Record<string, unknown> {
+// `originKey` (see extract.ts's ComponentExtraction.passthroughOrigin) is
+// the storage/id identity - what the $id and the generated filename use;
+// `domTag` is the real HTML tag this describes, kept separate so the
+// human-readable title/description always name a real element even when the
+// origin is a Base UI part rather than the tag itself.
+export function buildPassthroughSchema(originKey: string, domTag: string, inheritedProps: ExtractedProp[]): Record<string, unknown> {
   const properties: Record<string, ContractProperty> = {};
   for (const prop of inheritedProps) {
     if (prop.name === 'key' || prop.name === 'ref') continue;
@@ -348,10 +329,10 @@ export function buildPassthroughSchema(kindKey: string, domTag: string, inherite
   }
 
   return {
-    $id: passthroughTypeId(kindKey),
+    $id: passthroughTypeId(originKey),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    title: `UiKit ${kindKey} passthrough`,
-    description: `The props a kit component forwards to an underlying <${domTag}> element (directly or through Base UI), generated from this component's inherited (non-own) props. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. Shared by every export of the same directory that forwards an identical set (Button today); a compound component's parts each generate their own (see resolvePassthroughKindKey). Regenerate with \`npm run contracts:compile -- <directory>\`; a stale copy fails the freshness check.`,
+    title: `UiKit ${originKey} passthrough`,
+    description: `The props a kit component forwards to an underlying <${domTag}> element (directly or through Base UI), generated from this component's inherited (non-own) props. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. Keyed by the ORIGIN of the inherited props (a Base UI primitive part, or a plain DOM element type) rather than the DOM tag alone, so two components forwarding to the same tag through unrelated type surfaces never collide; two components genuinely wrapping the same origin share this file by construction. Regenerate with \`npm run contracts:compile -- <directory>\`; a stale copy fails the freshness check.`,
     type: 'object',
     properties,
     patternProperties: {
@@ -894,16 +875,25 @@ export function compileContract(directory: string, exportStem: string = director
 
   let passthroughSchema: Record<string, unknown> | undefined;
   let passthroughRef: SchemaRef | undefined;
-  if (extraction.passthroughKind) {
-    const kindKey = resolvePassthroughKindKey(directory, exportStem, extraction.passthroughKind);
-    passthroughSchema = buildPassthroughSchema(kindKey, extraction.passthroughKind, extraction.inheritedProps);
-    passthroughRef = { $ref: passthroughTypeId(kindKey) };
+  if (extraction.passthroughOrigin) {
+    if (!extraction.passthroughKind) {
+      // The origin walk and the domTag walk read the same heritage graph and
+      // must agree on whether one exists at all; disagreeing here means one
+      // of the two walks changed without the other, which is a harness bug,
+      // not a fact about the component's own source.
+      throw new Error(
+        `${exportStem}: resolved passthrough origin "${extraction.passthroughOrigin}" but no DOM element kind - the ` +
+          `origin and kind walks disagreed, which should never happen`,
+      );
+    }
+    passthroughSchema = buildPassthroughSchema(extraction.passthroughOrigin, extraction.passthroughKind, extraction.inheritedProps);
+    passthroughRef = { $ref: passthroughTypeId(extraction.passthroughOrigin) };
   } else if (extraction.inheritedProps.length > 0) {
-    // Inherited props exist but no element kind could be resolved for them -
+    // Inherited props exist but no origin could be resolved for them -
     // exactly the case a silent extractor would have dropped them in.
     throw new Error(
       `${exportStem}: ${extraction.inheritedProps.length} inherited prop(s) found (e.g. "${extraction.inheritedProps[0].name}") ` +
-        `but no passthrough element kind could be resolved from ${directory}.tsx's props type - cannot generate a ` +
+        `but no passthrough origin could be resolved from ${directory}.tsx's props type - cannot generate a ` +
         `passthrough type to declare them in`,
     );
   }
@@ -991,11 +981,10 @@ function compileOne(directory: string, exportStem: string): void {
   writeFileSync(instanceOut, `${JSON.stringify(instance, null, 2)}\n`);
   console.log(`wrote ${out}`);
   console.log(`wrote ${instanceOut}`);
-  if (extraction.passthroughKind) {
-    const kindKey = resolvePassthroughKindKey(directory, exportStem, extraction.passthroughKind);
-    const passthroughSchema = buildPassthroughSchema(kindKey, extraction.passthroughKind, extraction.inheritedProps);
+  if (extraction.passthroughOrigin && extraction.passthroughKind) {
+    const passthroughSchema = buildPassthroughSchema(extraction.passthroughOrigin, extraction.passthroughKind, extraction.inheritedProps);
     mkdirSync(GENERATED_DIR, { recursive: true });
-    const passthroughOut = join(GENERATED_DIR, `passthrough.${kindKey}.json`);
+    const passthroughOut = join(GENERATED_DIR, `passthrough.${extraction.passthroughOrigin}.json`);
     writeFileSync(passthroughOut, `${JSON.stringify(passthroughSchema, null, 2)}\n`);
     console.log(`wrote ${passthroughOut}`);
   }

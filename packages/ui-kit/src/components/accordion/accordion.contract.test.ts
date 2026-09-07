@@ -18,7 +18,6 @@ import {
   compileInstance,
   loadBaseSchema,
   loadPassthroughSchema,
-  resolvePassthroughKindKey,
   resolveTargetExtraction,
   type CompiledContract,
   type ContractInstance,
@@ -49,13 +48,13 @@ function compileUnit(stem: string): CompiledUnit {
   const contract = compileContract(DIRECTORY, stem);
   const instance = compileInstance(DIRECTORY, stem);
   // Every export here forwards to a real element (all four wrap a Base UI
-  // primitive), so passthroughKind is never undefined - a defensive message
-  // beats a bare "Cannot read properties of undefined" if that ever changes.
-  if (!extraction.passthroughKind) {
-    throw new Error(`${stem}: expected a passthrough kind, extraction resolved none`);
+  // primitive), so passthroughOrigin is never undefined - a defensive
+  // message beats a bare "Cannot read properties of undefined" if that ever
+  // changes.
+  if (!extraction.passthroughOrigin) {
+    throw new Error(`${stem}: expected a passthrough origin, extraction resolved none`);
   }
-  const kindKey = resolvePassthroughKindKey(DIRECTORY, stem, extraction.passthroughKind);
-  return { stem, contract, instance, passthroughSchema: loadPassthroughSchema(kindKey) };
+  return { stem, contract, instance, passthroughSchema: loadPassthroughSchema(extraction.passthroughOrigin) };
 }
 
 const units: Record<string, CompiledUnit> = Object.fromEntries(ALL_STEMS.map((stem) => [stem, compileUnit(stem)]));
@@ -201,11 +200,11 @@ describe('accordion family in a GTS store', () => {
     const gts = new GTS();
     gts.register(baseSchema);
     // Every passthrough schema this family's four contracts $ref, once each
-    // - two units (item and content) share the unscoped root's passthrough
-    // key only when their stem equals the directory, which is never true for
-    // a part, so all four passthrough schemas here are already distinct (see
-    // resolvePassthroughKindKey), and registering the same $id twice would
-    // mask a real collision instead of catching one.
+    // - root, item, trigger and panel are four different Base UI primitive
+    // parts, so each resolves to its own passthrough origin (see
+    // ComponentExtraction.passthroughOrigin) and all four are already
+    // distinct; registering the same $id twice would mask a real collision
+    // instead of catching one.
     for (const { passthroughSchema } of Object.values(units)) gts.register(passthroughSchema);
     for (const { contract } of Object.values(units)) gts.register(contract);
     return gts;

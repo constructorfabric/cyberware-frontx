@@ -110,12 +110,12 @@ function changedFilesSince(base: string): string[] {
   return [...new Set([...committed, ...workingTree, ...untracked])];
 }
 
-// The element kind a contract's own allOf carries, read off its passthrough
-// $ref rather than re-derived through extraction - `compat` compares two
-// POINTS IN TIME of the same contract, and the ref each one actually
-// shipped with is the ground truth for which passthrough file it composes,
-// not whatever extraction says the CURRENT source resolves to.
-function passthroughKindFromContract(contract: CompiledContract): string | undefined {
+// The passthrough origin a contract's own allOf carries, read off its
+// passthrough $ref rather than re-derived through extraction - `compat`
+// compares two POINTS IN TIME of the same contract, and the ref each one
+// actually shipped with is the ground truth for which passthrough file it
+// composes, not whatever extraction says the CURRENT source resolves to.
+function passthroughOriginFromContract(contract: CompiledContract): string | undefined {
   for (const ref of contract.allOf) {
     const match = /passthrough\.([a-z0-9_]+)\.v\d+~$/.exec(ref.$ref);
     if (match) return match[1];
@@ -160,14 +160,14 @@ function checkCompatForUnit(unit: ContractUnit, base: string): CompatVerdict & {
   // component's run must never leak in.
   const gts = new GTS();
   gts.register(loadBaseSchema());
-  const kind = passthroughKindFromContract(newContract);
+  const origin = passthroughOriginFromContract(newContract);
   let passthroughDiff: ReturnType<typeof diffPassthroughSchema> | undefined;
-  if (kind) {
-    const newPassthroughPath = join(GENERATED_DIR, `passthrough.${kind}.json`);
+  if (origin) {
+    const newPassthroughPath = join(GENERATED_DIR, `passthrough.${origin}.json`);
     if (existsSync(newPassthroughPath)) {
       const newPassthrough = JSON.parse(readFileSync(newPassthroughPath, 'utf8')) as Record<string, unknown>;
       gts.register(newPassthrough);
-      const oldPassthroughRaw = gitShow(base, `scripts/contracts/generated/passthrough.${kind}.json`);
+      const oldPassthroughRaw = gitShow(base, `scripts/contracts/generated/passthrough.${origin}.json`);
       if (oldPassthroughRaw !== undefined) {
         passthroughDiff = diffPassthroughSchema(JSON.parse(oldPassthroughRaw), newPassthrough);
       }

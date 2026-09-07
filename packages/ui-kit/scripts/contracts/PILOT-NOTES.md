@@ -5,6 +5,47 @@ DataTable). English, factual, one section per pilot component. Written by
 the developer who built the harness, for whoever decides whether to extend
 contract coverage past the two pilot components.
 
+## Passthrough key fix: keyed by origin, not DOM tag
+
+T5's `resolvePassthroughKindKey(directory, exportStem, domTag)` (see Deviation 2
+below) scoped a compound component's part to `<domTag>_<stem>` while an
+ordinary single-overlay directory kept the plain `<domTag>` key unchanged.
+That asymmetry was itself a latent collision, just one T5 never triggered:
+the plain `<domTag>` key was keyed by WHAT ELEMENT gets rendered, not by
+WHERE the forwarded props come from. Two single-overlay directories that
+both resolve to `button` - Button itself, and any future component that
+wraps a plain `<button>` with no Base UI primitive underneath it at all -
+would have shared `passthrough.button.json` and silently overwritten each
+other's generated file, exactly the defect Deviation 2 fixed for compound
+parts but left open kit-wide.
+
+**Fix**: the storage/id key is now the ORIGIN of the inherited props, not
+the DOM tag they end up rendering. Extract.ts's `resolvePassthroughOrigin`
+walks the same top-level heritage graph `topLevelHeritageLabels` already
+built for the human-readable `x-uikit.passthrough` labels, and classifies
+the outermost resolvable heritage member two ways: a declaration file under
+`node_modules/@base-ui/react/<component>/<part>/...` (a real Base UI
+primitive) yields `base_ui_<component>[_<part>]` - no part token when the
+primitive has none, e.g. `base_ui_button` for Button, one token when it
+does, e.g. `base_ui_accordion_root`/`_item`/`_trigger`/`_panel` for
+Accordion's four parts; a plain `ComponentProps<'tag'>` or
+`ComponentPropsWithRef<'tag'>` with no Base UI involved yields `dom_<tag>`;
+a props type with no such heritage at all (DataTable's own interface, T6)
+yields nothing, and the contract's `allOf` then carries only the base type.
+`resolvePassthroughKindKey` and the directory/exportStem-scoped key it
+computed are gone entirely - origin identity already carries whatever
+uniqueness the old stem-scoping was working around, and two kit components
+that really do wrap the SAME origin now share one generated file **by
+construction**, not by coincidence: their inherited-prop sets come from the
+same declaration, so sharing is correct rather than a residual gap to flag.
+
+This is a compiler/extractor-only change: no overlay content, no metamodel
+field, no new `coverage.assumptions` entry. The generated files themselves
+were renamed (`passthrough.button.json` -> `passthrough.base_ui_button.json`;
+Accordion's four analogously), and `button.contract.json`/each Accordion
+contract's `allOf` ref changed to match - the only content change in either
+component's compiled artifacts.
+
 ## Accordion (T5)
 
 ### What Accordion is, contract-wise
@@ -96,6 +137,11 @@ simply never triggered before Accordion. Closing it kit-wide (e.g. keying
 every passthrough file by directory unconditionally, or truly generating one
 shared, unioned type per kind) is a call for whoever owns the harness past
 these two pilots, not something this pilot needed to decide.
+
+**Superseded** (see "Passthrough key fix: keyed by origin, not DOM tag"
+above, done before T6): `resolvePassthroughKindKey` and the directory/stem
+scoping described here are gone. The residual gap this section flagged was
+exactly the case that fix closes - it is no longer open.
 
 ### Deviation 3: `composition.kinds` had to become typed refs, and gained a `parent` field
 

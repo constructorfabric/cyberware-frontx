@@ -1,6 +1,6 @@
 // Freshness: whether the artifacts committed next to a component's source
 // (<name>.contract.json, <name>.contract.instance.json, and its generated
-// per-kind passthrough type) are exactly what compiling the component right
+// per-origin passthrough type) are exactly what compiling the component right
 // now produces. Both the per-component vitest suite (see testing.ts) and
 // the merge-scoped guard (check.ts's `guard` subcommand) need the identical
 // comparison - one to fail a test with a diff, the other to fail a CI check
@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { jsonDiff } from './check-lib';
-import { buildPassthroughSchema, compileContract, compileInstance, resolvePassthroughKindKey, resolveTargetExtraction } from './compile';
+import { buildPassthroughSchema, compileContract, compileInstance, resolveTargetExtraction } from './compile';
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const GENERATED_DIR = join(kitRoot, 'scripts', 'contracts', 'generated');
@@ -20,7 +20,7 @@ export interface FreshnessReport {
   component: string;
   contractDiff: string[];
   instanceDiff: string[];
-  // 'not-applicable' for a component with no DOM/Base UI passthrough kind at
+  // 'not-applicable' for a component with no DOM/Base UI passthrough origin at
   // all (nothing forwarded, so no generated file to be stale) - distinct
   // from an empty diff array, which means a passthrough file exists and
   // matches.
@@ -57,10 +57,9 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
 
   const extraction = resolveTargetExtraction(directory, exportStem);
   let passthroughDiff: string[] | 'not-applicable' = 'not-applicable';
-  if (extraction.passthroughKind) {
-    const kindKey = resolvePassthroughKindKey(directory, exportStem, extraction.passthroughKind);
-    const committedPassthrough = readJsonIfExists(join(GENERATED_DIR, `passthrough.${kindKey}.json`));
-    const freshPassthrough = buildPassthroughSchema(kindKey, extraction.passthroughKind, extraction.inheritedProps);
+  if (extraction.passthroughOrigin && extraction.passthroughKind) {
+    const committedPassthrough = readJsonIfExists(join(GENERATED_DIR, `passthrough.${extraction.passthroughOrigin}.json`));
+    const freshPassthrough = buildPassthroughSchema(extraction.passthroughOrigin, extraction.passthroughKind, extraction.inheritedProps);
     passthroughDiff = jsonDiff(committedPassthrough, freshPassthrough);
   }
 

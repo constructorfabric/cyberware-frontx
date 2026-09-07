@@ -41,14 +41,16 @@ export const METAMODEL_TYPE_ID = `gts.${VENDOR_PACKAGE}.meta.component.v1`;
 // contract.
 export const BASE_TYPE_ID = `gts://gts.${VENDOR_PACKAGE}.base.component.v1~`;
 
-// GTS type id of a shared per-element-kind passthrough type - one id per
-// DOM tag (button, div, table, ...), independently versioned from any
-// component's contract. A function, not a constant: T3 moved the kit from
-// one hand-written button-only passthrough type to one generated file per
-// element kind (see extract.ts's resolveElementKind), so the id has to be
-// parameterized the same way the file name is.
-export function passthroughTypeId(kind: string): string {
-  return `gts://gts.${VENDOR_PACKAGE}.passthrough.${kind}.v1~`;
+// GTS type id of a shared passthrough type - one id per ORIGIN of inherited
+// props (a Base UI primitive part, or a plain DOM element type), not per DOM
+// tag: two components forwarding to the same `<button>` by way of two
+// different, unrelated type surfaces must never share a generated file (see
+// extract.ts's ComponentExtraction.passthroughOrigin for how the key is
+// derived). Independently versioned from any component's contract. A
+// function, not a constant, because the id has to be parameterized the same
+// way the generated file name is.
+export function passthroughTypeId(originKey: string): string {
+  return `gts://gts.${VENDOR_PACKAGE}.passthrough.${originKey}.v1~`;
 }
 
 // GTS tokens are snake_case; kit directories are kebab-case

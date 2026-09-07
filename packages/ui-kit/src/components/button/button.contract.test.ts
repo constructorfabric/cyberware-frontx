@@ -36,7 +36,7 @@ import { componentTypeRefPattern, instanceIdPattern, METAMODEL_VERSION, passthro
 import { assertContractFreshness } from '../../../scripts/contracts/testing';
 
 // Freshness: the committed button.contract.json, button.contract.instance.json
-// and generated/passthrough.button.json must equal a fresh compile. Every
+// and generated/passthrough.base_ui_button.json must equal a fresh compile. Every
 // other suite below compiles fresh in memory and never touches the committed
 // copy, so this is the one check standing between "the code is right" and
 // "what shipped is right" - see testing.ts.
@@ -45,8 +45,8 @@ assertContractFreshness('button');
 const contract = compileContract('button');
 const instance = compileInstance('button');
 const baseSchema = loadBaseSchema();
-const PASSTHROUGH_TYPE_ID = passthroughTypeId('button');
-const passthroughSchema = loadPassthroughSchema('button');
+const PASSTHROUGH_TYPE_ID = passthroughTypeId('base_ui_button');
+const passthroughSchema = loadPassthroughSchema('base_ui_button');
 
 // GTS ids are written here in URI form (`gts://...`), which is how a JSON
 // Schema $id/$ref has to look; gts-ts strips that prefix before parsing or
@@ -315,6 +315,7 @@ describe('overlay and extraction safety', () => {
       ownProps,
       inheritedProps: [],
       passthroughKind: 'button',
+      passthroughOrigin: 'base_ui_button',
       passthroughSources: [],
       variantSourceLabels: [],
       cannotExtract: [],

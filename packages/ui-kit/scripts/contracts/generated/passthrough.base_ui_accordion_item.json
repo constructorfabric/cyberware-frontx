@@ -1,8 +1,8 @@
 {
-  "$id": "gts://gts.frontx.uikit.passthrough.div_accordion_item.v1~",
+  "$id": "gts://gts.frontx.uikit.passthrough.base_ui_accordion_item.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "UiKit div_accordion_item passthrough",
-  "description": "The props a kit component forwards to an underlying <div> element (directly or through Base UI), generated from this component's inherited (non-own) props. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. Shared by every export of the same directory that forwards an identical set (Button today); a compound component's parts each generate their own (see resolvePassthroughKindKey). Regenerate with `npm run contracts:compile -- <directory>`; a stale copy fails the freshness check.",
+  "title": "UiKit base_ui_accordion_item passthrough",
+  "description": "The props a kit component forwards to an underlying <div> element (directly or through Base UI), generated from this component's inherited (non-own) props. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. Keyed by the ORIGIN of the inherited props (a Base UI primitive part, or a plain DOM element type) rather than the DOM tag alone, so two components forwarding to the same tag through unrelated type surfaces never collide; two components genuinely wrapping the same origin share this file by construction. Regenerate with `npm run contracts:compile -- <directory>`; a stale copy fails the freshness check.",
   "type": "object",
   "properties": {
     "style": {},

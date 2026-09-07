@@ -13,8 +13,8 @@
 // its first parameter's type AND whose declaration lives in the component's
 // own source file; every other resolved property - a Base UI primitive's
 // `render`, React's `onClick`, an aria-* attribute - is inherited, and is
-// what the generated per-element-kind passthrough type is built from (see
-// compile.ts's PassthroughSource / generated/passthrough.<kind>.json). This
+// what the generated per-origin passthrough type is built from (see
+// compile.ts's PassthroughSource / generated/passthrough.<origin>.json). This
 // is what a text-only extractor structurally cannot see: `Omit<X, 'className'>`
 // only removes `className` from X's shape, so every other field X declares
 // - including ones the component's own source never mentions - is still
@@ -55,7 +55,27 @@ export interface ComponentExtraction {
   // `div`, `table`, ...), resolved through Omit/Pick and BaseUIComponentProps
   // / ComponentProps generic arguments - undefined when the props type has
   // no such anchor (a from-scratch interface with no DOM/Base UI heritage).
+  // Human-readable only (feeds the generated passthrough type's description
+  // text); see passthroughOrigin below for the storage/id identity.
   passthroughKind?: string;
+  // Storage/id key for the generated passthrough type: WHERE the inherited
+  // props come from, not what DOM tag they end up rendering. Two components
+  // can both forward to a `<button>` (Button itself, and a hand-rolled
+  // Base UI-free `ComponentProps<'button'>` wrapper) while inheriting from
+  // completely different type surfaces - keying by `passthroughKind` alone
+  // let one silently overwrite the other's generated file. Derived from the
+  // declaration file of the outermost heritage member the component's own
+  // Props type extends: a Base UI primitive part
+  // (node_modules/@base-ui/react/<component>/<part>/...) gives
+  // `base_ui_<component>_<part>` (no `_<part>` when the primitive has none,
+  // e.g. Button); a plain `ComponentProps<'tag'>`/`ComponentPropsWithRef<'tag'>`
+  // gives `dom_<tag>`; a props type with no such heritage at all (a
+  // from-scratch interface, e.g. DataTable's) leaves this undefined even
+  // when passthroughKind is also undefined - the two always agree on
+  // presence, since they read the same heritage graph. A single snake_case
+  // token throughout, matching the GTS segment grammar (5 dot-tokens per
+  // segment) ids.ts's passthroughTypeId chains this onto.
+  passthroughOrigin?: string;
   // Human-readable labels for the non-variant heritage this component's own
   // Props type declares - "what the component forwards to an element",
   // kept for readers of the compiled contract, not consumed by the compiler.
@@ -467,6 +487,71 @@ function topLevelHeritageLabels(
   return { passthroughSources, variantSourceLabels };
 }
 
+// A declaration file already relativized by relativeDeclarationFile (so it
+// reads "@base-ui/react/accordion/root/AccordionRoot.d.mts", never an
+// absolute path) into the origin token resolvePassthroughOrigin needs: the
+// package's own directory layout is `<component>/<part?>/<File>.d.mts` -
+// Button has no part directory (button/Button.d.mts), Accordion's parts each
+// get one (accordion/root/AccordionRoot.d.mts). Anything not under
+// `@base-ui/react/` is not a Base UI origin at all - undefined, not a guess.
+function baseUiOriginFromDeclarationFile(relativeFile: string): string | undefined {
+  const prefix = '@base-ui/react/';
+  if (!relativeFile.startsWith(prefix)) return undefined;
+  const segments = relativeFile.slice(prefix.length).split('/');
+  // Last segment is always the file itself; everything before the leading
+  // component name is a part directory (zero or more - none for Button, one
+  // for every Accordion part seen so far, and this generalizes to a deeper
+  // package layout without change).
+  if (segments.length < 2) return undefined;
+  const [component, ...rest] = segments;
+  const part = rest.slice(0, -1);
+  return ['base_ui', component, ...part].map((token) => token.replace(/-/g, '_')).join('_');
+}
+
+// Classifies ONE heritage type reference - either a component's direct
+// extends-clause member, or what an Omit/Pick's first argument names - into
+// a passthrough origin token. Two shapes are recognized: a bare
+// `ComponentProps<'tag'>`/`ComponentPropsWithRef<'tag'>` (React's own DOM
+// props helper, no Base UI involved - the literal tag argument is the whole
+// story) and anything else, resolved through the checker to the file that
+// actually declares it. A reference to neither (an inline object type, a
+// kit-local interface with no DOM/Base UI heritage of its own) yields
+// undefined, which is exactly right for DataTable's from-scratch props.
+function originFromTypeRef(node: ts.TypeNode, checker: ts.TypeChecker, kitRoot: string): string | undefined {
+  const parts = typeRefParts(node);
+  if (!parts) return undefined;
+  if ((parts.name === 'ComponentProps' || parts.name === 'ComponentPropsWithRef') && parts.args?.length) {
+    const first = parts.args[0];
+    return ts.isLiteralTypeNode(first) && ts.isStringLiteral(first.literal) ? `dom_${first.literal.text}` : undefined;
+  }
+  const symbol = checker.getSymbolAtLocation(parts.location);
+  const resolved = symbol && (symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol);
+  const decl = resolved?.getDeclarations()?.[0];
+  if (!decl) return undefined;
+  return baseUiOriginFromDeclarationFile(relativeDeclarationFile(decl.getSourceFile().fileName, kitRoot));
+}
+
+// The origin (see ComponentExtraction.passthroughOrigin) of a component's
+// inherited props: the FIRST top-level heritage member that resolves to one
+// (matching walkPropsType's "first found wins" rule for domTag, so the two
+// never disagree about whether a component has a passthrough at all -
+// resolveTopLevelMembers stops at the same leaf names walkPropsType's own
+// kind detection eventually bottoms out past, which is what makes this the
+// OUTERMOST resolvable reference rather than the deepest one: Accordion's
+// Trigger resolves against `AccordionPrimitive.Trigger.Props` here, never
+// unwrapping into the Header+Trigger composition underneath it the way
+// walkPropsType's kind walk does to reach the literal 'button' tag.
+export function resolvePassthroughOrigin(node: ts.TypeNode, checker: ts.TypeChecker, kitRoot: string): string | undefined {
+  for (const member of resolveTopLevelMembers(node, checker, new Set(), 0)) {
+    const parts = typeRefParts(member);
+    if (!parts || parts.name === 'VariantProps') continue;
+    const target = (parts.name === 'Omit' || parts.name === 'Pick') && parts.args?.length ? parts.args[0] : member;
+    const origin = originFromTypeRef(target, checker, kitRoot);
+    if (origin) return origin;
+  }
+  return undefined;
+}
+
 function jsDocDefault(symbol: ts.Symbol): string | undefined {
   const tag = symbol.getJsDocTags().find((t) => t.name === 'default');
   if (!tag || !tag.text) return undefined;
@@ -581,6 +666,7 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
       const ownProps: ExtractedProp[] = [];
       const inheritedProps: ExtractedProp[] = [];
       let passthroughKind: string | undefined;
+      let passthroughOrigin: string | undefined;
       let passthroughSources: string[] = [];
       let variantSourceLabels: string[] = [];
       let axes: Record<string, string[]> = {};
@@ -594,6 +680,7 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
           const labels = topLevelHeritageLabels(param.type, checker, kitRoot);
           passthroughSources = labels.passthroughSources;
           variantSourceLabels = labels.variantSourceLabels;
+          passthroughOrigin = resolvePassthroughOrigin(param.type, checker, kitRoot);
         }
         passthroughKind = walk.kind;
 
@@ -633,6 +720,7 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
         ownProps,
         inheritedProps,
         passthroughKind,
+        passthroughOrigin,
         passthroughSources,
         variantSourceLabels,
         cannotExtract,

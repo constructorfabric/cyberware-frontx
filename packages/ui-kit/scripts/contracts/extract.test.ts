@@ -55,6 +55,52 @@ describe('extractComponent: type alias and intersection props (F15)', () => {
   it("resolves the passthrough element kind from ComponentProps<'div'>", () => {
     expect(banner.passthroughKind).toBe('div');
   });
+
+  it("resolves the passthrough origin as dom_div - a plain DOM tag, no Base UI involved", () => {
+    expect(banner.passthroughOrigin).toBe('dom_div');
+  });
+});
+
+describe('extractComponent: passthrough origin (harness fix - keyed by origin, not DOM tag)', () => {
+  const extractions = extractComponent(fixture('base-ui-origin.fixture.tsx'));
+  const wrapsButton = extractions.find((e) => e.name === 'WrapsButtonPrimitive')!;
+  const wrapsAccordionRoot = extractions.find((e) => e.name === 'WrapsAccordionRootPrimitive')!;
+
+  it('resolves a Base UI primitive declared with no part subdirectory to base_ui_<component>, no trailing part', () => {
+    // Button.Props lives directly in button/Button.d.mts - no root/item/...
+    // part folder - so the origin has no third token, unlike Accordion below.
+    expect(wrapsButton.passthroughKind).toBe('button');
+    expect(wrapsButton.passthroughOrigin).toBe('base_ui_button');
+  });
+
+  it('resolves a Base UI primitive declared under a part subdirectory to base_ui_<component>_<part>', () => {
+    expect(wrapsAccordionRoot.passthroughKind).toBe('div');
+    expect(wrapsAccordionRoot.passthroughOrigin).toBe('base_ui_accordion_root');
+  });
+
+  it('gives two components wrapping the same DOM tag through different origins two different keys', () => {
+    // The exact bug the fix closes: both resolve to a <button>-shaped
+    // domTag, but one is Base UI's Button and the other (Banner, the
+    // ComponentProps<'div'> fixture above) is a plain DOM element - a
+    // shared plain-tag key would have let one overwrite the other.
+    expect(wrapsButton.passthroughOrigin).not.toBe(wrapsAccordionRoot.passthroughOrigin);
+  });
+});
+
+describe('extractComponent: no passthrough origin for a from-scratch props type', () => {
+  // Alpha/Beta (two-components.fixture.tsx) extend nothing - no DOM element,
+  // no Base UI primitive - the exact shape DataTableProps has (T6): every
+  // own prop is declared in the component's own file, so there is nothing
+  // to generate a passthrough type FOR, and the origin walk must say so
+  // rather than guessing.
+  const extractions = extractComponent(fixture('two-components.fixture.tsx'));
+
+  it('leaves passthroughKind and passthroughOrigin both undefined', () => {
+    for (const extraction of extractions) {
+      expect(extraction.passthroughKind).toBeUndefined();
+      expect(extraction.passthroughOrigin).toBeUndefined();
+    }
+  });
 });
 
 describe('extractComponent: multiple exported components in one file (F17)', () => {

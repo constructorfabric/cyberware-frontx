@@ -8,7 +8,7 @@
       "$ref": "gts://gts.frontx.uikit.base.component.v1~"
     },
     {
-      "$ref": "gts://gts.frontx.uikit.passthrough.button.v1~"
+      "$ref": "gts://gts.frontx.uikit.passthrough.base_ui_button.v1~"
     }
   ],
   "properties": {
