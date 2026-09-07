@@ -148,6 +148,27 @@ jobs:
       if: github.event_name == 'pull_request'
       run: npm run policy:version-bump-on-change
 
+    # Contract guard/compat CI wiring (branch review 5720fd49, finding B1):
+    # the ui-kit component-contract harness's own guard/compat pipeline was
+    # built but never invoked anywhere in CI, so nothing enforced it on a
+    # real PR. Unlike the version-bump check above, this step is not gated
+    # to `pull_request` - a merge to develop/main can itself land an
+    # uncovered breaking contract change, not only a PR - so it needs a base
+    # ref for both event shapes. CONTRACTS_POLICY_BASE_REF supplies one, the
+    # same way the step above reads GITHUB_BASE_REF for its own base: on
+    # `pull_request`, `origin/${{ github.base_ref }}` (the same value
+    # GITHUB_BASE_REF holds); on `push`, the commit this push moved FROM
+    # (`github.event.before`) - unless that is the all-zero SHA a branch's
+    # first push carries (nothing to diff against yet), in which case the
+    # env var is left empty and contracts-policy.mjs prints why it is
+    # skipping guard/compat (coverage still runs). Neither branch needs a
+    # secret: `github.base_ref` and `github.event.before` are both plain
+    # event-context values already available on this job's `github` object.
+    - name: Contract guard and compatibility
+      env:
+        CONTRACTS_POLICY_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || (github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || '' }}
+      run: npm run policy:contracts
+
     # #524: `npm install` reconciling an out-of-sync template lockfile drops
     # the template's `file:.` self-link entry, writing a lockfile its own
     # `npm ci` then rejects ("Missing: ... from lock file") — and reconciling
