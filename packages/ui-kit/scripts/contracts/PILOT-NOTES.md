@@ -1,16 +1,16 @@
 # Contract harness pilot notes
 
-Cost and deviation log for the component-contract pilot (T5 Accordion, T6
+Cost and deviation log for the component-contract pilot (Accordion,
 DataTable). English, factual, one section per pilot component. Written by
 the developer who built the harness, for whoever decides whether to extend
 contract coverage past the two pilot components.
 
 ## Passthrough key fix: keyed by origin, not DOM tag
 
-T5's `resolvePassthroughKindKey(directory, exportStem, domTag)` (see Deviation 2
+Accordion's `resolvePassthroughKindKey(directory, exportStem, domTag)` (see Deviation 2
 below) scoped a compound component's part to `<domTag>_<stem>` while an
 ordinary single-overlay directory kept the plain `<domTag>` key unchanged.
-That asymmetry was itself a latent collision, just one T5 never triggered:
+That asymmetry was itself a latent collision, just one Accordion never triggered:
 the plain `<domTag>` key was keyed by WHAT ELEMENT gets rendered, not by
 WHERE the forwarded props come from. Two single-overlay directories that
 both resolve to `button` - Button itself, and any future component that
@@ -30,7 +30,7 @@ primitive has none, e.g. `base_ui_button` for Button, one token when it
 does, e.g. `base_ui_accordion_root`/`_item`/`_trigger`/`_panel` for
 Accordion's four parts; a plain `ComponentProps<'tag'>` or
 `ComponentPropsWithRef<'tag'>` with no Base UI involved yields `dom_<tag>`;
-a props type with no such heritage at all (DataTable's own interface, T6)
+a props type with no such heritage at all (DataTable's own interface)
 yields nothing, and the contract's `allOf` then carries only the base type.
 `resolvePassthroughKindKey` and the directory/exportStem-scoped key it
 computed are gone entirely - origin identity already carries whatever
@@ -46,22 +46,22 @@ Accordion's four analogously), and `button.contract.json`/each Accordion
 contract's `allOf` ref changed to match - the only content change in either
 component's compiled artifacts.
 
-## Accordion (T5)
+## Accordion
 
 ### What Accordion is, contract-wise
 
 `accordion.tsx` exports four components from one file - `Accordion` (root),
 `AccordionItem`, `AccordionTrigger`, `AccordionContent` - each wrapping a
-different Base UI Accordion primitive part. Through T4, the harness assumed
-one component, one directory, one overlay, one compiled contract. Accordion
-is the first component that breaks that assumption three separate ways at
-once: several public exports in one directory, a compound "family"
+different Base UI Accordion primitive part. Until this point the harness
+assumed one component, one directory, one overlay, one compiled contract.
+Accordion is the first component that breaks that assumption three separate
+ways at once: several public exports in one directory, a compound "family"
 relationship between them, and one export (`Accordion<Value>`) that is
 generic.
 
 ### Deviation 1: one contract per export, not a schema-chained family
 
-The stage-1 plan's original T5 wording proposed chaining the family through
+An earlier plan for this work proposed chaining the family through
 the GTS type system itself - `AccordionItem`'s props schema deriving from
 `Accordion`'s. That was corrected before implementation: a schema-level
 `root -> item` derivation would make `AccordionItem` inherit `Accordion`'s
@@ -87,11 +87,12 @@ membership is recorded, not inherited."
 
 ### Deviation 2: the passthrough-per-kind assumption did not survive contact with Accordion
 
-T4 built the generated passthrough type (`passthrough.<kind>.json`) as ONE
-FILE PER DOM ELEMENT KIND, shared kit-wide, implicitly assuming every
-component that resolves to a given kind (`div`, `button`, ...) forwards the
-same inherited-prop set. That held by coincidence through T4: Button was the
-only `button`-kind component, so nothing tested the assumption.
+The harness through Button built the generated passthrough type
+(`passthrough.<kind>.json`) as ONE FILE PER DOM ELEMENT KIND, shared
+kit-wide, implicitly assuming every component that resolves to a given kind
+(`div`, `button`, ...) forwards the same inherited-prop set. That held by
+coincidence: Button was the only `button`-kind component, so nothing tested
+the assumption.
 
 Accordion breaks it twice over, confirmed by compiling both components and
 diffing their generated passthrough output before deciding anything:
@@ -124,28 +125,28 @@ compile.ts. A directory's part whose export stem differs from the directory
 name (every Accordion export except the root) gets a passthrough file scoped
 to `<kind>_<stem>` (`div_accordion_item`, `div_accordion_content`,
 `button_accordion_trigger`); the ordinary case (`exportStem === directory` -
-Button, and every component through T4) keeps the plain `<kind>` filename
+Button, and every component before Accordion) keeps the plain `<kind>` filename
 unchanged, so Button's own generated artifact is untouched by this except
 for the description text (see "Text changes to Button's committed
 artifacts" below).
 
-**Known residual gap, out of scope for T5**: this fix is directory-scoped.
+**Known residual gap, out of scope for this pilot**: this fix is directory-scoped.
 Two DIFFERENT single-overlay directories that happen to resolve to the same
 kind (a hypothetical future `IconButton` alongside `Button`, say) would still
-collide under a plain `<kind>` filename - that risk pre-dates T5 and was
+collide under a plain `<kind>` filename - that risk pre-dates this pilot and was
 simply never triggered before Accordion. Closing it kit-wide (e.g. keying
 every passthrough file by directory unconditionally, or truly generating one
 shared, unioned type per kind) is a call for whoever owns the harness past
 these two pilots, not something this pilot needed to decide.
 
 **Superseded** (see "Passthrough key fix: keyed by origin, not DOM tag"
-above, done before T6): `resolvePassthroughKindKey` and the directory/stem
+above, done before DataTable): `resolvePassthroughKindKey` and the directory/stem
 scoping described here are gone. The residual gap this section flagged was
 exactly the case that fix closes - it is no longer open.
 
 ### Deviation 3: `composition.kinds` had to become typed refs, and gained a `parent` field
 
-T4's `composition.children.kinds` was a plain array of free-form strings
+The pre-Accordion harness's `composition.children.kinds` was a plain array of free-form strings
 (Button's overlay: `kinds: [text]`) - no schema-level connection to the GTS
 component-ref grammar `dont_use_when.instead` already used. Describing a
 family's actual allowed children (`Accordion` -> only `AccordionItem`;
@@ -159,10 +160,10 @@ component-shaped entry is now checked the same way `dont_use_when` is.
 
 Also added: `composition.parent`, an optional mirror of `children` for a
 part's allowed mount points (`AccordionTrigger`/`AccordionContent`'s parent
-is `AccordionItem`; `AccordionItem`'s parent is `Accordion`) - nothing in T4
-needed this, because nothing before Accordion was ever "only ever mounted
-under" something else. Both changes are additive and optional at the schema
-level (existing `properties`/`additionalProperties` shape), so Button's
+is `AccordionItem`; `AccordionItem`'s parent is `Accordion`) - nothing before
+Accordion was ever "only ever mounted under" something else, so nothing
+before it needed this field. Both changes are additive and optional at the
+schema level (existing `properties`/`additionalProperties` shape), so Button's
 overlay validates unchanged and its committed contract JSON is unaffected in
 content (only in the passthrough description text, see below).
 
@@ -191,7 +192,7 @@ internal composition.
 
 ### Deviation 5: the extractor needed no change
 
-The stage-1 plan anticipated a possible extractor fix "if the extractor
+An earlier plan anticipated a possible extractor fix "if the extractor
 cannot resolve a kind for some export." It could, for all four: a probe run
 against `accordion.tsx` before any extractor changes were considered
 resolved `Accordion` -> `div`, `AccordionItem` -> `div`, `AccordionTrigger`
@@ -231,7 +232,7 @@ consequence of the compiler producing different output for the SAME inputs.
   re-validation against a new required shape); `loadOverlay`,
   `compileInstance`, `compileContract`, `resolveTargetExtraction` all gained
   an optional second `exportStem` parameter (defaulting to `directory`, so
-  every T1-T4 call site - `compileContract('button')`, one argument - keeps
+  every pre-Accordion call site - `compileContract('button')`, one argument - keeps
   resolving exactly as before); `resolvePassthroughKindKey` is new (see
   Deviation 2); the CLI entry point changed from "compile one component" to
   "compile every `*.contract.yaml` overlay directly under this directory."
@@ -262,7 +263,7 @@ Accordion's own facts - the four overlays took about the time Button's one
 did - it was discovering and fixing the passthrough-sharing assumption
 before it shipped a non-deterministic build.
 
-## DataTable (T6)
+## DataTable
 
 ### What DataTable is, contract-wise
 
@@ -283,7 +284,7 @@ being `undefined` for both (asserted directly in
 
 Before this pilot, `componentExportCoverage` counted `extractComponent(...).length`
 against `overlayStems(...).length` and called the first number "total
-exports" - accidentally correct through T5 because Button and every
+exports" - accidentally correct through Accordion because Button and every
 Accordion export IS a component, so "extracted" and "exported" never
 diverged. DataTable's directory exports six non-component names alongside
 its two components, and NONE of them should ever need an overlay or count
@@ -346,7 +347,7 @@ paths appearing INSIDE a printed type. Fixed by reusing
 not a DataTable-specific patch, so any future component with an
 unnamed/structural inherited type gets the same protection for free. This
 was found only by actually compiling against the real component, the same
-way T5's Deviation 2 was - neither is discoverable by reading the harness
+way Accordion's Deviation 2 was - neither is discoverable by reading the harness
 or the component's source in isolation.
 
 ### What could not be expressed
@@ -403,7 +404,7 @@ entirely) rather than one deep problem repeated four times.
 | Overlay lines (yaml, all contracts in the directory) | 85 | 275 (102+58+59+56) | 219 (137+82) |
 | Own props: typed vs annotation-only (slot), summed across the directory's contracts | 5 typed, 1 slot | 4 typed, 0 slots | 4 typed, 8 slots |
 | Passthrough origin(s) | `base_ui_button` (one, shared by all consumers of Base UI's Button) | `base_ui_accordion_root`/`_item`/`_trigger`/`_panel` (four, one per Base UI primitive part) | none for either contract - no DOM/Base UI heritage on either props type |
-| Harness/compiler changes this component forced | 0 (harness already fit it - T1-T4 were built FOR Button) | `family`, `coverage.assumptions`, `composition.parent`, `composition.kinds` typed as refs, the (later superseded) passthrough-key scoping fix | coverage counts components not exports, `extension_points`, a `none` composition child kind, absolute-path normalization in printed type text |
+| Harness/compiler changes this component forced | 0 (harness already fit it - the original harness was built FOR Button) | `family`, `coverage.assumptions`, `composition.parent`, `composition.kinds` typed as refs, the (later superseded) passthrough-key scoping fix | coverage counts components not exports, `extension_points`, a `none` composition child kind, absolute-path normalization in printed type text |
 
 The typed-vs-slot ratio is the sharpest signal in that table: Button and
 Accordion both wrap a Base UI primitive whose own props are mostly
@@ -522,7 +523,7 @@ code but is typed against the generated union, and the extractor flips from
 "read the code" to "verify the code matches the YAML". Option A - the code
 stays the one place props/axes are declared, the extractor reads them, the
 overlay only carries what code cannot express - was hardened instead:
-`check.ts`'s `compat` subcommand (T4) diffs a component's committed props
+`check.ts`'s `compat` subcommand diffs a component's committed props
 schema against the same component at a base ref via gts-ts's
 `GTS.checkCompatibility` and fails the build on an incompatible verdict
 unless `CONTRACT_MAJOR` also moved. That is Option A's own answer to the
