@@ -107,3 +107,19 @@ export function instanceIdPattern(): string {
 export function propsSchemaIdPattern(): string {
   return `^${escapeRegExp(BASE_TYPE_ID)}${componentSegmentPattern()}~$`;
 }
+
+// Grammar of a passthrough type id (passthroughTypeId above): the vendor
+// package, `passthrough`, an origin token, a version. Unlike the component
+// segment above, the origin token has no fixed shape of its own to reuse -
+// it is either `dom_<tag>` or `base_ui_<component>[_<part>]` - but every
+// GTS token is snake_case regardless of origin kind, so the grammar is the
+// same `[a-z_][a-z0-9_]*` charset the metamodel already uses for a
+// component name. Existed only as a hand-checked equality
+// (`passthroughSchema.$id === PASSTHROUGH_TYPE_ID`) in each component's own
+// test until now - a hyphenated origin token (a custom element tag like
+// `<my-custom-element>` before its own normalization) would pass that
+// equality check just as easily as it would fail this pattern, which is the
+// whole point of asserting the grammar directly instead.
+export function passthroughTypeIdPattern(): string {
+  return `^gts://gts\\.${escapeRegExp(VENDOR_PACKAGE)}\\.passthrough\\.[a-z_][a-z0-9_]*\\.v\\d+~$`;
+}

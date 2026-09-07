@@ -20,6 +20,9 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import {
+  assertNoPassthroughCollision,
+  assertOverlayReferencesRealProps,
+  assertValidatesAgainst,
   BASE_TYPE_ID,
   buildMetamodel,
   buildPropsAndRequired,
@@ -79,6 +82,11 @@ function compileValidator(): ReturnType<Ajv2020['compile']> {
   // schema itself - declared for the same reason: strict mode must not trip
   // over gts-ts's own annotation keyword while checking props.
   ajv.addKeyword({ keyword: 'x-gts-traits-schema' });
+  // The generated passthrough schema (added below) carries this one - see
+  // buildPassthroughSchema's generated_from field (M4). Annotation only,
+  // same standing as $comment; declared so strict mode does not trip over
+  // it while resolving the passthrough $ref this contract composes.
+  ajv.addKeyword({ keyword: 'generated_from' });
   ajv.addSchema(baseSchema);
   ajv.addSchema(passthroughSchema);
   return ajv.compile(contract);
@@ -158,11 +166,15 @@ describe('button contract conformance', () => {
   it('derives from the base component type, with the base as the parent ref', () => {
     // Chained id and schema body must agree on the parent: gts-ts reads the
     // FIRST $ref in allOf as the parent (store.findParentRef), and the id is
-    // that parent's id plus this component's segment.
+    // that parent's id plus this component's segment. Whether the COMMITTED
+    // base.component.json's own $id equals BASE_TYPE_ID is N5's concern, not
+    // this test's: assertContractFreshness's baseSchemaDiff (testing.ts)
+    // already checks that centrally, byte-for-byte against buildBaseSchema(),
+    // for every component that calls it - a second, narrower literal check
+    // here would just be the same fact with two owners.
     expect(contract.allOf[0]).toEqual({ $ref: BASE_TYPE_ID });
     expect(contract.$id.startsWith(BASE_TYPE_ID)).toBe(true);
     expect(contract.allOf).toContainEqual({ $ref: PASSTHROUGH_TYPE_ID });
-    expect(baseSchema.$id).toBe(BASE_TYPE_ID);
     expect(passthroughSchema.$id).toBe(PASSTHROUGH_TYPE_ID);
   });
 
@@ -350,6 +362,104 @@ describe('overlay and extraction safety', () => {
     const { properties, required } = buildPropsAndRequired('button', agreeing, passthroughSchema);
     expect(properties).not.toHaveProperty('disabled');
     expect(required).toEqual([]);
+  });
+
+  // M11: this cross-check used to live only in the "overlay references only
+  // props that exist in code" test above, exercised against Button's own
+  // real compile - it now runs inside compile.ts's own compileContract for
+  // every component (see "overlay references only props that exist in
+  // code" above still passing, unchanged, as the positive control). These
+  // two are the negative controls, proving the check actually rejects a
+  // stale reference rather than merely never having been triggered yet -
+  // Accordion and DataTable get this for free from the same compileContract
+  // call, with no per-component test of their own required.
+  it('rejects an overlay whose deprecations.props references a prop that does not exist', () => {
+    const staleOverlay: Overlay = {
+      ...validOverlay,
+      deprecations: { props: { ghost: { since: '1.0.0', replacement: 'variant', hint: 'use variant instead' } } },
+    };
+    const extraction = syntheticExtraction([]);
+    expect(() => assertOverlayReferencesRealProps('button', staleOverlay, extraction)).toThrow(
+      /deprecations\.props references "ghost"/,
+    );
+  });
+
+  it('rejects an overlay whose composition.children.icons_via references a prop that does not exist', () => {
+    const staleOverlay: Overlay = {
+      ...validOverlay,
+      composition: { children: { kinds: ['text'], icons_via: 'ghostIcon' } },
+    };
+    const extraction = syntheticExtraction([]);
+    expect(() => assertOverlayReferencesRealProps('button', staleOverlay, extraction)).toThrow(
+      /composition\.children\.icons_via references "ghostIcon"/,
+    );
+  });
+});
+
+describe('M3: assembled output validated against its own schema before writing', () => {
+  it('accepts a value that satisfies the given schema', () => {
+    const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
+    expect(() => assertValidatesAgainst('button', 'test-value', schema, { ok: true })).not.toThrow();
+  });
+
+  it('rejects a value that does not satisfy the given schema, naming the component and what was validated', () => {
+    const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
+    expect(() => assertValidatesAgainst('button', 'test-value', schema, { ok: 'nope' })).toThrow(
+      /button: assembled test-value failed schema validation/,
+    );
+  });
+
+  it('drops a genuinely-unset field (JSON round-trip) rather than validating it as `undefined`', () => {
+    // The exact reason compileInstance/compileContract round-trip through
+    // JSON before validating (see testing.ts's validateContractTraits for
+    // the same rule applied to x-gts-traits): an own key set to `undefined`
+    // must read as absent, not as a value to type-check.
+    const schema = { type: 'object', properties: { maybe: { type: ['string', 'null'] } }, additionalProperties: false };
+    expect(() => assertValidatesAgainst('button', 'test-value', schema, { maybe: undefined })).not.toThrow();
+  });
+});
+
+describe('M4: shared passthrough origin write collision', () => {
+  it('allows a first write with no existing file on disk', () => {
+    expect(() => assertNoPassthroughCollision('button', 'base_ui_button', '/tmp/x.json', undefined, { disabled: { type: 'boolean' } })).not.toThrow();
+  });
+
+  it('allows the same component to recompile after a real source change', () => {
+    // The component already on record is the only owner - a properties
+    // mismatch here is an ordinary recompile, not a collision.
+    expect(() =>
+      assertNoPassthroughCollision(
+        'button',
+        'base_ui_button',
+        '/tmp/x.json',
+        { generatedFrom: ['button'], properties: { disabled: { type: 'boolean' } } },
+        { disabled: { type: 'boolean' }, name: { type: 'string' } },
+      ),
+    ).not.toThrow();
+  });
+
+  it('allows a shared origin whose fresh properties still agree with what is committed', () => {
+    expect(() =>
+      assertNoPassthroughCollision(
+        'icon-button',
+        'base_ui_button',
+        '/tmp/x.json',
+        { generatedFrom: ['button'], properties: { disabled: { type: 'boolean' } } },
+        { disabled: { type: 'boolean' } },
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects a different component writing a mismatched properties set, naming both components', () => {
+    expect(() =>
+      assertNoPassthroughCollision(
+        'icon-button',
+        'base_ui_button',
+        '/tmp/x.json',
+        { generatedFrom: ['button'], properties: { disabled: { type: 'boolean' } } },
+        { disabled: { type: 'boolean' }, extraOnly: { type: 'string' } },
+      ),
+    ).toThrow(/icon-button.*shared passthrough origin "base_ui_button".*already committed by button/s);
   });
 });
 

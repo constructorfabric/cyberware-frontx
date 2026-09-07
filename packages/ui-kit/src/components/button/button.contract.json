@@ -36,13 +36,13 @@
     "className": {
       "type": "string"
     },
+    "focusableWhenDisabled": {
+      "type": "boolean"
+    },
     "icon": {
       "description": "Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
     },
     "loading": {
-      "type": "boolean"
-    },
-    "focusableWhenDisabled": {
       "type": "boolean"
     }
   },

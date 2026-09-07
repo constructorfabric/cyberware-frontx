@@ -253,6 +253,13 @@ function extractVariants(
 ): { axes: Record<string, string[]>; defaults: Record<string, string> } {
   const axes: Record<string, string[]> = {};
   const defaults: Record<string, string> = {};
+  // Which VariantProps<typeof X> heritage entry (by label) an axis/default
+  // name first came from - N1: two heritage entries declaring the same axis
+  // name is a real conflict, not "the later one wins"; recorded per-name so
+  // the second occurrence names both sources instead of silently
+  // overwriting the first one's values.
+  const axisSourceLabel: Record<string, string> = {};
+  const defaultSourceLabel: Record<string, string> = {};
 
   for (const entityName of variantSources) {
     const label = lastEntityName(entityName);
@@ -277,20 +284,36 @@ function extractVariants(
     for (const { name, initializer } of literalKeys(config, 'cva config', cannotExtract)) {
       if (name === 'variants' && ts.isObjectLiteralExpression(initializer)) {
         for (const axis of literalKeys(initializer, 'variants', cannotExtract)) {
-          if (ts.isObjectLiteralExpression(axis.initializer)) {
-            axes[axis.name] = literalKeys(axis.initializer, `axis "${axis.name}"`, cannotExtract).map((v) => v.name);
-          } else {
+          if (!ts.isObjectLiteralExpression(axis.initializer)) {
             cannotExtract.push(`axis "${axis.name}": value map is not an object literal`);
+            continue;
           }
+          if (axis.name in axes) {
+            cannotExtract.push(
+              `cva: axis "${axis.name}" is declared by both "${axisSourceLabel[axis.name]}" and "${label}" - ` +
+                `duplicate VariantProps heritage entries would otherwise silently overwrite one axis with the other`,
+            );
+            continue;
+          }
+          axes[axis.name] = literalKeys(axis.initializer, `axis "${axis.name}"`, cannotExtract).map((v) => v.name);
+          axisSourceLabel[axis.name] = label;
         }
       }
       if (name === 'defaultVariants' && ts.isObjectLiteralExpression(initializer)) {
         for (const def of literalKeys(initializer, 'defaultVariants', cannotExtract)) {
-          if (ts.isStringLiteral(def.initializer)) {
-            defaults[def.name] = def.initializer.text;
-          } else {
+          if (!ts.isStringLiteral(def.initializer)) {
             cannotExtract.push(`default for "${def.name}" is not a string literal`);
+            continue;
           }
+          if (def.name in defaults) {
+            cannotExtract.push(
+              `cva: default "${def.name}" is declared by both "${defaultSourceLabel[def.name]}" and "${label}" - ` +
+                `duplicate VariantProps heritage entries would otherwise silently overwrite one default with the other`,
+            );
+            continue;
+          }
+          defaults[def.name] = def.initializer.text;
+          defaultSourceLabel[def.name] = label;
         }
       }
     }
@@ -302,6 +325,13 @@ function extractVariants(
 interface PropsTypeWalkResult {
   kind: string | undefined;
   variantSources: ts.EntityName[];
+  // Threaded alongside kind/variantSources rather than returned separately:
+  // a heritage node this walk cannot classify (a bare union, a mapped type,
+  // a generic wrapper resolving to neither an interface nor a type alias)
+  // is exactly as much a fact as a resolved kind or variant source, and
+  // belongs on the same result so extractComponent merges it into the
+  // component's cannotExtract list the same way.
+  cannotExtract: string[];
 }
 
 function typeRefParts(
@@ -314,6 +344,52 @@ function typeRefParts(
     const name = calleeName(node.expression);
     if (name === undefined) return undefined;
     return { name, args: node.typeArguments, location: node.expression };
+  }
+  return undefined;
+}
+
+// The six heritage shapes walkPropsType/resolveTopLevelMembers special-case,
+// resolved by what they actually declare (isCvaCall's own technique,
+// generalized to every heritage shape rather than just cva()): the
+// checker-resolved symbol's real name and the file that declares it, never
+// the identifier text at the use site. An `import { ComponentProps as CP }
+// from 'react'` reads the same as the unaliased form; a locally-declared
+// type that merely happens to be NAMED `Omit` or `ComponentProps` reads as
+// neither, and falls through to the generic named-reference unwrap below
+// instead of being silently (mis)treated as React's or TypeScript's own
+// utility type - exactly the M1 defect (F-class silent loss reintroduced
+// through import aliasing, not file relocation).
+type HeritageShape =
+  | { readonly kind: 'omit-pick' }
+  | { readonly kind: 'variant-props' }
+  | { readonly kind: 'component-props' }
+  | { readonly kind: 'base-ui-component-props' };
+
+function declaredUnder(declarations: readonly ts.Declaration[], pattern: RegExp): boolean {
+  return declarations.some((decl) => pattern.test(decl.getSourceFile().fileName));
+}
+
+function classifyHeritageReference(location: ts.Node, checker: ts.TypeChecker): HeritageShape | undefined {
+  const symbol = checker.getSymbolAtLocation(location);
+  if (!symbol) return undefined;
+  const resolved = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+  const name = resolved.getName();
+  const declarations = resolved.getDeclarations() ?? [];
+
+  if ((name === 'Omit' || name === 'Pick') && declaredUnder(declarations, /[\\/]node_modules[\\/]typescript[\\/]lib[\\/]/)) {
+    return { kind: 'omit-pick' };
+  }
+  if (name === 'VariantProps' && declaredUnder(declarations, /[\\/]node_modules[\\/]class-variance-authority[\\/]/)) {
+    return { kind: 'variant-props' };
+  }
+  if (
+    (name === 'ComponentProps' || name === 'ComponentPropsWithRef') &&
+    declaredUnder(declarations, /[\\/]node_modules[\\/]@types[\\/]react[\\/]/)
+  ) {
+    return { kind: 'component-props' };
+  }
+  if (name === 'BaseUIComponentProps' && declaredUnder(declarations, /[\\/]node_modules[\\/]@base-ui[\\/]react[\\/]/)) {
+    return { kind: 'base-ui-component-props' };
   }
   return undefined;
 }
@@ -341,20 +417,39 @@ function walkPropsType(
     walkPropsType(node.type, checker, result, visited, depth + 1);
     return;
   }
+  // An inline object type literal - `{ tone: ... }` in `ComponentProps<'div'>
+  // & { tone: ... }` - is a legitimate terminal: its own members are already
+  // reachable through checker.getPropertiesOfType at the top level, so there
+  // is nothing more for THIS walk (kind/variant discovery) to resolve here.
+  // Not an error, unlike the node kinds below it has no typeRefParts either.
+  if (ts.isTypeLiteralNode(node)) return;
 
   const parts = typeRefParts(node);
-  if (!parts) return;
-  const { name, args, location } = parts;
+  if (!parts) {
+    // A node kind this walk does not understand at all - a bare union, a
+    // mapped type, a conditional type - in heritage position. The old walk
+    // silently returned here with no kind/variantSources contributed and no
+    // note that anything was skipped (N2's bare-union case, and the general
+    // "unknown wrapper type" shape M1 asks for); recorded now instead of
+    // dropped, since whatever this node declares (a DOM/Base UI anchor, a
+    // cva axis) is exactly the kind of fact this walk exists to surface.
+    result.cannotExtract.push(
+      `heritage: "${node.getText()}" is a ${ts.SyntaxKind[node.kind]}, not a shape this walk can classify - cannot extract`,
+    );
+    return;
+  }
+  const { args, location } = parts;
+  const shape = classifyHeritageReference(location, checker);
 
-  if ((name === 'Omit' || name === 'Pick') && args && args.length > 0) {
+  if (shape?.kind === 'omit-pick' && args && args.length > 0) {
     walkPropsType(args[0], checker, result, visited, depth + 1);
     return;
   }
-  if (name === 'VariantProps' && args && args.length > 0 && ts.isTypeQueryNode(args[0])) {
+  if (shape?.kind === 'variant-props' && args && args.length > 0 && ts.isTypeQueryNode(args[0])) {
     result.variantSources.push(args[0].exprName);
     return;
   }
-  if ((name === 'BaseUIComponentProps' || name === 'ComponentProps' || name === 'ComponentPropsWithRef') && args?.length) {
+  if ((shape?.kind === 'base-ui-component-props' || shape?.kind === 'component-props') && args?.length) {
     const first = args[0];
     if (ts.isLiteralTypeNode(first) && ts.isStringLiteral(first.literal) && result.kind === undefined) {
       result.kind = first.literal.text;
@@ -365,81 +460,108 @@ function walkPropsType(
   // A named reference this loop does not special-case - resolve it and
   // recurse into its own declaration's heritage (interface `extends` list,
   // or a type alias's underlying type), which is how `ButtonPrimitive.Props`
-  // eventually reaches Base UI's `BaseUIComponentProps<'button', ...>`.
+  // eventually reaches Base UI's `BaseUIComponentProps<'button', ...>`. A
+  // reference that resolves to no symbol at all, or to a declaration kind
+  // this loop cannot unwrap (a class, an enum - anything but an interface or
+  // type alias), is exactly as unclassifiable as the node-kind case above
+  // and gets the same treatment: named, not silently dropped.
   const symbol = checker.getSymbolAtLocation(location);
-  if (!symbol) return;
+  if (!symbol) {
+    result.cannotExtract.push(`heritage: "${node.getText()}" has no resolvable symbol - cannot extract`);
+    return;
+  }
   const resolved = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
   if (visited.has(resolved)) return;
   visited.add(resolved);
+  let unwrapped = false;
   for (const decl of resolved.getDeclarations() ?? []) {
     if (ts.isInterfaceDeclaration(decl)) {
+      unwrapped = true;
       for (const clause of decl.heritageClauses ?? []) {
         for (const member of clause.types) walkPropsType(member, checker, result, visited, depth + 1);
       }
     } else if (ts.isTypeAliasDeclaration(decl)) {
+      unwrapped = true;
       walkPropsType(decl.type, checker, result, visited, depth + 1);
     }
   }
+  if (!unwrapped) {
+    result.cannotExtract.push(
+      `heritage: "${node.getText()}" resolves to a declaration this walk cannot unwrap (not an interface or type alias) - cannot extract`,
+    );
+  }
 }
-
-// The names walkPropsType and resolveTopLevelMembers both treat as leaves -
-// stop unwrapping and report the node itself, rather than continuing to
-// resolve into Base UI's or React's own type declarations. Kept as one list
-// so the two functions never disagree about where "the component's own
-// heritage" ends and "a well-known type helper's internals" begins.
-const HERITAGE_LEAF_NAMES = new Set([
-  'Omit',
-  'Pick',
-  'VariantProps',
-  'BaseUIComponentProps',
-  'ComponentProps',
-  'ComponentPropsWithRef',
-  'NativeButtonProps',
-  'NonNativeButtonProps',
-]);
 
 // Unwraps a props type node down to the constituents that actually carry
 // meaning for a reader: an intersection's members, and a plain named
 // reference (`ButtonProps`, `AlertProps`, ...) followed into whatever ITS
 // interface `extends` or type alias underlying type is. Stops at the same
-// leaves walkPropsType stops at (Omit/Pick/VariantProps/BaseUIComponentProps/
-// ComponentProps/NativeButtonProps) so the two functions describe the same
-// graph - one for kind/variant resolution, this one for the read-only labels
-// x-uikit.passthrough and x-uikit.variant_sources carry.
+// six shapes walkPropsType stops at (classifyHeritageReference, resolved by
+// symbol - not a hand-kept name list, so the two functions can never
+// disagree about where "the component's own heritage" ends and "a
+// well-known type helper's internals" begins) - one for kind/variant
+// resolution, this one for the read-only labels x-uikit.passthrough and
+// x-uikit.variant_sources carry. A node this walk genuinely cannot classify
+// (see walkPropsType's matching branches) is named in `cannotExtract`
+// instead of silently becoming an opaque label (N2/M1): the label-only
+// consumer downstream still gets a leaf back so it has something to render,
+// but the fact that the walk gave up on it is no longer lost.
 function resolveTopLevelMembers(
   node: ts.TypeNode,
   checker: ts.TypeChecker,
   visited: Set<ts.Symbol>,
   depth: number,
+  cannotExtract: string[],
 ): ts.TypeNode[] {
   if (depth > 12) return [node];
   if (ts.isIntersectionTypeNode(node)) {
-    return node.types.flatMap((member) => resolveTopLevelMembers(member, checker, visited, depth + 1));
+    return node.types.flatMap((member) => resolveTopLevelMembers(member, checker, visited, depth + 1, cannotExtract));
   }
   if (ts.isParenthesizedTypeNode(node)) {
-    return resolveTopLevelMembers(node.type, checker, visited, depth + 1);
+    return resolveTopLevelMembers(node.type, checker, visited, depth + 1, cannotExtract);
   }
+  if (ts.isTypeLiteralNode(node)) return [node];
+
   const parts = typeRefParts(node);
-  if (!parts || HERITAGE_LEAF_NAMES.has(parts.name)) return [node];
+  if (!parts) {
+    cannotExtract.push(
+      `heritage: "${node.getText()}" is a ${ts.SyntaxKind[node.kind]}, not a shape this walk can classify - cannot extract`,
+    );
+    return [node];
+  }
+  if (classifyHeritageReference(parts.location, checker)) return [node];
 
   const symbol = checker.getSymbolAtLocation(parts.location);
-  if (!symbol) return [node];
+  if (!symbol) {
+    cannotExtract.push(`heritage: "${node.getText()}" has no resolvable symbol - cannot extract`);
+    return [node];
+  }
   const resolved = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
   if (visited.has(resolved)) return [node];
   visited.add(resolved);
 
   const members: ts.TypeNode[] = [];
+  let unwrapped = false;
   for (const decl of resolved.getDeclarations() ?? []) {
     if (ts.isInterfaceDeclaration(decl)) {
+      unwrapped = true;
       for (const clause of decl.heritageClauses ?? []) {
-        for (const member of clause.types) members.push(...resolveTopLevelMembers(member, checker, visited, depth + 1));
+        for (const member of clause.types) members.push(...resolveTopLevelMembers(member, checker, visited, depth + 1, cannotExtract));
       }
     } else if (ts.isTypeAliasDeclaration(decl)) {
-      members.push(...resolveTopLevelMembers(decl.type, checker, visited, depth + 1));
+      unwrapped = true;
+      members.push(...resolveTopLevelMembers(decl.type, checker, visited, depth + 1, cannotExtract));
     }
   }
-  // A named reference this loop cannot unwrap further (an inline object
-  // type literal, a type with no heritage) is itself the leaf.
+  if (!unwrapped) {
+    cannotExtract.push(
+      `heritage: "${node.getText()}" resolves to a declaration this walk cannot unwrap (not an interface or type alias) - cannot extract`,
+    );
+  }
+  // A named reference with no heritage of its own (an inline object type
+  // literal, an interface/type alias declaring no `extends`) is itself the
+  // leaf - legitimate, not an error; `unwrapped` above already distinguishes
+  // that case from a genuinely opaque one.
   return members.length > 0 ? members : [node];
 }
 
@@ -454,13 +576,15 @@ function topLevelHeritageLabels(
   node: ts.TypeNode,
   checker: ts.TypeChecker,
   kitRoot: string,
+  cannotExtract: string[],
 ): { passthroughSources: string[]; variantSourceLabels: string[] } {
-  const members = resolveTopLevelMembers(node, checker, new Set(), 0);
+  const members = resolveTopLevelMembers(node, checker, new Set(), 0, cannotExtract);
   const passthroughSources: string[] = [];
   const variantSourceLabels: string[] = [];
   for (const member of members) {
     const parts = typeRefParts(member);
-    if (parts?.name === 'VariantProps') {
+    const shape = parts && classifyHeritageReference(parts.location, checker);
+    if (shape?.kind === 'variant-props') {
       variantSourceLabels.push(member.getText());
       continue;
     }
@@ -470,9 +594,7 @@ function topLevelHeritageLabels(
     // TypeScript's own lib.es5.d.ts and tell a reader nothing about which
     // component library the props actually come from).
     const location =
-      parts && (parts.name === 'Omit' || parts.name === 'Pick') && parts.args?.length
-        ? typeRefParts(parts.args[0])?.location
-        : parts?.location;
+      parts && shape?.kind === 'omit-pick' && parts.args?.length ? typeRefParts(parts.args[0])?.location : parts?.location;
     if (location) {
       const symbol = checker.getSymbolAtLocation(location);
       const resolved = symbol && (symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol);
@@ -520,9 +642,17 @@ function baseUiOriginFromDeclarationFile(relativeFile: string): string | undefin
 function originFromTypeRef(node: ts.TypeNode, checker: ts.TypeChecker, kitRoot: string): string | undefined {
   const parts = typeRefParts(node);
   if (!parts) return undefined;
-  if ((parts.name === 'ComponentProps' || parts.name === 'ComponentPropsWithRef') && parts.args?.length) {
+  const shape = classifyHeritageReference(parts.location, checker);
+  if (shape?.kind === 'component-props' && parts.args?.length) {
     const first = parts.args[0];
-    return ts.isLiteralTypeNode(first) && ts.isStringLiteral(first.literal) ? `dom_${first.literal.text}` : undefined;
+    // GTS tokens are snake_case; a custom element tag (`<my-custom-element>`)
+    // is a real, ordinary ComponentProps<'tag'> argument and carries a
+    // hyphen the base_ui branch below already strips - M2: without this the
+    // dom_ branch was the one place a hyphen leaked into an id grammar that
+    // is snake_case everywhere else.
+    return ts.isLiteralTypeNode(first) && ts.isStringLiteral(first.literal)
+      ? `dom_${first.literal.text.replace(/-/g, '_')}`
+      : undefined;
   }
   const symbol = checker.getSymbolAtLocation(parts.location);
   const resolved = symbol && (symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol);
@@ -535,17 +665,24 @@ function originFromTypeRef(node: ts.TypeNode, checker: ts.TypeChecker, kitRoot: 
 // inherited props: the FIRST top-level heritage member that resolves to one
 // (matching walkPropsType's "first found wins" rule for domTag, so the two
 // never disagree about whether a component has a passthrough at all -
-// resolveTopLevelMembers stops at the same leaf names walkPropsType's own
+// resolveTopLevelMembers stops at the same six shapes walkPropsType's own
 // kind detection eventually bottoms out past, which is what makes this the
 // OUTERMOST resolvable reference rather than the deepest one: Accordion's
 // Trigger resolves against `AccordionPrimitive.Trigger.Props` here, never
 // unwrapping into the Header+Trigger composition underneath it the way
 // walkPropsType's kind walk does to reach the literal 'button' tag.
-export function resolvePassthroughOrigin(node: ts.TypeNode, checker: ts.TypeChecker, kitRoot: string): string | undefined {
-  for (const member of resolveTopLevelMembers(node, checker, new Set(), 0)) {
+export function resolvePassthroughOrigin(
+  node: ts.TypeNode,
+  checker: ts.TypeChecker,
+  kitRoot: string,
+  cannotExtract: string[],
+): string | undefined {
+  for (const member of resolveTopLevelMembers(node, checker, new Set(), 0, cannotExtract)) {
     const parts = typeRefParts(member);
-    if (!parts || parts.name === 'VariantProps') continue;
-    const target = (parts.name === 'Omit' || parts.name === 'Pick') && parts.args?.length ? parts.args[0] : member;
+    if (!parts) continue;
+    const shape = classifyHeritageReference(parts.location, checker);
+    if (shape?.kind === 'variant-props') continue;
+    const target = shape?.kind === 'omit-pick' && parts.args?.length ? parts.args[0] : member;
     const origin = originFromTypeRef(target, checker, kitRoot);
     if (origin) return origin;
   }
@@ -584,16 +721,42 @@ function normalizeImportPathsInTypeText(typeText: string, kitRoot: string): stri
   return typeText.replace(/import\("([^"]*)"\)/g, (_match, path: string) => `import("${relativeDeclarationFile(path, kitRoot)}")`);
 }
 
-function isReactComponentCandidate(node: ts.Node): node is ts.FunctionDeclaration | ts.VariableDeclaration {
+// True for a call whose resolved callee really is React's own `forwardRef`
+// or `memo` export - checked by symbol identity the same way isCvaCall
+// checks cva, so an aliased import resolves the same as the plain form.
+function isReactWrapperCall(call: ts.CallExpression, checker: ts.TypeChecker, wrapperName: 'forwardRef' | 'memo'): boolean {
+  const symbol = checker.getSymbolAtLocation(call.expression);
+  if (!symbol) return false;
+  const resolved = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+  if (resolved.getName() !== wrapperName) return false;
+  return declaredUnder(resolved.getDeclarations() ?? [], /[\\/]node_modules[\\/]@types[\\/]react[\\/]/);
+}
+
+// Unwraps `forwardRef(...)`/`memo(...)` call wrappers around a component
+// function, straight through nesting (`memo(forwardRef((props, ref) =>
+// ...))`) - M8: the initializer becomes a CallExpression instead of a
+// function value, which the old arrow/function-expression-only check
+// silently read as "not component-shaped," undercounting check.ts's own
+// coverage report by miscounting a real, unwrapped component as one of the
+// exports it intentionally skips. `forwardRef`'s render function and
+// `memo`'s wrapped component are both their call's first argument - the
+// only argument shape either wrapper accepts there.
+function unwrapComponentInitializer(expr: ts.Expression | undefined, checker: ts.TypeChecker, depth = 0): ts.Expression | undefined {
+  if (expr === undefined || depth > 4 || !ts.isCallExpression(expr)) return expr;
+  if (isReactWrapperCall(expr, checker, 'forwardRef') || isReactWrapperCall(expr, checker, 'memo')) {
+    return unwrapComponentInitializer(expr.arguments[0], checker, depth + 1);
+  }
+  return expr;
+}
+
+function isReactComponentCandidate(
+  node: ts.Node,
+  checker: ts.TypeChecker,
+): node is ts.FunctionDeclaration | ts.VariableDeclaration {
   if (ts.isFunctionDeclaration(node) && node.name && /^[A-Z]/.test(node.name.text)) return true;
-  if (
-    ts.isVariableDeclaration(node) &&
-    ts.isIdentifier(node.name) &&
-    /^[A-Z]/.test(node.name.text) &&
-    node.initializer &&
-    (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
-  ) {
-    return true;
+  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && /^[A-Z]/.test(node.name.text)) {
+    const inner = unwrapComponentInitializer(node.initializer, checker);
+    if (inner && (ts.isArrowFunction(inner) || ts.isFunctionExpression(inner))) return true;
   }
   return false;
 }
@@ -608,21 +771,20 @@ function containsJsx(node: ts.Node): boolean {
   return found;
 }
 
-function functionBody(node: ts.FunctionDeclaration | ts.VariableDeclaration): ts.Node | undefined {
+function functionBody(node: ts.FunctionDeclaration | ts.VariableDeclaration, checker: ts.TypeChecker): ts.Node | undefined {
   if (ts.isFunctionDeclaration(node)) return node.body;
-  if (node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) {
-    return node.initializer.body;
-  }
+  const inner = unwrapComponentInitializer(node.initializer, checker);
+  if (inner && (ts.isArrowFunction(inner) || ts.isFunctionExpression(inner))) return inner.body;
   return undefined;
 }
 
 function firstParameter(
   node: ts.FunctionDeclaration | ts.VariableDeclaration,
+  checker: ts.TypeChecker,
 ): ts.ParameterDeclaration | undefined {
   if (ts.isFunctionDeclaration(node)) return node.parameters[0];
-  if (node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) {
-    return node.initializer.parameters[0];
-  }
+  const inner = unwrapComponentInitializer(node.initializer, checker);
+  if (inner && (ts.isArrowFunction(inner) || ts.isFunctionExpression(inner))) return inner.parameters[0];
   return undefined;
 }
 
@@ -670,13 +832,13 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
     }
 
     for (const candidate of candidates) {
-      if (!isReactComponentCandidate(candidate)) continue;
-      const body = functionBody(candidate);
+      if (!isReactComponentCandidate(candidate, checker)) continue;
+      const body = functionBody(candidate, checker);
       if (!body || !containsJsx(body)) continue;
       const name = ts.isFunctionDeclaration(candidate) ? candidate.name!.text : (candidate.name as ts.Identifier).text;
 
       const cannotExtract: string[] = [];
-      const param = firstParameter(candidate);
+      const param = firstParameter(candidate, checker);
       const ownProps: ExtractedProp[] = [];
       const inheritedProps: ExtractedProp[] = [];
       let passthroughKind: string | undefined;
@@ -688,15 +850,16 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
 
       if (param) {
         const paramType = checker.getTypeAtLocation(param);
-        const walk: PropsTypeWalkResult = { kind: undefined, variantSources: [] };
+        const walk: PropsTypeWalkResult = { kind: undefined, variantSources: [], cannotExtract: [] };
         if (param.type) {
           walkPropsType(param.type, checker, walk, new Set(), 0);
-          const labels = topLevelHeritageLabels(param.type, checker, kitRoot);
+          const labels = topLevelHeritageLabels(param.type, checker, kitRoot, cannotExtract);
           passthroughSources = labels.passthroughSources;
           variantSourceLabels = labels.variantSourceLabels;
-          passthroughOrigin = resolvePassthroughOrigin(param.type, checker, kitRoot);
+          passthroughOrigin = resolvePassthroughOrigin(param.type, checker, kitRoot, cannotExtract);
         }
         passthroughKind = walk.kind;
+        cannotExtract.push(...walk.cannotExtract);
 
         const variantsResult = extractVariants(walk.variantSources, checker, cannotExtract);
         axes = variantsResult.axes;
@@ -708,6 +871,17 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
           if (axisNames.has(propName)) continue;
 
           const declarations = prop.getDeclarations() ?? [];
+          if (declarations.length === 0) {
+            // A synthetic/computed property symbol (e.g. one instantiated
+            // from a mapped type like `Record<'a' | 'b', string>`) carries
+            // no declaration to point at - N4: own-vs-inherited classification
+            // and declarationFile both depend on having one, so there is
+            // nothing honest to report beyond "this prop could not be read."
+            // The old code filled the gap with the literal string 'unknown'
+            // as if it were real data instead of surfacing the gap itself.
+            cannotExtract.push(`prop "${propName}": no declaration found (a synthetic/computed property symbol) - cannot extract`);
+            continue;
+          }
           const ownDeclaration = declarations.find((d) => d.getSourceFile().fileName === source.fileName);
           const declaration = ownDeclaration ?? declarations[0];
           const propType = checker.getTypeOfSymbolAtLocation(prop, param);
@@ -719,7 +893,7 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
             name: propName,
             optional: (prop.flags & ts.SymbolFlags.Optional) !== 0,
             typeText,
-            declarationFile: declaration ? relativeDeclarationFile(declaration.getSourceFile().fileName, kitRoot) : 'unknown',
+            declarationFile: relativeDeclarationFile(declaration.getSourceFile().fileName, kitRoot),
             jsDocDefault: jsDocDefault(prop),
           };
           if (ownDeclaration) {
@@ -729,6 +903,20 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
           }
         }
       }
+
+      // Sorted by name before returning - N3: `checker.getPropertiesOfType`'s
+      // iteration order is an undocumented TypeScript-internal detail (its
+      // own symbol-table/intersection-merge order), not a fact about the
+      // component. Left unsorted, a routine `typescript` version bump could
+      // reorder a committed contract with no real prop change behind the
+      // diff, or make a fresh compile on a different TypeScript patch
+      // version disagree byte-for-byte with the commit that produced it -
+      // exactly the machine-independence the rest of this file (absolute
+      // path stripping, import(...) path normalization) already goes out of
+      // its way to guarantee.
+      const byName = (a: ExtractedProp, b: ExtractedProp): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+      ownProps.sort(byName);
+      inheritedProps.sort(byName);
 
       extractions.push({
         name,

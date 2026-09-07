@@ -9,19 +9,19 @@
     }
   ],
   "properties": {
-    "column": {
-      "description": "Slot: Column<{ rowSelectionFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowSortingFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowPaginationFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; sortedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; paginatedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; }, TData, TValue>. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
-    },
     "children": {
       "description": "Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
     },
     "className": {
       "type": "string"
+    },
+    "column": {
+      "description": "Slot: Column<{ rowSelectionFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowSortingFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowPaginationFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; sortedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; paginatedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; }, TData, TValue>. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
     }
   },
   "required": [
-    "column",
-    "children"
+    "children",
+    "column"
   ],
   "unevaluatedProperties": false,
   "x-uikit": {
@@ -58,12 +58,12 @@
       ]
     },
     "slots": {
-      "column": {
-        "typeText": "Column<{ rowSelectionFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowSortingFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowPaginationFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; sortedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; paginatedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; }, TData, TValue>",
-        "optional": false
-      },
       "children": {
         "typeText": "ReactNode",
+        "optional": false
+      },
+      "column": {
+        "typeText": "Column<{ rowSelectionFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowSortingFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowPaginationFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; sortedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; paginatedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; }, TData, TValue>",
         "optional": false
       }
     },

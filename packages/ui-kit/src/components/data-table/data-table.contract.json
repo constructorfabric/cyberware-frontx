@@ -9,32 +9,32 @@
     }
   ],
   "properties": {
+    "className": {
+      "type": "string"
+    },
     "columns": {
       "description": "Slot: ColumnDef<{ rowSelectionFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowSortingFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowPaginationFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; sortedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; paginatedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; }, TData>[]. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
     },
     "data": {
       "description": "Slot: TData[]. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
     },
-    "pageSize": {
-      "type": "number"
+    "emptyMessage": {
+      "description": "Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
     },
     "enableRowSelection": {
       "type": "boolean"
     },
-    "emptyMessage": {
+    "nextLabel": {
       "description": "Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
+    },
+    "pageSize": {
+      "type": "number"
     },
     "previousLabel": {
       "description": "Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
     },
-    "nextLabel": {
-      "description": "Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
-    },
     "selectionSummary": {
       "description": "Slot: ((selected: number, total: number) => ReactNode) | undefined. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
-    },
-    "className": {
-      "type": "string"
     }
   },
   "required": [
@@ -102,11 +102,11 @@
         "typeText": "ReactNode",
         "optional": true
       },
-      "previousLabel": {
+      "nextLabel": {
         "typeText": "ReactNode",
         "optional": true
       },
-      "nextLabel": {
+      "previousLabel": {
         "typeText": "ReactNode",
         "optional": true
       },

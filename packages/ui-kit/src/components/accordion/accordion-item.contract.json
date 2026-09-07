@@ -56,7 +56,9 @@
       "Omit<AccordionPrimitive.Item.Props, 'className'> (@base-ui/react/accordion/item/AccordionItem.d.mts)"
     ],
     "variant_sources": [],
-    "cannot_extract": []
+    "cannot_extract": [
+      "heritage: \"{\n    [P in keyof T]?: T[P];\n}\" is a MappedType, not a shape this walk can classify - cannot extract"
+    ]
   },
   "x-gts-traits": {
     "dont_use_when": [

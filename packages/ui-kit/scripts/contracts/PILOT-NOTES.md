@@ -596,3 +596,32 @@ block templates). Adopted as the term for whoever picks up block/template
 composite work next; no code in this branch defines, ships or tests a
 block - Accordion and DataTable are both ordinary (if compound, in
 Accordion's case) kit components, not blocks.
+
+## Compiler coupling: Base UI and DOM only, for now
+
+`extract.ts`'s origin resolver (`resolvePassthroughOrigin`,
+`classifyHeritageReference`, `baseUiOriginFromDeclarationFile`) recognizes
+exactly two families of inherited-props origin: a plain DOM element via
+React's `ComponentProps`/`ComponentPropsWithRef` (the `dom_<tag>` branch),
+and a Base UI primitive part via `BaseUIComponentProps`, keyed by its
+declaration file under `node_modules/@base-ui/react/`. Nothing else. A
+component whose inherited props come from a different headless-primitive
+library (Radix, react-aria, Ariakit, MUI unstyled) resolves no origin at
+all; `compileContract` then hard-fails on it (`... but no passthrough origin
+could be resolved ...`), by design (see extract.ts's own module comment) -
+the compiler refuses to guess rather than silently drop the props, but it
+still cannot compile such a component today.
+
+This is a real, current limit of the compiler itself, not just of the three
+overlays this pilot ships - the demo review's M5 finding named it precisely.
+Adding a second primitive library requires, at minimum: (1) a
+`classifyHeritageReference` shape for that library's own props-forwarding
+helper (the same symbol + declaration-file check every other shape here
+uses, never identifier text); (2) an origin-token branch parallel to
+`baseUiOriginFromDeclarationFile`, deriving a stable, collision-safe
+snake_case key from that library's own directory layout; (3) confirming the
+new origin's generated passthrough type still composes correctly under
+`unevaluatedProperties: false` the way `base_ui_*`/`dom_*` do today. None of
+that is designed against here - only DOM and Base UI were ever in scope for
+this pilot's three components - so treat "add a primitive library" as new
+design work on the origin resolver, not a config toggle.

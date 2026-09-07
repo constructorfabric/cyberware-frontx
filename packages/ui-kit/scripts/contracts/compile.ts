@@ -51,7 +51,7 @@
 //        The instance path is outPath with `.json` swapped for
 //        `.instance.json`; both files are written together, and the
 //        component's generated passthrough.<origin>.json alongside them.
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -373,8 +373,19 @@ function classifyProviderSafeType(typeText: string): ContractProperty | undefine
 // the storage/id identity - what the $id and the generated filename use;
 // `domTag` is the real HTML tag this describes, kept separate so the
 // human-readable title/description always name a real element even when the
-// origin is a Base UI part rather than the tag itself.
-export function buildPassthroughSchema(originKey: string, domTag: string, inheritedProps: ExtractedProp[]): Record<string, unknown> {
+// origin is a Base UI part rather than the tag itself. `generatedFrom` is
+// every component stem currently known to compile this origin - M4: a
+// shared origin key with no record of who put what into it is how two
+// components silently overwrote each other's file; committing the list next
+// to the properties it backs makes the write path (compileOne below) able
+// to compare "what's here now" against "who put it here" instead of
+// guessing, and gives a reviewer reading the diff the same answer.
+export function buildPassthroughSchema(
+  originKey: string,
+  domTag: string,
+  inheritedProps: ExtractedProp[],
+  generatedFrom: string[],
+): Record<string, unknown> {
   const properties: Record<string, ContractProperty> = {};
   for (const prop of inheritedProps) {
     if (prop.name === 'key' || prop.name === 'ref') continue;
@@ -388,6 +399,11 @@ export function buildPassthroughSchema(originKey: string, domTag: string, inheri
     title: `UiKit ${originKey} passthrough`,
     description: `The props a kit component forwards to an underlying <${domTag}> element (directly or through Base UI), generated from this component's inherited (non-own) props. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. Keyed by the ORIGIN of the inherited props (a Base UI primitive part, or a plain DOM element type) rather than the DOM tag alone, so two components forwarding to the same tag through unrelated type surfaces never collide; two components genuinely wrapping the same origin share this file by construction. Regenerate with \`npm run contracts:compile -- <directory>\`; a stale copy fails the freshness check.`,
     type: 'object',
+    // Every component stem that has ever compiled into this shared file, so
+    // a mismatched recompile can name who else is on the hook before
+    // silently overwriting their facts (see compileOne's write path).
+    // Not consumed by Ajv/GTS - annotation only, same standing as $comment.
+    generated_from: [...generatedFrom].sort(),
     properties,
     patternProperties: {
       '^aria-': {
@@ -864,6 +880,36 @@ function formatOverlayErrors(component: string, errors: ErrorObject[] | null | u
   return `${component}: overlay failed validation:\n  ${lines.join('\n  ')}`;
 }
 
+// M3: the compiler's own assembled output validated against the same
+// schemas a component's hand-written test file already checks it against
+// (buildMetamodel/buildGtsTraitsSchema) - moved here so a future component
+// with no such test still gets the check, rather than the module header's
+// claim ("the metamodel is enforced by the same validator that enforces
+// component props") being true only where a test file happens to assert it.
+// A fresh Ajv instance per call, matching compileOverlayValidator's own
+// style - these run once per compile, not in a hot loop, so there is
+// nothing to cache.
+function formatSchemaErrors(component: string, what: string, errors: ErrorObject[] | null | undefined): string {
+  const lines = (errors ?? []).map((err) => `"${err.instancePath || '/'}" ${err.message ?? 'is invalid'}`);
+  return `${component}: assembled ${what} failed schema validation:\n  ${lines.join('\n  ')}`;
+}
+
+// Round-tripped through JSON before validating, the same way
+// testing.ts's validateContractTraits does and for the same reason: a
+// field the overlay left unset (family, extension_points) is an own key
+// set to `undefined` on the in-memory object, which Ajv's `type` check
+// would reject against a schema that only allows `object` - JSON.stringify
+// dropping the key is what makes "genuinely absent" resolve the way the
+// schema (and every real consumer of the committed JSON) expects.
+export function assertValidatesAgainst(component: string, what: string, schema: Record<string, unknown>, value: unknown): void {
+  const ajv = new Ajv2020({ allErrors: true });
+  const validate = ajv.compile(schema);
+  const roundTripped = JSON.parse(JSON.stringify(value)) as unknown;
+  if (!validate(roundTripped)) {
+    throw new Error(formatSchemaErrors(component, what, validate.errors));
+  }
+}
+
 // The overlay-validation half, split out from loadOverlay's file read so it
 // can be exercised directly with an in-memory object: a malformed overlay is
 // a compile error whether it came from disk or a test fixture, and testing
@@ -918,7 +964,7 @@ function loadOverlay(directory: string, exportStem: string = directory): Overlay
 
 export function compileInstance(directory: string, exportStem: string = directory): ContractInstance {
   const overlay = loadOverlay(directory, exportStem);
-  return {
+  const instance: ContractInstance = {
     id: instanceId(exportStem, CONTRACT_MAJOR),
     metamodel: METAMODEL_VERSION,
     component: exportStem,
@@ -935,6 +981,12 @@ export function compileInstance(directory: string, exportStem: string = director
     extension_points: overlay.extension_points,
     props_schema: propsSchemaId(exportStem, CONTRACT_MAJOR),
   };
+  // M3: validated against the metamodel here, not only inside whichever
+  // component's own test file happens to assert it - a future mismatch
+  // between this assembly and buildMetamodel()'s own required-field list
+  // now fails every compile, not just the ones with test coverage for it.
+  assertValidatesAgainst(exportStem, 'instance', buildMetamodel(), instance);
+  return instance;
 }
 
 export interface PropsAndRequired {
@@ -1056,6 +1108,26 @@ export function resolveTargetExtraction(directory: string, exportStem: string = 
   return extraction;
 }
 
+// M11: the overlay must only ever point at a prop the extractor actually
+// found. `deprecations.props` keys and `composition.children.icons_via` are
+// the two prop-name-bearing overlay fields today - moved here from Button's
+// own test file so every component gets this cross-check unconditionally,
+// not just the one whose test author remembered to write it (Accordion and
+// DataTable had no equivalent protection before this). Extend this list if
+// the metamodel ever adds a third prop-name-bearing overlay field.
+export function assertOverlayReferencesRealProps(component: string, overlay: Overlay, extraction: ComponentExtraction): void {
+  const known = new Set([...Object.keys(extraction.axes), ...extraction.ownProps.map((prop) => prop.name)]);
+  for (const prop of Object.keys(overlay.deprecations.props ?? {})) {
+    if (!known.has(prop)) {
+      throw new Error(`${component}: overlay deprecations.props references "${prop}", which is not a real prop`);
+    }
+  }
+  const iconsVia = overlay.composition.children.icons_via;
+  if (iconsVia !== undefined && !known.has(iconsVia)) {
+    throw new Error(`${component}: overlay composition.children.icons_via references "${iconsVia}", which is not a real prop`);
+  }
+}
+
 export function compileContract(directory: string, exportStem: string = directory): CompiledContract {
   const extraction = resolveTargetExtraction(directory, exportStem);
 
@@ -1069,6 +1141,7 @@ export function compileContract(directory: string, exportStem: string = director
   }
 
   const overlay = loadOverlay(directory, exportStem);
+  assertOverlayReferencesRealProps(exportStem, overlay, extraction);
 
   let passthroughSchema: Record<string, unknown> | undefined;
   let passthroughRef: SchemaRef | undefined;
@@ -1083,7 +1156,14 @@ export function compileContract(directory: string, exportStem: string = director
           `origin and kind walks disagreed, which should never happen`,
       );
     }
-    passthroughSchema = buildPassthroughSchema(extraction.passthroughOrigin, extraction.passthroughKind, extraction.inheritedProps);
+    // The generated_from list is only meaningful at write time (M4's
+    // collision check, in compileOne below) - compileContract only reads
+    // `.properties` off this schema (buildPropsAndRequired's own-vs-
+    // passthrough type-conflict check), so a single-element placeholder is
+    // enough here and never gets written to disk.
+    passthroughSchema = buildPassthroughSchema(extraction.passthroughOrigin, extraction.passthroughKind, extraction.inheritedProps, [
+      exportStem,
+    ]);
     passthroughRef = { $ref: passthroughTypeId(extraction.passthroughOrigin) };
   } else if (extraction.inheritedProps.length > 0) {
     // Inherited props exist but no origin could be resolved for them -
@@ -1110,7 +1190,7 @@ export function compileContract(directory: string, exportStem: string = director
     // contract silently missing part of its overlay.
     throw new Error(`${exportStem}: SEMANTIC_FIELD_TARGETS does not route every semantic overlay field exactly once`);
   }
-  return {
+  const contract: CompiledContract = {
     $id: propsSchemaId(exportStem, CONTRACT_MAJOR),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: `UiKit ${exportStem} contract`,
@@ -1129,6 +1209,12 @@ export function compileContract(directory: string, exportStem: string = director
     },
     'x-gts-traits': pickFields(overlay, gtsTraitsFields),
   };
+  // M3: validated against buildGtsTraitsSchema() here, not only inside
+  // whichever component's own test file happens to register it with a GTS
+  // store - a future mismatch between this assembly and
+  // buildGtsTraitsSchema()'s own field routing now fails every compile.
+  assertValidatesAgainst(exportStem, 'x-gts-traits', buildGtsTraitsSchema(), contract['x-gts-traits']);
+  return contract;
 }
 
 // "Was this module invoked as the entry, rather than imported?" Under tsx
@@ -1174,12 +1260,58 @@ function compileOne(directory: string, exportStem: string): void {
   console.log(`wrote ${out}`);
   console.log(`wrote ${instanceOut}`);
   if (extraction.passthroughOrigin && extraction.passthroughKind) {
-    const passthroughSchema = buildPassthroughSchema(extraction.passthroughOrigin, extraction.passthroughKind, extraction.inheritedProps);
-    mkdirSync(GENERATED_DIR, { recursive: true });
     const passthroughOut = join(GENERATED_DIR, `passthrough.${extraction.passthroughOrigin}.json`);
+    const existing = existsSync(passthroughOut) ? (JSON.parse(readFileSync(passthroughOut, 'utf8')) as Record<string, unknown>) : undefined;
+    const existingGeneratedFrom = Array.isArray(existing?.generated_from) ? (existing.generated_from as string[]) : [];
+    const generatedFrom = Array.from(new Set([...existingGeneratedFrom, exportStem]));
+    const passthroughSchema = buildPassthroughSchema(
+      extraction.passthroughOrigin,
+      extraction.passthroughKind,
+      extraction.inheritedProps,
+      generatedFrom,
+    );
+    assertNoPassthroughCollision(
+      exportStem,
+      extraction.passthroughOrigin,
+      passthroughOut,
+      existing && { generatedFrom: existingGeneratedFrom, properties: existing.properties },
+      passthroughSchema.properties,
+    );
+    mkdirSync(GENERATED_DIR, { recursive: true });
     writeFileSync(passthroughOut, `${JSON.stringify(passthroughSchema, null, 2)}\n`);
     console.log(`wrote ${passthroughOut}`);
   }
+}
+
+// M4: a shared origin key is exactly that - shared. Two components can
+// resolve the SAME origin key (Omit's own excluded-keys argument is not
+// part of the key - see extract.ts's resolvePassthroughOrigin) while
+// genuinely inheriting DIFFERENT prop sets from it. Whichever compiled last
+// used to win silently; this compares the incoming properties against
+// whatever is already committed, and a real mismatch - as opposed to this
+// same component simply recompiling after a source change - fails the
+// build naming every component on record for this file instead of
+// overwriting them. Pure (no I/O) so it is unit-testable without touching
+// the real generated/ directory - compileOne above is the only real caller.
+export function assertNoPassthroughCollision(
+  exportStem: string,
+  originKey: string,
+  passthroughPath: string,
+  existing: { generatedFrom: string[]; properties: unknown } | undefined,
+  freshProperties: unknown,
+): void {
+  if (!existing) return;
+  const otherOwners = existing.generatedFrom.filter((stem) => stem !== exportStem);
+  if (otherOwners.length === 0) return;
+  if (JSON.stringify(existing.properties ?? {}) === JSON.stringify(freshProperties)) return;
+  throw new Error(
+    `${exportStem}: shared passthrough origin "${originKey}" is already committed by ${otherOwners.join(', ')} ` +
+      `with a different inherited-props set - compiling ${exportStem} would silently overwrite ${passthroughPath} ` +
+      `for ${otherOwners.length === 1 ? 'that component' : 'those components'}. If these components genuinely ` +
+      `inherit different props from the same origin, the origin key itself needs to change (see ` +
+      `resolvePassthroughOrigin in extract.ts); if they should match, recompile ${otherOwners.join(', ')} too so ` +
+      `both sides agree`,
+  );
 }
 
 // CLI entry - skipped when the module is imported (e.g. by the conformance

@@ -71,8 +71,24 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
   const extraction = resolveTargetExtraction(directory, exportStem);
   let passthroughDiff: string[] | 'not-applicable' = 'not-applicable';
   if (extraction.passthroughOrigin && extraction.passthroughKind) {
-    const committedPassthrough = readJsonIfExists(join(GENERATED_DIR, `passthrough.${extraction.passthroughOrigin}.json`));
-    const freshPassthrough = buildPassthroughSchema(extraction.passthroughOrigin, extraction.passthroughKind, extraction.inheritedProps);
+    const committedPassthrough = readJsonIfExists(join(GENERATED_DIR, `passthrough.${extraction.passthroughOrigin}.json`)) as
+      | Record<string, unknown>
+      | undefined;
+    // Freshness compares THIS component's own compiled output against what
+    // is committed - multi-owner correctness of generated_from is the write
+    // path's job (compile.ts's compileOne, M4), not this check's; carrying
+    // the committed list forward (falling back to just this component when
+    // nothing is committed yet) keeps a per-component freshness run from
+    // flagging a diff over a fact it has no way to recompute on its own.
+    const generatedFrom = Array.isArray(committedPassthrough?.generated_from)
+      ? (committedPassthrough.generated_from as string[])
+      : [exportStem];
+    const freshPassthrough = buildPassthroughSchema(
+      extraction.passthroughOrigin,
+      extraction.passthroughKind,
+      extraction.inheritedProps,
+      generatedFrom,
+    );
     passthroughDiff = jsonDiff(committedPassthrough, freshPassthrough);
   }
 

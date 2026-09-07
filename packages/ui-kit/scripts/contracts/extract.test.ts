@@ -5,11 +5,13 @@
 // extraction). A fixture that regresses silently is worse than one that
 // fails loudly, so several of these assert on the FAILURE path too
 // (cva-unresolvable), not just the happy path.
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { extractComponent, normalizeTypeText, parseStringLiteralUnion } from './extract';
+import { passthroughTypeId, passthroughTypeIdPattern } from './ids';
 
 const fixturesDir = join(process.cwd(), 'scripts/contracts/__fixtures__');
 const fixture = (name: string) => join(fixturesDir, name);
@@ -194,5 +196,120 @@ describe('parseStringLiteralUnion', () => {
   it('returns undefined for a type that is not a string literal union', () => {
     expect(parseStringLiteralUnion('string')).toBeUndefined();
     expect(parseStringLiteralUnion('"a" | number')).toBeUndefined();
+  });
+});
+
+describe('extractComponent: heritage shapes recognized by resolved symbol, not identifier text (M1)', () => {
+  it('classifies an aliased ComponentProps import the same as the unaliased form', () => {
+    // `import { ComponentProps as ReactComponentProps }` - a text match on
+    // the identifier "ComponentProps" would have missed this entirely.
+    const [card] = extractComponent(fixture('aliased-component-props.fixture.tsx'));
+    expect(card.cannotExtract).toEqual([]);
+    expect(card.passthroughKind).toBe('section');
+    expect(card.passthroughOrigin).toBe('dom_section');
+    expect(card.ownProps.map((p) => p.name)).toContain('heading');
+    expect(card.inheritedProps.map((p) => p.name)).toContain('id');
+  });
+
+  it('does not mistake a locally shadowed "Omit" for the real global utility type', () => {
+    // Omit has no module export to alias via `import ... as ...` - the
+    // failure mode that matters for it is the opposite of ComponentProps's:
+    // a local name collision. The old text match would have unwrapped this
+    // shadow's first "type argument" (ComponentProps<'span'>) and silently
+    // resolved a `span` passthrough kind/origin through a utility type that
+    // is not really Omit<T, K> at all. The real inherited props ARE present
+    // on the checker-resolved type (this shadow really does forward them)
+    // - proving this is a case of "found real props, refused to guess their
+    // origin," not "there was nothing here to find."
+    const [gadget] = extractComponent(fixture('aliased-omit.fixture.tsx'));
+    expect(gadget.passthroughKind).toBeUndefined();
+    expect(gadget.passthroughOrigin).toBeUndefined();
+    expect(gadget.inheritedProps.length).toBeGreaterThan(0);
+    expect(gadget.cannotExtract.length).toBeGreaterThan(0);
+  });
+
+  it('reports a cannotExtract entry for a heritage member wrapped in an unrecognized generic type helper', () => {
+    // `Readonly<ComponentProps<'div'>>` - Readonly IS a real, resolvable
+    // type alias, so the walk unwraps into it, but its underlying shape (a
+    // mapped type) is a node kind neither walk understands. The old code's
+    // catch-all `if (!parts) return;` silently gave up here.
+    const [widget] = extractComponent(fixture('unknown-wrapper.fixture.tsx'));
+    expect(widget.cannotExtract.some((msg) => msg.includes('MappedType'))).toBe(true);
+  });
+});
+
+describe('extractComponent: bare union type in heritage position (N2)', () => {
+  it('reports a cannotExtract entry instead of silently resolving nothing', () => {
+    const [swatch] = extractComponent(fixture('bare-union-heritage.fixture.tsx'));
+    expect(swatch.cannotExtract.some((msg) => msg.includes('UnionType'))).toBe(true);
+  });
+});
+
+describe('extractComponent: dom_ origin token normalized to snake_case (M2)', () => {
+  const PASSTHROUGH_ID_PATTERN = new RegExp(passthroughTypeIdPattern());
+
+  it('replaces a hyphenated custom element tag with underscores in the origin key', () => {
+    const [widget] = extractComponent(fixture('custom-element-origin.fixture.tsx'));
+    expect(widget.passthroughOrigin).toBe('dom_my_custom_element');
+    expect(passthroughTypeId(widget.passthroughOrigin!)).toMatch(PASSTHROUGH_ID_PATTERN);
+  });
+
+  it('every committed generated passthrough file carries an $id matching the grammar', () => {
+    const generatedDir = join(process.cwd(), 'scripts/contracts/generated');
+    const files = readdirSync(generatedDir).filter((name) => name.endsWith('.json'));
+    expect(files.length).toBeGreaterThan(0);
+    for (const name of files) {
+      const schema = JSON.parse(readFileSync(join(generatedDir, name), 'utf8')) as { $id: string };
+      expect(schema.$id, name).toMatch(PASSTHROUGH_ID_PATTERN);
+    }
+  });
+});
+
+describe('extractComponent: duplicate VariantProps axis names (N1)', () => {
+  it('reports a cannotExtract entry naming both sources instead of silently overwriting the axis', () => {
+    const [duplicate] = extractComponent(fixture('duplicate-axis.fixture.tsx'));
+    const conflict = duplicate.cannotExtract.find((msg) => msg.includes('axis "size"'));
+    expect(conflict).toBeDefined();
+    expect(conflict).toContain('sizeVariants');
+    expect(conflict).toContain('otherSizeVariants');
+    // The first-seen heritage entry's values are kept, not overwritten.
+    expect(duplicate.axes.size).toEqual(['sm', 'lg']);
+  });
+});
+
+describe('extractComponent: synthetic property symbol with no declaration (N4)', () => {
+  const [widget] = extractComponent(fixture('synthetic-property.fixture.tsx'));
+
+  it('reports a cannotExtract entry for each undeclared synthetic prop', () => {
+    expect(widget.cannotExtract.some((msg) => msg.includes('"a"'))).toBe(true);
+    expect(widget.cannotExtract.some((msg) => msg.includes('"b"'))).toBe(true);
+  });
+
+  it('never emits declarationFile: "unknown" as ordinary prop data', () => {
+    const allProps = [...widget.ownProps, ...widget.inheritedProps];
+    expect(allProps.some((p) => p.declarationFile === 'unknown')).toBe(false);
+  });
+
+  it('still classifies the real own prop correctly', () => {
+    expect(widget.ownProps.map((p) => p.name)).toContain('own');
+  });
+});
+
+describe('extractComponent: forwardRef/memo-wrapped components (M8)', () => {
+  it('recognizes a memo(...)-wrapped export as component-shaped', () => {
+    const extractions = extractComponent(fixture('memo-component.fixture.tsx'));
+    const ping = extractions.find((e) => e.name === 'Ping');
+    expect(ping).toBeDefined();
+    expect(ping?.ownProps.map((p) => p.name)).toEqual(['label']);
+  });
+});
+
+describe('extractComponent: own/inherited props sorted by name (N3)', () => {
+  it('returns ownProps and inheritedProps in ascending name order', () => {
+    const [button] = extractComponent(join(process.cwd(), 'src/components/button/button.tsx'));
+    const ownNames = button.ownProps.map((p) => p.name);
+    const inheritedNames = button.inheritedProps.map((p) => p.name);
+    expect(ownNames).toEqual([...ownNames].sort());
+    expect(inheritedNames).toEqual([...inheritedNames].sort());
   });
 });
