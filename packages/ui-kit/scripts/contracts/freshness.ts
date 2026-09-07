@@ -57,7 +57,10 @@ function readJsonIfExists(path: string): unknown {
 // component's part (accordion, 'accordion-item') passes both explicitly, see
 // testing.ts's assertContractFreshness and button/accordion's own
 // *.contract.test.ts.
+// @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-freshness:p1
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1
 export function checkComponentFreshness(directory: string, exportStem: string = directory): FreshnessReport {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-artifacts
   const dir = join(kitRoot, 'src', 'components', directory);
   const committedContract = readJsonIfExists(join(dir, `${exportStem}.contract.json`));
   const committedInstance = readJsonIfExists(join(dir, `${exportStem}.contract.instance.json`));
@@ -66,10 +69,14 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
 
   const contractDiff = jsonDiff(committedContract, freshContract);
   const instanceDiff = jsonDiff(committedInstance, freshInstance);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-artifacts
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-base
   const baseSchemaDiff = jsonDiff(loadBaseSchema(), buildBaseSchema());
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-base
 
   const extraction = resolveTargetExtraction(directory, exportStem);
   let passthroughDiff: string[] | 'not-applicable' = 'not-applicable';
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-passthrough
   if (extraction.passthroughOrigin && extraction.passthroughKind) {
     const committedPassthrough = readJsonIfExists(join(GENERATED_DIR, `passthrough.${extraction.passthroughOrigin}.json`)) as
       | Record<string, unknown>
@@ -80,6 +87,7 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
     // the committed list forward (falling back to just this component when
     // nothing is committed yet) keeps a per-component freshness run from
     // flagging a diff over a fact it has no way to recompute on its own.
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-passthrough-compare
     const generatedFrom = Array.isArray(committedPassthrough?.generated_from)
       ? (committedPassthrough.generated_from as string[])
       : [exportStem];
@@ -90,8 +98,11 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
       generatedFrom,
     );
     passthroughDiff = jsonDiff(committedPassthrough, freshPassthrough);
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-passthrough-compare
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-passthrough
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-slots
   const slotSchemaMismatches: string[] = [];
   for (const [name, prop] of Object.entries(freshContract.properties)) {
     const isSlotShaped = prop.type === undefined && prop.enum === undefined;
@@ -102,7 +113,9 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
       slotSchemaMismatches.push(`"${name}" has an x-uikit.slots entry but is typed or enumerated in properties`);
     }
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-slots
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-return
   const fresh =
     contractDiff.length === 0 &&
     instanceDiff.length === 0 &&
@@ -111,4 +124,5 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
     baseSchemaDiff.length === 0;
 
   return { component: exportStem, contractDiff, instanceDiff, passthroughDiff, slotSchemaMismatches, baseSchemaDiff, fresh };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-return
 }

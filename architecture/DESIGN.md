@@ -228,7 +228,7 @@ The template-manifest half of total classification remains review-held because t
 
 Every FrontX-owned layer member owns a local artifact chain: PRD, DESIGN and at least one FEATURE. A missing chain must be recorded as path-scoped architecture debt with a removal criterion.
 
-The current `ui-kit` ignore is accepted only as recorded debt. It is not proof that `ui-kit` has a complete artifact chain.
+Every FrontX-owned member now owns its chain: the last path-scoped exemption, `ui-kit`'s, was lifted when that package registered as its own child system with a PRD, a DESIGN and a FEATURE. No member is currently carried as recorded debt.
 
 #### LAYER-3 - Root-to-member citation direction
 
@@ -417,7 +417,7 @@ Root capacity is expressed as an absence of structural caps. Concrete runtime or
 | `@gears-frontx/gts-plugin` | Published libraries | [packages/gts-plugin/architecture/DESIGN.md](../packages/gts-plugin/architecture/DESIGN.md) |
 | `@gears-frontx/api` | Published libraries | [packages/api/architecture/DESIGN.md](../packages/api/architecture/DESIGN.md) |
 | `@gears-frontx/telemetry` | Published libraries | [packages/telemetry/architecture/DESIGN.md](../packages/telemetry/architecture/DESIGN.md) |
-| `@gears-frontx/ui-kit` | Published libraries | Artifact chain pending; registry ignore records debt. |
+| `@gears-frontx/ui-kit` | Published libraries | [packages/ui-kit/architecture/DESIGN.md](../packages/ui-kit/architecture/DESIGN.md) |
 | `@gears-frontx/cli` | Projects orchestration | [packages/cli/architecture/DESIGN.md](../packages/cli/architecture/DESIGN.md) |
 | `cyber-pilot-kit-frontx` | Projects orchestration | [packages/cyber-pilot-kit-frontx/architecture/DESIGN.md](../packages/cyber-pilot-kit-frontx/architecture/DESIGN.md) |
 

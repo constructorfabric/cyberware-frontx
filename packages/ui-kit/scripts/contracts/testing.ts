@@ -17,8 +17,11 @@ import { checkComponentFreshness } from './freshness';
 // (assertContractFreshness('button')); a compound component's part passes
 // both (assertContractFreshness('accordion', 'accordion-item')) - see
 // accordion.contract.test.ts.
+// @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-conformance:p1
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1
 export function assertContractFreshness(directory: string, exportStem: string = directory): void {
   describe(`${exportStem} contract freshness`, () => {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-freshness
     it('committed contract.json, contract.instance.json and generated passthrough match a fresh compile', () => {
       const report = checkComponentFreshness(directory, exportStem);
       expect(report.contractDiff, `${exportStem}.contract.json is stale:\n${report.contractDiff.join('\n')}`).toEqual([]);
@@ -30,16 +33,21 @@ export function assertContractFreshness(directory: string, exportStem: string = 
         expect(report.passthroughDiff, `generated passthrough is stale:\n${report.passthroughDiff.join('\n')}`).toEqual([]);
       }
     });
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-freshness
 
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-slots
     it('every annotation-only slot property has a matching x-uikit.slots entry', () => {
       const report = checkComponentFreshness(directory, exportStem);
       expect(report.slotSchemaMismatches).toEqual([]);
     });
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-slots
 
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-base
     it("committed base.component.json equals a fresh build (buildBaseSchema)", () => {
       const report = checkComponentFreshness(directory, exportStem);
       expect(report.baseSchemaDiff, `base.component.json is stale:\n${report.baseSchemaDiff.join('\n')}`).toEqual([]);
     });
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-base
   });
 }
 
@@ -80,8 +88,10 @@ const bareId = (id: string): string => id.replace(/^gts:\/\//, '');
 // the passthrough type nor any other component's contract is ever consulted
 // for trait validation.
 export function validateContractTraits(contract: CompiledContract): ValidationResult & { entity_type: string } {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-traits
   const gts = new GTS();
   gts.register(JSON.parse(JSON.stringify(loadBaseSchema())) as Record<string, unknown>);
   gts.register(JSON.parse(JSON.stringify(contract)) as Record<string, unknown>);
   return gts.validateEntity(bareId(contract.$id));
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-traits
 }

@@ -262,6 +262,7 @@ function extractVariants(
   const defaultSourceLabel: Record<string, string> = {};
 
   for (const entityName of variantSources) {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
     const label = lastEntityName(entityName);
     const symbol = checker.getSymbolAtLocation(entityName);
     const call = symbol ? traceSymbolToCvaCall(symbol, checker, new Set(), 0) : undefined;
@@ -288,13 +289,17 @@ function extractVariants(
             cannotExtract.push(`axis "${axis.name}": value map is not an object literal`);
             continue;
           }
+          // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axis-conflict
           if (axis.name in axes) {
+            // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axis-conflict-note
             cannotExtract.push(
               `cva: axis "${axis.name}" is declared by both "${axisSourceLabel[axis.name]}" and "${label}" - ` +
                 `duplicate VariantProps heritage entries would otherwise silently overwrite one axis with the other`,
             );
+            // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axis-conflict-note
             continue;
           }
+          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axis-conflict
           axes[axis.name] = literalKeys(axis.initializer, `axis "${axis.name}"`, cannotExtract).map((v) => v.name);
           axisSourceLabel[axis.name] = label;
         }
@@ -305,18 +310,23 @@ function extractVariants(
             cannotExtract.push(`default for "${def.name}" is not a string literal`);
             continue;
           }
+          // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-default-conflict
           if (def.name in defaults) {
+            // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-default-conflict-note
             cannotExtract.push(
               `cva: default "${def.name}" is declared by both "${defaultSourceLabel[def.name]}" and "${label}" - ` +
                 `duplicate VariantProps heritage entries would otherwise silently overwrite one default with the other`,
             );
+            // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-default-conflict-note
             continue;
           }
+          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-default-conflict
           defaults[def.name] = def.initializer.text;
           defaultSourceLabel[def.name] = label;
         }
       }
     }
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
   }
 
   return { axes, defaults };
@@ -370,6 +380,7 @@ function declaredUnder(declarations: readonly ts.Declaration[], pattern: RegExp)
 }
 
 function classifyHeritageReference(location: ts.Node, checker: ts.TypeChecker): HeritageShape | undefined {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   const symbol = checker.getSymbolAtLocation(location);
   if (!symbol) return undefined;
   const resolved = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
@@ -392,6 +403,7 @@ function classifyHeritageReference(location: ts.Node, checker: ts.TypeChecker): 
     return { kind: 'base-ui-component-props' };
   }
   return undefined;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
 }
 
 // Walks a props type's composition graph - Omit/Pick, intersections, and
@@ -425,6 +437,7 @@ function walkPropsType(
   if (ts.isTypeLiteralNode(node)) return;
 
   const parts = typeRefParts(node);
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
   if (!parts) {
     // A node kind this walk does not understand at all - a bare union, a
     // mapped type, a conditional type - in heritage position. The old walk
@@ -438,6 +451,7 @@ function walkPropsType(
     );
     return;
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
   const { args, location } = parts;
   const shape = classifyHeritageReference(location, checker);
 
@@ -677,6 +691,7 @@ export function resolvePassthroughOrigin(
   kitRoot: string,
   cannotExtract: string[],
 ): string | undefined {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
   for (const member of resolveTopLevelMembers(node, checker, new Set(), 0, cannotExtract)) {
     const parts = typeRefParts(member);
     if (!parts) continue;
@@ -687,6 +702,7 @@ export function resolvePassthroughOrigin(
     if (origin) return origin;
   }
   return undefined;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
 }
 
 function jsDocDefault(symbol: ts.Symbol): string | undefined {
@@ -812,7 +828,10 @@ function loadCompilerOptions(): ts.CompilerOptions {
   return cachedCompilerOptions;
 }
 
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1
+// @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-extraction:p1
 export function extractComponent(tsxPath: string): ComponentExtraction[] {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-program
   const options = loadCompilerOptions();
   const program = ts.createProgram({ rootNames: [tsxPath], options });
   const checker = program.getTypeChecker();
@@ -820,6 +839,7 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
   if (!source) {
     throw new Error(`extract: ${tsxPath} was not found by the TypeScript program`);
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-program
 
   const extractions: ComponentExtraction[] = [];
 
@@ -832,10 +852,12 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
     }
 
     for (const candidate of candidates) {
+      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
       if (!isReactComponentCandidate(candidate, checker)) continue;
       const body = functionBody(candidate, checker);
       if (!body || !containsJsx(body)) continue;
       const name = ts.isFunctionDeclaration(candidate) ? candidate.name!.text : (candidate.name as ts.Identifier).text;
+      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
 
       const cannotExtract: string[] = [];
       const param = firstParameter(candidate, checker);
@@ -882,6 +904,7 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
             cannotExtract.push(`prop "${propName}": no declaration found (a synthetic/computed property symbol) - cannot extract`);
             continue;
           }
+          // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-props
           const ownDeclaration = declarations.find((d) => d.getSourceFile().fileName === source.fileName);
           const declaration = ownDeclaration ?? declarations[0];
           const propType = checker.getTypeOfSymbolAtLocation(prop, param);
@@ -901,6 +924,7 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
           } else {
             inheritedProps.push(extracted);
           }
+          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-props
         }
       }
 
@@ -914,6 +938,7 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
       // exactly the machine-independence the rest of this file (absolute
       // path stripping, import(...) path normalization) already goes out of
       // its way to guarantee.
+      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-return
       const byName = (a: ExtractedProp, b: ExtractedProp): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
       ownProps.sort(byName);
       inheritedProps.sort(byName);
@@ -930,6 +955,7 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
         variantSourceLabels,
         cannotExtract,
       });
+      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-return
     }
   }
 

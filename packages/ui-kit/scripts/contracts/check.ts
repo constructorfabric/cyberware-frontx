@@ -165,10 +165,12 @@ function gitUntrackedFiles(): string[] {
 // untracked) - a guard that only looked at commits would let an uncommitted
 // contract edit through un-checked.
 function changedFilesSince(base: string): string[] {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
   const committed = gitDiffNameOnly([`${base}...HEAD`]);
   const workingTree = gitDiffNameOnly(['HEAD']);
   const untracked = gitUntrackedFiles();
   return [...new Set([...committed, ...workingTree, ...untracked])];
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
 }
 
 // The passthrough origin a contract's own allOf carries, read off its
@@ -202,12 +204,14 @@ function listContractUnits(): ContractUnit[] {
   return units;
 }
 
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1
 function checkCompatForUnit(
   unit: ContractUnit,
   base: string,
   renames: Map<string, string>,
   baseContracts: BaseRefContractEntry[],
 ): CompatVerdict & { component: string; isNew: boolean } {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-read
   const { directory, stem: component } = unit;
   const relPath = `src/components/${directory}/${component}.contract.json`;
   const newRaw = readFileSync(join(kitRoot, relPath), 'utf8');
@@ -220,8 +224,11 @@ function checkCompatForUnit(
   // the rename. resolveRenameSource escalates through git's own rename
   // detection, then an $id match, then a stem match before giving up.
   let oldRaw = gitShow(base, relPath);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-read
   let renamedFromNote = '';
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename
   if (oldRaw === undefined) {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
     const sourcePath = resolveRenameSource({
       currentPath: relPath,
       currentId: newContract.$id,
@@ -233,10 +240,16 @@ function checkCompatForUnit(
       oldRaw = gitShow(base, sourcePath);
       renamedFromNote = ` (renamed from ${sourcePath})`;
     }
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-new
   if (oldRaw === undefined) {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-new-return
     return { component, isNew: true, status: 'pass', notes: [`${component}: new contract (absent at ${base})`] };
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-new-return
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-new
 
   const oldContract = JSON.parse(oldRaw) as CompiledContract;
   const oldMajor = extractContractMajor(oldContract.$id);
@@ -247,6 +260,7 @@ function checkCompatForUnit(
   // component's run must never leak in.
   const gts = new GTS();
   gts.register(loadBaseSchema());
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough
   const origin = passthroughOriginFromContract(newContract);
   let passthroughDiff: ReturnType<typeof diffPassthroughSchema> | undefined;
   if (origin) {
@@ -260,6 +274,7 @@ function checkCompatForUnit(
       }
     }
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough
 
   // gts-ts's checkCompatibility (GtsCompatibility.checkCompatibility) never
   // resolves allOf/$ref - it diffs the two schemas' OWN properties/required
@@ -268,11 +283,13 @@ function checkCompatForUnit(
   // share the same real $id (same component, same major), so both are
   // registered under synthetic minor-versioned ids to avoid one silently
   // overwriting the other in the store.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
   const oldSynthetic = { ...oldContract, $id: synthesizeVersionedId(oldContract.$id, 0) };
   const newSynthetic = { ...newContract, $id: synthesizeVersionedId(newContract.$id, 1) };
   gts.register(oldSynthetic);
   gts.register(newSynthetic);
   const result = gts.checkCompatibility(bareId(oldSynthetic.$id), bareId(newSynthetic.$id), 'backward');
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
 
   // gts-ts's own backward check misses a newly required own prop and a
   // vanished own prop that was never required (a rename looks exactly like
@@ -282,6 +299,7 @@ function checkCompatForUnit(
   // assumed from reading it.
   const ownPropsDiff = diffOwnPropsSchema(oldContract, newContract);
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-decide
   const verdict = decideCompat({
     component,
     oldMajor,
@@ -292,6 +310,7 @@ function checkCompatForUnit(
     ownPropsDiff,
   });
   return { component, isNew: false, status: verdict.status, notes: verdict.notes.map((note) => `${note}${renamedFromNote}`) };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-decide
 }
 
 function runCompat(base: string, options: { json: boolean }): void {
@@ -317,7 +336,9 @@ function runCompat(base: string, options: { json: boolean }): void {
       console.log(`[${label}] ${result.notes.join(' ')}`);
     }
   }
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-compat-exit
   if (failed) process.exit(1);
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-compat-exit
 }
 
 // Whether a covered component's committed artifacts are exactly a fresh
@@ -336,9 +357,11 @@ function componentExportCoverage(directory: string): DirectoryExportCoverage {
   // A directory whose main file the extractor cannot resolve (wrong name, no
   // component-shaped export) reports 0 total exports rather than crashing a
   // report that is never supposed to fail the build.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-uncovered
   const componentNames = tryExtractComponentNames(directory);
   const skippedNonComponents = tryListExportedDeclarationNames(directory).filter((name) => !componentNames.includes(name));
   return { directory, totalExports: componentNames.length, coveredExports: overlayStems(directory).length, skippedNonComponents };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-uncovered
 }
 
 function tryExtractComponentNames(directory: string): string[] {
@@ -365,14 +388,20 @@ function runGuard(base: string, options: { json: boolean }): void {
   // component's compiled output without touching that component's own
   // directory at all (M6) - re-evaluate every covered entry, not just the
   // directories the diff happens to name.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-scope
   const toolingChanged = touchesSharedContractTooling(changedFiles);
   const touched = toolingChanged ? new Set([...touchedDirectly, ...covered]) : touchedDirectly;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-scope
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-empty
   if (touched.size === 0) {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-empty-return
     if (options.json) console.log(JSON.stringify({ command: 'guard', base, violated: false, toolingChanged, results: [] }));
     else console.log('guard: no component files changed - nothing to check.');
     return;
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-empty-return
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-empty
   if (toolingChanged && !options.json) {
     console.log('guard: shared contract tooling changed - re-checking every covered component for freshness.');
   }
@@ -380,6 +409,7 @@ function runGuard(base: string, options: { json: boolean }): void {
   const coveredSet = new Set(covered);
   let violated = false;
   const results: GuardResult[] = [];
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-each
   for (const component of [...touched].sort()) {
     // A deleted directory must never crash an unguarded readdirSync (M10):
     // check existence once, up front, and route through evaluateGuard's
@@ -407,7 +437,9 @@ function runGuard(base: string, options: { json: boolean }): void {
     results.push(result);
     if (result.status === 'covered-violation' || result.status === 'component-removed') violated = true;
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-each
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-return
   if (options.json) {
     console.log(JSON.stringify({ command: 'guard', base, violated, toolingChanged, results }));
   } else {
@@ -421,9 +453,14 @@ function runGuard(base: string, options: { json: boolean }): void {
       console.log(`[${label}] ${result.message}`);
     }
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-return
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-guard-exit
   if (violated) process.exit(1);
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-guard-exit
 }
 
+// @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-coverage-report:p1
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2
 function runCoverage(options: { json: boolean }): void {
   const all = listComponentDirs();
   const covered = loadCovered();
@@ -436,11 +473,13 @@ function runCoverage(options: { json: boolean }): void {
   const byDirectory = new Map(all.map((directory) => [directory, componentExportCoverage(directory)]));
   const uncovered = report.uncovered.map((component) => byDirectory.get(component) ?? { directory: component, totalExports: 0, coveredExports: 0, skippedNonComponents: [] });
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-return
   if (options.json) {
     console.log(JSON.stringify({ command: 'coverage', total: report.total, coveredCount: report.coveredCount, uncovered }));
     return;
   }
 
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-coverage-exit
   console.log(`${report.coveredCount} of ${report.total} components covered by contracts.`);
   if (uncovered.length === 0) return;
   console.log('Not yet in covered.json (n of m exports already have a contract):');
@@ -448,15 +487,21 @@ function runCoverage(options: { json: boolean }): void {
     const skippedNote = coverage.skippedNonComponents.length > 0 ? ` (skipped, not components: ${coverage.skippedNonComponents.join(', ')})` : '';
     console.log(`  - ${coverage.directory}: ${coverage.coveredExports} of ${coverage.totalExports} exports${skippedNote}`);
   }
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-coverage-exit
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-return
 }
 
 function parseBaseArg(args: string[]): string {
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-usage
   const index = args.indexOf('--base');
   const value = index === -1 ? undefined : args[index + 1];
   if (!value) {
+    // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-usage-exit
     console.error('Usage: contracts:check <compat|guard> --base <git-ref> [--json]');
     process.exit(1);
+    // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-usage-exit
   }
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-usage
   return value;
 }
 
@@ -474,21 +519,34 @@ function invokedDirectly(): boolean {
   return import.meta.url === pathToFileURL(entry).href;
 }
 
+// @cpt-flow:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1
 if (invokedDirectly()) {
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-invoke-check
   const [command, ...rest] = process.argv.slice(2);
   const json = parseJsonFlag(rest);
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-invoke-check
   switch (command) {
+    // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-dispatch-compat
     case 'compat':
       runCompat(parseBaseArg(rest), { json });
       break;
+    // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-dispatch-compat
+    // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-dispatch-guard
     case 'guard':
       runGuard(parseBaseArg(rest), { json });
       break;
+    // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-dispatch-guard
+    // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-dispatch-coverage
     case 'coverage':
       runCoverage({ json });
       break;
+    // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-dispatch-coverage
+    // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-unknown-subcommand
     default:
+      // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-unknown-subcommand-exit
       console.error('Usage: contracts:check <compat --base <git-ref> | guard --base <git-ref> | coverage> [--json]');
       process.exit(1);
+      // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-unknown-subcommand-exit
+    // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-unknown-subcommand
   }
 }

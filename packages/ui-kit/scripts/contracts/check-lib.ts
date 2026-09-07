@@ -67,6 +67,7 @@ export interface PassthroughDiff {
 }
 
 export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchema: PassthroughSchemaLike): PassthroughDiff {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
   const oldProps = oldSchema.properties ?? {};
   const newProps = newSchema.properties ?? {};
   const added = Object.keys(newProps).filter((name) => !(name in oldProps));
@@ -91,6 +92,7 @@ export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchem
   }
 
   return { added, removed, narrowed, compatible: removed.length === 0 && narrowed.length === 0 };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
 }
 
 // gts-ts's own `checkCompatibility(..., 'backward')` diffs a component's OWN
@@ -120,6 +122,7 @@ export interface OwnPropsDiff {
 }
 
 export function diffOwnPropsSchema(oldSchema: OwnPropsSchemaLike, newSchema: OwnPropsSchemaLike): OwnPropsDiff {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
   const oldProps = oldSchema.properties ?? {};
   const newProps = newSchema.properties ?? {};
   const oldRequired = new Set(oldSchema.required ?? []);
@@ -129,6 +132,7 @@ export function diffOwnPropsSchema(oldSchema: OwnPropsSchemaLike, newSchema: Own
   const newlyRequiredProps = [...newRequired].filter((name) => !oldRequired.has(name));
 
   return { removedProps, newlyRequiredProps, compatible: removedProps.length === 0 && newlyRequiredProps.length === 0 };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
 }
 
 export interface CompatDecisionInput {
@@ -153,15 +157,23 @@ export interface CompatVerdict {
 // acknowledgement that consumers built against the old major are expected to
 // break. An unchanged major carrying an incompatible change would ship a
 // props schema that silently rejects code that used to validate.
+// @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-compatibility:p1
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1
 export function decideCompat(input: CompatDecisionInput): CompatVerdict {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-combine
   const { component, oldMajor, newMajor, gtsBackwardCompatible, gtsBackwardErrors, passthroughDiff, ownPropsDiff } = input;
   const passthroughIncompatible = passthroughDiff !== undefined && !passthroughDiff.compatible;
   const ownPropsIncompatible = ownPropsDiff !== undefined && !ownPropsDiff.compatible;
   const incompatible = !gtsBackwardCompatible || passthroughIncompatible || ownPropsIncompatible;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-combine
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass
   if (!incompatible) {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass-return
     return { status: 'pass', notes: [`${component}: backward compatible`] };
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass-return
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass
 
   const reasons = [
     ...gtsBackwardErrors,
@@ -171,17 +183,23 @@ export function decideCompat(input: CompatDecisionInput): CompatVerdict {
     ...(passthroughDiff?.narrowed.map((entry) => `passthrough: prop "${entry.prop}" ${entry.reason}`) ?? []),
   ];
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-major
   if (newMajor > oldMajor) {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-major-return
     return {
       status: 'pass',
       notes: [`${component}: backward-incompatible, but the contract major moved v${oldMajor} -> v${newMajor}: ${reasons.join('; ')}`],
     };
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-major-return
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-major
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-fail
   return {
     status: 'fail',
     notes: [`${component}: backward-incompatible at contract major v${oldMajor} (unchanged) - ${reasons.join('; ')}`],
   };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-fail
 }
 
 // Extracts the major version off the LAST segment of a component contract's
@@ -220,12 +238,14 @@ export function synthesizeVersionedId(id: string, minor: number): string {
 // DIFFERENT question, answered by touchesSharedContractTooling below, not by
 // widening this regex.
 export function mapChangedFilesToComponents(changedFiles: string[]): Set<string> {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-map
   const components = new Set<string>();
   for (const file of changedFiles) {
     const match = /^src\/components\/([a-z][a-z0-9-]*)\//.exec(file);
     if (match) components.add(match[1]);
   }
   return components;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-map
 }
 
 const CONTRACTS_TOOLING_PREFIX = 'scripts/contracts/';
@@ -252,6 +272,7 @@ const NON_TOOLING_CONTRACTS_FILES = new Set(['check.ts', 'check-lib.ts', 'check-
 // component's compiled contract without touching that component's own
 // files at all.
 export function touchesSharedContractTooling(changedFiles: string[]): boolean {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
   return changedFiles.some((file) => {
     if (!file.startsWith(CONTRACTS_TOOLING_PREFIX)) return false;
     const rest = file.slice(CONTRACTS_TOOLING_PREFIX.length);
@@ -259,6 +280,7 @@ export function touchesSharedContractTooling(changedFiles: string[]): boolean {
     if (rest.endsWith('.test.ts')) return false;
     return !NON_TOOLING_CONTRACTS_FILES.has(rest);
   });
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
 }
 
 // A base-ref contract file `resolveRenameSource` can compare a "not found at
@@ -326,12 +348,15 @@ export interface GuardResult {
 // Once a component IS in covered.json, the guard holds it to what T4
 // promises for Button: an overlay must exist, and the committed artifacts
 // must be exactly what a fresh compile produces.
+// @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-guard-scope:p1
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-guard:p1
 export function evaluateGuard(input: GuardEvaluationInput): GuardResult {
   const { component, covered, overlayExists, artifactsFresh, componentExists = true } = input;
   // A deleted directory is a designed outcome (M10), not a crash: only a
   // problem when covered.json still names a component that no longer
   // exists - an untouched-by-coverage deletion is exactly as uninteresting
   // as any other uncovered change.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-removed
   if (!componentExists) {
     return covered
       ? {
@@ -341,6 +366,8 @@ export function evaluateGuard(input: GuardEvaluationInput): GuardResult {
         }
       : { component, status: 'uncovered-info', message: `${component}: directory removed - nothing to check` };
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-removed
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-uncovered
   if (!covered) {
     return {
       component,
@@ -348,6 +375,8 @@ export function evaluateGuard(input: GuardEvaluationInput): GuardResult {
       message: `${component}: touched, not in covered.json - no contract required yet`,
     };
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-uncovered
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
   if (!overlayExists) {
     return {
       component,
@@ -363,6 +392,7 @@ export function evaluateGuard(input: GuardEvaluationInput): GuardResult {
     };
   }
   return { component, status: 'covered-ok', message: `${component}: covered and fresh` };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
 }
 
 export interface CoverageReport {
@@ -372,9 +402,11 @@ export interface CoverageReport {
 }
 
 export function buildCoverageReport(allComponents: string[], covered: string[]): CoverageReport {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
   const coveredSet = new Set(covered);
   const uncovered = allComponents.filter((component) => !coveredSet.has(component)).sort();
   return { total: allComponents.length, coveredCount: covered.length, uncovered };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
 }
 
 export interface DirectoryExportCoverage {

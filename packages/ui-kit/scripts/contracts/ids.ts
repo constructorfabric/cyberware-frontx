@@ -50,26 +50,36 @@ export const BASE_TYPE_ID = `gts://gts.${VENDOR_PACKAGE}.base.component.v1~`;
 // function, not a constant, because the id has to be parameterized the same
 // way the generated file name is.
 export function passthroughTypeId(originKey: string): string {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-passthrough
   return `gts://gts.${VENDOR_PACKAGE}.passthrough.${originKey}.v1~`;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-passthrough
 }
 
 // GTS tokens are snake_case; kit directories are kebab-case
 // (navigation-menu -> navigation_menu).
 export function gtsToken(component: string): string {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-token
   return component.replace(/-/g, '_');
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-token
 }
 
 // A component's props schema id: the base type, then this component's own
 // derived segment at the given contract major.
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2
+// @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-identifiers:p2
 export function propsSchemaId(component: string, major: number): string {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-props-schema
   return `${BASE_TYPE_ID}${VENDOR_PACKAGE}.component.${gtsToken(component)}.v${major}~`;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-props-schema
 }
 
 // A component's contract instance id: the metamodel type, then the same
 // component segment - without the trailing `~` a TYPE id carries but an
 // INSTANCE id does not.
 export function instanceId(component: string, major: number): string {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-instance
   return `${METAMODEL_TYPE_ID}~${VENDOR_PACKAGE}.component.${gtsToken(component)}.v${major}`;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-instance
 }
 
 // Escapes every character special in a RegExp source, so a literal id
@@ -93,6 +103,7 @@ function componentSegmentPattern(captureName = false): string {
 
 // Grammar of a GTS component type reference - dont_use_when.instead, and
 // the conformance test's own check that an id it wrote is grammatical.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-patterns
 export function componentTypeRefPattern(captureName = false): string {
   return `^gts\\.${componentSegmentPattern(captureName)}~$`;
 }
@@ -123,3 +134,4 @@ export function propsSchemaIdPattern(): string {
 export function passthroughTypeIdPattern(): string {
   return `^gts://gts\\.${escapeRegExp(VENDOR_PACKAGE)}\\.passthrough\\.[a-z_][a-z0-9_]*\\.v\\d+~$`;
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-patterns

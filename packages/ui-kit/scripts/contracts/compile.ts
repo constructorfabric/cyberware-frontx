@@ -380,18 +380,21 @@ function classifyProviderSafeType(typeText: string): ContractProperty | undefine
 // to the properties it backs makes the write path (compileOne below) able
 // to compare "what's here now" against "who put it here" instead of
 // guessing, and gives a reviewer reading the diff the same answer.
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1
 export function buildPassthroughSchema(
   originKey: string,
   domTag: string,
   inheritedProps: ExtractedProp[],
   generatedFrom: string[],
 ): Record<string, unknown> {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
   const properties: Record<string, ContractProperty> = {};
   for (const prop of inheritedProps) {
     if (prop.name === 'key' || prop.name === 'ref') continue;
     if (prop.name.startsWith('aria-') || prop.name.startsWith('data-')) continue;
     properties[prop.name] = classifyProviderSafeType(prop.typeText) ?? {};
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
 
   return {
     $id: passthroughTypeId(originKey),
@@ -399,12 +402,14 @@ export function buildPassthroughSchema(
     title: `UiKit ${originKey} passthrough`,
     description: `The props a kit component forwards to an underlying <${domTag}> element (directly or through Base UI), generated from this component's inherited (non-own) props. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. Keyed by the ORIGIN of the inherited props (a Base UI primitive part, or a plain DOM element type) rather than the DOM tag alone, so two components forwarding to the same tag through unrelated type surfaces never collide; two components genuinely wrapping the same origin share this file by construction. Regenerate with \`npm run contracts:compile -- <directory>\`; a stale copy fails the freshness check.`,
     type: 'object',
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
     // Every component stem that has ever compiled into this shared file, so
     // a mismatched recompile can name who else is on the hook before
     // silently overwriting their facts (see compileOne's write path).
     // Not consumed by Ajv/GTS - annotation only, same standing as $comment.
     generated_from: [...generatedFrom].sort(),
     properties,
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-patterns
     patternProperties: {
       '^aria-': {
         description:
@@ -415,8 +420,10 @@ export function buildPassthroughSchema(
           'Any data attribute passes: they are open by construction, and consumers add their own (data-testid being the common one).',
       },
     },
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-patterns
     $comment:
       'Intentionally NOT closed (no unevaluatedProperties/additionalProperties): this is one of several in-place applicators a component composes, so it cannot know what the others contribute. Closure happens once, in the derived component type.',
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
   };
 }
 
@@ -734,6 +741,7 @@ export function buildMetamodel(): Record<string, unknown> {
 // inlining exists only for the copy buildGtsTraitsSchema below feeds to
 // gts-ts.
 function inlineLocalRefs(node: unknown, defs: Record<string, unknown>): unknown {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-inline
   if (Array.isArray(node)) return node.map((item) => inlineLocalRefs(item, defs));
   if (node !== null && typeof node === 'object') {
     const obj = node as Record<string, unknown>;
@@ -746,6 +754,7 @@ function inlineLocalRefs(node: unknown, defs: Record<string, unknown>): unknown 
     return out;
   }
   return node;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-inline
 }
 
 // `family` and `extension_points` are optional in the overlay - most
@@ -764,9 +773,11 @@ function inlineLocalRefs(node: unknown, defs: Record<string, unknown>): unknown 
 // `null` instance, so `family`'s `if`/`then` and `extension_points`'
 // `minItems: 1` still apply exactly as authored to real object/array data.
 function nullableTraitProperty(schema: Record<string, unknown>): Record<string, unknown> {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-nullable
   const type = schema.type;
   const nullableType = Array.isArray(type) ? [...type, 'null'] : [type, 'null'];
   return { ...schema, type: nullableType, default: null };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-nullable
 }
 
 // The trait half of the metamodel: the SAME field definitions buildMetamodel
@@ -783,12 +794,16 @@ function nullableTraitProperty(schema: Record<string, unknown>): Record<string, 
 // resolves. base.component.json's x-gts-traits-schema is a generated copy of
 // this function's output - see button.contract.test.ts's freshness
 // assertion, the same pattern ui-component.meta.json uses for buildMetamodel.
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2
+// @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-trait-schema:p1
 export function buildGtsTraitsSchema(): Record<string, unknown> {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-fields
   const metamodel = buildMetamodel();
   const defs = metamodel.$defs as Record<string, unknown>;
   const metamodelProperties = metamodel.properties as Record<string, Record<string, unknown>>;
   const metamodelRequired = new Set(metamodel.required as string[]);
   const traitFields = fieldsTargeting('x-gts-traits');
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-fields
 
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
@@ -802,6 +817,7 @@ export function buildGtsTraitsSchema(): Record<string, unknown> {
     }
   }
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-return
   return {
     type: 'object',
     description:
@@ -814,6 +830,7 @@ export function buildGtsTraitsSchema(): Record<string, unknown> {
     required,
     additionalProperties: false,
   };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-return
 }
 
 // base.component.json's full content: the abstract structural anchor
@@ -915,26 +932,42 @@ export function assertValidatesAgainst(component: string, what: string, schema: 
 // a compile error whether it came from disk or a test fixture, and testing
 // it this way keeps the fixture next to the assertion instead of in a
 // directory a reviewer has to go find.
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1
+// @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-overlay-admission:p1
 export function parseOverlay(component: string, raw: unknown): Overlay {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-machine-owned
   if (raw !== null && typeof raw === 'object') {
     const shadowed = MACHINE_OWNED.filter((key) => key in raw);
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-machine-owned-refuse
     if (shadowed.length > 0) {
       throw new Error(`${component}: overlay restates machine-owned field(s): ${shadowed.join(', ')}`);
     }
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-machine-owned-refuse
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-machine-owned
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-unknown-field
   const validate = compileOverlayValidator();
   if (!validate(raw)) {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-unknown-field-refuse
     throw new Error(formatOverlayErrors(component, validate.errors));
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-unknown-field-refuse
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-unknown-field
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-name-mismatch
   if (raw.component !== component) {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-name-mismatch-refuse
     throw new Error(
       `${component}: overlay "component" field is "${raw.component}", but the directory is "${component}" - the two must match`,
     );
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-name-mismatch-refuse
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-name-mismatch
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-return
   return raw;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-return
 }
 
 // `exportStem` defaults to `directory`: every component through T4 (Button
@@ -957,12 +990,16 @@ function loadOverlay(directory: string, exportStem: string = directory): Overlay
         `the directory or start with "${directory}-"`,
     );
   }
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-author-overlay
   const path = join(kitRoot, 'src', 'components', directory, `${exportStem}.contract.yaml`);
   const raw: unknown = parseYaml(readFileSync(path, 'utf8'));
   return parseOverlay(exportStem, raw);
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-author-overlay
 }
 
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-instance:p2
 export function compileInstance(directory: string, exportStem: string = directory): ContractInstance {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-instance:p2:inst-mi-assemble
   const overlay = loadOverlay(directory, exportStem);
   const instance: ContractInstance = {
     id: instanceId(exportStem, CONTRACT_MAJOR),
@@ -981,12 +1018,15 @@ export function compileInstance(directory: string, exportStem: string = director
     extension_points: overlay.extension_points,
     props_schema: propsSchemaId(exportStem, CONTRACT_MAJOR),
   };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-instance:p2:inst-mi-assemble
   // M3: validated against the metamodel here, not only inside whichever
   // component's own test file happens to assert it - a future mismatch
   // between this assembly and buildMetamodel()'s own required-field list
   // now fails every compile, not just the ones with test coverage for it.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-instance:p2:inst-mi-validate
   assertValidatesAgainst(exportStem, 'instance', buildMetamodel(), instance);
   return instance;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-instance:p2:inst-mi-validate
 }
 
 export interface PropsAndRequired {
@@ -1011,12 +1051,15 @@ export function buildPropsAndRequired(
   const required: string[] = [];
   const passthroughTypes = passthroughPropertyTypes(passthroughSchema);
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-axes
   for (const [axis, values] of Object.entries(extraction.axes)) {
     properties[axis] = { type: 'string', enum: values };
     if (extraction.defaults[axis] !== undefined) properties[axis].default = extraction.defaults[axis];
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-axes
 
   for (const prop of extraction.ownProps) {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
     if (passthroughTypes.has(prop.name)) {
       const declared = passthroughTypes.get(prop.name);
       // `declared === undefined` means the passthrough entry is
@@ -1039,10 +1082,12 @@ export function buildPropsAndRequired(
       // Declared by the passthrough type already - leave it there.
       continue;
     }
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
     const normative = classifyProviderSafeType(prop.typeText);
     if (normative) {
       properties[prop.name] = normative;
     } else {
+      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
       // Not expressible in the provider-safe subset - recorded as a slot
       // with its source type, checked by the lint, not by Ajv. It still gets
       // an annotation-only property entry, or `unevaluatedProperties: false`
@@ -1051,6 +1096,7 @@ export function buildPropsAndRequired(
       properties[prop.name] = {
         description: `Slot: ${prop.typeText}. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots.`,
       };
+      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
     }
     if (!prop.optional) required.push(prop.name);
   }
@@ -1096,6 +1142,7 @@ export function pascalCase(component: string): string {
 export function resolveTargetExtraction(directory: string, exportStem: string = directory): ComponentExtraction {
   const dir = join(kitRoot, 'src', 'components', directory);
   const extractions = extractComponent(join(dir, `${directory}.tsx`));
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-select
   const wantedName = pascalCase(exportStem);
   const extraction = extractions.find((e) => e.name === wantedName);
   if (!extraction) {
@@ -1105,6 +1152,7 @@ export function resolveTargetExtraction(directory: string, exportStem: string = 
         `${directory}.tsx exports: ${available}`,
     );
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-select
   return extraction;
 }
 
@@ -1116,29 +1164,39 @@ export function resolveTargetExtraction(directory: string, exportStem: string = 
 // DataTable had no equivalent protection before this). Extend this list if
 // the metamodel ever adds a third prop-name-bearing overlay field.
 export function assertOverlayReferencesRealProps(component: string, overlay: Overlay, extraction: ComponentExtraction): void {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop
   const known = new Set([...Object.keys(extraction.axes), ...extraction.ownProps.map((prop) => prop.name)]);
   for (const prop of Object.keys(overlay.deprecations.props ?? {})) {
     if (!known.has(prop)) {
+      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop-refuse
       throw new Error(`${component}: overlay deprecations.props references "${prop}", which is not a real prop`);
+      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop-refuse
     }
   }
   const iconsVia = overlay.composition.children.icons_via;
   if (iconsVia !== undefined && !known.has(iconsVia)) {
     throw new Error(`${component}: overlay composition.children.icons_via references "${iconsVia}", which is not a real prop`);
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop
 }
 
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1
+// @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-compilation:p1
 export function compileContract(directory: string, exportStem: string = directory): CompiledContract {
   const extraction = resolveTargetExtraction(directory, exportStem);
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-axis-failure
   const unresolvedVariants = extraction.cannotExtract.filter((msg) => msg.startsWith('cva:'));
   if (unresolvedVariants.length > 0) {
     // A VariantProps heritage entry the extractor could not trace to a real
     // cva(...) call would otherwise compile silently with its axes simply
     // missing - the exact defect (F16) this compiler exists to catch, so it
     // fails the build instead of shipping a contract that lost information.
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-axis-failure-refuse
     throw new Error(`${exportStem}: ${unresolvedVariants.join('; ')}`);
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-axis-failure-refuse
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-axis-failure
 
   const overlay = loadOverlay(directory, exportStem);
   assertOverlayReferencesRealProps(exportStem, overlay, extraction);
@@ -1166,13 +1224,17 @@ export function compileContract(directory: string, exportStem: string = director
     ]);
     passthroughRef = { $ref: passthroughTypeId(extraction.passthroughOrigin) };
   } else if (extraction.inheritedProps.length > 0) {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
     // Inherited props exist but no origin could be resolved for them -
     // exactly the case a silent extractor would have dropped them in.
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-refuse
     throw new Error(
       `${exportStem}: ${extraction.inheritedProps.length} inherited prop(s) found (e.g. "${extraction.inheritedProps[0].name}") ` +
         `but no passthrough origin could be resolved from ${directory}.tsx's props type - cannot generate a ` +
         `passthrough type to declare them in`,
     );
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-refuse
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
   }
 
   const { properties, required, slots } = buildPropsAndRequired(
@@ -1181,6 +1243,7 @@ export function compileContract(directory: string, exportStem: string = director
     passthroughSchema ?? { properties: {} },
   );
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
   const uikitFields = fieldsTargeting('x-uikit');
   const gtsTraitsFields = fieldsTargeting('x-gts-traits');
   if (uikitFields.length + gtsTraitsFields.length !== SEMANTIC_FIELDS.length) {
@@ -1190,6 +1253,7 @@ export function compileContract(directory: string, exportStem: string = director
     // contract silently missing part of its overlay.
     throw new Error(`${exportStem}: SEMANTIC_FIELD_TARGETS does not route every semantic overlay field exactly once`);
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
   const contract: CompiledContract = {
     $id: propsSchemaId(exportStem, CONTRACT_MAJOR),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -1198,7 +1262,9 @@ export function compileContract(directory: string, exportStem: string = director
     allOf: passthroughRef ? [{ $ref: BASE_TYPE_ID }, passthroughRef] : [{ $ref: BASE_TYPE_ID }],
     properties,
     required,
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
     unevaluatedProperties: false,
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
     'x-uikit': {
       metamodel: METAMODEL_VERSION,
       ...pickFields(overlay, uikitFields),
@@ -1213,8 +1279,10 @@ export function compileContract(directory: string, exportStem: string = director
   // whichever component's own test file happens to register it with a GTS
   // store - a future mismatch between this assembly and
   // buildGtsTraitsSchema()'s own field routing now fails every compile.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-return
   assertValidatesAgainst(exportStem, 'x-gts-traits', buildGtsTraitsSchema(), contract['x-gts-traits']);
   return contract;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-return
 }
 
 // "Was this module invoked as the entry, rather than imported?" Under tsx
@@ -1243,6 +1311,7 @@ export function overlayStems(directory: string): string[] {
 }
 
 function compileOne(directory: string, exportStem: string): void {
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-compile-each
   const extraction = resolveTargetExtraction(directory, exportStem);
   const contract = compileContract(directory, exportStem);
   const instance = compileInstance(directory, exportStem);
@@ -1257,8 +1326,12 @@ function compileOne(directory: string, exportStem: string): void {
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, `${JSON.stringify(contract, null, 2)}\n`);
   writeFileSync(instanceOut, `${JSON.stringify(instance, null, 2)}\n`);
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-compile-each
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-report-paths
   console.log(`wrote ${out}`);
   console.log(`wrote ${instanceOut}`);
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-report-paths
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-write-passthrough
   if (extraction.passthroughOrigin && extraction.passthroughKind) {
     const passthroughOut = join(GENERATED_DIR, `passthrough.${extraction.passthroughOrigin}.json`);
     const existing = existsSync(passthroughOut) ? (JSON.parse(readFileSync(passthroughOut, 'utf8')) as Record<string, unknown>) : undefined;
@@ -1281,6 +1354,7 @@ function compileOne(directory: string, exportStem: string): void {
     writeFileSync(passthroughOut, `${JSON.stringify(passthroughSchema, null, 2)}\n`);
     console.log(`wrote ${passthroughOut}`);
   }
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-write-passthrough
 }
 
 // M4: a shared origin key is exactly that - shared. Two components can
@@ -1300,10 +1374,12 @@ export function assertNoPassthroughCollision(
   existing: { generatedFrom: string[]; properties: unknown } | undefined,
   freshProperties: unknown,
 ): void {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision
   if (!existing) return;
   const otherOwners = existing.generatedFrom.filter((stem) => stem !== exportStem);
   if (otherOwners.length === 0) return;
   if (JSON.stringify(existing.properties ?? {}) === JSON.stringify(freshProperties)) return;
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision-refuse
   throw new Error(
     `${exportStem}: shared passthrough origin "${originKey}" is already committed by ${otherOwners.join(', ')} ` +
       `with a different inherited-props set - compiling ${exportStem} would silently overwrite ${passthroughPath} ` +
@@ -1312,6 +1388,8 @@ export function assertNoPassthroughCollision(
       `resolvePassthroughOrigin in extract.ts); if they should match, recompile ${otherOwners.join(', ')} too so ` +
       `both sides agree`,
   );
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision-refuse
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision
 }
 
 // CLI entry - skipped when the module is imported (e.g. by the conformance
@@ -1321,16 +1399,27 @@ export function assertNoPassthroughCollision(
 // several for a compound one) - there is no per-export CLI invocation,
 // because a reviewer regenerating a compound component's contracts wants all
 // of its parts refreshed together, not one at a time.
+// @cpt-flow:cpt-frontx-ui-kit-flow-component-contracts-compile:p1
 if (invokedDirectly()) {
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-invoke-compile
   const [directory] = process.argv.slice(2);
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-invoke-compile
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-missing-argument
   if (!directory) {
+    // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-usage-exit
     console.error('Usage: npm run contracts:compile -- <directory>');
     process.exit(1);
+    // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-usage-exit
   }
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-missing-argument
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-no-overlay
   const stems = overlayStems(directory);
   if (stems.length === 0) {
+    // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-no-overlay-exit
     console.error(`${directory}: no *.contract.yaml overlay found directly under src/components/${directory}/`);
     process.exit(1);
+    // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-no-overlay-exit
   }
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-no-overlay
   for (const stem of stems) compileOne(directory, stem);
 }

@@ -25,6 +25,7 @@
   - [2.19 Ecosystem Layer-Partition Governance - MEDIUM](#219-ecosystem-layer-partition-governance---medium)
   - [2.20 Telemetry SDK Compatibility Anchor - MEDIUM](#220-telemetry-sdk-compatibility-anchor---medium)
   - [2.21 AI-Driven Project Scaffolding from Intent - HIGH](#221-ai-driven-project-scaffolding-from-intent---high)
+  - [2.22 UI Kit Compatibility Anchor - MEDIUM](#222-ui-kit-compatibility-anchor---medium)
 - [3. Feature Dependencies](#3-feature-dependencies)
 - [4. Known Validator Debt](#4-known-validator-debt)
 
@@ -292,6 +293,25 @@ The installed SDLC kit currently defines feature-entry identifiers only in DECOM
 - [x] `p1` - **ID**: `cpt-frontx-feature-ai-project-scaffolding`
 
 **Owner**: Member-owned compatibility anchor only; behavior is defined in [FEATURE.md](../packages/cyber-pilot-kit-frontx/architecture/features/ai-project-scaffolding/FEATURE.md).
+
+### 2.22 [UI Kit Compatibility Anchor](../packages/ui-kit/architecture/) - MEDIUM
+
+**Owner**: Member-owned compatibility anchor only; behavior is defined in [DESIGN.md](../packages/ui-kit/architecture/DESIGN.md) and the member FEATURE file.
+
+**Installed-kit coverage references**:
+- `cpt-frontx-ui-kit-component-component-surface`
+- `cpt-frontx-ui-kit-component-token-system`
+- `cpt-frontx-ui-kit-component-package-build`
+- `cpt-frontx-ui-kit-component-agent-documentation`
+- `cpt-frontx-ui-kit-component-contract-harness`
+- `cpt-frontx-ui-kit-component-consumer-acceptance`
+- `cpt-frontx-ui-kit-constraint-overlay-meaning-only`
+- `cpt-frontx-ui-kit-constraint-token-seam`
+- `cpt-frontx-ui-kit-constraint-ui-committed-member`
+- `cpt-frontx-ui-kit-constraint-contracts-repository-only`
+- `cpt-frontx-ui-kit-principle-code-is-the-fact-owner`
+- `cpt-frontx-ui-kit-principle-styling-through-tokens`
+- `cpt-frontx-ui-kit-principle-scoped-enforcement`
 
 ## 3. Feature Dependencies
 

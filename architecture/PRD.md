@@ -309,13 +309,13 @@ Member-level use cases are owned by each member's own PRD §8, located through t
 
 ## 9. Acceptance Criteria
 
-- [ ] The three layers are each delivered by identified members whose own PRDs state their requirements: four published libraries, externally hosted templates under the CLI-owned contract, and two projects-orchestration units — verifiable via the member PRD links in §1.1 and §4.1.
+- [ ] The three layers are each delivered by identified members whose own PRDs state their requirements: five published libraries, externally hosted templates under the CLI-owned contract, and two projects-orchestration units — verifiable via the member PRD links in §1.1 and §4.1.
 - [ ] The layer-level requirements hold across every member: any UI framework, versioned evolution, no architectural ceiling — verifiable via `cpt-frontx-fr-ui-framework-agnostic`, `cpt-frontx-fr-versioned-platform-evolution`, and `cpt-frontx-fr-no-architectural-ceiling`.
 - [ ] A project can cross all three layers from scaffold to running application — verifiable via `cpt-frontx-usecase-cross-layer-project-delivery`.
 - [ ] The PRD is structurally valid and internally consistent: `cfs validate --artifact architecture/PRD.md --skip-code` returns PASS, and the standing content-quality checks — citation discipline, design-agnostic prose, controlled product vocabulary, and external-system-name scope — all clear.
 - [ ] Downstream SDLC artifacts authored against this PRD trace back to specific requirement, component, or contract IDs owned either here or by the owning member PRD.
 - [x] Governance has a real product requirement, `cpt-frontx-fr-layer-member-governance`, rather than borrowing unrelated requirement traces.
-- [ ] `ui-kit` remains visible as a published-library member while its local artifact chain remains recorded debt.
+- [x] `ui-kit` is a published-library member owning its own artifact chain, with no path-scoped exemption left standing for it - verifiable via its member pointer in the [DESIGN](./DESIGN.md#member-pointers) and the member-registration gate.
 
 ## 10. Dependencies
 
