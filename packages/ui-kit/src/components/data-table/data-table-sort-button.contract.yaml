@@ -1,0 +1,82 @@
+# Semantic overlay for DataTableSortButton - the second, independent
+# contract in this directory (see data-table.contract.yaml). Not a family
+# part of DataTable the way AccordionItem is a part of Accordion: it is
+# mounted inside a column's `header` render function, which TanStack Table
+# owns, not a kit component with its own contract - see the
+# `no-typed-parent-for-header-cell` assumption below for why `composition.parent`
+# stays unset here instead of pointing at one.
+component: data-table-sort-button
+
+intent: A sortable column's header button, toggling that column's sort state and showing its current direction.
+
+typical_uses:
+  - The header render function of a sortable column in a DataTable
+
+dont_use_when:
+  - rule: A standalone action button with no column to sort
+    instead: gts.frontx.uikit.component.button.v1~ # Button
+
+composition:
+  children:
+    kinds: [text]
+    # `children` is the button's own label (e.g. "Email") - the trailing
+    # sort-direction arrow is fixed and always rendered alongside it, the
+    # same way AccordionTrigger's chevron is never part of children.
+
+invariants:
+  - id: requires-a-real-column-instance
+    text: >-
+      `column` must be the live `Column` instance a `ColumnDef`'s own
+      `header` render function receives - toggling sort calls
+      `column.toggleSorting()` directly, so this only makes sense mounted
+      inside that render function, not constructed by hand elsewhere.
+
+anti_patterns:
+  - dont: Use DataTableSortButton outside a column's header render function
+    instead: For a plain action button with no column to sort, use Button directly
+
+deprecations: {}
+
+coverage:
+  a11y: not-described
+  assumptions:
+    - claim: column is a live @tanstack/react-table Column instance, not data
+      reason: >-
+        `Column<DataTableFeatures, TData, TValue>` carries methods
+        (`toggleSorting`, `getIsSorted`) and internal state, not a
+        serializable shape - it stays annotation-only (a slot) in the
+        compiled contract, the same way a function prop does.
+    - claim: TData and TValue are generic type parameters with no concrete shape
+      reason: >-
+        JSON Schema has no notion of a generic type parameter; both stay
+        implicit in `column`'s slot type rather than typed properties.
+    - claim: DataTableSortButton composes the kit's own Button internally
+      reason: >-
+        It renders a `<Button variant="ghost" size="sm">` around its own
+        label and a trailing sort-arrow icon - this is internal composition
+        (JSX in DataTableSortButton's own render body), not a props-type
+        heritage relationship, so the extractor reports it with no
+        passthrough origin at all: DataTableSortButtonProps declares
+        `column`/`children`/`className` itself and extends nothing.
+    - claim: its only real mount point is a column's header render function, which has no contract of its own
+      reason: >-
+        TanStack Table's `header: ({ column }) => ...` is a plain function
+        prop on `ColumnDef`, not a kit component - there is no
+        component_type_ref this contract could put in `composition.parent`
+        for it, so the relationship is recorded here in prose instead.
+
+examples:
+  good:
+    - title: A sortable column's header
+      code: |
+        columnHelper.accessor('email', {
+          header: ({ column }) => <DataTableSortButton column={column}>Email</DataTableSortButton>,
+        })
+  bad:
+    - title: Constructed outside any column header
+      code: <DataTableSortButton column={someColumn}>Email</DataTableSortButton>
+      why: >-
+        Outside a column's own `header` render function there is no live
+        `Column` instance to pass - `column` is not something a consumer
+        constructs by hand, it is handed in by TanStack Table's own render
+        call.

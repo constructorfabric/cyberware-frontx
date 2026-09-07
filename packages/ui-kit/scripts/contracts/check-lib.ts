@@ -247,4 +247,11 @@ export interface DirectoryExportCoverage {
   // adds is a compound directory partway through being described.
   totalExports: number;
   coveredExports: number;
+  // Exported names the extractor did not generate a contract for because
+  // they are not a React component - a helper function, a feature-set
+  // const, a type/interface (T6: data-table.tsx's dataTableColumnHelper,
+  // dataTableFeatures, dataTableSelectionColumn, DataTableSelectionColumnLabels).
+  // Reported so "2 of 6 exports" reads as "4 correctly excluded", not "4
+  // undescribed gaps".
+  skippedNonComponents: string[];
 }

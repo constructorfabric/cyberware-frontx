@@ -1,0 +1,137 @@
+# Semantic overlay for DataTable - the hand-written half of the contract.
+#
+# Two contracts live in this directory (see data-table-sort-button.contract.yaml
+# for the other): DataTable and DataTableSortButton are two independent
+# top-level exports, not a compound family like Accordion's root/parts - so
+# neither sets `family`. Every OTHER export of this file
+# (dataTableColumnHelper, dataTableFeatures, dataTableSelectionColumn,
+# DataTableSelectionColumnLabels) is a function or type, not a React
+# component - the extractor does not generate a contract for them at all
+# (see PILOT-NOTES.md's "coverage counting" note), and three of them show up
+# here instead, as `extension_points`.
+component: data-table
+
+intent: Render tabular data with sorting, optional row selection, and pagination from one columns/data pair.
+
+typical_uses:
+  - Tabular data with more rows than fit on one screen, where the user sorts a column
+  - A list the user selects rows from for a bulk action
+  - Paged results the user steps through instead of scrolling one long list
+
+dont_use_when:
+  - rule: Static markup with no sorting, selection or pagination need
+    instead: gts.frontx.uikit.component.table.v1~ # Table
+
+composition:
+  # DataTable takes no children at all - not even text: DataTableProps has no
+  # `children` field, and the component renders Table/TableHeader/TableBody
+  # internally from `columns`/`data`. "text" would claim a slot that does not
+  # exist, so this is "none", not an empty or omitted composition.
+  children:
+    kinds: [none]
+
+invariants:
+  - id: columns-and-data-share-row-type
+    text: >-
+      `columns` and `data` are both generic over the same `TData` - a
+      `ColumnDef` built for one row shape used against a `data` array of a
+      different shape is a type error at the call site, not a runtime
+      contract this schema can assert.
+  - id: selection-column-is-a-separate-opt-in
+    text: >-
+      `enableRowSelection` alone makes rows selectable and turns on the
+      footer's "N of M row(s) selected" text; it renders no checkbox column
+      by itself. A checkbox column only appears when `columns` also includes
+      one built with `dataTableSelectionColumn()`.
+  - id: page-size-must-be-positive
+    text: >-
+      `pageSize` seeds and live-resyncs the internal pagination state; zero
+      or negative values make the page-index rescale on prop change
+      (`current.pageIndex * current.pageSize / pageSize`) divide by zero or
+      go negative, so it must stay a positive integer.
+
+anti_patterns:
+  - dont: Mix column defs built against different TFeatures objects in one `columns` array
+    instead: Build every column with `dataTableColumnHelper()` (or a hand-rolled helper bound to the same `dataTableFeatures`), never a mix
+  - dont: Set `enableRowSelection` and expect a checkbox column to appear on its own
+    instead: Include `dataTableSelectionColumn()` in `columns` explicitly - the flag and the column are independent opt-ins
+
+deprecations: {}
+
+coverage:
+  a11y: not-described
+  rtl: not-described
+  assumptions:
+    - claim: TData is a generic type parameter with no concrete shape
+      reason: >-
+        JSON Schema has no notion of a generic type parameter; `columns` and
+        `data` stay annotation-only (slots) in the compiled contract rather
+        than typed properties - there is no TData to type them against
+        without a concrete consumer.
+    - claim: columns is an array of @tanstack/react-table ColumnDef objects
+      reason: >-
+        ColumnDef carries function-valued fields (header/cell render
+        functions among them) from a third-party package this contract does
+        not own; it is opaque to the provider-safe JSON Schema subset the
+        same way a function prop is, and is declared as an extension_point
+        instead of enumerated.
+    - claim: selectionSummary is a function prop, not data
+      reason: >-
+        `(selected, total) => ReactNode` has no JSON Schema representation;
+        it is a function returning a plurals-aware sentence, not a value
+        this schema can assert shape against.
+    - claim: sorting, row-selection and pagination state are internal, not props
+      reason: >-
+        `sorting`/`rowSelection`/`pagination` are component-owned useState,
+        never lifted to DataTableProps - "DataTable is sortable/selectable/
+        paginated" is discoverable only from `columns`' own fields and
+        `enableRowSelection`, not from this contract's prop schema.
+
+examples:
+  good:
+    - title: Sortable, selectable, paginated table
+      code: |
+        const columnHelper = dataTableColumnHelper<Payment>();
+        const columns = columnHelper.columns([
+          dataTableSelectionColumn<Payment>(),
+          columnHelper.accessor('status', { header: 'Status' }),
+          columnHelper.accessor('email', {
+            header: ({ column }) => <DataTableSortButton column={column}>Email</DataTableSortButton>,
+          }),
+        ]);
+        <DataTable columns={columns} data={payments} enableRowSelection />
+  bad:
+    - title: enableRowSelection with no selection column
+      code: <DataTable columns={columns} data={payments} enableRowSelection />
+      why: >-
+        Without a column built by `dataTableSelectionColumn()` in `columns`,
+        rows become internally selectable (the footer count can change) but
+        nothing in the rendered table lets a user actually select one - the
+        flag and the column are independent opt-ins, and this omits the
+        second one.
+
+extension_points:
+  - name: columns
+    kind: prop
+    description: >-
+      Column definitions - what data each column reads, how its header and
+      cells render, and whether it participates in sorting. The one required
+      way to shape what DataTable renders.
+    typed_by: '@tanstack/react-table ColumnDef<DataTableFeatures, TData>'
+  - name: dataTableColumnHelper
+    kind: helper
+    description: A createColumnHelper pre-bound to DataTableFeatures - the one column helper every DataTable column def should be built with.
+    typed_by: '@tanstack/react-table createColumnHelper, pre-bound to DataTableFeatures'
+  - name: dataTableSelectionColumn
+    kind: helper
+    description: Ready-made row-selection column (checkbox header/cell) a consumer spreads into `columns` to opt into selectable rows.
+    typed_by: 'returns @tanstack/react-table ColumnDef<DataTableFeatures, TData>'
+  - name: dataTableFeatures
+    kind: feature
+    description: >-
+      The fixed TanStack Table v9 feature set DataTable registers - row
+      selection, row sorting, row pagination. Not itself configurable per
+      instance; a consumer needing a different feature set (filtering,
+      column visibility, grouping, ...) builds directly against `useTable`
+      instead (see data-table.md's Escape hatch).
+    typed_by: '@tanstack/react-table tableFeatures({ rowSelectionFeature, rowSortingFeature, rowPaginationFeature, ... })'

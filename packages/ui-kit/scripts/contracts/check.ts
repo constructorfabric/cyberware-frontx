@@ -31,7 +31,7 @@ import {
   type GuardResult,
 } from './check-lib';
 import { loadBaseSchema, overlayStems, type CompiledContract } from './compile';
-import { extractComponent } from './extract';
+import { extractComponent, listExportedDeclarationNames } from './extract';
 import { checkComponentFreshness } from './freshness';
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -233,15 +233,24 @@ function componentExportCoverage(directory: string): DirectoryExportCoverage {
   // A directory whose main file the extractor cannot resolve (wrong name, no
   // component-shaped export) reports 0 total exports rather than crashing a
   // report that is never supposed to fail the build.
-  const totalExports = tryExtractComponentCount(directory);
-  return { directory, totalExports, coveredExports: overlayStems(directory).length };
+  const componentNames = tryExtractComponentNames(directory);
+  const skippedNonComponents = tryListExportedDeclarationNames(directory).filter((name) => !componentNames.includes(name));
+  return { directory, totalExports: componentNames.length, coveredExports: overlayStems(directory).length, skippedNonComponents };
 }
 
-function tryExtractComponentCount(directory: string): number {
+function tryExtractComponentNames(directory: string): string[] {
   try {
-    return extractComponent(join(COMPONENTS_DIR, directory, `${directory}.tsx`)).length;
+    return extractComponent(join(COMPONENTS_DIR, directory, `${directory}.tsx`)).map((e) => e.name);
   } catch {
-    return 0;
+    return [];
+  }
+}
+
+function tryListExportedDeclarationNames(directory: string): string[] {
+  try {
+    return listExportedDeclarationNames(join(COMPONENTS_DIR, directory, `${directory}.tsx`));
+  } catch {
+    return [];
   }
 }
 
@@ -299,7 +308,9 @@ function runCoverage(): void {
   console.log('Not yet in covered.json (n of m exports already have a contract):');
   for (const component of report.uncovered) {
     const coverage = byDirectory.get(component);
-    console.log(`  - ${component}: ${coverage?.coveredExports ?? 0} of ${coverage?.totalExports ?? 0} exports`);
+    const skipped = coverage?.skippedNonComponents ?? [];
+    const skippedNote = skipped.length > 0 ? ` (skipped, not components: ${skipped.join(', ')})` : '';
+    console.log(`  - ${component}: ${coverage?.coveredExports ?? 0} of ${coverage?.totalExports ?? 0} exports${skippedNote}`);
   }
 }
 

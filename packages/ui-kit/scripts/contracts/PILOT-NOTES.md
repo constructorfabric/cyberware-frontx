@@ -261,3 +261,157 @@ and the 22-assertion conformance suite. The single largest cost was NOT
 Accordion's own facts - the four overlays took about the time Button's one
 did - it was discovering and fixing the passthrough-sharing assumption
 before it shipped a non-deterministic build.
+
+## DataTable (T6)
+
+### What DataTable is, contract-wise
+
+`data-table.tsx` exports eight names; two are React components
+(`DataTable`, `DataTableSortButton`), the other six are a fixed
+TanStack-features const, a type alias for it, two helper functions and a
+small labels interface. Unlike Accordion, DataTable and DataTableSortButton
+are NOT a compound family - they are two independent top-level exports that
+happen to share a directory, so neither overlay sets `family`. Both props
+types are from-scratch interfaces with no `Omit<...>`/`ComponentProps<...>`
+heritage at all - `DataTableProps` extends nothing, `DataTableSortButtonProps`
+extends nothing - so both compile with `allOf: [base.component]` only, no
+generated passthrough type, confirmed by `resolveTargetExtraction(...).passthroughOrigin`
+being `undefined` for both (asserted directly in
+`data-table.contract.test.ts`).
+
+### Forced change 1: coverage must count components, not exports
+
+Before this pilot, `componentExportCoverage` counted `extractComponent(...).length`
+against `overlayStems(...).length` and called the first number "total
+exports" - accidentally correct through T5 because Button and every
+Accordion export IS a component, so "extracted" and "exported" never
+diverged. DataTable's directory exports six non-component names alongside
+its two components, and NONE of them should ever need an overlay or count
+against coverage. The extractor's own `isReactComponentCandidate` (uppercase
+name, JSX-returning body) already excluded them correctly from
+`extractComponent`'s result - the actual gap was that coverage had no way to
+SHOW which names were excluded and why, leaving "2 of 6" reading as an
+ambiguous fraction instead of "2 components, 4 correctly not-components".
+Fixed with a new `extract.ts` export, `listExportedDeclarationNames` (every
+top-level exported name in a file, component or not, gathered by the same
+program/checker `extractComponent` already builds), and a
+`skippedNonComponents` field on `DirectoryExportCoverage` that
+`check.ts`'s `runCoverage` now prints alongside the n-of-m count.
+
+### Forced change 2: extension_points
+
+DataTable's growth surface is a small, fixed set of exports
+(`columns`, `dataTableColumnHelper`, `dataTableSelectionColumn`,
+`dataTableFeatures`) rather than a long tail of individual plugin-shaped
+props - the metamodel had no field for "here is how a consumer extends this
+component" as a first-class concept, only individual typed/slotted props.
+Added `extension_points` (name/kind: prop\|helper\|feature/description/typed_by)
+as an optional array on the metamodel instance, additive (not in
+`required`), so `METAMODEL_VERSION` stayed `1.1.0` - Button's and
+Accordion's committed contracts recompile byte-identical. `typed_by` is
+free text, not a `component_type_ref`: the governing type
+(`@tanstack/react-table`'s `ColumnDef`) lives in a package this contract has
+no business re-typing, so a prose pointer is the honest claim.
+
+### Forced change 3: a `none` composition child kind
+
+`composition.children.kinds` required at least one entry, drawn from
+`component_type_ref` or the literal `"text"` - both Button and every
+Accordion part have SOME notion of children (text, or a named part).
+DataTable has neither: `DataTableProps` declares no `children` field at
+all, and the component renders `Table`/`TableHeader`/`TableBody` internally
+from `columns`/`data`. Writing `kinds: [text]` would have been a factual
+lie (there is no way to pass text children to `<DataTable>` and have
+anything happen). Added a third literal, `"none"`, to the same `oneOf` -
+additive, existing `"text"` and component-ref values stay valid, no
+metamodel version bump.
+
+### Forced change 4 (not anticipated going in): absolute paths inside printed type text
+
+Compiling DataTable's first overlay draft against the real extractor
+surfaced a defect unrelated to anything above: `columns`' printed type text
+(`checker.typeToString(..., NoTruncation)`) embedded the machine's own
+ABSOLUTE FILESYSTEM PATH inside `import("...")` qualifiers -
+TypeScript's printer falls back to a full `import()` path whenever
+`NoTruncation` forces a structural, unnamed type to print in full and the
+checker has no nominal name for it (`DataTableFeatures` traces back to an
+inferred `tableFeatures(...)` return type with none). Left as committed
+text, this would have made `data-table.contract.json` different on every
+machine that recompiles it - the exact defect `relativeDeclarationFile`
+already existed to prevent for declaration FILE paths, just not yet for
+paths appearing INSIDE a printed type. Fixed by reusing
+`relativeDeclarationFile`'s own normalization inside a new
+`normalizeImportPathsInTypeText`, applied to every extracted prop's
+`typeText` (own and inherited alike) at the point the checker prints it -
+not a DataTable-specific patch, so any future component with an
+unnamed/structural inherited type gets the same protection for free. This
+was found only by actually compiling against the real component, the same
+way T5's Deviation 2 was - neither is discoverable by reading the harness
+or the component's source in isolation.
+
+### What could not be expressed
+
+- **Generics** (`TData` on both components, `TValue` on
+  `DataTableSortButton`): no JSON Schema representation for a type
+  parameter; every prop that depends on one collapses to an annotation-only
+  slot, the same mechanism Accordion's `Value` generic already exercised -
+  no new compiler code needed here, only the fact recorded in
+  `coverage.assumptions`.
+- **Function props** (`selectionSummary`, and every `ColumnDef`'s own
+  `header`/`cell` render functions reached through `columns`): opaque past
+  "a function", same treatment as any other function prop in the kit;
+  `header`/`cell` specifically are never even visible to the extractor as
+  named properties of `DataTableProps` - they live one level down, inside
+  `columns`' element type, which is exactly why they are described as an
+  `extension_point` rather than chased into deeper schema.
+- **A runtime object prop** (`DataTableSortButton`'s `column: Column<...>`):
+  a live TanStack instance with methods (`toggleSorting`, `getIsSorted`),
+  not serializable data - annotation-only, same as Accordion's Base-UI-owned
+  inherited props, just arriving through an OWN prop instead of an
+  inherited one this time.
+- **Internal state** (`sorting`/`rowSelection`/`pagination`): never reaches
+  either props type at all, so there is nothing for the extractor to even
+  see - not a gap, a non-issue, but worth stating: "DataTable is
+  sortable/selectable/paginated" is not discoverable from its own compiled
+  prop schema, only from `columns`' fields and `enableRowSelection`.
+- **A typed composition parent for `DataTableSortButton`**: its real mount
+  point is a `ColumnDef`'s `header` render function, a plain function prop
+  TanStack Table owns, not a kit component - there is no `component_type_ref`
+  for "a table header cell" to put in `composition.parent`, so the
+  relationship is recorded in `coverage.assumptions` prose instead of the
+  typed field Accordion's parts use for the same kind of fact.
+
+### Effort
+
+About half a working day (~4 hours): both props types were from-scratch
+interfaces with no Base UI/DOM heritage to resolve, so there was no
+Accordion-scale extractor exploration needed - the actual time went into
+the absolute-path defect (found, diagnosed and fixed against the real
+`columns` type, not anticipated from reading the plan) and writing two
+honest overlays with real invariants/assumptions rather than placeholders.
+Four forced harness changes for two contracts, a higher ratio than
+Accordion's one (`resolvePassthroughKindKey`, later superseded) for four -
+DataTable's facts were individually smaller but touched more DIFFERENT
+corners of the metamodel (coverage counting, composition vocabulary,
+extension surface, and a portability bug outside the overlay vocabulary
+entirely) rather than one deep problem repeated four times.
+
+### Comparison: Button / Accordion / DataTable
+
+| | Button | Accordion (4 contracts) | DataTable (2 contracts) |
+|---|---|---|---|
+| Overlay lines (yaml, all contracts in the directory) | 85 | 275 (102+58+59+56) | 219 (137+82) |
+| Own props: typed vs annotation-only (slot), summed across the directory's contracts | 5 typed, 1 slot | 4 typed, 0 slots | 4 typed, 8 slots |
+| Passthrough origin(s) | `base_ui_button` (one, shared by all consumers of Base UI's Button) | `base_ui_accordion_root`/`_item`/`_trigger`/`_panel` (four, one per Base UI primitive part) | none for either contract - no DOM/Base UI heritage on either props type |
+| Harness/compiler changes this component forced | 0 (harness already fit it - T1-T4 were built FOR Button) | `family`, `coverage.assumptions`, `composition.parent`, `composition.kinds` typed as refs, the (later superseded) passthrough-key scoping fix | coverage counts components not exports, `extension_points`, a `none` composition child kind, absolute-path normalization in printed type text |
+
+The typed-vs-slot ratio is the sharpest signal in that table: Button and
+Accordion both wrap a Base UI primitive whose own props are mostly
+provider-safe types (`boolean`, `string`, string-literal unions) inherited
+through the passthrough mechanism, so their OWN props (the ones this table
+counts) are a small, mostly-typeable set on top of that. DataTable has no
+such inherited floor - every one of its own props is either provider-safe
+(`pageSize`, `enableRowSelection`, `className`) or fully opaque (`columns`,
+`data`, three `ReactNode` labels, `selectionSummary`) with nothing in
+between, because there is no underlying primitive contributing a typed
+baseline the way Base UI does for the other two.

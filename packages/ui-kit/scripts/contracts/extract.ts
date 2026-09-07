@@ -570,6 +570,20 @@ function relativeDeclarationFile(absolutePath: string, kitRoot: string): string 
   return relative(kitRoot, absolutePath).split('\\').join('/');
 }
 
+// TypeScript's printer inlines an `import("<absolute path>")` qualifier
+// whenever NoTruncation forces a structural (unnamed) type to print in full
+// and the checker has no nominal name to fall back to - real for DataTable's
+// `columns` (T6), whose element type traces back to an inferred
+// `tableFeatures(...)` return type with no name of its own. Left alone, the
+// printed type text embeds the machine's own absolute filesystem path into a
+// COMMITTED contract - the exact portability bug relativeDeclarationFile
+// above exists to prevent for declaration files, here reused for the same
+// paths when they show up INSIDE a printed type instead of as the
+// declaration location.
+function normalizeImportPathsInTypeText(typeText: string, kitRoot: string): string {
+  return typeText.replace(/import\("([^"]*)"\)/g, (_match, path: string) => `import("${relativeDeclarationFile(path, kitRoot)}")`);
+}
+
 function isReactComponentCandidate(node: ts.Node): node is ts.FunctionDeclaration | ts.VariableDeclaration {
   if (ts.isFunctionDeclaration(node) && node.name && /^[A-Z]/.test(node.name.text)) return true;
   if (
@@ -697,7 +711,10 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
           const ownDeclaration = declarations.find((d) => d.getSourceFile().fileName === source.fileName);
           const declaration = ownDeclaration ?? declarations[0];
           const propType = checker.getTypeOfSymbolAtLocation(prop, param);
-          const typeText = checker.typeToString(propType, param, ts.TypeFormatFlags.NoTruncation);
+          const typeText = normalizeImportPathsInTypeText(
+            checker.typeToString(propType, param, ts.TypeFormatFlags.NoTruncation),
+            kitRoot,
+          );
           const extracted: ExtractedProp = {
             name: propName,
             optional: (prop.flags & ts.SymbolFlags.Optional) !== 0,
@@ -729,4 +746,37 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
   }
 
   return extractions;
+}
+
+// Every top-level exported declaration name in a file, component or not -
+// used only by check.ts's coverage report (T6: data-table.tsx exports
+// DataTable/DataTableSortButton alongside four non-component helpers/types -
+// dataTableColumnHelper, dataTableFeatures, dataTableSelectionColumn,
+// DataTableSelectionColumnLabels). extractComponent already excludes these
+// correctly (isReactComponentCandidate requires an uppercase, JSX-returning
+// function/const; an interface or type alias is not even a value
+// declaration), so coverage's "N of M" count was never wrong - what was
+// missing is a way to SHOW which exports were excluded and why, rather than
+// leaving a reader to wonder if 2 of 6 exports means four are undescribed
+// gaps or four were never components at all.
+export function listExportedDeclarationNames(tsxPath: string): string[] {
+  const options = loadCompilerOptions();
+  const program = ts.createProgram({ rootNames: [tsxPath], options });
+  const source = program.getSourceFile(tsxPath);
+  if (!source) return [];
+
+  const names: string[] = [];
+  for (const statement of source.statements) {
+    if (!isNodeExported(statement)) continue;
+    if (ts.isFunctionDeclaration(statement) && statement.name) {
+      names.push(statement.name.text);
+    } else if (ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement) || ts.isClassDeclaration(statement)) {
+      if (statement.name) names.push(statement.name.text);
+    } else if (ts.isVariableStatement(statement)) {
+      for (const decl of statement.declarationList.declarations) {
+        if (ts.isIdentifier(decl.name)) names.push(decl.name.text);
+      }
+    }
+  }
+  return names;
 }

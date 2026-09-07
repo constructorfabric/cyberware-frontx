@@ -97,6 +97,9 @@
                   },
                   {
                     "const": "text"
+                  },
+                  {
+                    "const": "none"
                   }
                 ]
               },
@@ -339,6 +342,43 @@
           "parts"
         ]
       }
+    },
+    "extension_points": {
+      "type": "array",
+      "description": "Growth points a consumer extends this component through, declared once at the component level instead of enumerating every plugin-shaped prop individually (T6: DataTable's `columns` accepts arbitrary `@tanstack/react-table` ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed). Absent entirely for a component with no such surface - Button, Accordion, most of the kit.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "prop",
+              "helper",
+              "feature"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "typed_by": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "description",
+          "typed_by"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
     },
     "props_schema": {
       "type": "string",

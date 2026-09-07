@@ -127,6 +127,22 @@ export interface Family {
   parts?: string[];
 }
 
+// A plugin/growth point declared once at the component level instead of
+// enumerating every prop a plugin author might touch (T6: DataTable's
+// `columns` accepts arbitrary TanStack `ColumnDef`s, whose own `header`/
+// `cell` render functions are opaque to a JSON Schema extractor either way -
+// listing each such prop individually would just restate what `typed_by`
+// already says once). `typed_by` is free text, not a GTS ref: the type that
+// governs an extension point usually lives in a third-party package this
+// contract has no business re-typing (`@tanstack/react-table`'s `ColumnDef`),
+// so a prose pointer is the honest claim, not a broken reference.
+export interface ExtensionPoint {
+  name: string;
+  kind: 'prop' | 'helper' | 'feature';
+  description: string;
+  typed_by: string;
+}
+
 export interface Overlay {
   component: string;
   intent: string;
@@ -152,6 +168,11 @@ export interface Overlay {
   // Absent for every non-compound component (Button, ...): family only
   // exists where a directory's public surface is more than one contract.
   family?: Family;
+  // Absent for every component with no growth surface of its own (Button,
+  // Accordion, ...); present where a consumer extends behavior through a
+  // prop/helper/feature this contract cannot itself type-close (DataTable's
+  // `columns`, `dataTableColumnHelper`, `dataTableFeatures`).
+  extension_points?: ExtensionPoint[];
 }
 
 // The contract instance: the overlay, typed by the metamodel and pointing at
@@ -195,6 +216,7 @@ const SEMANTIC_FIELDS = [
   'coverage',
   'examples',
   'family',
+  'extension_points',
 ] as const;
 
 type SemanticField = (typeof SEMANTIC_FIELDS)[number];
@@ -211,6 +233,7 @@ const SEMANTIC_FIELD_TARGETS: Record<SemanticField, SemanticTarget> = {
   coverage: 'x-uikit',
   examples: 'x-uikit',
   family: 'x-uikit',
+  extension_points: 'x-uikit',
 };
 
 export interface CompiledContract {
@@ -446,10 +469,14 @@ export function buildMetamodel(): Record<string, unknown> {
                 // child IS a kit component - typed the same way
                 // dont_use_when.instead is, so a reader can resolve it and
                 // the conformance test can check it exists - or the literal
-                // "text" for the one non-component leaf content kind in use
-                // today (Button's own overlay). Not an open string: a typo'd
-                // ref would otherwise silently read as a content kind.
-                items: { oneOf: [{ $ref: '#/$defs/component_type_ref' }, { const: 'text' }] },
+                // "text" for a plain textual content kind (Button's own
+                // overlay), or "none" for a component with no children prop
+                // at all (T6: DataTable renders Table internally and takes
+                // no children - "text" would claim a slot that does not
+                // exist; "none" says so honestly instead). Not an open
+                // string: a typo'd ref would otherwise silently read as a
+                // content kind.
+                items: { oneOf: [{ $ref: '#/$defs/component_type_ref' }, { const: 'text' }, { const: 'none' }] },
                 minItems: 1,
               },
               icons_via: { $ref: '#/$defs/prop_name' },
@@ -598,6 +625,26 @@ export function buildMetamodel(): Record<string, unknown> {
         if: { properties: { role: { const: 'root' } }, required: ['role'] },
         then: { required: ['root', 'role', 'parts'] },
       },
+      extension_points: {
+        type: 'array',
+        description:
+          "Growth points a consumer extends this component through, declared once at the component level instead of enumerating every plugin-shaped prop individually (T6: DataTable's `columns` accepts arbitrary `@tanstack/react-table` ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed). Absent entirely for a component with no such surface - Button, Accordion, most of the kit.",
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', minLength: 1 },
+            kind: { type: 'string', enum: ['prop', 'helper', 'feature'] },
+            description: { type: 'string', minLength: 1 },
+            // Free text, not a GTS ref: the governing type usually lives in a
+            // third-party package this contract has no business re-typing
+            // (e.g. "@tanstack/react-table ColumnDef").
+            typed_by: { type: 'string', minLength: 1 },
+          },
+          required: ['name', 'kind', 'description', 'typed_by'],
+          additionalProperties: false,
+        },
+        minItems: 1,
+      },
       props_schema: {
         type: 'string',
         pattern: propsSchemaIdPattern(),
@@ -736,6 +783,7 @@ export function compileInstance(directory: string, exportStem: string = director
     coverage: overlay.coverage,
     examples: overlay.examples,
     family: overlay.family,
+    extension_points: overlay.extension_points,
     props_schema: propsSchemaId(exportStem, CONTRACT_MAJOR),
   };
 }
