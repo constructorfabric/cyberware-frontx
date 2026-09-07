@@ -425,6 +425,14 @@ jobs:
     # target the shell has reserved for it (`excludedSubtrees`) instead of
     # landing loose at the shell's root.
     - name: Validate shell + overlay composition
+      env:
+        # PULL REQUESTS ONLY: on a develop push, main.yml and publish-packages.yml
+        # start together, so for a few minutes the just-merged version is both
+        # unpublished and equal to the local one — substituting there would
+        # paper over a publish that failed or has not landed yet. See
+        # scripts/pin-unpublished-ecosystem-to-local-pack.mjs for the
+        # substitution criterion this enables.
+        FRONTX_SUBSTITUTE_UNPUBLISHED_PINS: ${{ github.event_name == 'pull_request' && '1' || '' }}
       run: |
         set -euo pipefail
 
@@ -551,18 +559,51 @@ jobs:
         done
         echo "==> Composed $composed_total package(s) into $shell"
 
+        # Captured before the `cd` below, because everything after it runs from
+        # $RUNNER_TEMP and still has to reach this checkout's scripts.
+        repo="$PWD"
+
         # Out of the checkout before installing, for the reason given above
         # the standalone step: an ancestor node_modules must not be able to
         # supply what the composed lockfile does not.
         composed="$RUNNER_TEMP/composed-$(basename "$shell")"
         rm -rf "$composed" && mkdir -p "$composed"
         tar -C "$shell" --exclude=node_modules -cf - . | tar -C "$composed" -xf -
+
+        # Pointed at the composed COPY: the tarballs are packed into it so every
+        # `file:` specifier stays a relative path inside it, not one climbing
+        # out of $RUNNER_TEMP. Run before `cd` because the script resolves
+        # this repo's packages/* from its own location.
+        #
+        # The trap makes the undo run even if `npm install` fails under
+        # `set -e`, which would otherwise skip the restore line below and leave
+        # the tree rewritten for whatever reads it next. Registered once the
+        # call above succeeds; `--restore` is a no-op if nothing was rewritten.
+        if [ -n "${FRONTX_SUBSTITUTE_UNPUBLISHED_PINS:-}" ]; then
+          node scripts/pin-unpublished-ecosystem-to-local-pack.mjs --tree "$composed"
+          # `|| true` is load-bearing, not defensive noise: bash carries the
+          # pre-trap exit status through an EXIT handler that ends successfully,
+          # but a handler whose LAST command fails overwrites it — measured both
+          # ways — so an unguarded restore could turn a green step red. Guarded,
+          # 0 stays 0 and a failing install stays failing, with no `$?` dance.
+          # It also means a restore failure on the red path cannot mask the
+          # install failure that is the actual finding.
+          trap 'node "$repo/scripts/pin-unpublished-ecosystem-to-local-pack.mjs" --tree "$composed" --restore || true' EXIT
+        fi
+
         cd "$composed"
         # npm install, not npm ci: the shell's committed lockfile is generated
         # without the overlay, so it has no mfe_packages entries and `ci` would
         # fail as out of sync. Re-installing after an `add` is the documented
         # workflow (template-mfe/README.md).
         npm install
+
+        # Must run before anything below reads these manifests as committed —
+        # see RESTORE_JOURNAL_NAME's docblock in the script for why.
+        if [ -n "${FRONTX_SUBSTITUTE_UNPUBLISHED_PINS:-}" ]; then
+          node "$repo/scripts/pin-unpublished-ecosystem-to-local-pack.mjs" --tree "$composed" --restore
+        fi
+
         # FRONTX_INCLUDE_TEMPLATE_EXAMPLES=1 on both commands below, because every
         # MFE package this job composes is one the template ships as an example
         # and therefore declares `"templateExample": true`. Without the opt-in

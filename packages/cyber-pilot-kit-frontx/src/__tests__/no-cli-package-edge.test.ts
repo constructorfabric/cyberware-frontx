@@ -76,14 +76,20 @@ describe('no @gears-frontx/cli package edge (cpt-frontx-dod-ai-upgrade-orchestra
 const INVENTORY_STORAGE_PATTERN = /\.frontx[/\\]inventory|FRONTX_INVENTORY_ROOT/i;
 
 describe('shipped kit documents reach the CLI only over its command surface', () => {
-  const documents = () => listFiles(KIT_ROOT, (name) => name.endsWith('.md'));
+  // `.mjs` alongside `.md`: the kit now ships an executable resource as well as
+  // documents, and a script is the one shipped surface that could carry a real
+  // import of the CLI package rather than an instruction to run it. The `.ts`
+  // scan above does not see it (it is not TypeScript) and the document scan did
+  // not either until this predicate was widened.
+  const documents = () => listFiles(KIT_ROOT, (name) => name.endsWith('.md') || name.endsWith('.mjs'));
 
-  it('walks the shipped documents, including the entry points outside src/', () => {
+  it('walks the shipped documents and scripts, including the entry points outside src/', () => {
     const found = documents().map((f) => f.slice(KIT_ROOT.length + 1));
 
     expect(found).toContain('SKILL.md');
     expect(found).toContain(join('skills', 'project-scaffolding', 'SKILL.md'));
     expect(found).toContain('AGENTS.md');
+    expect(found).toContain(join('skills', 'project-scaffolding', 'scripts', 'verify-walk.mjs'));
   });
 
   it('contains no import/require specifier naming @gears-frontx/cli in any shipped document', () => {

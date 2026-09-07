@@ -37,6 +37,54 @@ type = "file"
 user_modifiable = false
 public = true
 
+# The accounting layer over the scaffolding skill's Step 7 browser walk and Step 8
+# report: what must be true for a claim to stand, as categories with stable ids the
+# report walks one by one. The mechanics stay in the skill; this file only records
+# what they have to establish.
+#
+# No `public` key, deliberately. Studio admits `public = true` only for the `skill`,
+# `agent` and `rule` kinds, and this is neither - the same hard validation error the
+# `frontx_guidelines` note below describes would fire. It is installed and readable
+# either way; `public` controls only whether `generate-agents` offers a resource to
+# an agent host as its own entry point, which this one is not: it is reached from
+# the scaffolding skill that cites it.
+#
+# `kind = "checklist"` is what Studio infers from a source whose file name ends in
+# `checklist.md`; naming it explicitly keeps the manifest readable without depending
+# on that inference. Carries no `description` key, for the reason stated above the
+# scaffolding entry: a resource entry's `id` and `description` are scanned against
+# the generic solution-term list, and "verification" is what the document itself says
+# it is about.
+[[kits.resources]]
+id = "frontx_verification_checklist"
+kind = "checklist"
+source = "skills/project-scaffolding/verification-checklist.md"
+install_path = "skills/project-scaffolding/verification-checklist.md"
+type = "file"
+user_modifiable = false
+
+# The executable copy of Step 7's browser-walk mechanics: a node program that
+# drives one walk over the declared screens and emits a machine-readable result plus the
+# coverage rows. The skill states the rules and this resource performs them, so a
+# run reaches them by running a program rather than by reading paragraphs it may
+# read late or read partly.
+#
+# No `public` key, and no `description`, for the reasons the two entries above
+# give: `public = true` is a hard validation error outside the skill/agent/rule
+# kinds, and a resource entry's `id` and `description` are scanned against the
+# generic solution-term list. The document that cites it is the scaffolding
+# skill, which is where its invocation is written out.
+#
+# `kind = "script"` is stated rather than left to Studio's inference from the
+# source path, on the same principle as the checklist entry above.
+[[kits.resources]]
+id = "frontx_verify_walk"
+kind = "script"
+source = "skills/project-scaffolding/scripts/verify-walk.mjs"
+install_path = "skills/project-scaffolding/scripts/verify-walk.mjs"
+type = "file"
+user_modifiable = false
+
 [[kits.resources]]
 id = "frontx_agents"
 kind = "rule"

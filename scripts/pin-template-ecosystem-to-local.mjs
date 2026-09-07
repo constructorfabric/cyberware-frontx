@@ -34,9 +34,12 @@
  * own `packages/*`. Every other way an install can fail (an unresolvable
  * third-party dependency, a peer conflict, a corrupt lockfile edge) still
  * fails exactly as before it. Whether the PUBLISHED pins install at all is a
- * different question, answered by `Template Validate` (`main.yml`), which
- * this script does not touch and which still has to go red while they do not
- * resolve.
+ * different question, answered by `Template Validate` (`main.yml`), which this
+ * script does not touch. That job used to have to go red while a bumped pin did
+ * not resolve; it now substitutes a `npm pack` tarball of the very version the
+ * pin names, and only for that version - see
+ * `pin-unpublished-ecosystem-to-local-pack.mjs`, whose docblock explains why
+ * that job needs the published ARTIFACT while this one wants the working tree.
  *
  * Core logic is exported for unit tests; only `runCli` touches the process.
  *
@@ -66,10 +69,7 @@ import { ecosystemScopeMatcher, readEcosystemPackages, scanTreePins } from './te
  *   edits: { field: string; packageName: string; pinnedVersion: string; fileSpec: string }[];
  *   overrides: OverrideEntry[] | null;
  * }} ManifestEdit
- * @typedef {
- *   | { ok: true; templateDirName: string; manifestEdits: ManifestEdit[] }
- *   | { ok: false; reason: 'nothing-to-substitute' | 'override-conflict'; message: string }
- * } PlanResult
+ * @typedef {{ ok: true; templateDirName: string; manifestEdits: ManifestEdit[] } | { ok: false; reason: 'nothing-to-substitute' | 'override-conflict'; message: string }} PlanResult
  */
 
 /**
@@ -81,7 +81,7 @@ import { ecosystemScopeMatcher, readEcosystemPackages, scanTreePins } from './te
  * @param {string} relativePath
  * @returns {string}
  */
-function toPosixRelative(relativePath) {
+export function toPosixRelative(relativePath) {
   const posix = relativePath.split(path.sep).join('/');
   // `path.relative` omits the leading `./` a same-directory result needs to
   // read as a relative specifier rather than a bare (registry) one.
@@ -105,12 +105,16 @@ function toPosixRelative(relativePath) {
  * keep reporting a stale exact peer pin (a real drift), `version-bump-on-
  * change-check.mjs` must keep counting a peer edit as substantive, and a
  * sync-guard test binds that constant byte-for-byte to the CLI's
- * `validate-content-self-containment.ts`. Only this WRITER has the narrower
- * question, so only this writer carries the narrower list - the same split
- * `INSTALLED_DEPENDENCY_FIELDS` already makes in
- * `template-lockfile-selflink-check.mjs`.
+ * `validate-content-self-containment.ts`.
+ *
+ * Only a WRITER of `file:` specifiers has the narrower question, which is why
+ * the narrower list lives here and is exported to the second such writer
+ * (`pin-unpublished-ecosystem-to-local-pack.mjs`) rather than copied into it.
+ * `template-lockfile-selflink-check.mjs` keeps its own same-valued list on
+ * purpose: it READS an install tree and asks which fields materialise an entry
+ * there, a different question that happens to have the same answer today.
  */
-const INSTALLED_DEPENDENCY_FIELDS = new Set(['dependencies', 'devDependencies', 'optionalDependencies']);
+export const INSTALLED_DEPENDENCY_FIELDS = new Set(['dependencies', 'devDependencies', 'optionalDependencies']);
 
 /**
  * Every exact-registry-version pin site in `<repoRoot>/<templateDirName>`

@@ -117,6 +117,19 @@ export default [
     },
   },
 
+  // Kit-shipped scripts: node programs installed as kit resources rather than
+  // compiled from this repo's TypeScript. The L0 block above is scoped to
+  // .ts/.tsx, so without this block every `fetch`, `process` and `console` in
+  // them is a `no-undef` error against globals node actually provides.
+  {
+    files: ['packages/**/skills/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
+  },
+
   // React hooks
   {
     files: ['**/*.{ts,tsx}'],

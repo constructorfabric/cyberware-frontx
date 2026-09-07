@@ -13,6 +13,9 @@
     "packages/cli": {
       "ignore": ["templates/**", "template-sources/**"]
     },
+    "packages/cyber-pilot-kit-frontx": {
+      "entry": ["skills/**/scripts/*.mjs"]
+    },
     "packages/ui-kit": {
       "entry": [
         "demo/main.tsx",
