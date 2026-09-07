@@ -508,3 +508,91 @@ already uses to decide what belongs in `x-gts-traits` - at that point
 would be traits, which is the "move everything" version tscbmstubp
 originally proposed. The map is the single edit point either way; no other
 file changes shape.
+
+## Decisions taken from the demo review
+
+Five questions came out of PR #611's review thread. What follows is the
+call on each, for whoever extends contract coverage past these three pilot
+directories - not a re-litigation, a record of what was decided and why.
+
+**1. Source of truth stays the code; YAML holds meaning, not shape.**
+tscbmstubp (2026-09-04 11:22) proposed Option B: YAML declares props/axes,
+TypeScript is GENERATED from YAML (`button.contract.d.ts`), `cva()` stays in
+code but is typed against the generated union, and the extractor flips from
+"read the code" to "verify the code matches the YAML". Option A - the code
+stays the one place props/axes are declared, the extractor reads them, the
+overlay only carries what code cannot express - was hardened instead:
+`check.ts`'s `compat` subcommand (T4) diffs a component's committed props
+schema against the same component at a base ref via gts-ts's
+`GTS.checkCompatibility` and fails the build on an incompatible verdict
+unless `CONTRACT_MAJOR` also moved. That is Option A's own answer to the
+concern Option B was raised to solve - "a removed variant breaks consumers
+silently" - without inverting which side is generated. B is declined for a
+narrower reason than "A already works": the compiled JSON, not YAML-derived
+TypeScript, is the one artifact this contract format claims is normative -
+`gtsPlugin.registerSchema`, a projection into a structured-output schema, or
+a validator in another language all read the compiled JSON, never a
+`.d.ts`. Other kits (should this format ever leave this pilot) would extract
+their own language's types from that JSON however suits their own tooling;
+generating ONE language's types here would make that one language's shape
+look normative when it is not. The tradeoff B's author named honestly - "one
+YAML diff plus JSON diffs of the same fact" on every prop change - is
+accepted as the cost of keeping the compiled artifact the single normative
+one.
+
+**2. Vendor namespace stays `frontx.uikit`.** GeraBart's first review
+comment (2026-09-03 09:57) proposed a base type id shaped
+`gts.frontx.design.uikit.component.v1~`; itechmeat's reply (14:38:30)
+explained the base type actually needed a segment `frontx.uikit.component.v1`
+could not supply either - gts-ts's own grammar requires 5-6 dot-tokens per
+segment, and that string is 4 - so the base type shipped as
+`gts.frontx.uikit.base.component.v1~`, one token longer, keeping
+`frontx.uikit` rather than `frontx.design.uikit`. No reply followed on
+GeraBart's side of that thread. The question stays open, not resolved by
+default: `ids.ts`'s `VENDOR_PACKAGE` constant is the one place a rename
+would land, and it is cheap now (three directories - button, accordion,
+data-table) and gets more expensive every additional component `covered.json`
+gains, since every id a renamed vendor segment appears in - base type,
+every props schema, every passthrough type, every instance - would move in
+the same commit. Get the call before coverage grows much further.
+
+**3. Instance artifact kept.** See "The x-gts-traits hybrid" section above -
+the instance is what a catalog, plan validator or lint reads without JSON
+Schema machinery; the props schema is what a schema-aware validator or
+structured-output projection reads. Different readers, different costs;
+merging them would create a third, poorer-fit artifact rather than remove
+one.
+
+**4. The x-gts-traits hybrid is implemented; what ADR 0005's answer changes.**
+See "The x-gts-traits hybrid" section above for the split itself and the two
+gts-ts mechanics it had to work around. `ADR/0005-default-type-substrate-provider.md`
+decides which component owns the default GTS-backed type-substrate provider -
+it does not answer, and was never meant to answer, whether a GTS runtime
+ever reads a component's traits to CHANGE behavior at runtime versus only
+validating and storing them. That question is still open, addressed to
+GeraBart in the same PR #611 thread (itechmeat, 2026-09-03 14:38:51) and
+still unanswered as of this pilot. Two outcomes, both already accounted for
+by `SEMANTIC_FIELD_TARGETS` being the single routing switch: if the answer
+is "validate-and-store" (traits are checked and carried, nothing reads them
+to change behavior), nothing here changes - that is what this hybrid already
+assumes. If the answer is "a runtime acts on traits", the documentation
+fields currently left in `x-uikit` (`intent`, `typical_uses`, `invariants`,
+`anti_patterns`, `examples`) would need to move too, since "a runtime reads
+this" becomes the same bar `x-gts-traits` already uses for everything else -
+at that point `x-uikit` would fold away and the whole overlay would be
+traits, the "move everything" shape tscbmstubp's original comment (item 2)
+proposed.
+
+**5. "Block", not "higher-order component", for future template-copied
+composites.** tscbmstubp's terminology note (2026-09-04 11:37) proposed
+naming the future template-copied composite a kit-family root plus its parts
+compose into - not shipped anywhere in this branch - a "block" rather than a
+"higher-order component": HOC still implies an npm-consumed, versioned
+artifact the way Accordion's own root/item/trigger/content family is, where
+a block implies something a template copies in and the owning project then
+forks and maintains itself, per DESIGN's own library-vs-template line (the
+same distinction shadcn/ui draws between its library components and its
+block templates). Adopted as the term for whoever picks up block/template
+composite work next; no code in this branch defines, ships or tests a
+block - Accordion and DataTable are both ordinary (if compound, in
+Accordion's case) kit components, not blocks.
