@@ -17,11 +17,19 @@
 //      `identicalFiles` — closing the hole that let `apply --adopt-existing`
 //      write straight through an aliasing symlink.
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFsReadExistingContentFn, createFsReadInstalledContentFn } from '../fs-existing-content';
-import { reconcileExistingContent } from '../../scaffold/existing-content';
+import { reconcileExistingContent, DIRECTORY_CONTENT_MARKER, SPECIAL_CONTENT_MARKER } from '../../scaffold/existing-content';
+
+// `mkfifo` has no Node.js API — shelled out to the real command, present on
+// every POSIX platform this package targets (macOS/Linux CI). Windows is not
+// this suite's concern (a FIFO is a POSIX concept).
+function makeFifo(absolutePath: string): void {
+  execFileSync('mkfifo', [absolutePath]);
+}
 
 describe('createFsReadExistingContentFn (symlinks)', () => {
   let repoRoot: string;
@@ -128,6 +136,65 @@ describe('createFsReadExistingContentFn (symlinks)', () => {
 
     expect(items.map((item) => item.path)).toContain('app/dangling.json');
   });
+
+  // A FIFO at a payload leaf position: the walk must report it with the
+  // uncomparable marker, never read it — reading blocks forever waiting for
+  // a writer/reader that never attaches, hanging the whole process with no
+  // stdout, no stderr, and no exit. Proving the call RETURNS is the point of
+  // this test: if the fix regressed, this test would time out rather than
+  // fail cleanly.
+  it('reports a FIFO inside the target as an uncomparable entry, and the call returns rather than hanging', async () => {
+    const dir = await makeRepo();
+    await mkdir(path.join(dir, 'app'), { recursive: true });
+    makeFifo(path.join(dir, 'app', 'pipe'));
+    const readExistingContent = createFsReadExistingContentFn(dir);
+
+    const items = await readExistingContent('app');
+
+    expect(items).toEqual([{ path: 'app/pipe', content: SPECIAL_CONTENT_MARKER }]);
+  });
+
+  // A FIFO standing exactly AT the target itself — `blockingComponentOf`'s
+  // own concern, distinct from the walk above. Before this fix, a FIFO here
+  // fell through to `fs.readFileSync`, which blocks identically.
+  it('reports a FIFO standing at the target itself as the blocking component, and the call returns', async () => {
+    const dir = await makeRepo();
+    await mkdir(path.join(dir, 'app'), { recursive: true });
+    makeFifo(path.join(dir, 'app', 'pipe'));
+    const readExistingContent = createFsReadExistingContentFn(dir);
+
+    const items = await readExistingContent('app/pipe');
+
+    expect(items).toEqual([{ path: 'app/pipe', content: SPECIAL_CONTENT_MARKER }]);
+  });
+
+  // DIRECTORY-AT-LEAF fix: a directory standing exactly where the payload
+  // declares a FILE is otherwise invisible to reconciliation — the walk
+  // recurses INTO a directory rather than reporting it at its own path, so
+  // `existing.get(payloadPath)` reads as "nothing here yet" for a path that
+  // is, in fact, occupied. Reported here alongside recursing into it (its
+  // one real child file is still enumerated normally).
+  it('reports a directory at its own path with the directory marker, alongside recursing into it', async () => {
+    const dir = await makeRepo();
+    await mkdir(path.join(dir, 'app', 'README.md'), { recursive: true });
+    await writeFile(path.join(dir, 'app', 'README.md', 'inner.txt'), 'nested', 'utf-8');
+    const readExistingContent = createFsReadExistingContentFn(dir);
+
+    const items = await readExistingContent('app');
+
+    expect(items).toContainEqual({ path: 'app/README.md', content: DIRECTORY_CONTENT_MARKER });
+    expect(items).toContainEqual({ path: 'app/README.md/inner.txt', content: 'nested' });
+  });
+
+  it('reports an EMPTY directory too, at its own path, producing no other entry beneath it', async () => {
+    const dir = await makeRepo();
+    await mkdir(path.join(dir, 'app', 'README.md'), { recursive: true });
+    const readExistingContent = createFsReadExistingContentFn(dir);
+
+    const items = await readExistingContent('app');
+
+    expect(items).toEqual([{ path: 'app/README.md', content: DIRECTORY_CONTENT_MARKER }]);
+  });
 });
 
 describe('createFsReadInstalledContentFn (symlinks — unchanged by the fix)', () => {
@@ -158,6 +225,21 @@ describe('createFsReadInstalledContentFn (symlinks — unchanged by the fix)', (
     const items = await readInstalledContent('.');
 
     expect(items.map((item) => item.path)).toEqual(['real.json']);
+  });
+
+  // A template's payload directory structure and any special files it might
+  // ship are not this fix's target either — `readInstalledContent` keeps its
+  // pre-existing behaviour of reporting only real files, never a directory's
+  // own path and never a FIFO/socket/device.
+  it('still reports only real files, never a directory marker, for a template payload', async () => {
+    const dir = await makeTemplate();
+    await mkdir(path.join(dir, 'sub'), { recursive: true });
+    await writeFile(path.join(dir, 'sub', 'a.txt'), 'a', 'utf-8');
+    const readInstalledContent = createFsReadInstalledContentFn(dir);
+
+    const items = await readInstalledContent('.');
+
+    expect(items).toEqual([{ path: 'sub/a.txt', content: 'a' }]);
   });
 });
 

@@ -113,9 +113,12 @@ vendored into the target first:
 # "defaults" set in `frontx list` / `frontx list --json`), and the folder you
 # copy it into must be that default's own path: origin, relative to
 # ./my-app (here, "template-shell" — see that default's own path in
-# `packages/cli/src/generated/official-defaults.ts`)
+# `packages/cli/src/generated/official-defaults.ts`). Vendor tracked content
+# only — a plain recursive copy also drags in `node_modules`, `dist`,
+# `dist-lib` and `.frontx` (hundreds of MB in this checkout) and records that
+# folder as the new project's origin.
 mkdir -p ./my-app/template-shell
-cp -R template-shell/. ./my-app/template-shell/
+git archive HEAD template-shell | tar --strip-components=1 -x -C ./my-app/template-shell
 frontx seed ./my-app --input '{"templates":{"@gears-frontx/frontx-template-shell":["."]}}'
 ```
 

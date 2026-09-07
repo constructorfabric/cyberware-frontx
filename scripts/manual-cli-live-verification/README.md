@@ -38,7 +38,10 @@ CLI=/absolute/path/to/gears-frontx/packages/cli/dist/cli.js
 A note on `--json`: redirect it to a file before parsing. A plan or delete listing can run well past
 one pipe buffer, and a file is easier to inspect byte-for-byte with `jq`/`cat` than a terminal — the
 CLI itself waits for the full write to complete before exiting, so a full-reading pipe or redirect
-always receives the complete payload regardless of size.
+receives the complete payload regardless of size, as long as the destination itself reports a short
+write as a failure. A destination that instead accepts a short write silently — a file capped by a
+filesystem resource limit, say — gives the CLI nothing to detect or escalate on; that gap is out of
+reach of this check, not something a live run against an ordinary file or pipe can exercise.
 
 ```bash
 node "$CLI" delete . --dry-run --json > /tmp/plan.json
@@ -147,9 +150,6 @@ recovers, the second template is the cause.
 
 ## Expected redness
 
-- `npm run validate:templates` fails on `template-mfe` with 9 `overrides` violations: its overrides
-  are project-relative and meaningful only inside this monorepo. Known template defect.
-- `apply` copies the template's own `frontx-template.json` into the target. Known defect.
 - `delete` removes files but does not prune the directories they leave empty.
 
 ## Cleanup

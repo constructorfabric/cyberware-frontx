@@ -839,6 +839,39 @@ function descendDirectory(
 
 // @cpt-algo:cpt-frontx-algo-cli-scaffolding-delete-plan:p1
 /**
+ * The shallowest component of `absolutePath` that exists on disk as something
+ * other than a directory, or `null` when the path is simply absent.
+ *
+ * Only ever consulted once `realpathSync` has already refused the whole path,
+ * which happens for both of those cases and reports neither. The walk climbs
+ * to the first component that exists at all: everything below it is absent by
+ * construction, so if that component is a directory the path is genuinely
+ * not there, and if it is anything else — a regular file, a dangling or live
+ * symlink the chain cannot be followed through, a FIFO, a device — that is
+ * the entry blocking the path, and its name is what a refusal has to carry.
+ *
+ * `lstat`, not `stat`: a symlink standing on the way is itself the blocking
+ * entry, and dereferencing it would report on whatever it aliases instead.
+ * The walk terminates at the filesystem root, whose own components are
+ * ordinary directories, so no project root has to be threaded in for it.
+ */
+function firstNonDirectoryComponentOf(absolutePath: string): string | null {
+  let candidate = path.resolve(absolutePath);
+  for (;;) {
+    let stat: fs.Stats;
+    try {
+      stat = fs.lstatSync(candidate);
+    } catch {
+      const parent = path.dirname(candidate);
+      if (parent === candidate) return null; // walked to the filesystem root
+      candidate = parent;
+      continue;
+    }
+    return stat.isDirectory() ? null : candidate;
+  }
+}
+
+/**
  * Real `ListTargetFilesFn` (`../scaffold/delete-plan.ts`) — enumerates every
  * real file reachable under an arbitrary project-relative TARGET's absolute
  * directory, POSIX-relative to it. Unlike `createFsListPayloadFilesFn`
@@ -854,11 +887,48 @@ function descendDirectory(
  * applied target ordinarily exists on disk, but ground already partially or
  * fully removed by hand is not this seam's error to raise; it simply
  * enumerates fewer real candidates.
+ *
+ * Throws the typed `TargetNotDirectoryError` below, rather than reaching
+ * `fs.readdirSync` at all, when `absoluteDir` resolves to something other
+ * than a directory — a registered, applied target replaced by an ordinary
+ * file (or any other non-directory entry) since it was recorded.
+ * `fs.readdirSync` on a non-directory throws a bare `ENOTDIR` with no
+ * structure to it, and this seam's own contract (`Promise<string[]>`) gives
+ * this function no honest value to invent for "the target is not
+ * enumerable" other than `[]` — indistinguishable from a target that is
+ * genuinely empty, which `commands/delete.ts` must not be allowed to read as
+ * "there is nothing here to preserve or delete". A typed throw is what lets
+ * that command tell this fact apart from both cases and report it as its own
+ * structured refusal, rather than either an empty deletion plan or a bare
+ * `ENOTDIR` reaching the CLI's own top-level catch as an internal error with
+ * no JSON envelope at all.
  */
 export function createFsListTargetFilesFn(): ListTargetFilesFn {
   return async function listTargetFiles(absoluteDir: string): Promise<string[]> {
     const root = realPathOrNull(absoluteDir);
-    if (root === null) return [];
+    if (root === null) {
+      // `realpathSync` fails for two different facts, and they must not share
+      // an answer: a target that genuinely does not exist (ground already
+      // removed by hand — this seam's own contract calls that an ordinary
+      // empty enumeration), and a target unreachable because a component ON
+      // THE WAY to it is no longer a directory. Returning `[]` for the second
+      // would let `commands/delete.ts` compute an empty plan, report success,
+      // and strike the target from `targets[]` without having verified that
+      // anything was there — the same false success a non-directory AT the
+      // target produces, one component higher up.
+      const blocking = firstNonDirectoryComponentOf(absoluteDir);
+      if (blocking !== null) throw new TargetNotDirectoryError(blocking);
+      return [];
+    }
+    let rootStat: fs.Stats;
+    try {
+      rootStat = fs.statSync(root);
+    } catch {
+      return []; // vanished between realpath and stat: nothing real left to enumerate
+    }
+    if (!rootStat.isDirectory()) {
+      throw new TargetNotDirectoryError(absoluteDir);
+    }
     try {
       return walkFiles(absoluteDir, '', root, new Set([root]), new Set());
     } catch (error) {
@@ -868,4 +938,23 @@ export function createFsListTargetFilesFn(): ListTargetFilesFn {
       );
     }
   };
+}
+
+/**
+ * `ListTargetFilesFn` (`createFsListTargetFilesFn` above) was asked to
+ * enumerate `targetPath`, but whatever now stands there is not a directory
+ * at all. Typed, rather than a bare `Error`, so `commands/delete.ts` can
+ * report this the same way `apply` and `upgrade` already report a payload
+ * path whose on-disk shape cannot be compared — a structured refusal naming
+ * the offending path, never an internal failure with no envelope at all
+ * under `--json`.
+ */
+export class TargetNotDirectoryError extends Error {
+  readonly targetPath: string;
+
+  constructor(targetPath: string) {
+    super(`"${targetPath}" is no longer a directory: its content cannot be enumerated for deletion.`);
+    this.name = 'TargetNotDirectoryError';
+    this.targetPath = targetPath;
+  }
 }

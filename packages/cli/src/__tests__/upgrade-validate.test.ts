@@ -263,6 +263,22 @@ describe('validateUpgrade (cpt-frontx-algo-upgrade-changeset-validate)', () => {
     expect(result.message).toContain('app1/drift.ts');
     expect(result.message).toContain('app2/blocked.ts');
     expect(result.message).toContain('a directory stands at the path');
+
+    // `uncomparableConflicts` is a SUBSET of `conflicts` — never a disjoint
+    // list — the FEATURE's own wording for this report ("separately naming,
+    // within that report, which of those paths are instead uncomparable").
+    // Asserted here as the relationship itself, not merely as matching
+    // literal arrays that happen to overlap: a caller summing both lists'
+    // lengths to count "how many paths failed" would double-count every
+    // uncomparable one otherwise.
+    const details = result.details as { conflicts: { target: string; path: string }[]; uncomparableConflicts: { target: string; path: string }[] };
+    for (const entry of details.uncomparableConflicts) {
+      expect(details.conflicts).toContainEqual(entry);
+    }
+    // Strictly smaller here, not merely contained: this fixture carries one
+    // genuine drift (`app1/drift.ts`) that is never uncomparable, proving the
+    // subset is proper rather than the two lists happening to coincide.
+    expect(details.uncomparableConflicts.length).toBeLessThan(details.conflicts.length);
   });
 
   it('refuses INVALID_PATH, ahead of CONTENT_CONFLICT, when an ancestor symlink resolves outside the project root', async () => {
@@ -298,9 +314,17 @@ describe('validateUpgrade (cpt-frontx-algo-upgrade-changeset-validate)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.code).toBe('INVALID_PATH');
-    expect(result.details).toEqual({ paths: [{ target: 'app1', path: 'app1/vendor/lib.ts' }] });
+    // Same shape `CONTENT_CONFLICT` reports its own uncomparable causes in —
+    // naming the ancestor that actually blocks the path, not only the path.
+    expect(result.details).toEqual({
+      paths: [{ target: 'app1', path: 'app1/vendor/lib.ts' }],
+      uncomparableCauses: [{ target: 'app1', path: 'app1/vendor/lib.ts', component: 'app1/vendor', kind: 'symlink' }],
+    });
     expect(result.message).toContain('could not be proven to stay inside the project root');
     expect(result.message).toContain('app1/vendor/lib.ts');
+    // Names the offending ancestor directly — never the removed "the path
+    // itself, or an ancestor" disjunction that left a reader guessing which.
+    expect(result.message).toContain('ancestor "app1/vendor" is a symlink whose target escapes the project root');
     // The unrelated CONTENT_CONFLICT on app2 is never reported: containment
     // is checked, and refused, before content.
     expect(result.message).not.toContain('app2/drift.ts');
@@ -329,8 +353,14 @@ describe('validateUpgrade (cpt-frontx-algo-upgrade-changeset-validate)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.code).toBe('INVALID_PATH');
-    expect(result.details).toEqual({ paths: [{ target: 'app', path: 'app/leaf.txt' }] });
+    expect(result.details).toEqual({
+      paths: [{ target: 'app', path: 'app/leaf.txt' }],
+      uncomparableCauses: [{ target: 'app', path: 'app/leaf.txt', component: 'app/leaf.txt', kind: 'symlink' }],
+    });
     expect(result.message).toContain('could not be proven to stay inside the project root');
+    // `component === path` here: the LEAF itself is the offender, not an
+    // ancestor — named distinctly from the ancestor case above.
+    expect(result.message).toContain('the path itself is a symlink whose target escapes the project root');
   });
 
   it('refuses TARGET_CONFLICT when newly-claimed ground nests another registered template\'s target', async () => {

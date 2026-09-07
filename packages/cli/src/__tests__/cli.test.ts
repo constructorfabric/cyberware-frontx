@@ -2060,4 +2060,32 @@ describe('writeToStream (cpt-frontx-flow-cli-invocation-run-command, step 8)', (
     expect(result).toBe('failed');
     expect(uncaught).toEqual([]);
   });
+
+  // `createInteractiveDeletionConfirm` and `createInteractiveUpgradeApproval`
+  // route their own plan/listing writes through `writeToStream` and then
+  // hand the SAME stream to `readline.createInterface({ output: ... })`,
+  // whose internal prompt-writing (`[_writeToOutput]`) never goes through
+  // `writeToStream` at all. This only stays crash-safe if the permanent
+  // 'error' listener `writeToStream` attaches is keyed by stream identity —
+  // covering every later write on that stream, not just the call that
+  // attached it. A stub `Writable` here stands in for `readline`'s own write
+  // exactly the way `process.stdout.write()` stands in for it in the real
+  // interactive paths, without needing a real TTY/pipe to prove the point.
+  it('keeps a stream crash-safe for a write that bypasses writeToStream entirely, once any prior call has registered it', async () => {
+    const stream = new FailingWritable(makeErrnoException('EPIPE'));
+
+    const { result: firstResult, uncaught: firstUncaught } = await runWithUncaughtExceptionCapture(() =>
+      writeToStream(stream, 'plan listing'),
+    );
+    expect(firstResult).toBe('ok');
+    expect(firstUncaught).toEqual([]);
+
+    const { uncaught: secondUncaught } = await runWithUncaughtExceptionCapture(
+      () =>
+        new Promise<void>((resolve) => {
+          stream.write('prompt text', () => resolve());
+        }),
+    );
+    expect(secondUncaught).toEqual([]);
+  });
 });

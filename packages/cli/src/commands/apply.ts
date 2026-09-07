@@ -226,7 +226,14 @@ export async function resolveAndCheckBatch(
       ok: false,
       code: 'INVALID_PATH',
       message: `Target "${canonicalized.rawTarget}" could not be proven to stay inside the project root.`,
-      details: { target: canonicalized.rawTarget },
+      // `path`, not `target`: this is the same single-offending-path shape
+      // every other `INVALID_PATH` refusal in this package's `details`
+      // already carries (`commands/ownership.ts`, `commands/validate.ts`,
+      // and this file's own `PathContainmentError` catch below) — one
+      // vocabulary for one fact, rather than a second field name invented
+      // for the identical thing because this refusal happens to fire from a
+      // different call site.
+      details: { path: canonicalized.rawTarget },
     };
   }
 
@@ -310,7 +317,11 @@ export async function resolveAndCheckBatch(
         ok: false,
         code: 'INVALID_PATH',
         message: `Target "${verdict.path}" could not be proven to stay inside the project root.`,
-        details: { target: verdict.path },
+        // Same `path` shape as every other single-offending-path
+        // `INVALID_PATH` refusal in this package — see the sibling refusal
+        // just above this function's own `canonicalizeBatch` check for the
+        // full reasoning.
+        details: { path: verdict.path },
       };
     }
     // @cpt-begin:cpt-frontx-flow-cli-scaffolding-assemble-preview:p1:inst-asm-return-conflict
@@ -372,16 +383,36 @@ async function computePayloadForTarget(
   return payload;
 }
 
+// The human-readable name for each `uncomparableCauses` `kind` — the one
+// formulation both branches of `describePathCause` below read from, so the
+// wording for, say, `'special'` cannot drift between "at the path" and "as
+// an ancestor" phrasing.
+function describeCauseKind(kind: 'symlink' | 'file' | 'directory' | 'special'): string {
+  switch (kind) {
+    case 'symlink':
+      return 'a symlink';
+    case 'file':
+      return 'a regular file';
+    case 'directory':
+      return 'a directory';
+    case 'special':
+      return 'a special file (a FIFO, socket, or device) whose content cannot be read safely';
+  }
+}
+
 // Names the specific component `cause` blames for making `path` uncomparable
-// — the payload path itself (a symlink stands there), or the offending
-// ancestor directory component (a symlink or a regular file stands where a
-// directory is required) — so a refusal tells a developer, for example,
-// `"app2/dir" is a regular file` rather than leaving them to walk the chain
-// by hand.
-function describePathCause(path: string, cause: { component: string; kind: 'symlink' | 'file' } | undefined): string {
+// — the payload path itself (a symlink, a directory, or a special file
+// stands there), or the offending ancestor directory component (a symlink,
+// a regular file, or a special file stands where a directory is required)
+// — so a refusal tells a developer, for example, `"app2/dir" is a regular
+// file` rather than leaving them to walk the chain by hand.
+function describePathCause(
+  path: string,
+  cause: { component: string; kind: 'symlink' | 'file' | 'directory' | 'special' } | undefined,
+): string {
   if (cause === undefined) return path; // defensive: every uncomparable path carries a cause
-  if (cause.component === path) return `${path} (a symlink stands at the path)`;
-  return `${path} (ancestor "${cause.component}" is a ${cause.kind}, not a directory)`;
+  if (cause.component === path) return `${path} (${describeCauseKind(cause.kind)} stands at the path)`;
+  return `${path} (ancestor "${cause.component}" is ${describeCauseKind(cause.kind)}, not a directory)`;
 }
 
 // The ONE place the `CONTENT_CONFLICT` message for an unrecorded target's
@@ -407,7 +438,7 @@ function describePathCause(path: string, cause: { component: string; kind: 'syml
 function describeContentConflictCause(
   paths: readonly string[],
   uncomparable: readonly string[],
-  uncomparableCauses: readonly { path: string; component: string; kind: 'symlink' | 'file' }[],
+  uncomparableCauses: readonly { path: string; component: string; kind: 'symlink' | 'file' | 'directory' | 'special' }[],
 ): string {
   const uncomparableSet = new Set(uncomparable);
   const differing = paths.filter((candidate) => !uncomparableSet.has(candidate));
@@ -730,7 +761,7 @@ export async function runApplyPipeline(
   // `describePathCause` above and `ExistingContentPartitions.uncomparableCauses`
   // (`scaffold/existing-content.ts`) for why the refusal names each path's
   // own cause rather than leaving a developer to find it.
-  const uncomparableCauses: { path: string; component: string; kind: 'symlink' | 'file' }[] = [];
+  const uncomparableCauses: { path: string; component: string; kind: 'symlink' | 'file' | 'directory' | 'special' }[] = [];
   const undecidedAdditionalPaths: string[] = [];
   // `--adopt-existing`'s own contract is to leave an undeclared on-disk path
   // untouched — but the real existing-content walk (`adapters/fs-existing-

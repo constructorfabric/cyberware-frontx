@@ -51,7 +51,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ContentItem } from '../scaffold/types';
-import { SYMLINK_CONTENT_MARKER } from '../scaffold/existing-content';
+import { SYMLINK_CONTENT_MARKER, DIRECTORY_CONTENT_MARKER, SPECIAL_CONTENT_MARKER } from '../scaffold/existing-content';
 import type { ReadInstalledContentFn, ReadExistingContentFn } from '../scaffold/existing-content';
 
 // Install-time output, never committed template content
@@ -129,6 +129,20 @@ function listFilesRecursive(
     const relativePath = relativeDir === '' ? entry.name : `${relativeDir}/${entry.name}`;
     if (entry.isDirectory()) {
       if (skipInstallOutput && entry.name === PAYLOAD_SKIP_DIR) continue;
+      // Reported at its OWN path, alongside — never instead of — recursing
+      // into it: a directory is otherwise invisible to reconciliation at its
+      // own path (the walk only ever reports what it finds INSIDE a
+      // directory, never the directory itself), so a payload path the
+      // template declares as a file, where disk instead holds a directory,
+      // would read as "nothing here yet" and reach `commands/apply.ts`'s
+      // own `writeFileFn`, which fails with a raw `EISDIR`. Only for the
+      // EXISTING-content walk (`reportSymlinksAsExisting`): a template's own
+      // installed content (`readInstalledContent`) has no such hazard to
+      // guard against — every directory there is the template's own
+      // structure, never a project target's.
+      if (reportSymlinksAsExisting) {
+        items.push({ path: relativePath, content: DIRECTORY_CONTENT_MARKER });
+      }
       items.push(...listFilesRecursive(root, skipInstallOutput, reportSymlinksAsExisting, relativePath));
     } else if (entry.isFile()) {
       items.push({ path: relativePath, content: fs.readFileSync(path.join(root, relativePath), 'utf-8') });
@@ -137,13 +151,22 @@ function listFilesRecursive(
       // constant's own doc comment for why an uncomparable marker, rather
       // than the link's real target content, is the honest thing to report.
       items.push({ path: relativePath, content: SYMLINK_CONTENT_MARKER });
+    } else if (reportSymlinksAsExisting) {
+      // Any other special entry (fifo, socket, device): reported with an
+      // uncomparable marker rather than skipped, and NEVER read — a FIFO in
+      // particular blocks forever on an `open()` for either direction when
+      // no counterpart end is attached, and this walk must never attempt
+      // one. Only for the EXISTING-content walk; `readInstalledContent`
+      // below keeps skipping it outright, unchanged, matching
+      // `fs-read-content-items.ts`'s identical scope for the identical
+      // reason (a template's installed content is not expected to contain
+      // one).
+      items.push({ path: relativePath, content: SPECIAL_CONTENT_MARKER });
     }
-    // Any other special entry (fifo, socket, device), or — when
-    // `reportSymlinksAsExisting` is false — a symlink, is neither a
-    // directory nor a file by `withFileTypes`'s own report and is skipped,
-    // matching `fs-read-content-items.ts`'s identical scope for the
-    // identical reason (a template's installed content is not expected to
-    // be a symlink farm).
+    // `readInstalledContent` (`reportSymlinksAsExisting` false): a symlink,
+    // a directory's own entry, and any other special entry are all silently
+    // skipped here, exactly as before this fix — a template's own installed
+    // content is a different data source this fix does not target.
   }
   return items;
 }
@@ -188,6 +211,16 @@ export function createFsReadInstalledContentFn(repoRoot: string): ReadInstalledC
 // entry, and dereferencing it would report on whatever it aliases instead.
 // Its content is the same uncomparable marker the walk below uses for a
 // symlink it finds inside the target, so one rule covers both positions.
+//
+// A component that is neither a directory, a symlink, nor a REGULAR file
+// (`stat.isFile()`) — a FIFO, socket, or device — must never be read: this
+// function used to fall through to `readFileSync` for anything that was not
+// a directory or a symlink, which blocks forever on a FIFO with no writer
+// attached, hanging the whole process with no stdout, no stderr, and no
+// exit. It is reported with the same uncomparable marker the walk below uses
+// for a special entry it finds inside the target, so the two positions (the
+// target's own component, and one found while walking beneath it) refuse
+// identically.
 function blockingComponentOf(repoRoot: string, target: string): ContentItem | null {
   if (target === '.') return null; // the project root itself is the walk's own ground
   const segments = target.split('/');
@@ -201,9 +234,9 @@ function blockingComponentOf(repoRoot: string, target: string): ContentItem | nu
       return null; // nothing exists from here down: an ordinary not-yet-created target
     }
     if (stat.isDirectory()) continue;
-    return stat.isSymbolicLink()
-      ? { path: relativePath, content: SYMLINK_CONTENT_MARKER }
-      : { path: relativePath, content: fs.readFileSync(absolute, 'utf-8') };
+    if (stat.isSymbolicLink()) return { path: relativePath, content: SYMLINK_CONTENT_MARKER };
+    if (stat.isFile()) return { path: relativePath, content: fs.readFileSync(absolute, 'utf-8') };
+    return { path: relativePath, content: SPECIAL_CONTENT_MARKER };
   }
   return null;
 }

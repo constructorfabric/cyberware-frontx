@@ -36,6 +36,50 @@ import type { ContentItem } from './types';
 // decide that.
 export const SYMLINK_CONTENT_MARKER = '\uFFFF\uFFFFfrontx:existing-content:symlink-cannot-be-compared\uFFFF\uFFFF';
 
+// A directory standing exactly AT a payload path the template declares as a
+// FILE is a second, distinct way for a leaf to be uncomparable \u2014 the walk
+// recurses INTO a directory rather than reporting it (so its own path never
+// otherwise becomes an entry), which is exactly right for an ordinary
+// ancestor directory but leaves the directory's OWN path silently absent
+// from the existing-content map whenever a payload declares a file there
+// instead: `existing.get(payloadPath)` reads as `undefined`, indistinguishable
+// from "nothing written yet", and `commands/apply.ts` reaches its own
+// `writeFileFn` and fails with a raw `EISDIR` past every structured refusal
+// this module otherwise guarantees. Reported here, at the directory's own
+// path, ALONGSIDE recursing into it (never instead of) \u2014 the walk still needs
+// to see whatever real files that directory actually holds for every OTHER
+// payload path that legitimately lands beneath it. This marker is
+// deliberately excluded from the ancestor-blocking set
+// (`collectExistingPaths` below): an ordinary directory ancestor is the
+// expected, required shape for everything beneath it, and folding every
+// directory in the tree into that set would manufacture a false "bad
+// ancestor" for the overwhelming majority of payload paths, which normally
+// land beneath directories that already exist. It is likewise never added to
+// the map `additionalPaths` is drawn from (`filterExistingWithinOwnership`) \u2014
+// a directory is structure, not content a developer authored at that path,
+// and surfacing every directory in the target's tree as an undecided
+// "additional path" would flood `--adopt-existing`'s decision surface with
+// entries that were never really in question.
+export const DIRECTORY_CONTENT_MARKER = '\uFFFF\uFFFFfrontx:existing-content:directory-cannot-be-compared\uFFFF\uFFFF';
+
+// A FIFO, socket, device, or any other dirent that is neither a directory,
+// a regular file, nor a symlink is exactly as uncomparable against a
+// payload's declared text content as a symlink is \u2014 but unlike a symlink,
+// naively reading it (as this module's own adapter used to, falling through
+// to `readFileSync` for "anything that isn't a directory or a symlink") can
+// BLOCK FOREVER: opening a FIFO for reading waits for a writer that will
+// never arrive, and opening one for writing (were materialization ever to
+// reach it \u2014 a payload path the walk had wrongly reported as "nothing here"
+// would let it) waits for a reader that will never arrive either. Reported
+// with this marker, the same way a symlink is, so reconciliation refuses
+// `CONTENT_CONFLICT` \u2014 fail-closed, and without ever touching the special
+// file's content \u2014 rather than the caller blocking with no way to regain
+// control. Included in the ancestor-blocking set exactly like a symlink (a
+// FIFO standing where a directory is required blocks everything beneath it
+// identically), never excluded from it the way the directory marker above
+// is.
+export const SPECIAL_CONTENT_MARKER = '\uFFFF\uFFFFfrontx:existing-content:special-file-cannot-be-compared\uFFFF\uFFFF';
+
 // Injected reader for a template's installed content — every file reachable
 // under the template's installed content path, template-relative (never
 // project-relative), unfiltered by any target's effective ownership. Reuses
@@ -85,13 +129,17 @@ export interface ExistingContentPartitions {
   // difference that does not exist.
   uncomparablePaths: string[];
   // One entry per path in `uncomparablePaths`, naming the specific component
-  // that made it so — the payload path itself (a symlink stands there), or
-  // the offending ancestor directory component (a symlink or a regular file
-  // stands where a directory is required) — so a refusal can tell a
-  // developer "`app/dir` is a regular file" rather than leaving them to walk
-  // the chain by hand. `component` equals `path` itself for the payload-path
-  // case.
-  uncomparableCauses: { path: string; component: string; kind: 'symlink' | 'file' }[];
+  // that made it so — the payload path itself (a symlink, a directory, or a
+  // special file such as a FIFO stands there), or the offending ancestor
+  // directory component (a symlink, a regular file, or a special file stands
+  // where a directory is required) — so a refusal can tell a developer
+  // "`app/dir` is a regular file" rather than leaving them to walk the chain
+  // by hand. `component` equals `path` itself for the payload-path case.
+  // `kind: 'directory'` is reachable only at the payload path itself (an
+  // ordinary directory ancestor is the expected, required shape and is
+  // never itself the blocking component); `kind: 'special'` covers a FIFO,
+  // socket, or device, at either position.
+  uncomparableCauses: { path: string; component: string; kind: 'symlink' | 'file' | 'directory' | 'special' }[];
 }
 
 // @cpt-begin:cpt-frontx-algo-cli-scaffolding-existing-content:p1:inst-ec-compute-payload
@@ -126,6 +174,14 @@ function filterExistingWithinOwnership(
 ): Map<string, string> {
   const existing = new Map<string, string>();
   for (const item of rawExisting) {
+    // A directory-marker entry is structure, not content: the per-payload-path
+    // loop below decides whether a directory standing at a payload path is
+    // uncomparable using the RAW `directoryPaths` set instead (computed once,
+    // before this filter, from the same `rawExisting` this function reads),
+    // so this map never needs to carry it — and must not, or every ordinary
+    // directory in the target's tree would surface in `additionalPaths` as an
+    // undecided "additional path" nobody actually needs decided.
+    if (item.content === DIRECTORY_CONTENT_MARKER) continue;
     if (!isWithinEffectiveOwnership(item.path, target, exclusionRoots)) continue;
     existing.set(item.path, item.content);
   }
@@ -181,7 +237,16 @@ function filterExistingWithinOwnership(
 // `inst-ec-if-symlink-component` below).
 function collectExistingPaths(rawExisting: ContentItem[]): Set<string> {
   const existingPaths = new Set<string>();
-  for (const item of rawExisting) existingPaths.add(item.path);
+  for (const item of rawExisting) {
+    // An ordinary directory ancestor is the expected, required shape for
+    // everything beneath it — never itself a blocking component — so a
+    // directory-marker entry is excluded here, the identical exclusion
+    // `filterExistingWithinOwnership` above applies for the same reason.
+    // A symlink or a special-file entry stays IN this set: either one blocks
+    // descent exactly as a regular file does.
+    if (item.content === DIRECTORY_CONTENT_MARKER) continue;
+    existingPaths.add(item.path);
+  }
   return existingPaths;
 }
 
@@ -191,6 +256,27 @@ function collectSymlinkPaths(rawExisting: ContentItem[]): Set<string> {
     if (item.content === SYMLINK_CONTENT_MARKER) symlinkPaths.add(item.path);
   }
   return symlinkPaths;
+}
+
+// A directory standing exactly AT `payloadPath` — see `DIRECTORY_CONTENT_MARKER`'s
+// own doc comment for why this is a LEAF-only concern, never an ancestor one.
+function collectDirectoryPaths(rawExisting: ContentItem[]): Set<string> {
+  const directoryPaths = new Set<string>();
+  for (const item of rawExisting) {
+    if (item.content === DIRECTORY_CONTENT_MARKER) directoryPaths.add(item.path);
+  }
+  return directoryPaths;
+}
+
+// A FIFO, socket, device, or other special entry — see `SPECIAL_CONTENT_MARKER`'s
+// own doc comment. Checked at both the leaf and every ancestor, exactly like
+// `collectSymlinkPaths` above.
+function collectSpecialPaths(rawExisting: ContentItem[]): Set<string> {
+  const specialPaths = new Set<string>();
+  for (const item of rawExisting) {
+    if (item.content === SPECIAL_CONTENT_MARKER) specialPaths.add(item.path);
+  }
+  return specialPaths;
 }
 
 // Returns the SHALLOWEST ancestor of `payloadPath` occupied by anything other
@@ -203,10 +289,12 @@ function findBadAncestorComponent(
   payloadPath: string,
   existingPaths: ReadonlySet<string>,
   symlinkPaths: ReadonlySet<string>,
-): { component: string; kind: 'symlink' | 'file' } | null {
+  specialPaths: ReadonlySet<string>,
+): { component: string; kind: 'symlink' | 'file' | 'special' } | null {
   for (const ancestor of ancestorDirsOf(payloadPath)) {
     if (existingPaths.has(ancestor)) {
-      return { component: ancestor, kind: symlinkPaths.has(ancestor) ? 'symlink' : 'file' };
+      const kind = symlinkPaths.has(ancestor) ? 'symlink' : specialPaths.has(ancestor) ? 'special' : 'file';
+      return { component: ancestor, kind };
     }
   }
   return null;
@@ -276,37 +364,51 @@ export async function reconcileExistingContent(
   // comment for why this is computed before, not after, the ownership
   // filter above narrows `existing` down to `target`'s own ground.
   const symlinkPaths = collectSymlinkPaths(rawExisting);
+  const specialPaths = collectSpecialPaths(rawExisting);
+  const directoryPaths = collectDirectoryPaths(rawExisting);
   const existingPaths = collectExistingPaths(rawExisting);
 
   const identicalFiles: string[] = [];
   const contentConflicts: string[] = [];
   const uncomparablePaths: string[] = [];
-  const uncomparableCauses: { path: string; component: string; kind: 'symlink' | 'file' }[] = [];
+  const uncomparableCauses: { path: string; component: string; kind: 'symlink' | 'file' | 'directory' | 'special' }[] = [];
 
   // @cpt-begin:cpt-frontx-algo-cli-scaffolding-existing-content:p1:inst-ec-foreach-payload-path
   for (const [payloadPath, payloadContent] of payload) {
     // @cpt-begin:cpt-frontx-algo-cli-scaffolding-existing-content:p1:inst-ec-if-symlink-component
     // See `collectExistingPaths`'s own doc comment above for why this check
-    // exists, and why it is no longer scoped to symlinks alone. A symlink at
+    // exists, and why it is no longer scoped to symlinks alone. A symlink, a
+    // directory, or a special file (a FIFO, socket, or device) standing AT
     // the payload path itself (see `fs-containment.test.ts`'s "aliasing
-    // another file via symlink" suite), or a symlink OR A REGULAR FILE at ANY
-    // directory component between it and `target`, cannot be compared
-    // against the payload's declared text content, and writing through it —
-    // or beneath it — lands somewhere the payload path does not name, or
-    // fails outright with a raw `ENOTDIR`: the identical ground
-    // `architecture/ADR/0021-project-upgrade-mechanism.md` already settled
-    // for the upgrade engine ("A payload path where the disk holds a
+    // another file via symlink" suite), or a symlink, a regular file, or a
+    // special file at ANY directory component between it and `target`,
+    // cannot be compared against the payload's declared text content, and
+    // writing through it — or beneath it — lands somewhere the payload path
+    // does not name, fails outright with a raw `ENOTDIR`/`EISDIR`, or, for a
+    // special file, can block the whole process indefinitely: the identical
+    // ground `architecture/ADR/0021-project-upgrade-mechanism.md` already
+    // settled for the upgrade engine ("A payload path where the disk holds a
     // directory or a symlink instead of a regular file cannot be compared at
     // all and refuses the same way, fail-closed, with CONTENT_CONFLICT"),
-    // applied here to reconciliation rather than restated a second time.
+    // applied here to reconciliation rather than restated a second time. A
+    // directory at the LEAF is checked here too, never only as an ancestor
+    // shape — see `DIRECTORY_CONTENT_MARKER`'s own doc comment for why an
+    // ordinary directory ancestor stays permitted while a directory standing
+    // exactly at a payload path the template declares as a file does not.
     // This check runs BEFORE `inst-ec-if-exists` below, not as a special
     // case of it: `existing.get(payloadPath)` cannot even see a path hidden
     // beneath a symlinked or file-occupied directory (the walk never
     // descended into it), so waiting for that lookup to fire would let this
     // exact class of path slip through as "nothing on disk" instead.
-    const badAncestor = findBadAncestorComponent(payloadPath, existingPaths, symlinkPaths);
-    const isSymlinkAtLeaf = symlinkPaths.has(payloadPath);
-    if (isSymlinkAtLeaf || badAncestor !== null) {
+    const badAncestor = findBadAncestorComponent(payloadPath, existingPaths, symlinkPaths, specialPaths);
+    const leafKind: 'symlink' | 'directory' | 'special' | undefined = symlinkPaths.has(payloadPath)
+      ? 'symlink'
+      : directoryPaths.has(payloadPath)
+        ? 'directory'
+        : specialPaths.has(payloadPath)
+          ? 'special'
+          : undefined;
+    if (leafKind !== undefined || badAncestor !== null) {
       // @cpt-begin:cpt-frontx-algo-cli-scaffolding-existing-content:p1:inst-ec-add-symlink-conflict
       // A conflict in BOTH modes: `--adopt-existing` means "leave whatever
       // is already there untouched", and a write that follows a symlink, or
@@ -328,7 +430,7 @@ export async function reconcileExistingContent(
       uncomparableCauses.push(
         badAncestor !== null
           ? { path: payloadPath, component: badAncestor.component, kind: badAncestor.kind }
-          : { path: payloadPath, component: payloadPath, kind: 'symlink' },
+          : { path: payloadPath, component: payloadPath, kind: leafKind as 'symlink' | 'directory' | 'special' },
       );
       continue;
       // @cpt-end:cpt-frontx-algo-cli-scaffolding-existing-content:p1:inst-ec-add-symlink-conflict

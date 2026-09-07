@@ -374,14 +374,59 @@ function createFsRemoveEmptyDirFn(): RemoveEmptyDirFn {
   };
 }
 
-/** Prints the computed plan and prompts on stdin for confirmation, defaulting to No. */
+/**
+ * Prints the computed plan and prompts on stdin for confirmation, defaulting
+ * to No. Every write onto `process.stdout` here — the two listings below AND
+ * `readline`'s own writes of the prompt text once the interface exists —
+ * shares the single tolerant path `writeToStream` gives the final envelope
+ * write in `main()`: attaching its permanent 'error' listener to a stream is
+ * a one-time, idempotent registration (`tolerateStreamErrors`'s own
+ * `WeakSet` guard), so calling it here BEFORE `readline.createInterface` is
+ * built covers every later write `readline` itself makes to that same
+ * stream, not only the two calls that go through this function by name. A
+ * reader that closes early (`| head`) is the reader's own decision on an
+ * interactive listing exactly as it is on a `--json` envelope; it must not
+ * crash the process either way.
+ */
+/**
+ * The answer an interactive prompt gets, with end-of-input resolved to the
+ * prompt's own default rather than left hanging.
+ *
+ * `readline`'s `question()` returns a promise that only ever settles when a
+ * LINE arrives. Standard input that is already at end of file — a caller
+ * running the command with `< /dev/null`, a script or an agent driving it
+ * with nothing on stdin, a closed terminal — delivers no line and never will,
+ * so that promise stays pending forever. The process does not hang on it:
+ * the event loop simply runs out of work and Node exits, having printed the
+ * prompt and produced no outcome at all. A caller then sees a command that
+ * asked a question, answered nothing, and exited zero.
+ *
+ * Racing the interface's own `close` event against the answer turns that into
+ * the default the prompt already advertises — No — so end of input declines,
+ * says so, and leaves the same trace an explicitly typed "n" leaves. Refusing
+ * by default is the only safe reading of "no answer" for an operation that
+ * removes files or rewrites a project's content.
+ */
+async function askWithDefaultOnEndOfInput(rl: readline.Interface, prompt: string): Promise<string> {
+  return new Promise<string>((resolve) => {
+    let settled = false;
+    const settle = (answer: string): void => {
+      if (settled) return;
+      settled = true;
+      resolve(answer);
+    };
+    rl.once('close', () => settle(''));
+    void rl.question(prompt).then(settle, () => settle(''));
+  });
+}
+
 function createInteractiveDeletionConfirm(): ConfirmDeletionFn {
   return async function confirmDeletion(plan): Promise<'confirmed' | 'declined'> {
-    process.stdout.write(`Would delete:\n${plan.toDelete.map((p) => `  ${p}`).join('\n') || '  (nothing)'}\n`);
-    process.stdout.write(`Would preserve:\n${plan.toPreserve.map((p) => `  ${p}`).join('\n') || '  (nothing)'}\n`);
+    await writeToStream(process.stdout, `Would delete:\n${plan.toDelete.map((p) => `  ${p}`).join('\n') || '  (nothing)'}\n`);
+    await writeToStream(process.stdout, `Would preserve:\n${plan.toPreserve.map((p) => `  ${p}`).join('\n') || '  (nothing)'}\n`);
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     try {
-      const answer = await rl.question(`Delete "${plan.target}"? [y/N] `);
+      const answer = await askWithDefaultOnEndOfInput(rl, `Delete "${plan.target}"? [y/N] `);
       return answer.trim().toLowerCase() === 'y' ? 'confirmed' : 'declined';
     } finally {
       rl.close();
@@ -395,7 +440,11 @@ function createInteractiveDeletionConfirm(): ConfirmDeletionFn {
  * discipline `createInteractiveDeletionConfirm` above applies for `delete`.
  * Never constructed or called at all in `--json` mode: `commands/upgrade.ts`
  * wires its own `presentPlan` there instead (see the `upgrade` dispatch case
- * below), which never reads stdin.
+ * below), which never reads stdin. The rendered plan is written through
+ * `writeToStream`, for the same reason `createInteractiveDeletionConfirm`
+ * above writes through it rather than `process.stdout.write` directly: the
+ * permanent, idempotent 'error' listener that call attaches to the stream
+ * also covers every write `readline` performs on it afterward.
  */
 function createInteractiveUpgradeApproval(): PresentUpgradePlanFn {
   return async function presentUpgradePlan(plan): Promise<'approved' | 'declined'> {
@@ -415,10 +464,10 @@ function createInteractiveUpgradeApproval(): PresentUpgradePlanFn {
       ...reviewable.operations.map((operation) => `  ${operation.op.padEnd(10)} ${operation.path}`),
       ...reviewable.skipped.map((entry) => `  ${'SKIPPED'.padEnd(10)} ${entry.path} (${entry.reason})`),
     ];
-    process.stdout.write(`${lines.join('\n')}\n`);
+    await writeToStream(process.stdout, `${lines.join('\n')}\n`);
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     try {
-      const answer = await rl.question(`Apply this upgrade for "${plan.name}"? [y/N] `);
+      const answer = await askWithDefaultOnEndOfInput(rl, `Apply this upgrade for "${plan.name}"? [y/N] `);
       return answer.trim().toLowerCase() === 'y' ? 'approved' : 'declined';
     } finally {
       rl.close();
@@ -1967,7 +2016,13 @@ export async function run(argv: string[], deps: CliDeps): Promise<CommandOutcome
 // complete fast enough in practice to hide the same race) had not yet
 // consumed. Awaiting this callback before exiting is what lets the envelope's
 // completeness promise (`cpt-frontx-dod-cli-invocation-json-envelope-
-// dispatch`) hold regardless of payload size or destination.
+// dispatch`) hold for whatever this callback itself reports, regardless of
+// payload size or destination — it cannot reach further than that. A
+// destination that accepts a short write without surfacing it as a failure
+// (a file capped by a filesystem resource limit, say) never reports an error
+// to this callback at all, so a truncation of that kind is invisible here and
+// the guarantee does not extend to it; the DoD states that boundary rather
+// than an unconditional guarantee.
 //
 // A destination that fails mid-write reports that failure to the write's own
 // callback (with the error as its argument) AND separately schedules an

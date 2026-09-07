@@ -97,6 +97,23 @@ function describeCause(target: string, path: string, cause: { component: string;
   return `${location} (ancestor "${cause.component}" is a ${cause.kind}, not a directory)`;
 }
 
+// The `INVALID_PATH`-specific sibling of `describeCause` above: every
+// `escapingConflicts` entry's cause is always a symlink (`ClassifyResult.
+// escapingPaths` is only ever populated for a symlink cause, never a
+// directory or a plain file — see `classify.ts`'s own `escapesRoot` sites),
+// so this never has a `kind` to report and instead names the one thing
+// `describeCause` cannot: WHICH position — the leaf itself, or a named
+// ancestor — actually escapes, in place of the removed "the path itself, or
+// an ancestor directory component" disjunction that left a reader to guess.
+function describeEscapeCause(target: string, path: string, cause: { component: string } | undefined): string {
+  const location = `${target}:${path}`;
+  if (cause === undefined) return location; // defensive: every escaping path carries a cause
+  if (cause.component === path) {
+    return `${location} (the path itself is a symlink whose target escapes the project root)`;
+  }
+  return `${location} (ancestor "${cause.component}" is a symlink whose target escapes the project root)`;
+}
+
 // Composes the `CONTENT_CONFLICT` message naming each of the two causes
 // `contentConflicts` unions, with its own remedy — mirroring
 // `commands/apply.ts`'s own `describeContentConflictCause` in shape and
@@ -478,14 +495,28 @@ export async function validateUpgrade(input: ValidateInput): Promise<ValidateOut
   // named in one report.
   if (escapingConflicts.length > 0) {
     // @cpt-begin:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-return-escaping-ancestor
+    // `causeForEscaping` is keyed the same way `describeConflictCause`'s own
+    // `causeByKey` is built: `uncomparableCauses` already carries one entry
+    // per escaping path (escaping is a subset of uncomparable — every
+    // escaping path is, by construction, uncomparable first), so this is a
+    // filter, never a second computation of the cause itself.
+    const escapingKeys = new Set(escapingConflicts.map((conflict) => `${conflict.target}\u0000${conflict.path}`));
+    const escapingCauses = uncomparableCauses.filter((cause) => escapingKeys.has(`${cause.target}\u0000${cause.path}`));
+    const causeForEscaping = new Map(escapingCauses.map((cause) => [`${cause.target}\u0000${cause.path}`, cause]));
     return {
       ok: false,
       code: 'INVALID_PATH',
       message:
-        `"${name}"'s upgrade was refused: ${escapingConflicts.length} path(s) could not be proven to stay inside the ` +
-        'project root — the path itself, or an ancestor directory component, resolves through a symlink whose target ' +
-        `escapes it: ${describeConflictPaths(escapingConflicts)}.`,
-      details: { paths: escapingConflicts },
+        `"${name}"'s upgrade was refused: ${escapingConflicts.length} path(s) could not be proven to stay inside the project root: ` +
+        escapingConflicts
+          .map((conflict) => describeEscapeCause(conflict.target, conflict.path, causeForEscaping.get(`${conflict.target}\u0000${conflict.path}`)))
+          .join(', ') +
+        '.',
+      // Same shape `CONTENT_CONFLICT` reports (`conflicts`/`uncomparableConflicts`/
+      // `uncomparableCauses`) so a caller parses one structure for the
+      // component a refusal blames regardless of which code it got back,
+      // rather than a second, differently-shaped payload for this one code.
+      details: { paths: escapingConflicts, uncomparableCauses: escapingCauses },
     };
     // @cpt-end:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-return-escaping-ancestor
   }

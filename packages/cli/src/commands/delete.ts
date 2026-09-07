@@ -32,6 +32,14 @@ import type { CanonicalizeTargetFn } from '../scaffold/conflict-check';
 import type { ReadFileFn } from '../manifest/types';
 import type { ErrorCode } from '../envelope';
 import type { AssertPathWithinRootFn } from '../scaffold/types';
+// `listTargetFilesFn`'s real implementation (`createFsListTargetFilesFn`,
+// `../adapters/fs-project-io.ts`) throws this typed error, rather than
+// letting a bare `ENOTDIR` propagate, when a registered, applied target's
+// own on-disk location is no longer a directory. Caught inside `computePlan`
+// below and converted to the same structured refusal shape every other exit
+// from this function already returns — see that catch's own comment for why
+// `CONTENT_CONFLICT` is the code chosen.
+import { TargetNotDirectoryError } from '../adapters/fs-project-io';
 
 // Symmetric to `upgrade/types.ts`'s `RemoveProjectFileFn` — removes one
 // absolute file path, no-op when already absent. Reused directly rather
@@ -170,17 +178,49 @@ export async function deleteTarget(
     if (!stateResult.ok) {
       return { ok: false, code: 'PROJECT_INVALID', message: stateResult.message };
     }
-    const plan = await computeDeletionPlan(
-      canonical,
-      repoRoot,
-      stateResult.document,
-      inventory,
-      canonicalizeFn,
-      listTargetFilesFn,
-      readFileFn,
-    );
-    if (!plan.ok) return plan;
-    return { ok: true, document: stateResult.document, plan };
+    // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-if-target-shape-drifted
+    // `<target>` is recorded as applied (the `TARGET_NOT_APPLIED` check
+    // below runs on `computeDeletionPlan`'s own return, so a target that is
+    // not even registered never reaches this far), but its on-disk location
+    // may have changed shape since — replaced by an ordinary file, or any
+    // other non-directory entry — between `apply` and this `delete`. This is
+    // the same class of fact `apply` and `upgrade` already refuse for a
+    // payload path whose disk shape cannot be compared against declared
+    // content (`architecture/ADR/0021-project-upgrade-mechanism.md`): here
+    // it is the TARGET's own shape, not a path beneath it, but the target's
+    // recorded content can no longer be read or reconciled either way, and
+    // `CONTENT_CONFLICT` is the identical code both other engines already
+    // use for "the disk holds something this operation cannot work with
+    // where it expected a directory" — never a bespoke third code for what
+    // is, from a caller's point of view, the same fact.
+    try {
+      const plan = await computeDeletionPlan(
+        canonical,
+        repoRoot,
+        stateResult.document,
+        inventory,
+        canonicalizeFn,
+        listTargetFilesFn,
+        readFileFn,
+      );
+      if (!plan.ok) return plan;
+      return { ok: true, document: stateResult.document, plan };
+    } catch (error) {
+      if (error instanceof TargetNotDirectoryError) {
+        // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-target-shape-drifted
+        return {
+          ok: false,
+          code: 'CONTENT_CONFLICT',
+          message:
+            `Aborted — ${error.message} Its recorded content cannot be reconciled or deleted while something ` +
+            'other than a directory occupies it; nothing deleted.',
+          details: { target: canonical, path: error.targetPath },
+        };
+        // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-target-shape-drifted
+      }
+      throw error;
+    }
+    // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-if-target-shape-drifted
   }
 
   // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-compute-plan

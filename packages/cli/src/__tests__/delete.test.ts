@@ -10,6 +10,7 @@ import type { CanonicalizeTargetFn } from '../scaffold/conflict-check';
 import type { ProjectStateDocument, ReadProjectStateFn, WriteProjectStateFn, TemplateEntry } from '../project-state/types';
 import type { ReadFileFn } from '../manifest/types';
 import type { AssertPathWithinRootFn } from '../scaffold/types';
+import { TargetNotDirectoryError } from '../adapters/fs-project-io';
 
 const identityCanonicalize: CanonicalizeTargetFn = (rawTarget) => rawTarget;
 
@@ -118,6 +119,87 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
     expect(result).toMatchObject({ ok: false, code: 'TARGET_NOT_APPLIED' });
     expect(removed()).toEqual([]);
     expect(write).not.toHaveBeenCalled();
+  });
+
+  // The real `createFsListTargetFilesFn` (`../adapters/fs-project-io.ts`)
+  // throws this typed error when a registered, applied target's own
+  // on-disk location is no longer a directory — modeled here with a fake
+  // that throws it, rather than a real filesystem, since this suite's own
+  // convention keeps command-level tests fake-backed (the adapter's own
+  // real-fs coverage lives in `adapters/__tests__/fs-project-io.test.ts`).
+  // `deleteTarget` must convert it to a structured `CONTENT_CONFLICT`
+  // refusal — never let it propagate as an uncaught exception, which would
+  // reach `cli.ts`'s own top-level catch with no JSON envelope at all.
+  it('refuses CONTENT_CONFLICT, naming the target, when the target itself is no longer a directory', async () => {
+    const initialDocument: ProjectStateDocument = {
+      formatVersion: 1,
+      templates: { appTemplate: entry(['packages/app']) },
+      projectOwnedRoots: [],
+    };
+    const { read, write } = fakeProjectState(initialDocument);
+    const { remove, removed } = fakeRemoveFile();
+    const throwingListTargetFiles: ListTargetFilesFn = async () => {
+      throw new TargetNotDirectoryError('/repo/packages/app');
+    };
+
+    const result = await deleteTarget(
+      'packages/app',
+      '/repo',
+      { jsonMode: true, dryRun: false, yes: true },
+      fakeInventory({ appTemplate: { excludedSubtrees: [] } }),
+      identityCanonicalize,
+      throwingListTargetFiles,
+      neverCalledReadFileFn,
+      remove,
+      noopAssertPathWithinRoot,
+      read,
+      write,
+      neverConfirm(),
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'CONTENT_CONFLICT',
+      details: { target: 'packages/app', path: '/repo/packages/app' },
+    });
+    // Nothing was deleted, and the project state document is untouched — the
+    // refusal fired before this call ever reached its own removal or
+    // project-state-mutation steps.
+    expect(removed()).toEqual([]);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  // `--dry-run` reaches the identical `computePlan()` helper, and a shape
+  // drift must be caught there too, before this flow ever reports the
+  // delete/preserve lists as if the target were enumerable.
+  it('also refuses CONTENT_CONFLICT under --dry-run, rather than reporting an empty plan', async () => {
+    const initialDocument: ProjectStateDocument = {
+      formatVersion: 1,
+      templates: { appTemplate: entry(['packages/app']) },
+      projectOwnedRoots: [],
+    };
+    const { read, write } = fakeProjectState(initialDocument);
+    const { remove } = fakeRemoveFile();
+    const throwingListTargetFiles: ListTargetFilesFn = async () => {
+      throw new TargetNotDirectoryError('/repo/packages/app');
+    };
+
+    const result = await deleteTarget(
+      'packages/app',
+      '/repo',
+      { jsonMode: true, dryRun: true, yes: false },
+      fakeInventory({ appTemplate: { excludedSubtrees: [] } }),
+      identityCanonicalize,
+      throwingListTargetFiles,
+      neverCalledReadFileFn,
+      remove,
+      noopAssertPathWithinRoot,
+      read,
+      write,
+      neverConfirm(),
+    );
+
+    expect(result).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
   });
 
   it('--dry-run reports the plan without deleting or requiring confirmation', async () => {

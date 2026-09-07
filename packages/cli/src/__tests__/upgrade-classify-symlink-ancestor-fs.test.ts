@@ -148,10 +148,11 @@ describe('classifyTarget against a real filesystem — symlinked ancestor direct
 
   // --- the full matrix: every ancestor shape × every operation class -----
   //
-  // Six of eleven claimed ancestor shapes are pinned here — {leaf is a
+  // Seven of eleven claimed ancestor/leaf shapes are pinned here — {leaf is a
   // symlink, an ancestor BELOW the target is a symlink, the TARGET ITSELF is
   // a symlink, an ancestor ABOVE the target is a symlink, an ancestor is a
-  // DANGLING symlink, an ancestor is an ordinary REGULAR FILE} — crossed
+  // DANGLING symlink, an ancestor is an ordinary REGULAR FILE, the LEAF
+  // itself is an ordinary DIRECTORY} — crossed
   // with every operation class {ADD, REPLACE, REMOVE}, against a real
   // filesystem. Each
   // case asserts both that classification refuses fail-closed and that the
@@ -191,6 +192,26 @@ describe('classifyTarget against a real filesystem — symlinked ancestor direct
       },
       async verifyUnchanged(root) {
         expect(await readFile(path.join(root, 'protected-real.txt'), 'utf-8')).toBe('PROTECTED');
+      },
+    },
+    {
+      // The mirror of the scenario above: here the DISK holds an ordinary
+      // DIRECTORY exactly where the payload declares a regular file, no
+      // symlink anywhere in the chain. `inst-cls-if-not-regular`'s
+      // `diskEntry.kind === 'directory'` branch is a different condition
+      // than the ancestor probe every other scenario in this matrix
+      // exercises, and was previously pinned only against `fakeReadDiskEntry`
+      // (`upgrade-classify.test.ts`) — never against a real directory a real
+      // `lstat` reports.
+      name: 'leaf itself is an ordinary DIRECTORY, standing where the payload declares a regular file',
+      leafRel: 'leaf.txt',
+      async setup(root) {
+        await mkdir(path.join(root, 'workspace', 'leaf.txt'), { recursive: true });
+        await writeFile(path.join(root, 'workspace', 'leaf.txt', 'inner.txt'), 'PROTECTED', 'utf-8');
+        return { target: 'workspace' };
+      },
+      async verifyUnchanged(root) {
+        expect(await readFile(path.join(root, 'workspace', 'leaf.txt', 'inner.txt'), 'utf-8')).toBe('PROTECTED');
       },
     },
     {

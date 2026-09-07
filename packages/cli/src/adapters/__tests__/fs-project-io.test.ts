@@ -10,6 +10,8 @@ import {
   createFsResolveDeclaredExclusionFn,
   createFsReadProjectStateFn,
   createFsWriteProjectStateFn,
+  createFsListTargetFilesFn,
+  TargetNotDirectoryError,
 } from '../fs-project-io';
 
 // Real-fs coverage for the two adapters behind the content self-containment
@@ -445,6 +447,91 @@ describe('createFsReadProjectStateFn / createFsWriteProjectStateFn', () => {
     if (orphan) {
       const orphanContent = await readFile(path.join(dir, '.frontx', orphan), 'utf-8');
       expect(JSON.parse(orphanContent)).toEqual({ formatVersion: 1, templates: {}, projectOwnedRoots: ['scripts'] });
+    }
+  });
+});
+
+// Real-fs coverage for `createFsListTargetFilesFn` — the delete-plan
+// algorithm's target enumeration seam. A registered, applied target's own
+// on-disk location replaced by an ordinary file (or any other non-directory
+// entry) since it was applied must throw the typed `TargetNotDirectoryError`
+// rather than either a bare `ENOTDIR` (what `fs.readdirSync` throws
+// unprompted) or resolving to `[]` (indistinguishable from a genuinely empty,
+// still-a-directory target) — `commands/delete.ts` depends on the typed
+// class to report this as a structured refusal instead of letting a bare
+// filesystem error reach the CLI's own top-level catch with no JSON envelope.
+describe('createFsListTargetFilesFn', () => {
+  let repoRoot: string;
+
+  afterEach(async () => {
+    if (repoRoot) await rm(repoRoot, { recursive: true, force: true });
+    repoRoot = '';
+  });
+
+  async function makeRepo(): Promise<string> {
+    const dir = await mkdtemp(path.join(tmpdir(), 'frontx-list-target-files-'));
+    repoRoot = dir;
+    return dir;
+  }
+
+  it('enumerates real files under an ordinary target directory, unchanged', async () => {
+    const dir = await makeRepo();
+    await mkdir(path.join(dir, 'app'), { recursive: true });
+    await writeFile(path.join(dir, 'app', 'a.txt'), 'a', 'utf-8');
+    const listTargetFiles = createFsListTargetFilesFn();
+
+    const files = await listTargetFiles(path.join(dir, 'app'));
+
+    expect(files).toEqual(['a.txt']);
+  });
+
+  it('resolves to [] when the target does not exist at all, unchanged', async () => {
+    const dir = await makeRepo();
+    const listTargetFiles = createFsListTargetFilesFn();
+
+    const files = await listTargetFiles(path.join(dir, 'never-created'));
+
+    expect(files).toEqual([]);
+  });
+
+  // The same fact one component higher up. `realpathSync` refuses both a
+  // genuinely absent path and one blocked by a non-directory ancestor, and
+  // conflating them would let a deletion report success, remove nothing, and
+  // strike the target from the record without ever having looked at its
+  // ground.
+  it('throws TargetNotDirectoryError, naming the blocking ancestor, when a component ABOVE the target is a regular file', async () => {
+    const dir = await makeRepo();
+    await writeFile(path.join(dir, 'parent'), 'FILE-ABOVE-TARGET', 'utf-8');
+    const listTargetFiles = createFsListTargetFilesFn();
+
+    await expect(listTargetFiles(path.join(dir, 'parent', 'child'))).rejects.toBeInstanceOf(TargetNotDirectoryError);
+    await expect(listTargetFiles(path.join(dir, 'parent', 'child'))).rejects.toThrow(/parent/);
+  });
+
+  it('still resolves to [] when only a MISSING directory stands between the repo and the target', async () => {
+    const dir = await makeRepo();
+    const listTargetFiles = createFsListTargetFilesFn();
+
+    // Nothing on this path exists: ground a developer removed by hand is an
+    // ordinary empty enumeration, not a refusal.
+    await expect(listTargetFiles(path.join(dir, 'gone', 'child'))).resolves.toEqual([]);
+  });
+
+  it('throws TargetNotDirectoryError, naming the path, when the target has been replaced by a regular file', async () => {
+    const dir = await makeRepo();
+    await writeFile(path.join(dir, 'dst'), 'PROTECTED-TARGET-FILE', 'utf-8');
+    const listTargetFiles = createFsListTargetFilesFn();
+    const targetPath = path.join(dir, 'dst');
+
+    await expect(listTargetFiles(targetPath)).rejects.toThrow(TargetNotDirectoryError);
+    try {
+      await listTargetFiles(targetPath);
+      expect.unreachable('expected TargetNotDirectoryError');
+    } catch (error) {
+      expect(error).toBeInstanceOf(TargetNotDirectoryError);
+      if (error instanceof TargetNotDirectoryError) {
+        expect(error.targetPath).toBe(targetPath);
+      }
     }
   });
 });

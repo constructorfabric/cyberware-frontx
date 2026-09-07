@@ -3,7 +3,12 @@ import path from 'node:path';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
-import { reconcileExistingContent, SYMLINK_CONTENT_MARKER } from '../scaffold/existing-content';
+import {
+  reconcileExistingContent,
+  SYMLINK_CONTENT_MARKER,
+  DIRECTORY_CONTENT_MARKER,
+  SPECIAL_CONTENT_MARKER,
+} from '../scaffold/existing-content';
 import { computeExclusionRoots } from '../scaffold/effective-ownership';
 import { createFsReadExistingContentFn } from '../adapters/fs-existing-content';
 import type { ContentItem } from '../scaffold/types';
@@ -488,6 +493,107 @@ describe('reconcileExistingContent', () => {
     });
 
     expect(result.uncomparableCauses).toEqual([{ path: 'app/leaf.txt', component: 'app/leaf.txt', kind: 'symlink' }]);
+  });
+
+  // DIRECTORY-AT-LEAF: a directory standing exactly where the payload
+  // declares a FILE. The real walk (`adapters/fs-existing-content.ts`)
+  // reports the directory at its own path with `DIRECTORY_CONTENT_MARKER`
+  // (this fake models exactly that) — never merely absent, which is what let
+  // `commands/apply.ts` reach `writeFileFn` and fail with a raw `EISDIR`.
+  it('reports a payload path as contentConflicts when a DIRECTORY occupies the payload path itself', async () => {
+    const result = await reconcileExistingContent({
+      target: 'app',
+      exclusionRoots: [],
+      installedContentPath: 'inv/t',
+      readInstalledContent: fakeReadInstalledContent([{ path: 'README.md', content: 'FROM-PAYLOAD' }]),
+      readExistingContent: fakeReadExistingContent([{ path: 'app/README.md', content: DIRECTORY_CONTENT_MARKER }]),
+    });
+
+    expect(result.contentConflicts).toEqual(['app/README.md']);
+    expect(result.uncomparablePaths).toEqual(['app/README.md']);
+    expect(result.uncomparableCauses).toEqual([{ path: 'app/README.md', component: 'app/README.md', kind: 'directory' }]);
+    expect(result.identicalFiles).toEqual([]);
+  });
+
+  // The directory marker must never leak into `additionalPaths`: an ordinary
+  // directory the walk recurses into on the way to unrelated real content is
+  // structure, not undeclared content a developer authored — surfacing every
+  // directory in the tree as an "additional path" needing an `--adopt-
+  // existing` decision would flood that decision surface with entries that
+  // were never really in question. This is the exact shape the fix must not
+  // widen: `additionalPaths` for every OTHER shape stays identical.
+  it('never reports a directory-marker entry in additionalPaths, even when it does not match any payload path', async () => {
+    const result = await reconcileExistingContent({
+      target: 'app',
+      exclusionRoots: [],
+      installedContentPath: 'inv/t',
+      readInstalledContent: fakeReadInstalledContent([{ path: 'src/index.ts', content: 'export {};' }]),
+      readExistingContent: fakeReadExistingContent([
+        { path: 'app/src', content: DIRECTORY_CONTENT_MARKER },
+        { path: 'app/src/index.ts', content: 'export {};' },
+        // An unrelated directory, matching no payload path at all — must
+        // stay silent, never surfacing as `additionalPaths`.
+        { path: 'app/docs', content: DIRECTORY_CONTENT_MARKER },
+      ]),
+    });
+
+    expect(result.identicalFiles).toEqual(['app/src/index.ts']);
+    expect(result.contentConflicts).toEqual([]);
+    expect(result.additionalPaths).toEqual([]);
+  });
+
+  // An ordinary directory ancestor — reported now, at its own path, by the
+  // real walk — must NEVER be treated as a "bad ancestor" the way a symlink
+  // or a regular file ancestor is: it is exactly the expected shape for
+  // everything beneath it. This is the regression the fix must not
+  // introduce: every payload path beneath an ordinary, still-existing
+  // directory keeps reconciling normally.
+  it('does not treat an ordinary directory-marker ancestor as a bad ancestor', async () => {
+    const result = await reconcileExistingContent({
+      target: '.',
+      exclusionRoots: [],
+      installedContentPath: 'inv/t',
+      readInstalledContent: fakeReadInstalledContent([{ path: 'app/dir/file.txt', content: 'export {};' }]),
+      readExistingContent: fakeReadExistingContent([
+        { path: 'app/dir', content: DIRECTORY_CONTENT_MARKER },
+        { path: 'app/dir/file.txt', content: 'export {};' },
+      ]),
+    });
+
+    expect(result.identicalFiles).toEqual(['app/dir/file.txt']);
+    expect(result.contentConflicts).toEqual([]);
+    expect(result.uncomparablePaths).toEqual([]);
+  });
+
+  // SPECIAL FILE (FIFO/socket/device) AT LEAF: reported with
+  // `SPECIAL_CONTENT_MARKER`, refused exactly like a symlink at the leaf —
+  // its content must never be read (a FIFO with no writer blocks forever).
+  it('reports a payload path as contentConflicts when a special filesystem entry occupies the payload path itself', async () => {
+    const result = await reconcileExistingContent({
+      target: 'app',
+      exclusionRoots: [],
+      installedContentPath: 'inv/t',
+      readInstalledContent: fakeReadInstalledContent([{ path: 'pipe', content: 'FROM-PAYLOAD' }]),
+      readExistingContent: fakeReadExistingContent([{ path: 'app/pipe', content: SPECIAL_CONTENT_MARKER }]),
+    });
+
+    expect(result.contentConflicts).toEqual(['app/pipe']);
+    expect(result.uncomparableCauses).toEqual([{ path: 'app/pipe', component: 'app/pipe', kind: 'special' }]);
+  });
+
+  // SPECIAL FILE AS ANCESTOR: a FIFO standing where a directory is required
+  // blocks descent exactly as a symlink or a regular file does.
+  it('reports a payload path as contentConflicts when a special filesystem entry is a directory ANCESTOR', async () => {
+    const result = await reconcileExistingContent({
+      target: '.',
+      exclusionRoots: [],
+      installedContentPath: 'inv/t',
+      readInstalledContent: fakeReadInstalledContent([{ path: 'app/pipe/sub/a.txt', content: 'x' }]),
+      readExistingContent: fakeReadExistingContent([{ path: 'app/pipe', content: SPECIAL_CONTENT_MARKER }]),
+    });
+
+    expect(result.contentConflicts).toEqual(['app/pipe/sub/a.txt']);
+    expect(result.uncomparableCauses).toEqual([{ path: 'app/pipe/sub/a.txt', component: 'app/pipe', kind: 'special' }]);
   });
 });
 
