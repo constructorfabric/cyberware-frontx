@@ -341,7 +341,24 @@ jobs:
             if [ -n "${FRONTX_SUBSTITUTE_UNPUBLISHED_PINS:-}" ]; then
               trap 'node "$repo/scripts/pin-unpublished-ecosystem-to-local-pack.mjs" --tree "$isolated" --restore || true' EXIT
             fi
-            npm ci
+            # `npm ci` refuses before touching the network the moment the
+            # substitution above has run: it requires the committed
+            # package-lock.json to already resolve the SAME spec the
+            # (rewritten) package.json now names, and the checked-in lock's
+            # root entry for the substituted package still names the old
+            # published version - pin substitution alone cannot satisfy that,
+            # no matter how the pin resolves. Same reasoning and same fix as
+            # the composition step below already documents for its own
+            # (different) cause: `npm install` re-derives a lockfile from
+            # what is actually on disk instead of insisting the committed one
+            # already matches. Only swapped in when substitution is active -
+            # a run with every pin published keeps the stricter `npm ci`, so
+            # ordinary lockfile drift still fails loudly here.
+            if [ -n "${FRONTX_SUBSTITUTE_UNPUBLISHED_PINS:-}" ]; then
+              npm install --no-audit --no-fund
+            else
+              npm ci
+            fi
             # Must run before anything below reads these manifests as
             # committed - see RESTORE_JOURNAL_NAME's docblock in the script
             # for why.
