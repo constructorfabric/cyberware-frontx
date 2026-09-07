@@ -1,0 +1,64 @@
+{
+  "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.accordion_item.v1",
+  "metamodel": "1.1.0",
+  "component": "accordion-item",
+  "intent": "One collapsible section of an Accordion, identified by a unique value.",
+  "typical_uses": [
+    "One entry in an Accordion's list of sections, wrapping a trigger and its panel"
+  ],
+  "dont_use_when": [
+    {
+      "rule": "A section that must always stay visible and never collapse",
+      "instead": "gts.frontx.uikit.component.card.v1~"
+    }
+  ],
+  "composition": {
+    "children": {
+      "kinds": [
+        "gts.frontx.uikit.component.accordion_trigger.v1~",
+        "gts.frontx.uikit.component.accordion_content.v1~"
+      ]
+    },
+    "parent": {
+      "kinds": [
+        "gts.frontx.uikit.component.accordion.v1~"
+      ]
+    }
+  },
+  "invariants": [
+    {
+      "id": "value-required-to-control-or-default-open",
+      "text": "`value` identifies this item within its root; it is what `Accordion`'s `value`/`defaultValue` name to control or default which item is open."
+    }
+  ],
+  "anti_patterns": [
+    {
+      "dont": "Reuse the same `value` for two items under one Accordion root",
+      "instead": "Give every item a unique `value` - see the root's item-values-unique-per-root invariant"
+    }
+  ],
+  "deprecations": {},
+  "coverage": {
+    "a11y": "verified"
+  },
+  "examples": {
+    "good": [
+      {
+        "title": "An item with its trigger and panel",
+        "code": "<AccordionItem value=\"item-1\">\n  <AccordionTrigger>Is it accessible?</AccordionTrigger>\n  <AccordionContent>Yes. It adheres to the WAI-ARIA design pattern.</AccordionContent>\n</AccordionItem>\n"
+      }
+    ],
+    "bad": [
+      {
+        "title": "An item outside any Accordion",
+        "code": "<AccordionItem value=\"item-1\">\n  <AccordionTrigger>Is it accessible?</AccordionTrigger>\n</AccordionItem>\n",
+        "why": "AccordionItem has no open/close state of its own - it reads and writes the nearest Accordion root's state, so mounting it outside one renders nothing usable."
+      }
+    ]
+  },
+  "family": {
+    "root": "gts.frontx.uikit.component.accordion.v1~",
+    "role": "part"
+  },
+  "props_schema": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
+}

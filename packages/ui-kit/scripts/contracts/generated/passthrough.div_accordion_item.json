@@ -1,48 +1,17 @@
 {
-  "$id": "gts://gts.frontx.uikit.passthrough.button.v1~",
+  "$id": "gts://gts.frontx.uikit.passthrough.div_accordion_item.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "UiKit button passthrough",
-  "description": "The props a kit component forwards to an underlying <button> element (directly or through Base UI), generated from this component's inherited (non-own) props. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. Shared by every export of the same directory that forwards an identical set (Button today); a compound component's parts each generate their own (see resolvePassthroughKindKey). Regenerate with `npm run contracts:compile -- <directory>`; a stale copy fails the freshness check.",
+  "title": "UiKit div_accordion_item passthrough",
+  "description": "The props a kit component forwards to an underlying <div> element (directly or through Base UI), generated from this component's inherited (non-own) props. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. Shared by every export of the same directory that forwards an identical set (Button today); a compound component's parts each generate their own (see resolvePassthroughKindKey). Regenerate with `npm run contracts:compile -- <directory>`; a stale copy fails the freshness check.",
   "type": "object",
   "properties": {
     "style": {},
-    "form": {
-      "type": "string"
-    },
     "slot": {
       "type": "string"
     },
     "title": {
       "type": "string"
     },
-    "disabled": {
-      "type": "boolean"
-    },
-    "formAction": {},
-    "formEncType": {
-      "type": "string"
-    },
-    "formMethod": {
-      "type": "string"
-    },
-    "formNoValidate": {
-      "type": "boolean"
-    },
-    "formTarget": {
-      "type": "string"
-    },
-    "name": {
-      "type": "string"
-    },
-    "type": {
-      "type": "string",
-      "enum": [
-        "button",
-        "submit",
-        "reset"
-      ]
-    },
-    "value": {},
     "suppressContentEditableWarning": {
       "type": "boolean"
     },
@@ -172,8 +141,8 @@
       "type": "string",
       "enum": [
         "",
-        "auto",
         "manual",
+        "auto",
         "hint"
       ]
     },
@@ -383,10 +352,12 @@
     "onTransitionRunCapture": {},
     "onTransitionStart": {},
     "onTransitionStartCapture": {},
-    "nativeButton": {
+    "value": {},
+    "disabled": {
       "type": "boolean"
     },
-    "render": {}
+    "render": {},
+    "onOpenChange": {}
   },
   "patternProperties": {
     "^aria-": {

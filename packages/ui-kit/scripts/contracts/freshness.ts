@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { jsonDiff } from './check-lib';
-import { buildPassthroughSchema, compileContract, compileInstance, resolveTargetExtraction } from './compile';
+import { buildPassthroughSchema, compileContract, compileInstance, resolvePassthroughKindKey, resolveTargetExtraction } from './compile';
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const GENERATED_DIR = join(kitRoot, 'scripts', 'contracts', 'generated');
@@ -40,21 +40,27 @@ function readJsonIfExists(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8')) as unknown;
 }
 
-export function checkComponentFreshness(component: string): FreshnessReport {
-  const dir = join(kitRoot, 'src', 'components', component);
-  const committedContract = readJsonIfExists(join(dir, `${component}.contract.json`));
-  const committedInstance = readJsonIfExists(join(dir, `${component}.contract.instance.json`));
-  const freshContract = compileContract(component);
-  const freshInstance = compileInstance(component);
+// `exportStem` defaults to `directory` for the ordinary one-overlay-per-
+// directory case (Button, and every component through T4) - a compound
+// component's part (accordion, 'accordion-item') passes both explicitly, see
+// testing.ts's assertContractFreshness and button/accordion's own
+// *.contract.test.ts.
+export function checkComponentFreshness(directory: string, exportStem: string = directory): FreshnessReport {
+  const dir = join(kitRoot, 'src', 'components', directory);
+  const committedContract = readJsonIfExists(join(dir, `${exportStem}.contract.json`));
+  const committedInstance = readJsonIfExists(join(dir, `${exportStem}.contract.instance.json`));
+  const freshContract = compileContract(directory, exportStem);
+  const freshInstance = compileInstance(directory, exportStem);
 
   const contractDiff = jsonDiff(committedContract, freshContract);
   const instanceDiff = jsonDiff(committedInstance, freshInstance);
 
-  const extraction = resolveTargetExtraction(component);
+  const extraction = resolveTargetExtraction(directory, exportStem);
   let passthroughDiff: string[] | 'not-applicable' = 'not-applicable';
   if (extraction.passthroughKind) {
-    const committedPassthrough = readJsonIfExists(join(GENERATED_DIR, `passthrough.${extraction.passthroughKind}.json`));
-    const freshPassthrough = buildPassthroughSchema(extraction.passthroughKind, extraction.inheritedProps);
+    const kindKey = resolvePassthroughKindKey(directory, exportStem, extraction.passthroughKind);
+    const committedPassthrough = readJsonIfExists(join(GENERATED_DIR, `passthrough.${kindKey}.json`));
+    const freshPassthrough = buildPassthroughSchema(kindKey, extraction.passthroughKind, extraction.inheritedProps);
     passthroughDiff = jsonDiff(committedPassthrough, freshPassthrough);
   }
 
@@ -75,5 +81,5 @@ export function checkComponentFreshness(component: string): FreshnessReport {
     (passthroughDiff === 'not-applicable' || passthroughDiff.length === 0) &&
     slotSchemaMismatches.length === 0;
 
-  return { component, contractDiff, instanceDiff, passthroughDiff, slotSchemaMismatches, fresh };
+  return { component: exportStem, contractDiff, instanceDiff, passthroughDiff, slotSchemaMismatches, fresh };
 }

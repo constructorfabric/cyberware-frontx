@@ -44,7 +44,7 @@
     "component": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$",
-      "description": "Kit directory name under src/components/."
+      "description": "Kit directory name under src/components/, or - for one export of a compound component (see `family`) - that export's own kebab-case stem, which shares the directory's name as a prefix (accordion-item lives in src/components/accordion/)."
     },
     "intent": {
       "type": "string",
@@ -91,13 +91,35 @@
             "kinds": {
               "type": "array",
               "items": {
-                "type": "string",
-                "minLength": 1
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/component_type_ref"
+                  },
+                  {
+                    "const": "text"
+                  }
+                ]
               },
               "minItems": 1
             },
             "icons_via": {
               "$ref": "#/$defs/prop_name"
+            }
+          },
+          "required": [
+            "kinds"
+          ],
+          "additionalProperties": false
+        },
+        "parent": {
+          "type": "object",
+          "properties": {
+            "kinds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/component_type_ref"
+              },
+              "minItems": 1
             }
           },
           "required": [
@@ -186,6 +208,29 @@
     },
     "coverage": {
       "type": "object",
+      "properties": {
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "claim": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "claim",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
       "additionalProperties": {
         "$ref": "#/$defs/coverage_verdict"
       }
@@ -249,6 +294,51 @@
         "bad"
       ],
       "additionalProperties": false
+    },
+    "family": {
+      "type": "object",
+      "description": "Membership in a compound component's family (Accordion, its Item, Trigger and Content), when this component is one. Deliberately NOT expressed as a schema-level derivation (a part's props schema does not chain from the root's - an item does not inherit the root's props, and a closed base would reject them as undeclared if it did): the relationship lives here, in the instance, and the conformance test checks that every ref resolves to a real compiled contract. Absent entirely for a component with no family - Button, most of the kit.",
+      "properties": {
+        "root": {
+          "$ref": "#/$defs/component_type_ref"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "root",
+            "part"
+          ]
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/component_type_ref"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "root",
+        "role"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "role": {
+            "const": "root"
+          }
+        },
+        "required": [
+          "role"
+        ]
+      },
+      "then": {
+        "required": [
+          "root",
+          "role",
+          "parts"
+        ]
+      }
     },
     "props_schema": {
       "type": "string",

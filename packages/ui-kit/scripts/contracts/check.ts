@@ -27,9 +27,11 @@ import {
   mapChangedFilesToComponents,
   synthesizeVersionedId,
   type CompatVerdict,
+  type DirectoryExportCoverage,
   type GuardResult,
 } from './check-lib';
-import { loadBaseSchema, type CompiledContract } from './compile';
+import { loadBaseSchema, overlayStems, type CompiledContract } from './compile';
+import { extractComponent } from './extract';
 import { checkComponentFreshness } from './freshness';
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -121,8 +123,27 @@ function passthroughKindFromContract(contract: CompiledContract): string | undef
   return undefined;
 }
 
-function checkCompatForComponent(component: string, base: string): CompatVerdict & { component: string; isNew: boolean } {
-  const relPath = `src/components/${component}/${component}.contract.json`;
+// A compiled contract unit: one `*.contract.yaml` overlay directly under a
+// component directory. `directory` and `stem` are equal for the ordinary
+// case (button/button); a compound component's part has its own stem inside
+// the shared directory (accordion/accordion-item) - see compile.ts's
+// resolveTargetExtraction for the same split.
+interface ContractUnit {
+  directory: string;
+  stem: string;
+}
+
+function listContractUnits(): ContractUnit[] {
+  const units: ContractUnit[] = [];
+  for (const directory of listComponentDirs()) {
+    for (const stem of overlayStems(directory)) units.push({ directory, stem });
+  }
+  return units;
+}
+
+function checkCompatForUnit(unit: ContractUnit, base: string): CompatVerdict & { component: string; isNew: boolean } {
+  const { directory, stem: component } = unit;
+  const relPath = `src/components/${directory}/${component}.contract.json`;
   const newRaw = readFileSync(join(kitRoot, relPath), 'utf8');
   const oldRaw = gitShow(base, relPath);
   if (oldRaw === undefined) {
@@ -178,17 +199,17 @@ function checkCompatForComponent(component: string, base: string): CompatVerdict
 }
 
 function runCompat(base: string): void {
-  const components = listComponentDirs().filter((component) =>
-    existsSync(join(COMPONENTS_DIR, component, `${component}.contract.json`)),
+  const units = listContractUnits().filter((unit) =>
+    existsSync(join(COMPONENTS_DIR, unit.directory, `${unit.stem}.contract.json`)),
   );
-  if (components.length === 0) {
+  if (units.length === 0) {
     console.log('compat: no components carry a contract.json yet - nothing to check.');
     return;
   }
 
   let failed = false;
-  for (const component of components) {
-    const result = checkCompatForComponent(component, base);
+  for (const unit of units) {
+    const result = checkCompatForUnit(unit, base);
     const label = result.isNew ? 'NEW' : result.status === 'pass' ? 'PASS' : 'FAIL';
     console.log(`[${label}] ${result.notes.join(' ')}`);
     if (result.status === 'fail') failed = true;
@@ -200,8 +221,28 @@ function runCompat(base: string): void {
 // compile - the same freshness check testing.ts asserts per-component, run
 // here for whichever component the guard is currently evaluating rather
 // than every component in the kit.
-function isComponentFresh(component: string): boolean {
-  return checkComponentFreshness(component).fresh;
+function isComponentFresh(directory: string, exportStem: string): boolean {
+  return checkComponentFreshness(directory, exportStem).fresh;
+}
+
+// How many of a directory's exported components have an overlay, and how
+// many the checker resolves in total - used both to decide `overlayExists`
+// below (a covered compound directory needs EVERY export described, not
+// just one) and by `coverage`'s "n of m exports" report.
+function componentExportCoverage(directory: string): DirectoryExportCoverage {
+  // A directory whose main file the extractor cannot resolve (wrong name, no
+  // component-shaped export) reports 0 total exports rather than crashing a
+  // report that is never supposed to fail the build.
+  const totalExports = tryExtractComponentCount(directory);
+  return { directory, totalExports, coveredExports: overlayStems(directory).length };
+}
+
+function tryExtractComponentCount(directory: string): number {
+  try {
+    return extractComponent(join(COMPONENTS_DIR, directory, `${directory}.tsx`)).length;
+  } catch {
+    return 0;
+  }
 }
 
 function runGuard(base: string): void {
@@ -216,13 +257,20 @@ function runGuard(base: string): void {
   let violated = false;
   const results: GuardResult[] = [];
   for (const component of [...touched].sort()) {
-    const overlayExists = existsSync(join(COMPONENTS_DIR, component, `${component}.contract.yaml`));
+    const stems = overlayStems(component);
+    const { totalExports } = componentExportCoverage(component);
+    // A covered compound directory must have every export described, not
+    // merely one overlay - a directory that touches "overlayExists" by
+    // coincidence (its root overlay happens to exist) while a sibling part's
+    // overlay is missing or stale would otherwise pass silently.
+    const overlayExists = stems.length > 0 && stems.length === totalExports;
     const isCovered = covered.has(component);
     // Freshness only needs computing (and can only be computed - it calls
     // compileContract, which throws without an overlay) for a covered
-    // component that actually has one; evaluateGuard already fails an
-    // overlay-less covered component before this matters.
-    const artifactsFresh = isCovered && overlayExists ? isComponentFresh(component) : false;
+    // component that actually has every overlay; evaluateGuard already fails
+    // an incomplete covered component before this matters.
+    const artifactsFresh =
+      isCovered && overlayExists ? stems.every((stem) => isComponentFresh(component, stem)) : false;
     const result = evaluateGuard({ component, covered: isCovered, overlayExists, artifactsFresh });
     results.push(result);
     if (result.status === 'covered-violation') violated = true;
@@ -240,9 +288,18 @@ function runCoverage(): void {
   const covered = loadCovered();
   const report = buildCoverageReport(all, covered);
   console.log(`${report.coveredCount} of ${report.total} components covered by contracts.`);
-  if (report.uncovered.length > 0) {
-    console.log('Uncovered:');
-    for (const component of report.uncovered) console.log(`  - ${component}`);
+  if (report.uncovered.length === 0) return;
+
+  // covered.json is a human-curated allowlist (the guard's gate, grown one
+  // directory at a time); the fraction here is the live, filesystem-derived
+  // count of what already has a contract - a compound directory can read
+  // "4 of 4 exports" and simply not be promoted into covered.json yet, which
+  // is a different, more actionable fact than "0 of 63" was ever able to say.
+  const byDirectory = new Map(all.map((directory) => [directory, componentExportCoverage(directory)]));
+  console.log('Not yet in covered.json (n of m exports already have a contract):');
+  for (const component of report.uncovered) {
+    const coverage = byDirectory.get(component);
+    console.log(`  - ${component}: ${coverage?.coveredExports ?? 0} of ${coverage?.totalExports ?? 0} exports`);
   }
 }
 

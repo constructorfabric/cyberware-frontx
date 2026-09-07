@@ -1,0 +1,107 @@
+{
+  "$id": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit accordion contract",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "gts://gts.frontx.uikit.base.component.v1~"
+    },
+    {
+      "$ref": "gts://gts.frontx.uikit.passthrough.div.v1~"
+    }
+  ],
+  "properties": {
+    "className": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "unevaluatedProperties": false,
+  "x-uikit": {
+    "metamodel": "1.1.0",
+    "intent": "Show one or more sections at a time, collapsing the rest to their headers.",
+    "typical_uses": [
+      "A list of independent sections (FAQ, settings groups) too long to show all at once, where the user opens what is relevant",
+      "Progressive disclosure of grouped content under named headers"
+    ],
+    "dont_use_when": [
+      {
+        "rule": "A single show/hide toggle for one piece of content",
+        "instead": "gts.frontx.uikit.component.collapsible.v1~"
+      },
+      {
+        "rule": "Primary navigation between sections that stays visible",
+        "instead": "gts.frontx.uikit.component.tabs.v1~"
+      }
+    ],
+    "composition": {
+      "children": {
+        "kinds": [
+          "gts.frontx.uikit.component.accordion_item.v1~"
+        ]
+      }
+    },
+    "invariants": [
+      {
+        "id": "multiple-false-at-most-one-open",
+        "text": "With `multiple` at its default of false, opening one item closes any other open item - at most one item is open at a time."
+      },
+      {
+        "id": "item-values-unique-per-root",
+        "text": "Every `AccordionItem`'s `value` must be unique within THIS root. Nesting an `Accordion` inside another's panel needs its own value namespace: Base UI scopes keyboard navigation to the nearest root, but not value uniqueness across roots."
+      }
+    ],
+    "anti_patterns": [
+      {
+        "dont": "Put an always-visible required form control inside a collapsed panel",
+        "instead": "Keep required fields outside the accordion, or default that item's panel open - a screen reader user tabbing through the page will not discover a hidden required field until they expand that section"
+      },
+      {
+        "dont": "Nest an Accordion inside another Accordion's panel without checking value uniqueness across both",
+        "instead": "Give every item, across both roots, a unique `value`"
+      }
+    ],
+    "deprecations": {},
+    "coverage": {
+      "a11y": "verified",
+      "rtl": "not-described",
+      "assumptions": [
+        {
+          "claim": "value, defaultValue and onValueChange are typed in terms of a generic Value parameter",
+          "reason": "JSON Schema has no notion of a generic type parameter, so these stay annotation-only (slots) in the compiled contract rather than typed properties. accordion.md's own example uses string values (value=\"item-1\"), which is the documented usage."
+        }
+      ]
+    },
+    "examples": {
+      "good": [
+        {
+          "title": "Two sections, single-expansion (the default)",
+          "code": "<Accordion>\n  <AccordionItem value=\"item-1\">\n    <AccordionTrigger>Is it accessible?</AccordionTrigger>\n    <AccordionContent>Yes. It adheres to the WAI-ARIA design pattern.</AccordionContent>\n  </AccordionItem>\n  <AccordionItem value=\"item-2\">\n    <AccordionTrigger>Is it styled?</AccordionTrigger>\n    <AccordionContent>Yes, with the kit's own tokens.</AccordionContent>\n  </AccordionItem>\n</Accordion>\n"
+        }
+      ],
+      "bad": [
+        {
+          "title": "A single section used as a show/hide toggle",
+          "code": "<Accordion>\n  <AccordionItem value=\"only\">\n    <AccordionTrigger>Show details</AccordionTrigger>\n    <AccordionContent>Details go here.</AccordionContent>\n  </AccordionItem>\n</Accordion>\n",
+          "why": "One section is not what an accordion is for - it carries Base UI's multi-item expansion machinery for nothing to coordinate. Reach for `Collapsible` instead."
+        }
+      ]
+    },
+    "family": {
+      "root": "gts.frontx.uikit.component.accordion.v1~",
+      "role": "root",
+      "parts": [
+        "gts.frontx.uikit.component.accordion_item.v1~",
+        "gts.frontx.uikit.component.accordion_trigger.v1~",
+        "gts.frontx.uikit.component.accordion_content.v1~"
+      ]
+    },
+    "slots": {},
+    "passthrough": [
+      "Omit<AccordionPrimitive.Root.Props<Value>, 'className'> (@base-ui/react/accordion/root/AccordionRoot.d.mts)"
+    ],
+    "variant_sources": [],
+    "cannot_extract": []
+  }
+}

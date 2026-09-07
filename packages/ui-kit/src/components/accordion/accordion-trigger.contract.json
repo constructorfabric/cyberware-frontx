@@ -1,0 +1,93 @@
+{
+  "$id": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit accordion-trigger contract",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "gts://gts.frontx.uikit.base.component.v1~"
+    },
+    {
+      "$ref": "gts://gts.frontx.uikit.passthrough.button_accordion_trigger.v1~"
+    }
+  ],
+  "properties": {
+    "className": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "unevaluatedProperties": false,
+  "x-uikit": {
+    "metamodel": "1.1.0",
+    "intent": "The clickable header that expands or collapses its AccordionItem.",
+    "typical_uses": [
+      "The single header/summary child of an AccordionItem"
+    ],
+    "dont_use_when": [
+      {
+        "rule": "A standalone button with no AccordionItem to expand or collapse",
+        "instead": "gts.frontx.uikit.component.button.v1~"
+      }
+    ],
+    "composition": {
+      "children": {
+        "kinds": [
+          "text"
+        ]
+      },
+      "parent": {
+        "kinds": [
+          "gts.frontx.uikit.component.accordion_item.v1~"
+        ]
+      }
+    },
+    "invariants": [
+      {
+        "id": "always-renders-a-chevron",
+        "text": "AccordionTrigger always renders a trailing chevron that rotates on open/close - there is no prop to hide it, matching upstream Base UI."
+      }
+    ],
+    "anti_patterns": [
+      {
+        "dont": "Pass an icon element through children expecting it before the chevron",
+        "instead": "Children are the trigger's text label only; the chevron is fixed and always trailing"
+      }
+    ],
+    "deprecations": {},
+    "coverage": {
+      "a11y": "verified",
+      "assumptions": [
+        {
+          "claim": "AccordionTrigger wraps two Base UI parts, Header and Trigger",
+          "reason": "The kit's AccordionTrigger composes Base UI's Accordion.Header (a plain wrapper, not separately exposed by the kit) around Accordion.Trigger into one exported component; this contract describes the exported surface, not the two-part internal composition, so Header's own props are not part of it."
+        }
+      ]
+    },
+    "examples": {
+      "good": [
+        {
+          "title": "A trigger as an AccordionItem's header",
+          "code": "<AccordionItem value=\"item-1\">\n  <AccordionTrigger>Is it accessible?</AccordionTrigger>\n</AccordionItem>\n"
+        }
+      ],
+      "bad": [
+        {
+          "title": "A trigger with no AccordionItem around it",
+          "code": "<AccordionTrigger>Is it accessible?</AccordionTrigger>",
+          "why": "AccordionTrigger reads and writes the nearest AccordionItem's open state through Base UI context; outside one, clicking it does nothing."
+        }
+      ]
+    },
+    "family": {
+      "root": "gts.frontx.uikit.component.accordion.v1~",
+      "role": "part"
+    },
+    "slots": {},
+    "passthrough": [
+      "Omit<AccordionPrimitive.Trigger.Props, 'className'> (@base-ui/react/accordion/trigger/AccordionTrigger.d.mts)"
+    ],
+    "variant_sources": [],
+    "cannot_extract": []
+  }
+}

@@ -237,3 +237,14 @@ export function buildCoverageReport(allComponents: string[], covered: string[]):
   const uncovered = allComponents.filter((component) => !coveredSet.has(component)).sort();
   return { total: allComponents.length, coveredCount: covered.length, uncovered };
 }
+
+export interface DirectoryExportCoverage {
+  directory: string;
+  // How many of the directory's exported components (extractComponent's
+  // result for its .tsx) have a `<stem>.contract.yaml` overlay directly
+  // under it, out of how many are exported in total. A directory with one
+  // export (the norm) is either 0 of 1 or 1 of 1 - the interesting case T5
+  // adds is a compound directory partway through being described.
+  totalExports: number;
+  coveredExports: number;
+}

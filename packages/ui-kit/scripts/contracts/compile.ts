@@ -49,7 +49,7 @@
 //        The instance path is outPath with `.json` swapped for
 //        `.instance.json`; both files are written together, and the
 //        component's generated passthrough.<kind>.json alongside them.
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -70,6 +70,7 @@ import {
   BASE_TYPE_ID,
   componentTypeRefPattern,
   CONTRACT_MAJOR,
+  gtsToken,
   instanceId,
   instanceIdPattern,
   METAMODEL_TYPE_ID,
@@ -86,6 +87,45 @@ export interface Examples {
   bad: { title: string; code: string; why: string }[];
 }
 
+export type CoverageVerdict = 'verified' | 'checked-no' | 'not-described';
+
+// A claim the code cannot make true, recorded next to why - "generic over
+// Value" and "wraps two Base UI parts" are facts about the TYPE SYSTEM's
+// limits, not a verdict on whether the kit tested something. Modeled as its
+// own array under `coverage.assumptions` rather than another
+// coverage_verdict key: a verdict is one word, an assumption needs a reason
+// a reader can check.
+export interface CoverageAssumption {
+  claim: string;
+  reason: string;
+}
+
+// Free-form claim ids (a11y, rtl, ...) map to a verdict; `assumptions` is the
+// one reserved key that instead holds a list of claim+reason pairs - see
+// buildMetamodel's `coverage` schema for the properties/additionalProperties
+// split that makes both shapes legal in the same object.
+export interface Coverage {
+  assumptions?: CoverageAssumption[];
+  [claim: string]: CoverageVerdict | CoverageAssumption[] | undefined;
+}
+
+// Family membership of a compound component's part (T5: Accordion is the
+// first component whose public surface is more than one exported component
+// sharing one directory). Deliberately NOT a schema-level derivation chain
+// (item deriving from root would make item inherit root's props under a
+// closed base, which is wrong - an item is not a root) - the relationship is
+// recorded here, in the overlay/instance, and checked by the conformance
+// test instead of by the type system.
+export interface Family {
+  // The root's own GTS component type ref - self-referential on the root's
+  // own overlay, and how a part points back to the family it belongs to.
+  root: string;
+  role: 'root' | 'part';
+  // Every other member of the family, by ref. Root-only: a part does not
+  // restate its siblings, it just points at the root.
+  parts?: string[];
+}
+
 export interface Overlay {
   component: string;
   intent: string;
@@ -96,12 +136,21 @@ export interface Overlay {
   // `instead` is a GTS component type id (see the metamodel's
   // component_type_ref), not a display name - a name resolves to nothing.
   dont_use_when: { rule: string; instead: string }[];
-  composition: { children: { kinds: string[]; icons_via?: string } };
+  composition: {
+    children: { kinds: string[]; icons_via?: string };
+    // Optional, and only meaningful for a compound component's part - the
+    // root/item(s) it is only ever mounted under. Button and the rest of
+    // the kit never set this: nothing constrains where they may appear.
+    parent?: { kinds: string[] };
+  };
   invariants: { id: string; text: string }[];
   anti_patterns: { dont: string; instead: string }[];
   deprecations: { props?: Record<string, { since: string; replacement: string; hint: string }> };
-  coverage: Record<string, string>;
+  coverage: Coverage;
   examples: Examples;
+  // Absent for every non-compound component (Button, ...): family only
+  // exists where a directory's public surface is more than one contract.
+  family?: Family;
 }
 
 // The contract instance: the overlay, typed by the metamodel and pointing at
@@ -144,6 +193,7 @@ const SEMANTIC_FIELDS = [
   'deprecations',
   'coverage',
   'examples',
+  'family',
 ] as const;
 
 type SemanticField = (typeof SEMANTIC_FIELDS)[number];
@@ -159,6 +209,7 @@ const SEMANTIC_FIELD_TARGETS: Record<SemanticField, SemanticTarget> = {
   deprecations: 'x-uikit',
   coverage: 'x-uikit',
   examples: 'x-uikit',
+  family: 'x-uikit',
 };
 
 export interface CompiledContract {
@@ -252,17 +303,43 @@ function classifyProviderSafeType(typeText: string): ContractProperty | undefine
   return undefined;
 }
 
-// Generates the shared per-element-kind passthrough type from a component's
-// inherited (non-own) props. `key`/`ref` are React/JSX machinery, not props
-// a consumer sets, so neither belongs in a props contract. Individual
-// `aria-*` names are excluded the same way the OLD hand-written file handled
-// them: React's AriaAttributes type declares ~50 of them by literal name,
-// and enumerating each one here would bury the file in exactly the
-// boilerplate the shared `^aria-` pattern property already covers for free;
-// `data-*` attributes are not typed as literal properties at all (JSX
-// accepts them structurally), so there is nothing to exclude there beyond
-// keeping the same `^data-` pattern property as before.
-export function buildPassthroughSchema(kind: string, inheritedProps: ExtractedProp[]): Record<string, unknown> {
+// Storage/id key for a generated passthrough type, distinct from the DOM tag
+// it describes. Sharing ONE file per element kind kit-wide assumed every
+// component of a kind forwards the same inherited-prop set; T5's Accordion
+// broke that assumption twice over - AccordionTrigger's `button` kind is not
+// Button's (own-vs-inherited is a per-component split by declaration file,
+// and a probe compiling both showed even the NATIVE <button> attribute
+// union prints in a different member order depending which program compiled
+// it), and Accordion/AccordionItem/AccordionContent all resolve to `div` but
+// forward genuinely different sets (the root alone forwards `value`,
+// `multiple`, `onValueChange`, ...). So a compound directory's parts each
+// get their own scoped key (`<kind>_<stem>`, one token - gtsToken keeps the
+// GTS segment grammar's token count intact); an ordinary single-export
+// directory (Button, and every component through T4) keeps the plain `kind`
+// key, unchanged. This does not close the kit-wide gap for two SEPARATE
+// single-export directories that happen to resolve to the same kind with
+// different inherited props - that risk predates T5 and is out of scope
+// here; see PILOT-NOTES.md.
+export function resolvePassthroughKindKey(directory: string, exportStem: string, domTag: string): string {
+  return exportStem === directory ? domTag : `${domTag}_${gtsToken(exportStem)}`;
+}
+
+// Generates a passthrough type from a component's inherited (non-own) props.
+// `key`/`ref` are React/JSX machinery, not props a consumer sets, so neither
+// belongs in a props contract. Individual `aria-*` names are excluded the
+// same way the OLD hand-written file handled them: React's AriaAttributes
+// type declares ~50 of them by literal name, and enumerating each one here
+// would bury the file in exactly the boilerplate the shared `^aria-` pattern
+// property already covers for free; `data-*` attributes are not typed as
+// literal properties at all (JSX accepts them structurally), so there is
+// nothing to exclude there beyond keeping the same `^data-` pattern property
+// as before.
+//
+// `kindKey` (see resolvePassthroughKindKey above) is the storage/id identity
+// - what the $id and the generated filename use; `domTag` is the real HTML
+// tag this describes, kept separate so the human-readable title/description
+// always name a real element even when the key is scoped per export.
+export function buildPassthroughSchema(kindKey: string, domTag: string, inheritedProps: ExtractedProp[]): Record<string, unknown> {
   const properties: Record<string, ContractProperty> = {};
   for (const prop of inheritedProps) {
     if (prop.name === 'key' || prop.name === 'ref') continue;
@@ -271,10 +348,10 @@ export function buildPassthroughSchema(kind: string, inheritedProps: ExtractedPr
   }
 
   return {
-    $id: passthroughTypeId(kind),
+    $id: passthroughTypeId(kindKey),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    title: `UiKit ${kind} passthrough`,
-    description: `The props a kit component forwards to an underlying <${kind}> element (directly or through Base UI), generated from every extracted component's inherited (non-own) props for this element kind. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. One passthrough type per element kind: a link-like component chains a different kind's generated file instead, and neither has to restate the other's attributes. Regenerate with \`npm run contracts:compile -- <component>\`; a stale copy fails the freshness check.`,
+    title: `UiKit ${kindKey} passthrough`,
+    description: `The props a kit component forwards to an underlying <${domTag}> element (directly or through Base UI), generated from this component's inherited (non-own) props. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. Shared by every export of the same directory that forwards an identical set (Button today); a compound component's parts each generate their own (see resolvePassthroughKindKey). Regenerate with \`npm run contracts:compile -- <directory>\`; a stale copy fails the freshness check.`,
     type: 'object',
     properties,
     patternProperties: {
@@ -346,7 +423,8 @@ export function buildMetamodel(): Record<string, unknown> {
       component: {
         type: 'string',
         pattern: '^[a-z][a-z0-9-]*$',
-        description: 'Kit directory name under src/components/.',
+        description:
+          'Kit directory name under src/components/, or - for one export of a compound component (see `family`) - that export\'s own kebab-case stem, which shares the directory\'s name as a prefix (accordion-item lives in src/components/accordion/).',
       },
       intent: {
         type: 'string',
@@ -383,10 +461,33 @@ export function buildMetamodel(): Record<string, unknown> {
             properties: {
               kinds: {
                 type: 'array',
-                items: { type: 'string', minLength: 1 },
+                // A component type ref (see component_type_ref) when the
+                // child IS a kit component - typed the same way
+                // dont_use_when.instead is, so a reader can resolve it and
+                // the conformance test can check it exists - or the literal
+                // "text" for the one non-component leaf content kind in use
+                // today (Button's own overlay). Not an open string: a typo'd
+                // ref would otherwise silently read as a content kind.
+                items: { oneOf: [{ $ref: '#/$defs/component_type_ref' }, { const: 'text' }] },
                 minItems: 1,
               },
               icons_via: { $ref: '#/$defs/prop_name' },
+            },
+            required: ['kinds'],
+            additionalProperties: false,
+          },
+          // Only a compound component's part sets this: the root/item
+          // kind(s) it is only ever mounted under. Optional and absent from
+          // every other component's overlay - nothing about Button
+          // constrains where it may appear.
+          parent: {
+            type: 'object',
+            properties: {
+              kinds: {
+                type: 'array',
+                items: { $ref: '#/$defs/component_type_ref' },
+                minItems: 1,
+              },
             },
             required: ['kinds'],
             additionalProperties: false,
@@ -441,6 +542,24 @@ export function buildMetamodel(): Record<string, unknown> {
       },
       coverage: {
         type: 'object',
+        properties: {
+          // Reserved key: a fact the code cannot make true (a generic type
+          // parameter, a part composed of two Base UI primitives) rather
+          // than a verified/checked-no/not-described claim - see the
+          // CoverageAssumption type this validates against in compile.ts.
+          assumptions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                claim: { type: 'string', minLength: 1 },
+                reason: { type: 'string', minLength: 1 },
+              },
+              required: ['claim', 'reason'],
+              additionalProperties: false,
+            },
+          },
+        },
         additionalProperties: { $ref: '#/$defs/coverage_verdict' },
       },
       examples: {
@@ -477,6 +596,26 @@ export function buildMetamodel(): Record<string, unknown> {
         },
         required: ['good', 'bad'],
         additionalProperties: false,
+      },
+      family: {
+        type: 'object',
+        description:
+          "Membership in a compound component's family (Accordion, its Item, Trigger and Content), when this component is one. Deliberately NOT expressed as a schema-level derivation (a part's props schema does not chain from the root's - an item does not inherit the root's props, and a closed base would reject them as undeclared if it did): the relationship lives here, in the instance, and the conformance test checks that every ref resolves to a real compiled contract. Absent entirely for a component with no family - Button, most of the kit.",
+        properties: {
+          root: { $ref: '#/$defs/component_type_ref' },
+          role: { type: 'string', enum: ['root', 'part'] },
+          // Root-only: a part points at the root via `root` above and does
+          // not restate its siblings.
+          parts: {
+            type: 'array',
+            items: { $ref: '#/$defs/component_type_ref' },
+            minItems: 1,
+          },
+        },
+        required: ['root', 'role'],
+        additionalProperties: false,
+        if: { properties: { role: { const: 'root' } }, required: ['role'] },
+        then: { required: ['root', 'role', 'parts'] },
       },
       props_schema: {
         type: 'string',
@@ -575,18 +714,37 @@ export function parseOverlay(component: string, raw: unknown): Overlay {
   return raw;
 }
 
-function loadOverlay(component: string): Overlay {
-  const path = join(kitRoot, 'src', 'components', component, `${component}.contract.yaml`);
+// `exportStem` defaults to `directory`: every component through T4 (Button
+// included) has exactly one overlay per directory, named after the
+// directory itself, so every existing call site (`loadOverlay('button')`)
+// keeps resolving the same file. A compound directory's part
+// (`loadOverlay('accordion', 'accordion-item')`) reads
+// accordion/accordion-item.contract.yaml instead - a second overlay file in
+// the same directory, not a second directory.
+function loadOverlay(directory: string, exportStem: string = directory): Overlay {
+  if (exportStem !== directory && !exportStem.startsWith(`${directory}-`)) {
+    // The stem's own directory-prefix check T5 adds: `component` on the
+    // overlay is validated against `exportStem` by parseOverlay below (an
+    // unchanged, two-argument call - see button.contract.test.ts), but
+    // nothing there knows which directory the file was loaded FROM. A part
+    // overlay filed under the wrong directory (or a directory typo in the
+    // filename) would otherwise compile as if it were a top-level component.
+    throw new Error(
+      `${exportStem}: overlay stem does not belong to directory "${directory}" - a part's stem must equal ` +
+        `the directory or start with "${directory}-"`,
+    );
+  }
+  const path = join(kitRoot, 'src', 'components', directory, `${exportStem}.contract.yaml`);
   const raw: unknown = parseYaml(readFileSync(path, 'utf8'));
-  return parseOverlay(component, raw);
+  return parseOverlay(exportStem, raw);
 }
 
-export function compileInstance(component: string): ContractInstance {
-  const overlay = loadOverlay(component);
+export function compileInstance(directory: string, exportStem: string = directory): ContractInstance {
+  const overlay = loadOverlay(directory, exportStem);
   return {
-    id: instanceId(component, CONTRACT_MAJOR),
+    id: instanceId(exportStem, CONTRACT_MAJOR),
     metamodel: METAMODEL_VERSION,
-    component,
+    component: exportStem,
     intent: overlay.intent,
     typical_uses: overlay.typical_uses,
     dont_use_when: overlay.dont_use_when,
@@ -596,7 +754,8 @@ export function compileInstance(component: string): ContractInstance {
     deprecations: overlay.deprecations,
     coverage: overlay.coverage,
     examples: overlay.examples,
-    props_schema: propsSchemaId(component, CONTRACT_MAJOR),
+    family: overlay.family,
+    props_schema: propsSchemaId(exportStem, CONTRACT_MAJOR),
   };
 }
 
@@ -697,28 +856,30 @@ export function pascalCase(component: string): string {
     .join('');
 }
 
-// Finds the extraction for the export matching this component's directory
-// name (button -> Button). A file exporting several components (the norm
-// across the kit, see research section 4) needs to say which one a given
-// `.contract.yaml` overlay describes; T5 is what adds the per-export
-// overlays that let this resolve to more than one target.
-export function resolveTargetExtraction(component: string): ComponentExtraction {
-  const dir = join(kitRoot, 'src', 'components', component);
-  const extractions = extractComponent(join(dir, `${component}.tsx`));
-  const wantedName = pascalCase(component);
+// Finds the extraction for the export named by `exportStem` (button ->
+// Button, accordion-item -> AccordionItem). `exportStem` defaults to
+// `directory`: the ordinary case (one component per directory, named after
+// it) resolves exactly as before T5. A compound directory's part passes its
+// own stem - the .tsx file is still the directory's single source file
+// (extractComponent already returns one ComponentExtraction per exported
+// component in it, see extract.ts), only the SELECTION changes.
+export function resolveTargetExtraction(directory: string, exportStem: string = directory): ComponentExtraction {
+  const dir = join(kitRoot, 'src', 'components', directory);
+  const extractions = extractComponent(join(dir, `${directory}.tsx`));
+  const wantedName = pascalCase(exportStem);
   const extraction = extractions.find((e) => e.name === wantedName);
   if (!extraction) {
     const available = extractions.map((e) => e.name).join(', ') || '(none)';
     throw new Error(
-      `${component}: no exported component named "${wantedName}" (directory "${component}" in PascalCase) - ` +
-        `${component}.tsx exports: ${available}`,
+      `${exportStem}: no exported component named "${wantedName}" (overlay stem "${exportStem}" in PascalCase) - ` +
+        `${directory}.tsx exports: ${available}`,
     );
   }
   return extraction;
 }
 
-export function compileContract(component: string): CompiledContract {
-  const extraction = resolveTargetExtraction(component);
+export function compileContract(directory: string, exportStem: string = directory): CompiledContract {
+  const extraction = resolveTargetExtraction(directory, exportStem);
 
   const unresolvedVariants = extraction.cannotExtract.filter((msg) => msg.startsWith('cva:'));
   if (unresolvedVariants.length > 0) {
@@ -726,28 +887,29 @@ export function compileContract(component: string): CompiledContract {
     // cva(...) call would otherwise compile silently with its axes simply
     // missing - the exact defect (F16) this compiler exists to catch, so it
     // fails the build instead of shipping a contract that lost information.
-    throw new Error(`${component}: ${unresolvedVariants.join('; ')}`);
+    throw new Error(`${exportStem}: ${unresolvedVariants.join('; ')}`);
   }
 
-  const overlay = loadOverlay(component);
+  const overlay = loadOverlay(directory, exportStem);
 
   let passthroughSchema: Record<string, unknown> | undefined;
   let passthroughRef: SchemaRef | undefined;
   if (extraction.passthroughKind) {
-    passthroughSchema = buildPassthroughSchema(extraction.passthroughKind, extraction.inheritedProps);
-    passthroughRef = { $ref: passthroughTypeId(extraction.passthroughKind) };
+    const kindKey = resolvePassthroughKindKey(directory, exportStem, extraction.passthroughKind);
+    passthroughSchema = buildPassthroughSchema(kindKey, extraction.passthroughKind, extraction.inheritedProps);
+    passthroughRef = { $ref: passthroughTypeId(kindKey) };
   } else if (extraction.inheritedProps.length > 0) {
     // Inherited props exist but no element kind could be resolved for them -
     // exactly the case a silent extractor would have dropped them in.
     throw new Error(
-      `${component}: ${extraction.inheritedProps.length} inherited prop(s) found (e.g. "${extraction.inheritedProps[0].name}") ` +
-        `but no passthrough element kind could be resolved from ${component}.tsx's props type - cannot generate a ` +
+      `${exportStem}: ${extraction.inheritedProps.length} inherited prop(s) found (e.g. "${extraction.inheritedProps[0].name}") ` +
+        `but no passthrough element kind could be resolved from ${directory}.tsx's props type - cannot generate a ` +
         `passthrough type to declare them in`,
     );
   }
 
   const { properties, required, slots } = buildPropsAndRequired(
-    component,
+    exportStem,
     extraction,
     passthroughSchema ?? { properties: {} },
   );
@@ -759,18 +921,18 @@ export function compileContract(component: string): CompiledContract {
     // SEMANTIC_FIELD_TARGETS is edited to drop a field on the floor - a
     // config mistake worth failing loudly on rather than shipping a
     // contract silently missing part of its overlay.
-    throw new Error(`${component}: SEMANTIC_FIELD_TARGETS does not route every semantic overlay field exactly once`);
+    throw new Error(`${exportStem}: SEMANTIC_FIELD_TARGETS does not route every semantic overlay field exactly once`);
   }
   if (gtsTraitsFields.length > 0) {
     // No field maps here yet (see the map above); the day one does, this
     // needs an 'x-gts-traits' block emitted alongside 'x-uikit' below.
-    throw new Error(`${component}: x-gts-traits routing is not implemented yet, but is configured for: ${gtsTraitsFields.join(', ')}`);
+    throw new Error(`${exportStem}: x-gts-traits routing is not implemented yet, but is configured for: ${gtsTraitsFields.join(', ')}`);
   }
 
   return {
-    $id: propsSchemaId(component, CONTRACT_MAJOR),
+    $id: propsSchemaId(exportStem, CONTRACT_MAJOR),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    title: `UiKit ${component} contract`,
+    title: `UiKit ${exportStem} contract`,
     type: 'object',
     allOf: passthroughRef ? [{ $ref: BASE_TYPE_ID }, passthroughRef] : [{ $ref: BASE_TYPE_ID }],
     properties,
@@ -798,23 +960,31 @@ function invokedDirectly(): boolean {
   return import.meta.url === pathToFileURL(entry).href;
 }
 
-// CLI entry - skipped when the module is imported (e.g. by the conformance test).
-if (invokedDirectly()) {
-  const [component, outPath] = process.argv.slice(2);
-  if (!component) {
-    console.error('Usage: npm run contracts:compile -- <component> [outPath]');
-    process.exit(1);
-  }
-  const extraction = resolveTargetExtraction(component);
-  const contract = compileContract(component);
-  const instance = compileInstance(component);
-  // Default output sits next to the component's source, alongside the
-  // overlay it was compiled from - not dist/contracts, which does not exist
-  // until a build runs. The committed artifact IS the compiled contract;
-  // dist/ gets its own copy through the normal build/publish step.
-  const out = outPath ?? join(kitRoot, 'src', 'components', component, `${component}.contract.json`);
-  // Derived, not a third argument: the two artifacts describe one component
-  // and there is no case for writing them to unrelated places.
+// Every `*.contract.yaml` overlay directly in a directory - one for the
+// ordinary case (button.contract.yaml), one per export for a compound
+// component (accordion.contract.yaml, accordion-item.contract.yaml, ...).
+// `.contract.ru.yaml` never matches this suffix (it ends in `.ru.yaml`, not
+// `.contract.yaml`) - it is excluded on disk locally and must never be
+// picked up as a normal overlay if it exists.
+export function overlayStems(directory: string): string[] {
+  const dir = join(kitRoot, 'src', 'components', directory);
+  return readdirSync(dir)
+    .filter((name) => name.endsWith('.contract.yaml'))
+    .map((name) => name.slice(0, -'.contract.yaml'.length))
+    .sort();
+}
+
+function compileOne(directory: string, exportStem: string): void {
+  const extraction = resolveTargetExtraction(directory, exportStem);
+  const contract = compileContract(directory, exportStem);
+  const instance = compileInstance(directory, exportStem);
+  // Output sits next to the component's source, alongside the overlay it was
+  // compiled from - not dist/contracts, which does not exist until a build
+  // runs. The committed artifact IS the compiled contract; dist/ gets its
+  // own copy through the normal build/publish step.
+  const out = join(kitRoot, 'src', 'components', directory, `${exportStem}.contract.json`);
+  // Derived, not a separate argument: the two artifacts describe one
+  // component and there is no case for writing them to unrelated places.
   const instanceOut = `${out.replace(/\.json$/, '')}.instance.json`;
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, `${JSON.stringify(contract, null, 2)}\n`);
@@ -822,10 +992,32 @@ if (invokedDirectly()) {
   console.log(`wrote ${out}`);
   console.log(`wrote ${instanceOut}`);
   if (extraction.passthroughKind) {
-    const passthroughSchema = buildPassthroughSchema(extraction.passthroughKind, extraction.inheritedProps);
+    const kindKey = resolvePassthroughKindKey(directory, exportStem, extraction.passthroughKind);
+    const passthroughSchema = buildPassthroughSchema(kindKey, extraction.passthroughKind, extraction.inheritedProps);
     mkdirSync(GENERATED_DIR, { recursive: true });
-    const passthroughOut = join(GENERATED_DIR, `passthrough.${extraction.passthroughKind}.json`);
+    const passthroughOut = join(GENERATED_DIR, `passthrough.${kindKey}.json`);
     writeFileSync(passthroughOut, `${JSON.stringify(passthroughSchema, null, 2)}\n`);
     console.log(`wrote ${passthroughOut}`);
   }
+}
+
+// CLI entry - skipped when the module is imported (e.g. by the conformance
+// test). Takes a DIRECTORY, not one component: `npm run contracts:compile
+// -- accordion` compiles every `*.contract.yaml` overlay directly under
+// src/components/accordion/ (one for the ordinary single-overlay directory,
+// several for a compound one) - there is no per-export CLI invocation,
+// because a reviewer regenerating a compound component's contracts wants all
+// of its parts refreshed together, not one at a time.
+if (invokedDirectly()) {
+  const [directory] = process.argv.slice(2);
+  if (!directory) {
+    console.error('Usage: npm run contracts:compile -- <directory>');
+    process.exit(1);
+  }
+  const stems = overlayStems(directory);
+  if (stems.length === 0) {
+    console.error(`${directory}: no *.contract.yaml overlay found directly under src/components/${directory}/`);
+    process.exit(1);
+  }
+  for (const stem of stems) compileOne(directory, stem);
 }

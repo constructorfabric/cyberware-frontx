@@ -11,14 +11,18 @@ import { describe, expect, it } from 'vitest';
 
 import { checkComponentFreshness } from './freshness';
 
-export function assertContractFreshness(component: string): void {
-  describe(`${component} contract freshness`, () => {
+// `exportStem` defaults to `directory` for the ordinary one-overlay case
+// (assertContractFreshness('button')); a compound component's part passes
+// both (assertContractFreshness('accordion', 'accordion-item')) - see
+// accordion.contract.test.ts.
+export function assertContractFreshness(directory: string, exportStem: string = directory): void {
+  describe(`${exportStem} contract freshness`, () => {
     it('committed contract.json, contract.instance.json and generated passthrough match a fresh compile', () => {
-      const report = checkComponentFreshness(component);
-      expect(report.contractDiff, `${component}.contract.json is stale:\n${report.contractDiff.join('\n')}`).toEqual([]);
+      const report = checkComponentFreshness(directory, exportStem);
+      expect(report.contractDiff, `${exportStem}.contract.json is stale:\n${report.contractDiff.join('\n')}`).toEqual([]);
       expect(
         report.instanceDiff,
-        `${component}.contract.instance.json is stale:\n${report.instanceDiff.join('\n')}`,
+        `${exportStem}.contract.instance.json is stale:\n${report.instanceDiff.join('\n')}`,
       ).toEqual([]);
       if (report.passthroughDiff !== 'not-applicable') {
         expect(report.passthroughDiff, `generated passthrough is stale:\n${report.passthroughDiff.join('\n')}`).toEqual([]);
@@ -26,7 +30,7 @@ export function assertContractFreshness(component: string): void {
     });
 
     it('every annotation-only slot property has a matching x-uikit.slots entry', () => {
-      const report = checkComponentFreshness(component);
+      const report = checkComponentFreshness(directory, exportStem);
       expect(report.slotSchemaMismatches).toEqual([]);
     });
   });

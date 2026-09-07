@@ -1,0 +1,59 @@
+# Semantic overlay for AccordionTrigger - a part of the Accordion family, see
+# accordion.contract.yaml's `family` for how the four contracts relate.
+component: accordion-trigger
+
+intent: The clickable header that expands or collapses its AccordionItem.
+
+typical_uses:
+  - The single header/summary child of an AccordionItem
+
+dont_use_when:
+  - rule: A standalone button with no AccordionItem to expand or collapse
+    instead: gts.frontx.uikit.component.button.v1~ # Button
+
+composition:
+  children:
+    kinds: [text]
+  parent:
+    kinds: [gts.frontx.uikit.component.accordion_item.v1~] # AccordionItem
+
+invariants:
+  - id: always-renders-a-chevron
+    text: >-
+      AccordionTrigger always renders a trailing chevron that rotates on
+      open/close - there is no prop to hide it, matching upstream Base UI.
+
+anti_patterns:
+  - dont: Pass an icon element through children expecting it before the chevron
+    instead: Children are the trigger's text label only; the chevron is fixed and always trailing
+
+deprecations: {}
+
+coverage:
+  a11y: verified # focus and aria-expanded/aria-controls wiring come from Base UI
+  assumptions:
+    - claim: AccordionTrigger wraps two Base UI parts, Header and Trigger
+      reason: >-
+        The kit's AccordionTrigger composes Base UI's Accordion.Header
+        (a plain wrapper, not separately exposed by the kit) around
+        Accordion.Trigger into one exported component; this contract
+        describes the exported surface, not the two-part internal
+        composition, so Header's own props are not part of it.
+
+examples:
+  good:
+    - title: A trigger as an AccordionItem's header
+      code: |
+        <AccordionItem value="item-1">
+          <AccordionTrigger>Is it accessible?</AccordionTrigger>
+        </AccordionItem>
+  bad:
+    - title: A trigger with no AccordionItem around it
+      code: <AccordionTrigger>Is it accessible?</AccordionTrigger>
+      why: >-
+        AccordionTrigger reads and writes the nearest AccordionItem's open
+        state through Base UI context; outside one, clicking it does nothing.
+
+family:
+  root: gts.frontx.uikit.component.accordion.v1~ # Accordion
+  role: part

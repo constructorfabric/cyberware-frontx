@@ -1,0 +1,58 @@
+# Semantic overlay for AccordionItem - a part of the Accordion family, see
+# accordion.contract.yaml's `family` for how the four contracts relate.
+component: accordion-item
+
+intent: One collapsible section of an Accordion, identified by a unique value.
+
+typical_uses:
+  - One entry in an Accordion's list of sections, wrapping a trigger and its panel
+
+dont_use_when:
+  - rule: A section that must always stay visible and never collapse
+    instead: gts.frontx.uikit.component.card.v1~ # Card
+
+composition:
+  children:
+    kinds:
+      - gts.frontx.uikit.component.accordion_trigger.v1~ # AccordionTrigger
+      - gts.frontx.uikit.component.accordion_content.v1~ # AccordionContent
+  parent:
+    kinds: [gts.frontx.uikit.component.accordion.v1~] # Accordion
+
+invariants:
+  - id: value-required-to-control-or-default-open
+    text: >-
+      `value` identifies this item within its root; it is what `Accordion`'s
+      `value`/`defaultValue` name to control or default which item is open.
+
+anti_patterns:
+  - dont: Reuse the same `value` for two items under one Accordion root
+    instead: Give every item a unique `value` - see the root's item-values-unique-per-root invariant
+
+deprecations: {}
+
+coverage:
+  a11y: verified # item disclosure state comes from Base UI
+
+examples:
+  good:
+    - title: An item with its trigger and panel
+      code: |
+        <AccordionItem value="item-1">
+          <AccordionTrigger>Is it accessible?</AccordionTrigger>
+          <AccordionContent>Yes. It adheres to the WAI-ARIA design pattern.</AccordionContent>
+        </AccordionItem>
+  bad:
+    - title: An item outside any Accordion
+      code: |
+        <AccordionItem value="item-1">
+          <AccordionTrigger>Is it accessible?</AccordionTrigger>
+        </AccordionItem>
+      why: >-
+        AccordionItem has no open/close state of its own - it reads and
+        writes the nearest Accordion root's state, so mounting it outside one
+        renders nothing usable.
+
+family:
+  root: gts.frontx.uikit.component.accordion.v1~ # Accordion
+  role: part
