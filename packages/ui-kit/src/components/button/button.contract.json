@@ -8,7 +8,7 @@
       "$ref": "gts://gts.frontx.uikit.base.component.v1~"
     },
     {
-      "$ref": "gts://gts.frontx.uikit.passthrough.dom_button.v1~"
+      "$ref": "gts://gts.frontx.uikit.passthrough.button.v1~"
     }
   ],
   "properties": {
@@ -32,6 +32,9 @@
         "lg"
       ],
       "default": "default"
+    },
+    "className": {
+      "type": "string"
     },
     "icon": {
       "description": "Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
@@ -126,7 +129,7 @@
       }
     },
     "passthrough": [
-      "Omit<ButtonPrimitive.Props, 'className'>"
+      "Omit<ButtonPrimitive.Props, 'className'> (@base-ui/react/button/Button.d.mts)"
     ],
     "variant_sources": [
       "VariantProps<typeof buttonVariants>"

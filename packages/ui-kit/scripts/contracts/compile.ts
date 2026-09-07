@@ -14,26 +14,29 @@
 //
 // A component's props schema is not a standalone schema that happens to look
 // like its neighbours: it derives from base.component.json and composes one
-// shared passthrough type per element kind (passthrough.dom-button.json for
-// anything backed by a <button>). Those two are hand-written source, not
-// compiled output - they describe no component's code, so there is nothing to
-// extract for them; they live next to this file and are read here and by the
-// conformance test. What the derivation buys is closure: because the
-// forwarded DOM props are declared by a schema this one $refs, the derived
-// type can set `unevaluatedProperties: false` and reject a typo'd kit prop
-// without also rejecting className, aria-* or data-*. `additionalProperties`
-// could not do that job - it cannot see through $ref or allOf, so it would
-// reject every inherited prop.
+// GENERATED passthrough type per element kind (passthrough.button.json for
+// anything backed by a <button>, one file per kind under
+// scripts/contracts/generated/). base.component.json is hand-written source -
+// it describes no component's code, so there is nothing to extract for it.
+// The passthrough types are compiled output: they are built from a
+// component's own INHERITED props (extract.ts's ComponentExtraction), the
+// same way the component's own contract is, and are committed next to it so
+// a reviewer sees the forwarded surface change in the same diff as the
+// source change that caused it. What the derivation buys is closure: because
+// the forwarded DOM props are declared by a schema this one $refs, the
+// derived type can set `unevaluatedProperties: false` and reject a typo'd
+// kit prop without also rejecting className, aria-* or data-*.
+// `additionalProperties` could not do that job - it cannot see through $ref
+// or allOf, so it would reject every inherited prop.
 //
 // The overlay itself is validated before it is trusted: an unknown key (a
 // typo, a stray JSON-schema keyword like `type`/`required`) fails the
 // compile by name instead of silently vanishing on merge, and a component
 // that redeclares a passthrough-owned prop with a conflicting type fails
-// instead of the passthrough type quietly winning. Both checks exist because
-// the alternative - one field lost, one prop double-declared with two
-// disagreeing types - is exactly the class of bug a generated contract exists
-// to catch, and a compiler that could itself make it would be worse than no
-// contract at all.
+// instead of the passthrough type quietly winning. A VariantProps heritage
+// entry the extractor could not trace to a real cva(...) call fails the same
+// way: a component that silently lost its variant axes is a worse defect
+// than a compile that stops and says which axis it could not read.
 //
 // The compiled JSON is the canonical contract every consumer reads (Ajv,
 // gtsPlugin.registerSchema, projections, the lint). It is written next to
@@ -44,7 +47,8 @@
 //
 // Usage: npm run contracts:compile -- <component> [outPath]
 //        The instance path is outPath with `.json` swapped for
-//        `.instance.json`; both files are written together.
+//        `.instance.json`; both files are written together, and the
+//        component's generated passthrough.<kind>.json alongside them.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -61,7 +65,7 @@ import Ajv2020 from 'ajv/dist/2020';
 // the line that caused it.
 import { parse as parseYaml } from 'yaml';
 
-import { extractComponent, type Extraction } from './extract';
+import { extractComponent, normalizeTypeText, parseStringLiteralUnion, type ComponentExtraction, type ExtractedProp } from './extract';
 import {
   BASE_TYPE_ID,
   componentTypeRefPattern,
@@ -70,12 +74,12 @@ import {
   instanceIdPattern,
   METAMODEL_TYPE_ID,
   METAMODEL_VERSION,
-  PASSTHROUGH_TYPE_ID,
+  passthroughTypeId,
   propsSchemaId,
   propsSchemaIdPattern,
 } from './ids';
 
-export { BASE_TYPE_ID, PASSTHROUGH_TYPE_ID, propsSchemaId, instanceId };
+export { BASE_TYPE_ID, passthroughTypeId, propsSchemaId, instanceId };
 
 export interface Examples {
   good: { title: string; code: string }[];
@@ -179,14 +183,12 @@ export interface CompiledContract {
   'x-uikit': {
     metamodel: string;
     slots: Record<string, { typeText: string; optional: boolean }>;
-    // DOM/Base UI heritage clauses only - what the component actually
-    // forwards to an element. A `VariantProps<...>` heritage clause is not
-    // forwarding anything; it is where the component's own cva axes come
-    // from, so it is reported separately below instead of alongside real
-    // passthrough.
+    // What the component's own Props type literally extends, besides its
+    // VariantProps heritage - readable labels (the heritage text plus the
+    // declaration file the checker resolved it to), not consumed by any
+    // validator. variant_sources is the complementary list: where this
+    // component's own cva axes come from, not what it forwards.
     passthrough: string[];
-    // Heritage clauses of the shape `VariantProps<typeof ...>`: the source
-    // of this component's own variant axes, not props it forwards.
     variant_sources: string[];
     cannot_extract: string[];
   } & Omit<Overlay, 'component'>;
@@ -198,26 +200,30 @@ const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 // rather than inlined so the artifacts, the conformance test and Ajv all see
 // one copy of each.
 const SCHEMA_DIR = dirname(fileURLToPath(import.meta.url));
+const GENERATED_DIR = join(SCHEMA_DIR, 'generated');
 
 export function loadBaseSchema(): Record<string, unknown> {
   return JSON.parse(readFileSync(join(SCHEMA_DIR, 'base.component.json'), 'utf8')) as Record<string, unknown>;
 }
 
-export function loadPassthroughSchema(): Record<string, unknown> {
-  return JSON.parse(readFileSync(join(SCHEMA_DIR, 'passthrough.dom-button.json'), 'utf8')) as Record<
-    string,
-    unknown
-  >;
+// The generated per-element-kind passthrough type this component's inherited
+// props were compiled into (see buildPassthroughSchema). Reads the
+// COMMITTED copy - the same file the freshness check in T4 diffs a fresh
+// compile against - not a value kept only in memory, so a stale copy is
+// something CI can catch instead of something only the compiler ever sees.
+export function loadPassthroughSchema(kind: string): Record<string, unknown> {
+  const path = join(GENERATED_DIR, `passthrough.${kind}.json`);
+  return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
 }
 
 // name -> declared JSON Schema `type`, for every prop the passthrough type
-// owns. `undefined` for an annotation-only entry (onClick, children): there
-// is nothing to compare a component's own declaration against, so those
-// names are still treated as owned (skip the property) but never trigger the
-// type-conflict check below.
-function passthroughPropertyTypes(passthroughSchema: Record<string, unknown>): Map<string, string | undefined> {
-  const properties = (passthroughSchema.properties ?? {}) as Record<string, { type?: string }>;
-  return new Map(Object.entries(properties).map(([name, schema]) => [name, schema.type]));
+// owns. `undefined` for an annotation-only entry (onClick, children, style):
+// there is nothing to compare a component's own declaration against, so
+// those names are still treated as owned (skip the property) but never
+// trigger the type-conflict check below.
+function passthroughPropertyTypes(passthroughSchema: Record<string, unknown>): Map<string, ContractProperty | undefined> {
+  const properties = (passthroughSchema.properties ?? {}) as Record<string, ContractProperty>;
+  return new Map(Object.entries(properties).map(([name, schema]) => [name, schema.type ? schema : undefined]));
 }
 
 // Machine-owned fields the overlay must not restate - one fact, one owner.
@@ -227,21 +233,63 @@ function passthroughPropertyTypes(passthroughSchema: Record<string, unknown>): M
 // specifically rather than folding into "unknown key".
 const MACHINE_OWNED = ['axes', 'props', 'defaults', 'variants', 'required', 'slots', 'type'];
 
-// Normative props stay inside the provider-safe JSON Schema subset; anything
-// unrepresentable there (ReactNode slots, render props) is described in
-// x-uikit instead of the schema body.
-const NORMATIVE_TYPES: Record<string, ContractProperty> = {
-  boolean: { type: 'boolean' },
-  string: { type: 'string' },
-};
+// A prop's normalized TypeScript text, classified into the provider-safe
+// JSON Schema subset a validator can actually assert: boolean/string/number
+// exactly, or a string literal union as an enum. Everything else - a
+// function, ReactNode, an element, an object shape - has no JSON Schema
+// representation and is annotation-only (see buildPropsAndRequired's slot
+// branch and buildPassthroughSchema's else branch). One function, used by
+// both a component's own props and its generated passthrough type, so the
+// same TypeScript shape is always classified the same way regardless of
+// which side of the own/inherited split it happens to land on.
+function classifyProviderSafeType(typeText: string): ContractProperty | undefined {
+  const normalized = normalizeTypeText(typeText);
+  if (normalized === 'boolean' || normalized === 'string' || normalized === 'number') {
+    return { type: normalized };
+  }
+  const enumValues = parseStringLiteralUnion(normalized);
+  if (enumValues) return { type: 'string', enum: enumValues };
+  return undefined;
+}
 
-// A TS union member's trailing `| undefined` (from an optional prop's
-// `?:`-less but union-widened type text) does not change what the prop
-// actually holds, so it is stripped before comparing against a passthrough
-// property's JSON Schema `type` - otherwise every optional string prop would
-// spuriously conflict with a required-looking passthrough entry.
-function normalizeTypeText(typeText: string): string {
-  return typeText.replace(/\s*\|\s*undefined\s*$/, '').trim();
+// Generates the shared per-element-kind passthrough type from a component's
+// inherited (non-own) props. `key`/`ref` are React/JSX machinery, not props
+// a consumer sets, so neither belongs in a props contract. Individual
+// `aria-*` names are excluded the same way the OLD hand-written file handled
+// them: React's AriaAttributes type declares ~50 of them by literal name,
+// and enumerating each one here would bury the file in exactly the
+// boilerplate the shared `^aria-` pattern property already covers for free;
+// `data-*` attributes are not typed as literal properties at all (JSX
+// accepts them structurally), so there is nothing to exclude there beyond
+// keeping the same `^data-` pattern property as before.
+export function buildPassthroughSchema(kind: string, inheritedProps: ExtractedProp[]): Record<string, unknown> {
+  const properties: Record<string, ContractProperty> = {};
+  for (const prop of inheritedProps) {
+    if (prop.name === 'key' || prop.name === 'ref') continue;
+    if (prop.name.startsWith('aria-') || prop.name.startsWith('data-')) continue;
+    properties[prop.name] = classifyProviderSafeType(prop.typeText) ?? {};
+  }
+
+  return {
+    $id: passthroughTypeId(kind),
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    title: `UiKit ${kind} passthrough`,
+    description: `The props a kit component forwards to an underlying <${kind}> element (directly or through Base UI), generated from every extracted component's inherited (non-own) props for this element kind. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. One passthrough type per element kind: a link-like component chains a different kind's generated file instead, and neither has to restate the other's attributes. Regenerate with \`npm run contracts:compile -- <component>\`; a stale copy fails the freshness check.`,
+    type: 'object',
+    properties,
+    patternProperties: {
+      '^aria-': {
+        description:
+          'Any ARIA attribute passes. Enumerating the WAI-ARIA set here would go stale against the spec and buy nothing: a contract\'s job is to stop typos in KIT props, and the a11y rules that actually matter (icon-only needs aria-label) are invariants, not a property list.',
+      },
+      '^data-': {
+        description:
+          'Any data attribute passes: they are open by construction, and consumers add their own (data-testid being the common one).',
+      },
+    },
+    $comment:
+      'Intentionally NOT closed (no unevaluatedProperties/additionalProperties): this is one of several in-place applicators a component composes, so it cannot know what the others contribute. Closure happens once, in the derived component type.',
+  };
 }
 
 // The metamodel schema, built from ids.ts rather than typed twice: the
@@ -561,12 +609,12 @@ export interface PropsAndRequired {
 // The machine-owned half of a component's props schema: cva axes, own
 // props (typed where the provider-safe subset can express them, slots
 // where it cannot) and which own props are required. Split out from
-// compileContract so it can be unit-tested with a synthetic Extraction -
-// in particular the passthrough type-conflict check, which needs no real
-// component file to exercise.
+// compileContract so it can be unit-tested with a synthetic
+// ComponentExtraction - in particular the passthrough type-conflict check,
+// which needs no real component file to exercise.
 export function buildPropsAndRequired(
   component: string,
-  extraction: Extraction,
+  extraction: ComponentExtraction,
   passthroughSchema: Record<string, unknown>,
 ): PropsAndRequired {
   const properties: Record<string, ContractProperty> = {};
@@ -581,23 +629,30 @@ export function buildPropsAndRequired(
 
   for (const prop of extraction.ownProps) {
     if (passthroughTypes.has(prop.name)) {
-      const declaredType = passthroughTypes.get(prop.name);
-      // `declaredType === undefined` means the passthrough entry is
-      // annotation-only (onClick, children): nothing to compare against,
-      // so the name still counts as owned but the type check is skipped.
-      if (declaredType !== undefined && normalizeTypeText(prop.typeText) !== declaredType) {
-        throw new Error(
-          `${component}: prop "${prop.name}" declared "${prop.typeText}" in ${component}.tsx conflicts with the ` +
-            `passthrough type's declared type "${declaredType}" (${PASSTHROUGH_TYPE_ID}) - one prop, one owner, ` +
-            `and the two disagree`,
-        );
+      const declared = passthroughTypes.get(prop.name);
+      // `declared === undefined` means the passthrough entry is
+      // annotation-only (onClick, children, style): nothing to compare
+      // against, so the name still counts as owned but the type check is
+      // skipped.
+      if (declared !== undefined) {
+        const ownClassified = classifyProviderSafeType(prop.typeText);
+        const agrees =
+          ownClassified !== undefined &&
+          ownClassified.type === declared.type &&
+          JSON.stringify(ownClassified.enum) === JSON.stringify(declared.enum);
+        if (!agrees) {
+          throw new Error(
+            `${component}: prop "${prop.name}" declared "${prop.typeText}" in ${component}.tsx conflicts with the ` +
+              `passthrough type's declared type "${declared.type}" - one prop, one owner, and the two disagree`,
+          );
+        }
       }
       // Declared by the passthrough type already - leave it there.
       continue;
     }
-    const normative = NORMATIVE_TYPES[prop.typeText];
+    const normative = classifyProviderSafeType(prop.typeText);
     if (normative) {
-      properties[prop.name] = { ...normative };
+      properties[prop.name] = normative;
     } else {
       // Not expressible in the provider-safe subset - recorded as a slot
       // with its source type, checked by the lint, not by Ajv. It still gets
@@ -630,20 +685,72 @@ function pickFields<T extends object, K extends keyof T>(source: T, keys: readon
   return out;
 }
 
-// A `VariantProps<typeof ...>` heritage clause is the source of this
-// component's own cva axes, not a prop it forwards to an element - grouping
-// it with real passthrough would tell a reader that `variant`/`size` are
-// forwarded DOM attributes, which they are not.
-function isVariantSource(heritageClause: string): boolean {
-  return /^VariantProps</.test(heritageClause.trim());
+// A component's directory is kebab-case; its exported name is PascalCase
+// (navigation-menu -> NavigationMenu). This is the one place that mapping
+// happens, so a file exporting several components picks the right one by
+// the same rule compileContract's error message describes.
+export function pascalCase(component: string): string {
+  return component
+    .split('-')
+    .filter(Boolean)
+    .map((segment) => segment[0].toUpperCase() + segment.slice(1))
+    .join('');
+}
+
+// Finds the extraction for the export matching this component's directory
+// name (button -> Button). A file exporting several components (the norm
+// across the kit, see research section 4) needs to say which one a given
+// `.contract.yaml` overlay describes; T5 is what adds the per-export
+// overlays that let this resolve to more than one target.
+export function resolveTargetExtraction(component: string): ComponentExtraction {
+  const dir = join(kitRoot, 'src', 'components', component);
+  const extractions = extractComponent(join(dir, `${component}.tsx`));
+  const wantedName = pascalCase(component);
+  const extraction = extractions.find((e) => e.name === wantedName);
+  if (!extraction) {
+    const available = extractions.map((e) => e.name).join(', ') || '(none)';
+    throw new Error(
+      `${component}: no exported component named "${wantedName}" (directory "${component}" in PascalCase) - ` +
+        `${component}.tsx exports: ${available}`,
+    );
+  }
+  return extraction;
 }
 
 export function compileContract(component: string): CompiledContract {
-  const dir = join(kitRoot, 'src', 'components', component);
-  const extraction: Extraction = extractComponent(join(dir, `${component}.tsx`));
+  const extraction = resolveTargetExtraction(component);
+
+  const unresolvedVariants = extraction.cannotExtract.filter((msg) => msg.startsWith('cva:'));
+  if (unresolvedVariants.length > 0) {
+    // A VariantProps heritage entry the extractor could not trace to a real
+    // cva(...) call would otherwise compile silently with its axes simply
+    // missing - the exact defect (F16) this compiler exists to catch, so it
+    // fails the build instead of shipping a contract that lost information.
+    throw new Error(`${component}: ${unresolvedVariants.join('; ')}`);
+  }
+
   const overlay = loadOverlay(component);
-  const passthroughSchema = loadPassthroughSchema();
-  const { properties, required, slots } = buildPropsAndRequired(component, extraction, passthroughSchema);
+
+  let passthroughSchema: Record<string, unknown> | undefined;
+  let passthroughRef: SchemaRef | undefined;
+  if (extraction.passthroughKind) {
+    passthroughSchema = buildPassthroughSchema(extraction.passthroughKind, extraction.inheritedProps);
+    passthroughRef = { $ref: passthroughTypeId(extraction.passthroughKind) };
+  } else if (extraction.inheritedProps.length > 0) {
+    // Inherited props exist but no element kind could be resolved for them -
+    // exactly the case a silent extractor would have dropped them in.
+    throw new Error(
+      `${component}: ${extraction.inheritedProps.length} inherited prop(s) found (e.g. "${extraction.inheritedProps[0].name}") ` +
+        `but no passthrough element kind could be resolved from ${component}.tsx's props type - cannot generate a ` +
+        `passthrough type to declare them in`,
+    );
+  }
+
+  const { properties, required, slots } = buildPropsAndRequired(
+    component,
+    extraction,
+    passthroughSchema ?? { properties: {} },
+  );
 
   const uikitFields = fieldsTargeting('x-uikit');
   const gtsTraitsFields = fieldsTargeting('x-gts-traits');
@@ -665,7 +772,7 @@ export function compileContract(component: string): CompiledContract {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: `UiKit ${component} contract`,
     type: 'object',
-    allOf: [{ $ref: BASE_TYPE_ID }, { $ref: PASSTHROUGH_TYPE_ID }],
+    allOf: passthroughRef ? [{ $ref: BASE_TYPE_ID }, passthroughRef] : [{ $ref: BASE_TYPE_ID }],
     properties,
     required,
     unevaluatedProperties: false,
@@ -673,8 +780,8 @@ export function compileContract(component: string): CompiledContract {
       metamodel: METAMODEL_VERSION,
       ...pickFields(overlay, uikitFields),
       slots,
-      passthrough: extraction.passthrough.filter((clause) => !isVariantSource(clause)),
-      variant_sources: extraction.passthrough.filter(isVariantSource),
+      passthrough: extraction.passthroughSources,
+      variant_sources: extraction.variantSourceLabels,
       cannot_extract: extraction.cannotExtract,
     },
   };
@@ -698,6 +805,7 @@ if (invokedDirectly()) {
     console.error('Usage: npm run contracts:compile -- <component> [outPath]');
     process.exit(1);
   }
+  const extraction = resolveTargetExtraction(component);
   const contract = compileContract(component);
   const instance = compileInstance(component);
   // Default output sits next to the component's source, alongside the
@@ -713,4 +821,11 @@ if (invokedDirectly()) {
   writeFileSync(instanceOut, `${JSON.stringify(instance, null, 2)}\n`);
   console.log(`wrote ${out}`);
   console.log(`wrote ${instanceOut}`);
+  if (extraction.passthroughKind) {
+    const passthroughSchema = buildPassthroughSchema(extraction.passthroughKind, extraction.inheritedProps);
+    mkdirSync(GENERATED_DIR, { recursive: true });
+    const passthroughOut = join(GENERATED_DIR, `passthrough.${extraction.passthroughKind}.json`);
+    writeFileSync(passthroughOut, `${JSON.stringify(passthroughSchema, null, 2)}\n`);
+    console.log(`wrote ${passthroughOut}`);
+  }
 }

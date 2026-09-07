@@ -21,22 +21,24 @@ import { describe, expect, it } from 'vitest';
 import {
   BASE_TYPE_ID,
   buildMetamodel,
+  buildPassthroughSchema,
   buildPropsAndRequired,
   compileContract,
   compileInstance,
   loadBaseSchema,
   loadPassthroughSchema,
   parseOverlay,
-  PASSTHROUGH_TYPE_ID,
+  resolveTargetExtraction,
   type Overlay,
 } from '../../../scripts/contracts/compile';
-import { extractComponent, type Extraction } from '../../../scripts/contracts/extract';
-import { componentTypeRefPattern, instanceIdPattern, METAMODEL_VERSION } from '../../../scripts/contracts/ids';
+import type { ComponentExtraction } from '../../../scripts/contracts/extract';
+import { componentTypeRefPattern, instanceIdPattern, METAMODEL_VERSION, passthroughTypeId } from '../../../scripts/contracts/ids';
 
 const contract = compileContract('button');
 const instance = compileInstance('button');
 const baseSchema = loadBaseSchema();
-const passthroughSchema = loadPassthroughSchema();
+const PASSTHROUGH_TYPE_ID = passthroughTypeId('button');
+const passthroughSchema = loadPassthroughSchema('button');
 
 // GTS ids are written here in URI form (`gts://...`), which is how a JSON
 // Schema $id/$ref has to look; gts-ts strips that prefix before parsing or
@@ -61,9 +63,7 @@ function compileValidator(): ReturnType<Ajv2020['compile']> {
   ajv.addSchema(passthroughSchema);
   return ajv.compile(contract);
 }
-// vitest rewrites import.meta.url to a root-relative path, so resolve from
-// the package cwd instead.
-const extraction = extractComponent(join(process.cwd(), 'src/components/button/button.tsx'));
+const extraction = resolveTargetExtraction('button');
 const metaSchema = JSON.parse(
   readFileSync(join(process.cwd(), 'scripts/contracts/ui-component.meta.json'), 'utf8'),
 ) as SchemaObject;
@@ -92,10 +92,9 @@ describe('button contract conformance', () => {
 
   it('required is an array mirroring own props with optional:false', () => {
     // No fixture: derived from the same extraction the contract was built
-    // from. Button has no required own props today (className is
-    // passthrough-owned, icon/loading/focusableWhenDisabled are all
-    // optional), so this also proves `required` is `[]`, not an absent
-    // field, when nothing is required.
+    // from. Button has no required own props today (className, icon,
+    // loading, focusableWhenDisabled are all optional), so this also proves
+    // `required` is `[]`, not an absent field, when nothing is required.
     expect(Array.isArray(contract.required)).toBe(true);
     const expected = extraction.ownProps
       .filter((prop) => prop.name in contract.properties && !prop.optional)
@@ -161,14 +160,36 @@ describe('button contract conformance', () => {
   });
 
   it('leaves passthrough-owned props to the passthrough type', () => {
-    // className is declared by ButtonProps (Base UI's Props omits it), but
-    // it is a DOM prop every component forwards - the passthrough type owns
-    // it, and the component schema must not carry a competing copy.
+    // `disabled` is never mentioned in button.tsx's own ButtonProps body -
+    // it reaches the props type only through the Omit<ButtonPrimitive.Props,
+    // 'className'> heritage, so it is inherited, and the passthrough type
+    // owns it; the component schema must not carry a competing copy.
     const passthroughProps = Object.keys((passthroughSchema.properties ?? {}) as Record<string, unknown>);
-    expect(passthroughProps).toContain('className');
+    expect(passthroughProps).toContain('disabled');
     for (const prop of passthroughProps) {
       expect(Object.keys(contract.properties), `"${prop}" is declared twice`).not.toContain(prop);
     }
+  });
+
+  it('classifies className as an own prop, not passthrough - the kit narrows it everywhere', () => {
+    // button.tsx redeclares `className?: string`, narrower than Base UI's
+    // `string | ((state) => string)` union: this is a deliberate, kit-wide
+    // convention (every component does it, see accordion.tsx), not an
+    // accidental duplicate, so the checker's own-vs-inherited split (by
+    // declaration file) is the correct signal here, not a defect to work
+    // around with a hardcoded exception.
+    expect(extraction.ownProps.map((p) => p.name)).toContain('className');
+    expect(passthroughSchema.properties).not.toHaveProperty('className');
+    expect(contract.properties.className).toEqual({ type: 'string' });
+  });
+
+  it('is fresh: a recompile of the generated passthrough type matches the committed copy', () => {
+    // The generated/passthrough.button.json committed alongside the
+    // contract must be exactly what a fresh extraction produces - the same
+    // freshness guarantee button.contract.json itself carries (see T4),
+    // pulled forward here because T3 is what made the file generated at all.
+    const fresh = buildPassthroughSchema('button', extraction.inheritedProps);
+    expect(passthroughSchema).toEqual(fresh);
   });
 });
 
@@ -181,6 +202,14 @@ describe('button props validation', () => {
     expect(validate({ variannt: 'ghost' })).toBe(false);
   });
 
+  it('rejects an unknown prop that merely looks plausible', () => {
+    // Distinct from the typo case above: this name is not a near-miss of a
+    // real kit prop, own or inherited - it is evaluated by nothing in the
+    // derived schema, which is exactly what closure exists to catch.
+    const validate = compileValidator();
+    expect(validate({ tooltip: 'Delete' })).toBe(false);
+  });
+
   it('accepts aria-*, data-* and className alongside valid kit props', () => {
     const validate = compileValidator();
     const props = {
@@ -189,6 +218,26 @@ describe('button props validation', () => {
       className: 'my-button',
       'aria-label': 'Delete item',
       'data-testid': 'delete-button',
+    };
+    expect(validate(props), new Ajv2020().errorsText(validate.errors)).toBe(true);
+  });
+
+  it('accepts inherited passthrough props - the surface F8 found closed off', () => {
+    // Before T3's checker-based extraction, the hand-written passthrough
+    // type only declared 7 props; everything else Base UI's ButtonProps and
+    // React's ButtonHTMLAttributes actually carry - `name`, `form`, `render`,
+    // `nativeButton` among them - was rejected by `unevaluatedProperties:
+    // false` despite being a real, forwarded prop. The generated passthrough
+    // type is built from the checker's own resolution of what button.tsx's
+    // props type inherits, so all of these now validate.
+    const validate = compileValidator();
+    const props = {
+      variant: 'default',
+      name: 'confirm',
+      form: 'checkout',
+      render: () => null,
+      nativeButton: true,
+      title: 'Confirm the order',
     };
     expect(validate(props), new Ajv2020().errorsText(validate.errors)).toBe(true);
   });
@@ -252,32 +301,42 @@ describe('overlay and extraction safety', () => {
     expect(() => parseOverlay('button', wrongComponent)).toThrow(/"not-button".*"button"/s);
   });
 
-  it('rejects a component prop whose type conflicts with the passthrough type, naming both locations', () => {
-    // Synthetic extraction, not a fixture component under src/components:
-    // the conflict check only needs an Extraction shape, and this keeps the
-    // test next to the assertion instead of in a directory to go find.
-    const conflicting: Extraction = {
+  // A synthetic extraction, not a fixture component under src/components:
+  // the passthrough-conflict check only needs a ComponentExtraction shape,
+  // and this keeps the test next to the assertion instead of in a directory
+  // a reviewer has to go find. `disabled` is chosen because it is a real
+  // entry in Button's generated passthrough type (boolean, inherited from
+  // React's ButtonHTMLAttributes) - `declarationFile` is irrelevant to
+  // buildPropsAndRequired, so a placeholder is fine.
+  function syntheticExtraction(ownProps: ComponentExtraction['ownProps']): ComponentExtraction {
+    return {
+      name: 'Button',
       axes: {},
       defaults: {},
-      ownProps: [{ name: 'className', optional: true, typeText: 'boolean' }],
-      passthrough: [],
+      ownProps,
+      inheritedProps: [],
+      passthroughKind: 'button',
+      passthroughSources: [],
+      variantSourceLabels: [],
       cannotExtract: [],
     };
+  }
+
+  it('rejects a component prop whose type conflicts with the passthrough type, naming both locations', () => {
+    const conflicting = syntheticExtraction([
+      { name: 'disabled', optional: true, typeText: 'string', declarationFile: 'button.tsx' },
+    ]);
     expect(() => buildPropsAndRequired('button', conflicting, passthroughSchema)).toThrow(
-      /"className".*button\.tsx.*declared type "string"/s,
+      /"disabled".*button\.tsx.*declared type "boolean"/s,
     );
   });
 
   it('leaves a passthrough prop alone when the declared types agree', () => {
-    const agreeing: Extraction = {
-      axes: {},
-      defaults: {},
-      ownProps: [{ name: 'className', optional: true, typeText: 'string | undefined' }],
-      passthrough: [],
-      cannotExtract: [],
-    };
+    const agreeing = syntheticExtraction([
+      { name: 'disabled', optional: true, typeText: 'boolean | undefined', declarationFile: 'button.tsx' },
+    ]);
     const { properties, required } = buildPropsAndRequired('button', agreeing, passthroughSchema);
-    expect(properties).not.toHaveProperty('className');
+    expect(properties).not.toHaveProperty('disabled');
     expect(required).toEqual([]);
   });
 });

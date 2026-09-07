@@ -1,0 +1,400 @@
+{
+  "$id": "gts://gts.frontx.uikit.passthrough.button.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit button passthrough",
+  "description": "The props a kit component forwards to an underlying <button> element (directly or through Base UI), generated from every extracted component's inherited (non-own) props for this element kind. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. One passthrough type per element kind: a link-like component chains a different kind's generated file instead, and neither has to restate the other's attributes. Regenerate with `npm run contracts:compile -- <component>`; a stale copy fails the freshness check.",
+  "type": "object",
+  "properties": {
+    "style": {},
+    "form": {
+      "type": "string"
+    },
+    "slot": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "disabled": {
+      "type": "boolean"
+    },
+    "formAction": {},
+    "formEncType": {
+      "type": "string"
+    },
+    "formMethod": {
+      "type": "string"
+    },
+    "formNoValidate": {
+      "type": "boolean"
+    },
+    "formTarget": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "button",
+        "submit",
+        "reset"
+      ]
+    },
+    "value": {},
+    "suppressContentEditableWarning": {
+      "type": "boolean"
+    },
+    "suppressHydrationWarning": {
+      "type": "boolean"
+    },
+    "accessKey": {
+      "type": "string"
+    },
+    "autoCapitalize": {},
+    "autoFocus": {
+      "type": "boolean"
+    },
+    "contentEditable": {},
+    "contextMenu": {
+      "type": "string"
+    },
+    "dir": {
+      "type": "string"
+    },
+    "draggable": {},
+    "enterKeyHint": {
+      "type": "string",
+      "enum": [
+        "search",
+        "enter",
+        "done",
+        "go",
+        "next",
+        "previous",
+        "send"
+      ]
+    },
+    "hidden": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    },
+    "lang": {
+      "type": "string"
+    },
+    "nonce": {
+      "type": "string"
+    },
+    "spellCheck": {},
+    "tabIndex": {
+      "type": "number"
+    },
+    "translate": {
+      "type": "string",
+      "enum": [
+        "yes",
+        "no"
+      ]
+    },
+    "radioGroup": {
+      "type": "string"
+    },
+    "role": {},
+    "about": {
+      "type": "string"
+    },
+    "content": {
+      "type": "string"
+    },
+    "datatype": {
+      "type": "string"
+    },
+    "inlist": {},
+    "prefix": {
+      "type": "string"
+    },
+    "property": {
+      "type": "string"
+    },
+    "rel": {
+      "type": "string"
+    },
+    "resource": {
+      "type": "string"
+    },
+    "rev": {
+      "type": "string"
+    },
+    "typeof": {
+      "type": "string"
+    },
+    "vocab": {
+      "type": "string"
+    },
+    "autoCorrect": {
+      "type": "string"
+    },
+    "autoSave": {
+      "type": "string"
+    },
+    "itemProp": {
+      "type": "string"
+    },
+    "itemScope": {
+      "type": "boolean"
+    },
+    "itemType": {
+      "type": "string"
+    },
+    "itemID": {
+      "type": "string"
+    },
+    "itemRef": {
+      "type": "string"
+    },
+    "results": {
+      "type": "number"
+    },
+    "security": {
+      "type": "string"
+    },
+    "unselectable": {
+      "type": "string",
+      "enum": [
+        "off",
+        "on"
+      ]
+    },
+    "popover": {
+      "type": "string",
+      "enum": [
+        "",
+        "auto",
+        "manual",
+        "hint"
+      ]
+    },
+    "popoverTargetAction": {
+      "type": "string",
+      "enum": [
+        "toggle",
+        "show",
+        "hide"
+      ]
+    },
+    "popoverTarget": {
+      "type": "string"
+    },
+    "inert": {
+      "type": "boolean"
+    },
+    "inputMode": {
+      "type": "string",
+      "enum": [
+        "search",
+        "text",
+        "none",
+        "email",
+        "tel",
+        "url",
+        "numeric",
+        "decimal"
+      ]
+    },
+    "is": {
+      "type": "string"
+    },
+    "exportparts": {
+      "type": "string"
+    },
+    "part": {
+      "type": "string"
+    },
+    "children": {},
+    "dangerouslySetInnerHTML": {},
+    "onCopy": {},
+    "onCopyCapture": {},
+    "onCut": {},
+    "onCutCapture": {},
+    "onPaste": {},
+    "onPasteCapture": {},
+    "onCompositionEnd": {},
+    "onCompositionEndCapture": {},
+    "onCompositionStart": {},
+    "onCompositionStartCapture": {},
+    "onCompositionUpdate": {},
+    "onCompositionUpdateCapture": {},
+    "onFocus": {},
+    "onFocusCapture": {},
+    "onBlur": {},
+    "onBlurCapture": {},
+    "onChange": {},
+    "onChangeCapture": {},
+    "onBeforeInput": {},
+    "onBeforeInputCapture": {},
+    "onInput": {},
+    "onInputCapture": {},
+    "onReset": {},
+    "onResetCapture": {},
+    "onSubmit": {},
+    "onSubmitCapture": {},
+    "onInvalid": {},
+    "onInvalidCapture": {},
+    "onLoad": {},
+    "onLoadCapture": {},
+    "onError": {},
+    "onErrorCapture": {},
+    "onKeyDown": {},
+    "onKeyDownCapture": {},
+    "onKeyPress": {},
+    "onKeyPressCapture": {},
+    "onKeyUp": {},
+    "onKeyUpCapture": {},
+    "onAbort": {},
+    "onAbortCapture": {},
+    "onCanPlay": {},
+    "onCanPlayCapture": {},
+    "onCanPlayThrough": {},
+    "onCanPlayThroughCapture": {},
+    "onDurationChange": {},
+    "onDurationChangeCapture": {},
+    "onEmptied": {},
+    "onEmptiedCapture": {},
+    "onEncrypted": {},
+    "onEncryptedCapture": {},
+    "onEnded": {},
+    "onEndedCapture": {},
+    "onLoadedData": {},
+    "onLoadedDataCapture": {},
+    "onLoadedMetadata": {},
+    "onLoadedMetadataCapture": {},
+    "onLoadStart": {},
+    "onLoadStartCapture": {},
+    "onPause": {},
+    "onPauseCapture": {},
+    "onPlay": {},
+    "onPlayCapture": {},
+    "onPlaying": {},
+    "onPlayingCapture": {},
+    "onProgress": {},
+    "onProgressCapture": {},
+    "onRateChange": {},
+    "onRateChangeCapture": {},
+    "onSeeked": {},
+    "onSeekedCapture": {},
+    "onSeeking": {},
+    "onSeekingCapture": {},
+    "onStalled": {},
+    "onStalledCapture": {},
+    "onSuspend": {},
+    "onSuspendCapture": {},
+    "onTimeUpdate": {},
+    "onTimeUpdateCapture": {},
+    "onVolumeChange": {},
+    "onVolumeChangeCapture": {},
+    "onWaiting": {},
+    "onWaitingCapture": {},
+    "onAuxClick": {},
+    "onAuxClickCapture": {},
+    "onClick": {},
+    "onClickCapture": {},
+    "onContextMenu": {},
+    "onContextMenuCapture": {},
+    "onDoubleClick": {},
+    "onDoubleClickCapture": {},
+    "onDrag": {},
+    "onDragCapture": {},
+    "onDragEnd": {},
+    "onDragEndCapture": {},
+    "onDragEnter": {},
+    "onDragEnterCapture": {},
+    "onDragExit": {},
+    "onDragExitCapture": {},
+    "onDragLeave": {},
+    "onDragLeaveCapture": {},
+    "onDragOver": {},
+    "onDragOverCapture": {},
+    "onDragStart": {},
+    "onDragStartCapture": {},
+    "onDrop": {},
+    "onDropCapture": {},
+    "onMouseDown": {},
+    "onMouseDownCapture": {},
+    "onMouseEnter": {},
+    "onMouseLeave": {},
+    "onMouseMove": {},
+    "onMouseMoveCapture": {},
+    "onMouseOut": {},
+    "onMouseOutCapture": {},
+    "onMouseOver": {},
+    "onMouseOverCapture": {},
+    "onMouseUp": {},
+    "onMouseUpCapture": {},
+    "onSelect": {},
+    "onSelectCapture": {},
+    "onTouchCancel": {},
+    "onTouchCancelCapture": {},
+    "onTouchEnd": {},
+    "onTouchEndCapture": {},
+    "onTouchMove": {},
+    "onTouchMoveCapture": {},
+    "onTouchStart": {},
+    "onTouchStartCapture": {},
+    "onPointerDown": {},
+    "onPointerDownCapture": {},
+    "onPointerMove": {},
+    "onPointerMoveCapture": {},
+    "onPointerUp": {},
+    "onPointerUpCapture": {},
+    "onPointerCancel": {},
+    "onPointerCancelCapture": {},
+    "onPointerEnter": {},
+    "onPointerLeave": {},
+    "onPointerOver": {},
+    "onPointerOverCapture": {},
+    "onPointerOut": {},
+    "onPointerOutCapture": {},
+    "onGotPointerCapture": {},
+    "onGotPointerCaptureCapture": {},
+    "onLostPointerCapture": {},
+    "onLostPointerCaptureCapture": {},
+    "onScroll": {},
+    "onScrollCapture": {},
+    "onScrollEnd": {},
+    "onScrollEndCapture": {},
+    "onWheel": {},
+    "onWheelCapture": {},
+    "onAnimationStart": {},
+    "onAnimationStartCapture": {},
+    "onAnimationEnd": {},
+    "onAnimationEndCapture": {},
+    "onAnimationIteration": {},
+    "onAnimationIterationCapture": {},
+    "onToggle": {},
+    "onBeforeToggle": {},
+    "onTransitionCancel": {},
+    "onTransitionCancelCapture": {},
+    "onTransitionEnd": {},
+    "onTransitionEndCapture": {},
+    "onTransitionRun": {},
+    "onTransitionRunCapture": {},
+    "onTransitionStart": {},
+    "onTransitionStartCapture": {},
+    "nativeButton": {
+      "type": "boolean"
+    },
+    "render": {}
+  },
+  "patternProperties": {
+    "^aria-": {
+      "description": "Any ARIA attribute passes. Enumerating the WAI-ARIA set here would go stale against the spec and buy nothing: a contract's job is to stop typos in KIT props, and the a11y rules that actually matter (icon-only needs aria-label) are invariants, not a property list."
+    },
+    "^data-": {
+      "description": "Any data attribute passes: they are open by construction, and consumers add their own (data-testid being the common one)."
+    }
+  },
+  "$comment": "Intentionally NOT closed (no unevaluatedProperties/additionalProperties): this is one of several in-place applicators a component composes, so it cannot know what the others contribute. Closure happens once, in the derived component type."
+}
