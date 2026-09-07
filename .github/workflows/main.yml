@@ -305,17 +305,49 @@ jobs:
     # pinned version - stayed green here while the composed a11y suite failed
     # outside the monorepo (PR #586 review). node_modules is left behind on
     # purpose: the copy installs from its own lockfile and nothing else.
+    # Same pin problem as the composition step below, and the same fix: a
+    # self-contained template pins @gears-frontx/* to exact registry versions
+    # too (template-shell/package.json), so a pull request that bumps one of
+    # this repo's packages/* leaves that pin naming a version only the
+    # post-merge publish run will ever publish, and this step's `npm ci`
+    # would fail with ETARGET before the isolated copy it validates exists.
+    # See scripts/pin-unpublished-ecosystem-to-local-pack.mjs for the
+    # substitution criterion and why it never fires outside a pull request.
     - name: Validate self-contained templates
+      env:
+        FRONTX_SUBSTITUTE_UNPUBLISHED_PINS: ${{ github.event_name == 'pull_request' && '1' || '' }}
       run: |
         set -euo pipefail
+        repo="$PWD"
         for template in $SELF_CONTAINED_TEMPLATES; do
           echo "==> Validating $template"
           isolated="$RUNNER_TEMP/standalone-$(basename "$template")"
           rm -rf "$isolated" && mkdir -p "$isolated"
           tar -C "$template" --exclude=node_modules -cf - . | tar -C "$isolated" -xf -
+
+          # Called with an absolute --tree before the `cd` below: the script
+          # resolves the tree from that argument and this repo's packages/*
+          # from its own location, neither from cwd, so it works the same
+          # here as it does in the composition step below.
+          if [ -n "${FRONTX_SUBSTITUTE_UNPUBLISHED_PINS:-}" ]; then
+            node scripts/pin-unpublished-ecosystem-to-local-pack.mjs --tree "$isolated"
+          fi
           (
             cd "$isolated"
+            # Same trap as the composition step: makes the undo run even if
+            # `npm ci` fails, which would otherwise skip the explicit restore
+            # below and leave the tree rewritten for whatever reads it next.
+            # `--restore` is a no-op if nothing was rewritten.
+            if [ -n "${FRONTX_SUBSTITUTE_UNPUBLISHED_PINS:-}" ]; then
+              trap 'node "$repo/scripts/pin-unpublished-ecosystem-to-local-pack.mjs" --tree "$isolated" --restore || true' EXIT
+            fi
             npm ci
+            # Must run before anything below reads these manifests as
+            # committed - see RESTORE_JOURNAL_NAME's docblock in the script
+            # for why.
+            if [ -n "${FRONTX_SUBSTITUTE_UNPUBLISHED_PINS:-}" ]; then
+              node "$repo/scripts/pin-unpublished-ecosystem-to-local-pack.mjs" --tree "$isolated" --restore
+            fi
             # Full `build`, not just build:package/build:packages — it also
             # chains build:mfes, generate:mfe-manifests and vite build, which
             # nothing else in CI runs. It comes first so the later checks see
