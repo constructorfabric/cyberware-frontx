@@ -20,13 +20,18 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BASE_TYPE_ID,
-  PASSTHROUGH_TYPE_ID,
+  buildMetamodel,
+  buildPropsAndRequired,
   compileContract,
   compileInstance,
   loadBaseSchema,
   loadPassthroughSchema,
+  parseOverlay,
+  PASSTHROUGH_TYPE_ID,
+  type Overlay,
 } from '../../../scripts/contracts/compile';
-import { extractComponent } from '../../../scripts/contracts/extract';
+import { extractComponent, type Extraction } from '../../../scripts/contracts/extract';
+import { componentTypeRefPattern, instanceIdPattern, METAMODEL_VERSION } from '../../../scripts/contracts/ids';
 
 const contract = compileContract('button');
 const instance = compileInstance('button');
@@ -64,8 +69,11 @@ const metaSchema = JSON.parse(
 ) as SchemaObject;
 
 // Grammar of a GTS component type reference; the capture is the component
-// token, snake_case where the kit directory is kebab-case.
-const COMPONENT_TYPE_REF = /^gts\.frontx\.uikit\.component\.([a-z_][a-z0-9_]*)\.v\d+~$/;
+// token, snake_case where the kit directory is kebab-case. Built from
+// ids.ts, the same module the metamodel's own patterns come from - a
+// hand-copied regex here is exactly how a previous version of this pattern
+// drifted from the metamodel's without either side noticing.
+const COMPONENT_TYPE_REF = new RegExp(componentTypeRefPattern(true));
 
 describe('button contract conformance', () => {
   it('mirrors every cva axis and value, both directions', () => {
@@ -80,6 +88,20 @@ describe('button contract conformance', () => {
     for (const [axis, def] of Object.entries(extraction.defaults)) {
       expect(contract.properties[axis]?.default).toBe(def);
     }
+  });
+
+  it('required is an array mirroring own props with optional:false', () => {
+    // No fixture: derived from the same extraction the contract was built
+    // from. Button has no required own props today (className is
+    // passthrough-owned, icon/loading/focusableWhenDisabled are all
+    // optional), so this also proves `required` is `[]`, not an absent
+    // field, when nothing is required.
+    expect(Array.isArray(contract.required)).toBe(true);
+    const expected = extraction.ownProps
+      .filter((prop) => prop.name in contract.properties && !prop.optional)
+      .map((prop) => prop.name)
+      .sort();
+    expect([...contract.required].sort()).toEqual(expected);
   });
 
   it('overlay references only props that exist in code', () => {
@@ -186,6 +208,80 @@ describe('button props validation', () => {
   });
 });
 
+// A minimal overlay satisfying every metamodel constraint, used to isolate
+// one failure at a time in the tests below - not Button's real overlay, so
+// a change to button.contract.yaml can never make one of these tests fail
+// for an unrelated reason.
+const validOverlay: Overlay = {
+  component: 'button',
+  intent: 'Trigger a single action in the current context.',
+  typical_uses: ['A one-off action with an immediate effect'],
+  dont_use_when: [{ rule: 'Navigation between routes or pages', instead: 'gts.frontx.uikit.component.navigation_menu.v1~' }],
+  composition: { children: { kinds: ['text'] } },
+  invariants: [],
+  anti_patterns: [],
+  deprecations: {},
+  coverage: {},
+  examples: {
+    good: [{ title: 'Minimal use', code: '<Button />' }],
+    bad: [{ title: 'Minimal misuse', code: '<Button />', why: 'placeholder reason' }],
+  },
+};
+
+describe('overlay and extraction safety', () => {
+  it('accepts a well-formed overlay unchanged', () => {
+    expect(parseOverlay('button', validOverlay)).toEqual(validOverlay);
+  });
+
+  it('rejects an overlay with an unknown key, naming the key and the component', () => {
+    const withUnknownKey = { ...validOverlay, typo_field: 'nope' };
+    expect(() => parseOverlay('button', withUnknownKey)).toThrow('typo_field');
+    expect(() => parseOverlay('button', withUnknownKey)).toThrow('button');
+  });
+
+  it('rejects an overlay that restates a machine-owned field, by name', () => {
+    // `variants` (plural, matching the cva config the compiler extracts) is
+    // the exact typo F9 caught: an overlay author reaching for the wrong
+    // key silently lost the field instead of failing to compile.
+    const withMachineOwnedKey = { ...validOverlay, variants: {} };
+    expect(() => parseOverlay('button', withMachineOwnedKey)).toThrow(/machine-owned field\(s\): variants/);
+  });
+
+  it('rejects an overlay whose component field does not match the directory', () => {
+    const wrongComponent = { ...validOverlay, component: 'not-button' };
+    expect(() => parseOverlay('button', wrongComponent)).toThrow(/"not-button".*"button"/s);
+  });
+
+  it('rejects a component prop whose type conflicts with the passthrough type, naming both locations', () => {
+    // Synthetic extraction, not a fixture component under src/components:
+    // the conflict check only needs an Extraction shape, and this keeps the
+    // test next to the assertion instead of in a directory to go find.
+    const conflicting: Extraction = {
+      axes: {},
+      defaults: {},
+      ownProps: [{ name: 'className', optional: true, typeText: 'boolean' }],
+      passthrough: [],
+      cannotExtract: [],
+    };
+    expect(() => buildPropsAndRequired('button', conflicting, passthroughSchema)).toThrow(
+      /"className".*button\.tsx.*declared type "string"/s,
+    );
+  });
+
+  it('leaves a passthrough prop alone when the declared types agree', () => {
+    const agreeing: Extraction = {
+      axes: {},
+      defaults: {},
+      ownProps: [{ name: 'className', optional: true, typeText: 'string | undefined' }],
+      passthrough: [],
+      cannotExtract: [],
+    };
+    const { properties, required } = buildPropsAndRequired('button', agreeing, passthroughSchema);
+    expect(properties).not.toHaveProperty('className');
+    expect(required).toEqual([]);
+  });
+});
+
 describe('button contract instance', () => {
   it('validates against the component metamodel', () => {
     const ajv = new Ajv2020();
@@ -194,9 +290,19 @@ describe('button contract instance', () => {
   });
 
   it('carries a grammatical GTS instance id', () => {
-    expect(instance.id).toMatch(
-      /^gts\.frontx\.uikit\.meta\.component\.v1~frontx\.uikit\.component\.[a-z_][a-z0-9_]*\.v\d+$/,
-    );
+    expect(instance.id).toMatch(new RegExp(instanceIdPattern()));
+  });
+
+  it("carries the compiler's METAMODEL_VERSION, not a free-form string", () => {
+    expect(instance.metamodel).toBe(METAMODEL_VERSION);
+  });
+
+  it('the committed ui-component.meta.json equals a fresh build from ids.ts', () => {
+    // buildMetamodel() is what actually validates instances above
+    // (metaSchema); this asserts the human-readable copy committed next to
+    // it has not drifted - the failure mode T2 closes is a hand-edited
+    // pattern string in the JSON file disagreeing with what ids.ts builds.
+    expect(metaSchema).toEqual(buildMetamodel());
   });
 
   it('points at the props schema it was compiled with', () => {
@@ -206,7 +312,10 @@ describe('button contract instance', () => {
   it('every dont_use_when alternative resolves to a component the kit ships', () => {
     // Demo stand-in for the registry existence check x-gts-ref performs:
     // grammar alone would happily accept an id nothing implements.
-    expect(instance.dont_use_when.length).toBeGreaterThan(0);
+    // Non-emptiness itself is the metamodel's job (dont_use_when has
+    // minItems: 1, checked by "validates against the component metamodel"
+    // above) - asserting it again here would be the same fact with two
+    // owners.
     for (const { rule, instead } of instance.dont_use_when) {
       const match = COMPONENT_TYPE_REF.exec(instead);
       if (match === null) {

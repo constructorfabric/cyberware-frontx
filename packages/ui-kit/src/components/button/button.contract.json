@@ -43,11 +43,12 @@
       "type": "boolean"
     }
   },
+  "required": [],
   "unevaluatedProperties": false,
   "x-uikit": {
-    "metamodel": "0.1.0-demo",
+    "metamodel": "1.1.0",
     "intent": "Trigger a single action in the current context.",
-    "use_when": [
+    "typical_uses": [
       "A one-off action with an immediate effect (submit, confirm, open a dialog)",
       "An icon-only action that has an accessible name (pass aria-label)"
     ],
@@ -125,7 +126,9 @@
       }
     },
     "passthrough": [
-      "Omit<ButtonPrimitive.Props, 'className'>",
+      "Omit<ButtonPrimitive.Props, 'className'>"
+    ],
+    "variant_sources": [
       "VariantProps<typeof buttonVariants>"
     ],
     "cannot_extract": []
