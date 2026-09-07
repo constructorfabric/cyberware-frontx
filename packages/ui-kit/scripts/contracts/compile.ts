@@ -200,11 +200,22 @@ export interface SchemaRef {
   $ref: string;
 }
 
-// Which annotation block each semantic overlay field lands in. Every field
-// maps to 'x-uikit' today; if the fields feeding GTS trait projections ever
-// need their own keyword, moving one is an edit to this map, not a rewrite
-// of how the annotation blob gets assembled (see fieldsTargeting/pickFields
-// below).
+// Which annotation block each semantic overlay field lands in. A field a
+// validator or lint actually READS (dont_use_when's typed `instead`,
+// composition, deprecations, coverage, family, extension_points) targets
+// 'x-gts-traits', where gts-ts's own GTS.validateEntity checks it against
+// base.component.json's x-gts-traits-schema (see buildGtsTraitsSchema
+// below) the same way it checks component props - a malformed trait block
+// fails the build, not a review comment. A field that is prose FOR A
+// READER, with no validator on the other end (intent, typical_uses,
+// invariants, anti_patterns, examples), stays in 'x-uikit'. This map is the
+// single switch: moving a field between the two blocks (or the day ADR
+// 0005 answers whether a runtime acts on traits at all, see PILOT-NOTES.md)
+// is an edit here, not a rewrite of how either annotation blob gets
+// assembled (see fieldsTargeting/pickFields below) - CompiledContract's own
+// 'x-uikit'/'x-gts-traits' field types are derived from this map's literal
+// values (FieldsFor below), so an edit here that moves a field also moves
+// which block TypeScript requires it to appear in.
 const SEMANTIC_FIELDS = [
   'intent',
   'typical_uses',
@@ -222,19 +233,30 @@ const SEMANTIC_FIELDS = [
 type SemanticField = (typeof SEMANTIC_FIELDS)[number];
 type SemanticTarget = 'x-uikit' | 'x-gts-traits';
 
-const SEMANTIC_FIELD_TARGETS: Record<SemanticField, SemanticTarget> = {
+const SEMANTIC_FIELD_TARGETS = {
   intent: 'x-uikit',
   typical_uses: 'x-uikit',
-  dont_use_when: 'x-uikit',
-  composition: 'x-uikit',
+  dont_use_when: 'x-gts-traits',
+  composition: 'x-gts-traits',
   invariants: 'x-uikit',
   anti_patterns: 'x-uikit',
-  deprecations: 'x-uikit',
-  coverage: 'x-uikit',
+  deprecations: 'x-gts-traits',
+  coverage: 'x-gts-traits',
   examples: 'x-uikit',
-  family: 'x-uikit',
-  extension_points: 'x-uikit',
-};
+  family: 'x-gts-traits',
+  extension_points: 'x-gts-traits',
+} as const satisfies Record<SemanticField, SemanticTarget>;
+
+// The field-name union routed at a given target, computed from
+// SEMANTIC_FIELD_TARGETS's own literal values (the `as const satisfies`
+// above is what keeps them literal instead of widening to `SemanticTarget`)
+// rather than duplicated as a second, hand-typed list - the type-level twin
+// of what fieldsTargeting computes at runtime.
+type FieldsFor<Target extends SemanticTarget> = {
+  [Field in SemanticField]: (typeof SEMANTIC_FIELD_TARGETS)[Field] extends Target ? Field : never;
+}[SemanticField];
+type UikitFields = FieldsFor<'x-uikit'>;
+type TraitFields = FieldsFor<'x-gts-traits'>;
 
 export interface CompiledContract {
   $id: string;
@@ -266,7 +288,16 @@ export interface CompiledContract {
     passthrough: string[];
     variant_sources: string[];
     cannot_extract: string[];
-  } & Omit<Overlay, 'component'>;
+  } & Pick<Overlay, UikitFields>;
+  // The validator-read half of the overlay, checked by gts-ts against
+  // base.component.json's x-gts-traits-schema (GTS.validateEntity ->
+  // GtsStore.validateSchemaTraits) - see buildGtsTraitsSchema. `family` and
+  // `extension_points` are genuinely absent (not merely `undefined`) for a
+  // component whose overlay omits them, exactly like their x-uikit-routed
+  // counterparts always have been - the trait schema's own nullable+default
+  // shape is what makes that absence resolve instead of failing gts-ts's
+  // completeness check.
+  'x-gts-traits': Pick<Overlay, TraitFields>;
 }
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -672,6 +703,124 @@ export function buildMetamodel(): Record<string, unknown> {
   };
 }
 
+// Replaces every local `{ $ref: '#/$defs/X' }` in a metamodel field
+// definition with the $defs entry it points to, recursively. Needed because
+// gts-ts's own trait-schema ref resolver (GtsStore.resolveTraitSchemaRefs,
+// called from validateSchemaTraits before a trait schema is compiled) reads
+// ANY `$ref`/`$$ref` key as a GTS ENTITY id to look up in the store - it has
+// no concept of a local JSON-Schema pointer into the same object's own
+// $defs, and fails a trait schema carrying one with "Unresolvable trait
+// schema reference" rather than a validation error a reviewer would
+// recognize as a $defs problem. buildMetamodel()'s field definitions (and
+// the committed ui-component.meta.json, and every overlay-authoring schema
+// buildOverlaySchema derives from them) keep using $ref/$defs as normal -
+// they go through Ajv, which resolves those the standard way - this
+// inlining exists only for the copy buildGtsTraitsSchema below feeds to
+// gts-ts.
+function inlineLocalRefs(node: unknown, defs: Record<string, unknown>): unknown {
+  if (Array.isArray(node)) return node.map((item) => inlineLocalRefs(item, defs));
+  if (node !== null && typeof node === 'object') {
+    const obj = node as Record<string, unknown>;
+    if (typeof obj.$ref === 'string' && obj.$ref.startsWith('#/$defs/')) {
+      const defName = obj.$ref.slice('#/$defs/'.length);
+      return inlineLocalRefs(defs[defName], defs);
+    }
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) out[key] = inlineLocalRefs(value, defs);
+    return out;
+  }
+  return node;
+}
+
+// `family` and `extension_points` are optional in the overlay - most
+// components set neither. A trait property still has to resolve when
+// nothing in the chain provides it: GtsStore.validateSchemaTraits demands
+// EVERY property x-gts-traits-schema declares have either a value or a
+// schema `default`, regardless of this JSON Schema's own `required` list
+// (that check runs before Ajv ever sees the data - see the "unresolved
+// trait property" step in validateSchemaTraits). There is no honest
+// non-null default for "this component's family membership" or "this
+// component's extension points", so the property's type gains `null` as an
+// alternative and defaults to it. This does not weaken the real shape for a
+// component that DOES set the field: `properties`, `required` and
+// `minItems` are all instance-type-scoped keywords (JSON Schema applies
+// them only to data of the matching type) and are vacuously satisfied by a
+// `null` instance, so `family`'s `if`/`then` and `extension_points`'
+// `minItems: 1` still apply exactly as authored to real object/array data.
+function nullableTraitProperty(schema: Record<string, unknown>): Record<string, unknown> {
+  const type = schema.type;
+  const nullableType = Array.isArray(type) ? [...type, 'null'] : [type, 'null'];
+  return { ...schema, type: nullableType, default: null };
+}
+
+// The trait half of the metamodel: the SAME field definitions buildMetamodel
+// authors for `dont_use_when`/`composition`/`deprecations`/`coverage`/
+// `family`/`extension_points` (fieldsTargeting('x-gts-traits'), the single
+// switch SEMANTIC_FIELD_TARGETS controls), copied rather than re-typed by
+// hand so the trait schema and the overlay-authoring schema can never
+// silently disagree about what one of these fields looks like. Two
+// mechanical adjustments on top of that copy, both forced by gts-ts's own
+// trait machinery rather than a choice made here: local $defs refs are
+// inlined (inlineLocalRefs) because gts-ts's ref resolver cannot follow
+// them, and the two fields the overlay does not require are wrapped nullable
+// (nullableTraitProperty) so a component that has nothing to say there still
+// resolves. base.component.json's x-gts-traits-schema is a generated copy of
+// this function's output - see button.contract.test.ts's freshness
+// assertion, the same pattern ui-component.meta.json uses for buildMetamodel.
+export function buildGtsTraitsSchema(): Record<string, unknown> {
+  const metamodel = buildMetamodel();
+  const defs = metamodel.$defs as Record<string, unknown>;
+  const metamodelProperties = metamodel.properties as Record<string, Record<string, unknown>>;
+  const metamodelRequired = new Set(metamodel.required as string[]);
+  const traitFields = fieldsTargeting('x-gts-traits');
+
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+  for (const field of traitFields) {
+    const inlined = inlineLocalRefs(metamodelProperties[field], defs) as Record<string, unknown>;
+    if (metamodelRequired.has(field)) {
+      properties[field] = inlined;
+      required.push(field);
+    } else {
+      properties[field] = nullableTraitProperty(inlined);
+    }
+  }
+
+  return {
+    type: 'object',
+    description:
+      "Validator-read half of the overlay: what GTS.validateEntity checks a component contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from base.component down to the component's own contract). Everything here is a fact a validator or lint actually reads - dont_use_when's typed alternative, composition, deprecations, coverage (including its assumptions), family and extension_points; a purely documentary field (intent, typical_uses, invariants, anti_patterns, examples) lives in x-uikit instead, which no validator reads. additionalProperties: false so an unknown trait key fails GTS.validateEntity by name instead of vanishing silently - the exact gap the demo review flagged against the OLD, undifferentiated x-uikit block.",
+    properties,
+    // Only the fields the overlay itself always requires (buildMetamodel's
+    // own `required` list) are required here too - `family`/`extension_points`
+    // are optional at BOTH levels, resolved instead by nullableTraitProperty's
+    // default above.
+    required,
+    additionalProperties: false,
+  };
+}
+
+// base.component.json's full content: the abstract structural anchor
+// (unchanged since T1) plus x-gts-traits-schema, generated rather than
+// hand-typed for the reason buildGtsTraitsSchema documents. Read from disk
+// as loadBaseSchema does for every other purpose (compiling a component,
+// registering it in a GTS store) - this function exists so the committed
+// file can be checked against a fresh build the same way ui-component.meta.json
+// is checked against buildMetamodel().
+export function buildBaseSchema(): Record<string, unknown> {
+  return {
+    $id: BASE_TYPE_ID,
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    title: 'UiKit base component',
+    description:
+      "Abstract base type every kit component's props schema derives from. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which belongs to the per-origin passthrough type, because a base shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, the validator-read half of the overlay vocabulary (see buildGtsTraitsSchema) that GTS.validateEntity checks a component's own x-gts-traits against.",
+    type: 'object',
+    $comment:
+      "No additionalProperties/unevaluatedProperties here on purpose. gts-ts's validateSchemaAgainstParent rejects a derived schema that adds properties when the base sets additionalProperties: false, and closing the base would mean every component had to restate it. Closure is the DERIVED type's job (unevaluatedProperties: false), where the full property set is finally known.",
+    'x-gts-traits-schema': buildGtsTraitsSchema(),
+  };
+}
+
 // The overlay's own schema: the metamodel's authored fields (everything
 // except id/metamodel/props_schema, which the compiler writes) with
 // additionalProperties: false at every level - inherited from the
@@ -961,12 +1110,6 @@ export function compileContract(directory: string, exportStem: string = director
     // contract silently missing part of its overlay.
     throw new Error(`${exportStem}: SEMANTIC_FIELD_TARGETS does not route every semantic overlay field exactly once`);
   }
-  if (gtsTraitsFields.length > 0) {
-    // No field maps here yet (see the map above); the day one does, this
-    // needs an 'x-gts-traits' block emitted alongside 'x-uikit' below.
-    throw new Error(`${exportStem}: x-gts-traits routing is not implemented yet, but is configured for: ${gtsTraitsFields.join(', ')}`);
-  }
-
   return {
     $id: propsSchemaId(exportStem, CONTRACT_MAJOR),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -984,6 +1127,7 @@ export function compileContract(directory: string, exportStem: string = director
       variant_sources: extraction.variantSourceLabels,
       cannot_extract: extraction.cannotExtract,
     },
+    'x-gts-traits': pickFields(overlay, gtsTraitsFields),
   };
 }
 

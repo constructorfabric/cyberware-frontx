@@ -29,11 +29,12 @@ import {
   loadPassthroughSchema,
   parseOverlay,
   resolveTargetExtraction,
+  type CompiledContract,
   type Overlay,
 } from '../../../scripts/contracts/compile';
 import type { ComponentExtraction } from '../../../scripts/contracts/extract';
 import { componentTypeRefPattern, instanceIdPattern, METAMODEL_VERSION, passthroughTypeId } from '../../../scripts/contracts/ids';
-import { assertContractFreshness } from '../../../scripts/contracts/testing';
+import { assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
 
 // Freshness: the committed button.contract.json, button.contract.instance.json
 // and generated/passthrough.base_ui_button.json must equal a fresh compile. Every
@@ -61,12 +62,23 @@ const bareId = (id: string): string => id.replace(/^gts:\/\//, '');
 // ref fails the suite rather than validating against a truncated schema.
 function compileValidator(): ReturnType<Ajv2020['compile']> {
   const ajv = new Ajv2020();
-  // x-uikit is the kit's own annotation vocabulary. Declaring it keeps Ajv's
-  // strict mode on for every other keyword - the alternative, `strict:
-  // false`, would also swallow a genuine typo like `unevaluatedProperites`,
-  // which is exactly the class of mistake this schema exists to catch. No
-  // `validate`/`code`, so it asserts nothing: an annotation, like `title`.
+  // x-uikit and x-gts-traits are the kit's own annotation vocabulary (the
+  // documentation half and the validator-read half - see compile.ts's
+  // SEMANTIC_FIELD_TARGETS). Declaring both keeps Ajv's strict mode on for
+  // every other keyword - the alternative, `strict: false`, would also
+  // swallow a genuine typo like `unevaluatedProperites`, which is exactly
+  // the class of mistake this schema exists to catch. Neither has a
+  // `validate`/`code`, so neither asserts anything here: this Ajv instance
+  // checks props, not traits - x-gts-traits is what GTS.validateEntity
+  // checks against base.component.json's x-gts-traits-schema (see
+  // validateContractTraits, testing.ts, and "button contract in a GTS
+  // store" below).
   ajv.addKeyword({ keyword: 'x-uikit' });
+  ajv.addKeyword({ keyword: 'x-gts-traits' });
+  // base.component.json (added below) carries this one, not the component
+  // schema itself - declared for the same reason: strict mode must not trip
+  // over gts-ts's own annotation keyword while checking props.
+  ajv.addKeyword({ keyword: 'x-gts-traits-schema' });
   ajv.addSchema(baseSchema);
   ajv.addSchema(passthroughSchema);
   return ajv.compile(contract);
@@ -113,10 +125,10 @@ describe('button contract conformance', () => {
 
   it('overlay references only props that exist in code', () => {
     const known = new Set([...Object.keys(extraction.axes), ...extraction.ownProps.map((prop) => prop.name)]);
-    for (const prop of Object.keys(contract['x-uikit'].deprecations.props ?? {})) {
+    for (const prop of Object.keys(contract['x-gts-traits'].deprecations.props ?? {})) {
       expect(known, `deprecated prop "${prop}" is not a real prop`).toContain(prop);
     }
-    const iconsVia = contract['x-uikit'].composition.children.icons_via;
+    const iconsVia = contract['x-gts-traits'].composition.children.icons_via;
     if (iconsVia !== undefined) {
       expect(known).toContain(iconsVia);
     }
@@ -426,9 +438,12 @@ describe('button contract in a GTS store', () => {
     return gts;
   }
 
-  it('validates as a derived GTS type, and so do the types it derives from', () => {
+  it('validates as a derived GTS type, and so does the passthrough type it composes', () => {
+    // BASE_TYPE_ID is deliberately not checked here - see "the abstract base
+    // type alone never resolves its own trait schema" below for why it
+    // cannot pass this same call.
     const gts = registeredStore();
-    for (const id of [BASE_TYPE_ID, PASSTHROUGH_TYPE_ID, contract.$id]) {
+    for (const id of [PASSTHROUGH_TYPE_ID, contract.$id]) {
       const result = gts.validateEntity(bareId(id));
       expect(result.ok, `${id}: ${result.error}`).toBe(true);
       expect(result.entity_type).toBe('schema');
@@ -444,5 +459,62 @@ describe('button contract in a GTS store', () => {
     const result = gts.validateEntity(bareId(contract.$id));
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Parent schema not found');
+  });
+
+  it('the abstract base type alone never resolves its own trait schema - a leaf must supply the values', () => {
+    // base.component.json declares x-gts-traits-schema but carries no
+    // x-gts-traits of its own: it is the abstract parent, not a component.
+    // Validated by itself (no derived contract in the chain to supply real
+    // values), GtsStore.validateSchemaTraits' "unresolved trait property"
+    // check finds every required trait field (dont_use_when, composition,
+    // deprecations, coverage) with neither a value nor a default, and fails.
+    // Asserted here on purpose, not silently dropped from the loop above: a
+    // component's OWN contract is the only place those values can come
+    // from, which "validates x-gts-traits against base.component.json's
+    // x-gts-traits-schema" below proves for the case that matters.
+    const gts = new GTS();
+    gts.register(baseSchema);
+    const result = gts.validateEntity(bareId(BASE_TYPE_ID));
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('required property');
+  });
+
+  it("validates x-gts-traits against base.component.json's x-gts-traits-schema", () => {
+    // validateContractTraits (testing.ts) documents which gts-ts API this
+    // goes through: GTS.validateEntity, which for a derived schema like this
+    // one calls both GtsStore.validateSchemaAgainstParent (whose last step
+    // is the private validateSchemaTraits - the merged-values-against-
+    // effective-schema Ajv check) and GtsStore.validateEntityTraits (the
+    // additionalProperties: false closure check).
+    const result = validateContractTraits(contract);
+    expect(result.ok, result.error).toBe(true);
+  });
+
+  it('rejects a contract whose x-gts-traits carries a malformed dont_use_when.instead', () => {
+    // Negative control: PR #611 (item 6b) flagged that a broken trait block
+    // registered silently under the old, undifferentiated x-uikit annotation
+    // - nothing validated it. An `instead` that is not a grammatical GTS
+    // component type id must now fail GTS.validateEntity with a traits
+    // error instead of passing as an untyped string.
+    const corrupted: CompiledContract = {
+      ...contract,
+      'x-gts-traits': {
+        ...contract['x-gts-traits'],
+        dont_use_when: [{ rule: 'placeholder', instead: 'not-a-gts-id' }],
+      },
+    };
+    const result = validateContractTraits(corrupted);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/trait/i);
+  });
+
+  it('rejects a contract whose x-gts-traits carries an unknown trait key', () => {
+    const corrupted = {
+      ...contract,
+      'x-gts-traits': { ...contract['x-gts-traits'], bogus_field: true },
+    } as CompiledContract;
+    const result = validateContractTraits(corrupted);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/trait/i);
   });
 });

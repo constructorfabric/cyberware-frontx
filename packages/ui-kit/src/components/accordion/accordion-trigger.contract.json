@@ -24,6 +24,41 @@
     "typical_uses": [
       "The single header/summary child of an AccordionItem"
     ],
+    "invariants": [
+      {
+        "id": "always-renders-a-chevron",
+        "text": "AccordionTrigger always renders a trailing chevron that rotates on open/close - there is no prop to hide it, matching upstream Base UI."
+      }
+    ],
+    "anti_patterns": [
+      {
+        "dont": "Pass an icon element through children expecting it before the chevron",
+        "instead": "Children are the trigger's text label only; the chevron is fixed and always trailing"
+      }
+    ],
+    "examples": {
+      "good": [
+        {
+          "title": "A trigger as an AccordionItem's header",
+          "code": "<AccordionItem value=\"item-1\">\n  <AccordionTrigger>Is it accessible?</AccordionTrigger>\n</AccordionItem>\n"
+        }
+      ],
+      "bad": [
+        {
+          "title": "A trigger with no AccordionItem around it",
+          "code": "<AccordionTrigger>Is it accessible?</AccordionTrigger>",
+          "why": "AccordionTrigger reads and writes the nearest AccordionItem's open state through Base UI context; outside one, clicking it does nothing."
+        }
+      ]
+    },
+    "slots": {},
+    "passthrough": [
+      "Omit<AccordionPrimitive.Trigger.Props, 'className'> (@base-ui/react/accordion/trigger/AccordionTrigger.d.mts)"
+    ],
+    "variant_sources": [],
+    "cannot_extract": []
+  },
+  "x-gts-traits": {
     "dont_use_when": [
       {
         "rule": "A standalone button with no AccordionItem to expand or collapse",
@@ -42,18 +77,6 @@
         ]
       }
     },
-    "invariants": [
-      {
-        "id": "always-renders-a-chevron",
-        "text": "AccordionTrigger always renders a trailing chevron that rotates on open/close - there is no prop to hide it, matching upstream Base UI."
-      }
-    ],
-    "anti_patterns": [
-      {
-        "dont": "Pass an icon element through children expecting it before the chevron",
-        "instead": "Children are the trigger's text label only; the chevron is fixed and always trailing"
-      }
-    ],
     "deprecations": {},
     "coverage": {
       "a11y": "verified",
@@ -64,30 +87,9 @@
         }
       ]
     },
-    "examples": {
-      "good": [
-        {
-          "title": "A trigger as an AccordionItem's header",
-          "code": "<AccordionItem value=\"item-1\">\n  <AccordionTrigger>Is it accessible?</AccordionTrigger>\n</AccordionItem>\n"
-        }
-      ],
-      "bad": [
-        {
-          "title": "A trigger with no AccordionItem around it",
-          "code": "<AccordionTrigger>Is it accessible?</AccordionTrigger>",
-          "why": "AccordionTrigger reads and writes the nearest AccordionItem's open state through Base UI context; outside one, clicking it does nothing."
-        }
-      ]
-    },
     "family": {
       "root": "gts.frontx.uikit.component.accordion.v1~",
       "role": "part"
-    },
-    "slots": {},
-    "passthrough": [
-      "Omit<AccordionPrimitive.Trigger.Props, 'className'> (@base-ui/react/accordion/trigger/AccordionTrigger.d.mts)"
-    ],
-    "variant_sources": [],
-    "cannot_extract": []
+    }
   }
 }

@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { jsonDiff } from './check-lib';
-import { buildPassthroughSchema, compileContract, compileInstance, resolveTargetExtraction } from './compile';
+import { buildBaseSchema, buildPassthroughSchema, compileContract, compileInstance, loadBaseSchema, resolveTargetExtraction } from './compile';
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const GENERATED_DIR = join(kitRoot, 'scripts', 'contracts', 'generated');
@@ -32,6 +32,18 @@ export interface FreshnessReport {
   // buildPropsAndRequired from the same loop, so they cannot drift on their
   // own - this catches the day something edits one without the other.
   slotSchemaMismatches: string[];
+  // base.component.json is shared by every component, not per-directory
+  // like the other three diffs above - computed on every call regardless of
+  // which component is being checked (cheap: buildBaseSchema is pure string
+  // construction, no I/O beyond the one file read loadBaseSchema already
+  // does) so that a stale x-gts-traits-schema is caught by whichever
+  // component's contract test happens to run assertContractFreshness first,
+  // rather than depending on one file remembering to check it - the same
+  // "committed copy equals a fresh build" pattern button.contract.test.ts
+  // already applies to ui-component.meta.json/buildMetamodel, generalized
+  // here so every family gets it through the shared helper instead of only
+  // whichever file happens to assert it.
+  baseSchemaDiff: string[];
   fresh: boolean;
 }
 
@@ -54,6 +66,7 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
 
   const contractDiff = jsonDiff(committedContract, freshContract);
   const instanceDiff = jsonDiff(committedInstance, freshInstance);
+  const baseSchemaDiff = jsonDiff(loadBaseSchema(), buildBaseSchema());
 
   const extraction = resolveTargetExtraction(directory, exportStem);
   let passthroughDiff: string[] | 'not-applicable' = 'not-applicable';
@@ -78,7 +91,8 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
     contractDiff.length === 0 &&
     instanceDiff.length === 0 &&
     (passthroughDiff === 'not-applicable' || passthroughDiff.length === 0) &&
-    slotSchemaMismatches.length === 0;
+    slotSchemaMismatches.length === 0 &&
+    baseSchemaDiff.length === 0;
 
-  return { component: exportStem, contractDiff, instanceDiff, passthroughDiff, slotSchemaMismatches, fresh };
+  return { component: exportStem, contractDiff, instanceDiff, passthroughDiff, slotSchemaMismatches, baseSchemaDiff, fresh };
 }

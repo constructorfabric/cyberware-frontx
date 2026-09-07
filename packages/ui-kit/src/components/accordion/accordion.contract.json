@@ -25,23 +25,6 @@
       "A list of independent sections (FAQ, settings groups) too long to show all at once, where the user opens what is relevant",
       "Progressive disclosure of grouped content under named headers"
     ],
-    "dont_use_when": [
-      {
-        "rule": "A single show/hide toggle for one piece of content",
-        "instead": "gts.frontx.uikit.component.collapsible.v1~"
-      },
-      {
-        "rule": "Primary navigation between sections that stays visible",
-        "instead": "gts.frontx.uikit.component.tabs.v1~"
-      }
-    ],
-    "composition": {
-      "children": {
-        "kinds": [
-          "gts.frontx.uikit.component.accordion_item.v1~"
-        ]
-      }
-    },
     "invariants": [
       {
         "id": "multiple-false-at-most-one-open",
@@ -62,17 +45,6 @@
         "instead": "Give every item, across both roots, a unique `value`"
       }
     ],
-    "deprecations": {},
-    "coverage": {
-      "a11y": "verified",
-      "rtl": "not-described",
-      "assumptions": [
-        {
-          "claim": "value, defaultValue and onValueChange are typed in terms of a generic Value parameter",
-          "reason": "JSON Schema has no notion of a generic type parameter, so these stay annotation-only (slots) in the compiled contract rather than typed properties. accordion.md's own example uses string values (value=\"item-1\"), which is the documented usage."
-        }
-      ]
-    },
     "examples": {
       "good": [
         {
@@ -88,6 +60,42 @@
         }
       ]
     },
+    "slots": {},
+    "passthrough": [
+      "Omit<AccordionPrimitive.Root.Props<Value>, 'className'> (@base-ui/react/accordion/root/AccordionRoot.d.mts)"
+    ],
+    "variant_sources": [],
+    "cannot_extract": []
+  },
+  "x-gts-traits": {
+    "dont_use_when": [
+      {
+        "rule": "A single show/hide toggle for one piece of content",
+        "instead": "gts.frontx.uikit.component.collapsible.v1~"
+      },
+      {
+        "rule": "Primary navigation between sections that stays visible",
+        "instead": "gts.frontx.uikit.component.tabs.v1~"
+      }
+    ],
+    "composition": {
+      "children": {
+        "kinds": [
+          "gts.frontx.uikit.component.accordion_item.v1~"
+        ]
+      }
+    },
+    "deprecations": {},
+    "coverage": {
+      "a11y": "verified",
+      "rtl": "not-described",
+      "assumptions": [
+        {
+          "claim": "value, defaultValue and onValueChange are typed in terms of a generic Value parameter",
+          "reason": "JSON Schema has no notion of a generic type parameter, so these stay annotation-only (slots) in the compiled contract rather than typed properties. accordion.md's own example uses string values (value=\"item-1\"), which is the documented usage."
+        }
+      ]
+    },
     "family": {
       "root": "gts.frontx.uikit.component.accordion.v1~",
       "role": "root",
@@ -96,12 +104,6 @@
         "gts.frontx.uikit.component.accordion_trigger.v1~",
         "gts.frontx.uikit.component.accordion_content.v1~"
       ]
-    },
-    "slots": {},
-    "passthrough": [
-      "Omit<AccordionPrimitive.Root.Props<Value>, 'className'> (@base-ui/react/accordion/root/AccordionRoot.d.mts)"
-    ],
-    "variant_sources": [],
-    "cannot_extract": []
+    }
   }
 }

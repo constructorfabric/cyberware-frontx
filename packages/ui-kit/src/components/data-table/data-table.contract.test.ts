@@ -21,7 +21,7 @@ import {
   type ContractInstance,
 } from '../../../scripts/contracts/compile';
 import { listExportedDeclarationNames } from '../../../scripts/contracts/extract';
-import { assertContractFreshness } from '../../../scripts/contracts/testing';
+import { assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
 
 const DIRECTORY = 'data-table';
 // Two INDEPENDENT top-level exports, not a compound family - unlike
@@ -176,5 +176,32 @@ describe('data-table in a GTS store', () => {
     const result = gts.validateEntity(bareId(units[DIRECTORY].contract.$id));
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Parent schema not found');
+  });
+
+  it("every contract's x-gts-traits validates against base.component.json's x-gts-traits-schema", () => {
+    // See button.contract.test.ts for which gts-ts API this goes through
+    // and why validateContractTraits (testing.ts) round-trips the contract
+    // through JSON first. Real here: DataTable sets extension_points but not
+    // family, DataTableSortButton sets neither - between the two contracts,
+    // every optional-trait absence shape this directory can produce is
+    // exercised.
+    for (const { stem, contract } of Object.values(units)) {
+      const result = validateContractTraits(contract);
+      expect(result.ok, `${stem}: ${result.error}`).toBe(true);
+    }
+  });
+
+  it("rejects DataTable's contract when x-gts-traits carries a malformed dont_use_when.instead - negative control", () => {
+    const original = units[DIRECTORY].contract;
+    const corrupted: CompiledContract = {
+      ...original,
+      'x-gts-traits': {
+        ...original['x-gts-traits'],
+        dont_use_when: [{ rule: 'placeholder', instead: 'not-a-gts-id' }],
+      },
+    };
+    const result = validateContractTraits(corrupted);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/trait/i);
   });
 });

@@ -30,19 +30,6 @@
     "typical_uses": [
       "The header render function of a sortable column in a DataTable"
     ],
-    "dont_use_when": [
-      {
-        "rule": "A standalone action button with no column to sort",
-        "instead": "gts.frontx.uikit.component.button.v1~"
-      }
-    ],
-    "composition": {
-      "children": {
-        "kinds": [
-          "text"
-        ]
-      }
-    },
     "invariants": [
       {
         "id": "requires-a-real-column-instance",
@@ -55,28 +42,6 @@
         "instead": "For a plain action button with no column to sort, use Button directly"
       }
     ],
-    "deprecations": {},
-    "coverage": {
-      "a11y": "not-described",
-      "assumptions": [
-        {
-          "claim": "column is a live @tanstack/react-table Column instance, not data",
-          "reason": "`Column<DataTableFeatures, TData, TValue>` carries methods (`toggleSorting`, `getIsSorted`) and internal state, not a serializable shape - it stays annotation-only (a slot) in the compiled contract, the same way a function prop does."
-        },
-        {
-          "claim": "TData and TValue are generic type parameters with no concrete shape",
-          "reason": "JSON Schema has no notion of a generic type parameter; both stay implicit in `column`'s slot type rather than typed properties."
-        },
-        {
-          "claim": "DataTableSortButton composes the kit's own Button internally",
-          "reason": "It renders a `<Button variant=\"ghost\" size=\"sm\">` around its own label and a trailing sort-arrow icon - this is internal composition (JSX in DataTableSortButton's own render body), not a props-type heritage relationship, so the extractor reports it with no passthrough origin at all: DataTableSortButtonProps declares `column`/`children`/`className` itself and extends nothing."
-        },
-        {
-          "claim": "its only real mount point is a column's header render function, which has no contract of its own",
-          "reason": "TanStack Table's `header: ({ column }) => ...` is a plain function prop on `ColumnDef`, not a kit component - there is no component_type_ref this contract could put in `composition.parent` for it, so the relationship is recorded here in prose instead."
-        }
-      ]
-    },
     "examples": {
       "good": [
         {
@@ -107,5 +72,42 @@
     ],
     "variant_sources": [],
     "cannot_extract": []
+  },
+  "x-gts-traits": {
+    "dont_use_when": [
+      {
+        "rule": "A standalone action button with no column to sort",
+        "instead": "gts.frontx.uikit.component.button.v1~"
+      }
+    ],
+    "composition": {
+      "children": {
+        "kinds": [
+          "text"
+        ]
+      }
+    },
+    "deprecations": {},
+    "coverage": {
+      "a11y": "not-described",
+      "assumptions": [
+        {
+          "claim": "column is a live @tanstack/react-table Column instance, not data",
+          "reason": "`Column<DataTableFeatures, TData, TValue>` carries methods (`toggleSorting`, `getIsSorted`) and internal state, not a serializable shape - it stays annotation-only (a slot) in the compiled contract, the same way a function prop does."
+        },
+        {
+          "claim": "TData and TValue are generic type parameters with no concrete shape",
+          "reason": "JSON Schema has no notion of a generic type parameter; both stay implicit in `column`'s slot type rather than typed properties."
+        },
+        {
+          "claim": "DataTableSortButton composes the kit's own Button internally",
+          "reason": "It renders a `<Button variant=\"ghost\" size=\"sm\">` around its own label and a trailing sort-arrow icon - this is internal composition (JSX in DataTableSortButton's own render body), not a props-type heritage relationship, so the extractor reports it with no passthrough origin at all: DataTableSortButtonProps declares `column`/`children`/`className` itself and extends nothing."
+        },
+        {
+          "claim": "its only real mount point is a column's header render function, which has no contract of its own",
+          "reason": "TanStack Table's `header: ({ column }) => ...` is a plain function prop on `ColumnDef`, not a kit component - there is no component_type_ref this contract could put in `composition.parent` for it, so the relationship is recorded here in prose instead."
+        }
+      ]
+    }
   }
 }

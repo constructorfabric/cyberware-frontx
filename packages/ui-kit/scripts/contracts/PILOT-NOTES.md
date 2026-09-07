@@ -415,3 +415,96 @@ such inherited floor - every one of its own props is either provider-safe
 `data`, three `ReactNode` labels, `selectionSummary`) with nothing in
 between, because there is no underlying primitive contributing a typed
 baseline the way Base UI does for the other two.
+
+## The x-gts-traits hybrid (PR #611 demo review follow-up)
+
+PR #611's review thread (button.contract.json:47, tscbmstubp, 2026-09-03
+14:06) asked what `x-uikit` is - not a JSON Schema keyword, not a registered
+GTS trait, an undifferentiated bag every overlay field landed in regardless
+of whether anything downstream actually read it. Two follow-on proposals
+came out of that thread: move the WHOLE overlay into `x-gts-traits`
+(validated by gts-ts itself) and drop the compiled `.instance.json`
+artifact, since the trait-typed props schema would carry everything the
+instance did. Implemented instead: a hybrid split, `SEMANTIC_FIELD_TARGETS`
+in compile.ts.
+
+**What moved and why.** A field a validator or lint actually reads -
+`dont_use_when` (its `instead` is a typed GTS ref, checked by pattern),
+`composition`, `deprecations`, `coverage` (including `assumptions`),
+`family`, `extension_points` - now compiles into `x-gts-traits`, checked by
+`GTS.validateEntity` against `base.component.json`'s new
+`x-gts-traits-schema` (`GtsStore.validateSchemaAgainstParent` ->
+`validateSchemaTraits`, plus `validateEntityTraits`'s closure check - see
+button.contract.test.ts's "button contract in a GTS store" suite for both
+call paths exercised directly). A field that is prose FOR A READER with no
+validator on the other end - `intent`, `typical_uses`, `invariants`,
+`anti_patterns`, `examples` - stays in `x-uikit`, which nothing but a human
+or a doc generator ever reads. This answers the PR's own question by
+construction: `x-uikit` is no longer "everything", it is specifically "the
+half nothing validates."
+
+**Two gts-ts mechanics this hybrid had to work around, neither documented
+anywhere gts-ts ships (no README section, no test in its own `tests/`
+directory mentions traits - this was worked out by reading
+`GtsStore.validateSchemaTraits`/`validateEntityTraits`/
+`collectAllTraitProperties` in `node_modules/@globaltypesystem/gts-ts/src/store.ts`
+and confirming against the real package, see testing.ts's
+`validateContractTraits` for the confirmed API):
+
+1. `GtsStore.resolveTraitSchemaRefs` treats ANY `$ref`/`$$ref` key as a GTS
+   ENTITY id to resolve in the store - it has no concept of a local JSON
+   Schema pointer into the trait schema's own `$defs`, and fails a trait
+   schema carrying one with "Unresolvable trait schema reference" rather
+   than a recognizable validation error. `buildGtsTraitsSchema` (compile.ts)
+   therefore INLINES every `#/$defs/...` ref from the corresponding
+   `buildMetamodel()` field definitions (`inlineLocalRefs`) instead of
+   reusing them by reference - the field text itself is still one source
+   (buildMetamodel's), only the ref-vs-inline mechanics differ between the
+   overlay-authoring schema (Ajv, which resolves `$defs` normally) and the
+   trait schema (gts-ts's own resolver, which does not).
+2. `GtsStore.validateSchemaTraits`'s "unresolved trait property" check
+   demands EVERY property `x-gts-traits-schema` declares have either a
+   provided value or a schema `default`, regardless of this JSON Schema's
+   own `required` list - checked with the `in` operator, before Ajv ever
+   sees the data. `family` and `extension_points` are optional in the
+   overlay (most components set neither), so a component that omits both
+   would otherwise fail this check on its own, real, committed contract -
+   not a demo artifact, `GTS.validateEntity` on the shipped
+   `<name>.contract.json`. `nullableTraitProperty` (compile.ts) wraps
+   exactly those two fields' type with `| null` and a schema-level
+   `default: null`: `properties`/`required`/`minItems`/`if`/`then` are all
+   instance-type-scoped JSON Schema keywords, vacuously satisfied by a
+   `null` instance, so the real shape is unchanged for a component (like
+   Accordion's root) that DOES set the field.
+
+**Instance artifact (`<stem>.contract.instance.json`) kept, the suggestion
+to drop it declined.** The same thread proposed folding the instance away
+once traits carried everything the metamodel described. It is kept because
+the two artifacts serve different readers with different costs: the
+INSTANCE is what a catalog, a plan validator, or a lint rule reads without
+loading JSON Schema machinery at all - `intent`, `dont_use_when`,
+`composition` and the rest as a plain typed object, one `JSON.parse` and a
+metamodel-shaped Ajv check, no `allOf` chain to walk, no passthrough type to
+resolve, no GTS store to register into. The PROPS SCHEMA (and its
+`x-gts-traits` annotation) is what a schema-aware validator or a
+structured-output projection reads - the shape `GTS.validateEntity`,
+`gtsPlugin.registerSchema` and Ajv itself all expect. Merging them would
+mean every instance-only reader either takes on the derived-schema
+machinery it never needed, or the compiler emits a "props-schema-shaped
+view with the derivation stripped out" - a THIRD artifact in substance, not
+a saved one. Two artifacts, two readers, one compiler that keeps them in
+sync (the freshness check) is the cheaper shape.
+
+**What changes if ADR 0005 answers "a GTS runtime acts on traits" versus
+"validate-and-store only".** This hybrid assumes the latter: `x-gts-traits`
+today is checked and carried, nothing reads it at runtime to change
+behavior. If ADR 0005 settles on "validate-and-store", nothing here changes
+- the split already matches that answer. If it settles on "a runtime acts on
+traits", the DOCUMENTATION fields currently left in `x-uikit` (`intent`,
+`typical_uses`, `invariants`, `anti_patterns`, `examples`) would need to
+move too, since "a runtime reads this" is exactly the bar `SEMANTIC_FIELD_TARGETS`
+already uses to decide what belongs in `x-gts-traits` - at that point
+`x-uikit` would carry nothing (or fold away entirely) and the whole overlay
+would be traits, which is the "move everything" version tscbmstubp
+originally proposed. The map is the single edit point either way; no other
+file changes shape.

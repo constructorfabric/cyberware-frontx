@@ -55,24 +55,6 @@
       "A one-off action with an immediate effect (submit, confirm, open a dialog)",
       "An icon-only action that has an accessible name (pass aria-label)"
     ],
-    "dont_use_when": [
-      {
-        "rule": "Navigation between routes or pages",
-        "instead": "gts.frontx.uikit.component.navigation_menu.v1~"
-      },
-      {
-        "rule": "Toggling a persistent on/off state",
-        "instead": "gts.frontx.uikit.component.switch.v1~"
-      }
-    ],
-    "composition": {
-      "children": {
-        "kinds": [
-          "text"
-        ],
-        "icons_via": "icon"
-      }
-    },
     "invariants": [
       {
         "id": "icon-only-needs-label",
@@ -93,11 +75,6 @@
         "instead": "Use the `icon` prop"
       }
     ],
-    "deprecations": {},
-    "coverage": {
-      "a11y": "verified",
-      "rtl": "not-described"
-    },
     "examples": {
       "good": [
         {
@@ -135,5 +112,30 @@
       "VariantProps<typeof buttonVariants>"
     ],
     "cannot_extract": []
+  },
+  "x-gts-traits": {
+    "dont_use_when": [
+      {
+        "rule": "Navigation between routes or pages",
+        "instead": "gts.frontx.uikit.component.navigation_menu.v1~"
+      },
+      {
+        "rule": "Toggling a persistent on/off state",
+        "instead": "gts.frontx.uikit.component.switch.v1~"
+      }
+    ],
+    "composition": {
+      "children": {
+        "kinds": [
+          "text"
+        ],
+        "icons_via": "icon"
+      }
+    },
+    "deprecations": {},
+    "coverage": {
+      "a11y": "verified",
+      "rtl": "not-described"
+    }
   }
 }

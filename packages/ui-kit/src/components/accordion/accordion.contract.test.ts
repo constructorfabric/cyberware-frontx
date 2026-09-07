@@ -23,7 +23,7 @@ import {
   type ContractInstance,
 } from '../../../scripts/contracts/compile';
 import { componentTypeRefPattern } from '../../../scripts/contracts/ids';
-import { assertContractFreshness } from '../../../scripts/contracts/testing';
+import { assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
 
 const DIRECTORY = 'accordion';
 // stem === directory for the root (see compile.ts's resolveTargetExtraction
@@ -142,20 +142,20 @@ describe('accordion family: composition references resolve', () => {
   // actually a component ref (not the "text" leaf kind Button also uses) -
   // gathered once so the resolution check does not repeat itself per unit.
   function typedCompositionRefs(contract: CompiledContract): string[] {
-    const composition = contract['x-uikit'].composition;
+    const composition = contract['x-gts-traits'].composition;
     const refs = [...composition.children.kinds, ...(composition.parent?.kinds ?? [])];
     return refs.filter((ref) => ref !== 'text');
   }
 
   it("the root's only allowed child is AccordionItem", () => {
-    expect(units[DIRECTORY].contract['x-uikit'].composition.children.kinds).toEqual([
+    expect(units[DIRECTORY].contract['x-gts-traits'].composition.children.kinds).toEqual([
       'gts.frontx.uikit.component.accordion_item.v1~',
     ]);
   });
 
   it("every part's parent.kinds names a directory that exists", () => {
     for (const stem of PART_STEMS) {
-      const kinds = units[stem].contract['x-uikit'].composition.parent?.kinds ?? [];
+      const kinds = units[stem].contract['x-gts-traits'].composition.parent?.kinds ?? [];
       expect(kinds.length, stem).toBeGreaterThan(0);
     }
   });
@@ -232,5 +232,26 @@ describe('accordion family in a GTS store', () => {
     const result = gts.validateEntity(bareId(units[DIRECTORY].contract.$id));
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Parent schema not found');
+  });
+
+  it("every contract's x-gts-traits validates against base.component.json's x-gts-traits-schema", () => {
+    // See button.contract.test.ts for which gts-ts API this goes through
+    // (GTS.validateEntity) and why the registration round-trips through
+    // JSON first (validateContractTraits, testing.ts) - real here because
+    // three of these four contracts (item, trigger, content) omit `family`
+    // and all four omit `extension_points`, which is exactly the "genuinely
+    // absent, not merely undefined" case that round-trip matters for.
+    for (const { stem, contract } of Object.values(units)) {
+      const result = validateContractTraits(contract);
+      expect(result.ok, `${stem}: ${result.error}`).toBe(true);
+    }
+  });
+
+  it("rejects the root's contract when x-gts-traits carries an unknown trait key - negative control", () => {
+    const root = units[DIRECTORY].contract;
+    const corrupted = { ...root, 'x-gts-traits': { ...root['x-gts-traits'], bogus_field: true } } as typeof root;
+    const result = validateContractTraits(corrupted);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/trait/i);
   });
 });

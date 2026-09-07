@@ -50,19 +50,6 @@
       "A list the user selects rows from for a bulk action",
       "Paged results the user steps through instead of scrolling one long list"
     ],
-    "dont_use_when": [
-      {
-        "rule": "Static markup with no sorting, selection or pagination need",
-        "instead": "gts.frontx.uikit.component.table.v1~"
-      }
-    ],
-    "composition": {
-      "children": {
-        "kinds": [
-          "none"
-        ]
-      }
-    },
     "invariants": [
       {
         "id": "columns-and-data-share-row-type",
@@ -87,29 +74,6 @@
         "instead": "Include `dataTableSelectionColumn()` in `columns` explicitly - the flag and the column are independent opt-ins"
       }
     ],
-    "deprecations": {},
-    "coverage": {
-      "a11y": "not-described",
-      "rtl": "not-described",
-      "assumptions": [
-        {
-          "claim": "TData is a generic type parameter with no concrete shape",
-          "reason": "JSON Schema has no notion of a generic type parameter; `columns` and `data` stay annotation-only (slots) in the compiled contract rather than typed properties - there is no TData to type them against without a concrete consumer."
-        },
-        {
-          "claim": "columns is an array of @tanstack/react-table ColumnDef objects",
-          "reason": "ColumnDef carries function-valued fields (header/cell render functions among them) from a third-party package this contract does not own; it is opaque to the provider-safe JSON Schema subset the same way a function prop is, and is declared as an extension_point instead of enumerated."
-        },
-        {
-          "claim": "selectionSummary is a function prop, not data",
-          "reason": "`(selected, total) => ReactNode` has no JSON Schema representation; it is a function returning a plurals-aware sentence, not a value this schema can assert shape against."
-        },
-        {
-          "claim": "sorting, row-selection and pagination state are internal, not props",
-          "reason": "`sorting`/`rowSelection`/`pagination` are component-owned useState, never lifted to DataTableProps - \"DataTable is sortable/selectable/ paginated\" is discoverable only from `columns`' own fields and `enableRowSelection`, not from this contract's prop schema."
-        }
-      ]
-    },
     "examples": {
       "good": [
         {
@@ -125,32 +89,6 @@
         }
       ]
     },
-    "extension_points": [
-      {
-        "name": "columns",
-        "kind": "prop",
-        "description": "Column definitions - what data each column reads, how its header and cells render, and whether it participates in sorting. The one required way to shape what DataTable renders.",
-        "typed_by": "@tanstack/react-table ColumnDef<DataTableFeatures, TData>"
-      },
-      {
-        "name": "dataTableColumnHelper",
-        "kind": "helper",
-        "description": "A createColumnHelper pre-bound to DataTableFeatures - the one column helper every DataTable column def should be built with.",
-        "typed_by": "@tanstack/react-table createColumnHelper, pre-bound to DataTableFeatures"
-      },
-      {
-        "name": "dataTableSelectionColumn",
-        "kind": "helper",
-        "description": "Ready-made row-selection column (checkbox header/cell) a consumer spreads into `columns` to opt into selectable rows.",
-        "typed_by": "returns @tanstack/react-table ColumnDef<DataTableFeatures, TData>"
-      },
-      {
-        "name": "dataTableFeatures",
-        "kind": "feature",
-        "description": "The fixed TanStack Table v9 feature set DataTable registers - row selection, row sorting, row pagination. Not itself configurable per instance; a consumer needing a different feature set (filtering, column visibility, grouping, ...) builds directly against `useTable` instead (see data-table.md's Escape hatch).",
-        "typed_by": "@tanstack/react-table tableFeatures({ rowSelectionFeature, rowSortingFeature, rowPaginationFeature, ... })"
-      }
-    ],
     "slots": {
       "columns": {
         "typeText": "ColumnDef<{ rowSelectionFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowSortingFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowPaginationFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; sortedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; paginatedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; }, TData>[]",
@@ -182,5 +120,69 @@
     ],
     "variant_sources": [],
     "cannot_extract": []
+  },
+  "x-gts-traits": {
+    "dont_use_when": [
+      {
+        "rule": "Static markup with no sorting, selection or pagination need",
+        "instead": "gts.frontx.uikit.component.table.v1~"
+      }
+    ],
+    "composition": {
+      "children": {
+        "kinds": [
+          "none"
+        ]
+      }
+    },
+    "deprecations": {},
+    "coverage": {
+      "a11y": "not-described",
+      "rtl": "not-described",
+      "assumptions": [
+        {
+          "claim": "TData is a generic type parameter with no concrete shape",
+          "reason": "JSON Schema has no notion of a generic type parameter; `columns` and `data` stay annotation-only (slots) in the compiled contract rather than typed properties - there is no TData to type them against without a concrete consumer."
+        },
+        {
+          "claim": "columns is an array of @tanstack/react-table ColumnDef objects",
+          "reason": "ColumnDef carries function-valued fields (header/cell render functions among them) from a third-party package this contract does not own; it is opaque to the provider-safe JSON Schema subset the same way a function prop is, and is declared as an extension_point instead of enumerated."
+        },
+        {
+          "claim": "selectionSummary is a function prop, not data",
+          "reason": "`(selected, total) => ReactNode` has no JSON Schema representation; it is a function returning a plurals-aware sentence, not a value this schema can assert shape against."
+        },
+        {
+          "claim": "sorting, row-selection and pagination state are internal, not props",
+          "reason": "`sorting`/`rowSelection`/`pagination` are component-owned useState, never lifted to DataTableProps - \"DataTable is sortable/selectable/ paginated\" is discoverable only from `columns`' own fields and `enableRowSelection`, not from this contract's prop schema."
+        }
+      ]
+    },
+    "extension_points": [
+      {
+        "name": "columns",
+        "kind": "prop",
+        "description": "Column definitions - what data each column reads, how its header and cells render, and whether it participates in sorting. The one required way to shape what DataTable renders.",
+        "typed_by": "@tanstack/react-table ColumnDef<DataTableFeatures, TData>"
+      },
+      {
+        "name": "dataTableColumnHelper",
+        "kind": "helper",
+        "description": "A createColumnHelper pre-bound to DataTableFeatures - the one column helper every DataTable column def should be built with.",
+        "typed_by": "@tanstack/react-table createColumnHelper, pre-bound to DataTableFeatures"
+      },
+      {
+        "name": "dataTableSelectionColumn",
+        "kind": "helper",
+        "description": "Ready-made row-selection column (checkbox header/cell) a consumer spreads into `columns` to opt into selectable rows.",
+        "typed_by": "returns @tanstack/react-table ColumnDef<DataTableFeatures, TData>"
+      },
+      {
+        "name": "dataTableFeatures",
+        "kind": "feature",
+        "description": "The fixed TanStack Table v9 feature set DataTable registers - row selection, row sorting, row pagination. Not itself configurable per instance; a consumer needing a different feature set (filtering, column visibility, grouping, ...) builds directly against `useTable` instead (see data-table.md's Escape hatch).",
+        "typed_by": "@tanstack/react-table tableFeatures({ rowSelectionFeature, rowSortingFeature, rowPaginationFeature, ... })"
+      }
+    ]
   }
 }

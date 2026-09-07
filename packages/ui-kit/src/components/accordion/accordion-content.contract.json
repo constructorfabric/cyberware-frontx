@@ -24,6 +24,41 @@
     "typical_uses": [
       "The single body/detail child of an AccordionItem, shown when it is open"
     ],
+    "invariants": [
+      {
+        "id": "height-animates-via-base-ui-runtime-var",
+        "text": "Open/close height-animates against Base UI's own `--accordion-panel-height` custom property, a live ResizeObserver measurement written on the panel element - not a themeable token."
+      }
+    ],
+    "anti_patterns": [
+      {
+        "dont": "Rely on the panel's content being mounted while its item is closed",
+        "instead": "Set `keepMounted` on the Accordion root if closed-panel content must stay in the DOM (e.g. for in-page search); otherwise assume it unmounts"
+      }
+    ],
+    "examples": {
+      "good": [
+        {
+          "title": "A panel as an AccordionItem's body",
+          "code": "<AccordionItem value=\"item-1\">\n  <AccordionTrigger>Is it accessible?</AccordionTrigger>\n  <AccordionContent>Yes. It adheres to the WAI-ARIA design pattern.</AccordionContent>\n</AccordionItem>\n"
+        }
+      ],
+      "bad": [
+        {
+          "title": "A panel with no AccordionItem around it",
+          "code": "<AccordionContent>Yes. It adheres to the WAI-ARIA design pattern.</AccordionContent>",
+          "why": "AccordionContent reads the nearest AccordionItem's open state through Base UI context to decide whether to render; outside one, it has nothing to read."
+        }
+      ]
+    },
+    "slots": {},
+    "passthrough": [
+      "Omit<AccordionPrimitive.Panel.Props, 'className'> (@base-ui/react/accordion/panel/AccordionPanel.d.mts)"
+    ],
+    "variant_sources": [],
+    "cannot_extract": []
+  },
+  "x-gts-traits": {
     "dont_use_when": [
       {
         "rule": "Content that must stay visible regardless of any item's open state",
@@ -42,46 +77,13 @@
         ]
       }
     },
-    "invariants": [
-      {
-        "id": "height-animates-via-base-ui-runtime-var",
-        "text": "Open/close height-animates against Base UI's own `--accordion-panel-height` custom property, a live ResizeObserver measurement written on the panel element - not a themeable token."
-      }
-    ],
-    "anti_patterns": [
-      {
-        "dont": "Rely on the panel's content being mounted while its item is closed",
-        "instead": "Set `keepMounted` on the Accordion root if closed-panel content must stay in the DOM (e.g. for in-page search); otherwise assume it unmounts"
-      }
-    ],
     "deprecations": {},
     "coverage": {
       "a11y": "verified"
     },
-    "examples": {
-      "good": [
-        {
-          "title": "A panel as an AccordionItem's body",
-          "code": "<AccordionItem value=\"item-1\">\n  <AccordionTrigger>Is it accessible?</AccordionTrigger>\n  <AccordionContent>Yes. It adheres to the WAI-ARIA design pattern.</AccordionContent>\n</AccordionItem>\n"
-        }
-      ],
-      "bad": [
-        {
-          "title": "A panel with no AccordionItem around it",
-          "code": "<AccordionContent>Yes. It adheres to the WAI-ARIA design pattern.</AccordionContent>",
-          "why": "AccordionContent reads the nearest AccordionItem's open state through Base UI context to decide whether to render; outside one, it has nothing to read."
-        }
-      ]
-    },
     "family": {
       "root": "gts.frontx.uikit.component.accordion.v1~",
       "role": "part"
-    },
-    "slots": {},
-    "passthrough": [
-      "Omit<AccordionPrimitive.Panel.Props, 'className'> (@base-ui/react/accordion/panel/AccordionPanel.d.mts)"
-    ],
-    "variant_sources": [],
-    "cannot_extract": []
+    }
   }
 }
