@@ -97,20 +97,30 @@ rule and the reasoning behind it live in
 
 ### 4. Or seed a new project from the built-in defaults
 
-`seed` bootstraps a brand-new project directory in one step: it creates
-`.frontx/project.json`, auto-registers each named template, and applies the
-batch — but it accepts **only the CLI's own built-in default templates**
-(there is nothing else yet registered for a virgin directory to resolve a
-batch against), and in this repository's own build those defaults are `path:`
-origins that resolve only inside this monorepo's own checkout
-(`architecture/DECOMPOSITION.md` §2.22). It is **not** a way to start a
-project elsewhere — use `register` + `apply` (above) for that.
+`seed` creates `.frontx/project.json`, auto-registers each named template, and
+applies the batch in one call — but it accepts **only the CLI's own built-in
+default templates** (there is nothing else yet registered for a virgin
+directory to resolve a batch against), and in this repository's own build
+those defaults are `path:` origins, which resolve **relative to the directory
+being seeded** — not to this monorepo's checkout, wherever `seed` happens to
+be invoked from. A bare empty target directory has nothing at that relative
+path to resolve against and `seed` refuses it; the template must already be
+vendored into the target first:
 
 ```bash
-# <default-name> must be one of the CLI's built-in defaults — see the
-# "defaults" set in `frontx list` / `frontx list --json`
-frontx seed ./my-app --input '{"templates":{"<default-name>":["."]}}'
+# Vendor the template into the target directory yourself, then seed on top of
+# it — <default-name> must be one of the CLI's built-in defaults (see the
+# "defaults" set in `frontx list` / `frontx list --json`), and the folder you
+# copy it into must be that default's own path: origin, relative to
+# ./my-app (here, "template-shell" — see that default's own path in
+# `packages/cli/src/generated/official-defaults.ts`)
+mkdir -p ./my-app/template-shell
+cp -R template-shell/. ./my-app/template-shell/
+frontx seed ./my-app --input '{"templates":{"@gears-frontx/frontx-template-shell":["."]}}'
 ```
+
+Outside this checkout there is nothing to vendor from, so `register` a remote
+origin and `apply` it instead (above) — the path that works anywhere.
 
 `seed` refuses a directory that already carries a `.frontx/project.json` — a
 project once seeded is extended through `apply`, never re-seeded.

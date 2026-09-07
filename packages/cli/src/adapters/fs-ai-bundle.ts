@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { BundleExistsFn, CopyBundleFn, RemoveBundleFn } from '../scaffold/ai-bundle';
 import { assertPathWithinProjectRoot, resolveWriteParentDir } from './fs-project-io';
+import { FRONTX_NAMESPACE_ROOT } from '../manifest/types';
 
 // The one place `.frontx/ai/<manifestName>/` is spelled, from either a
 // template's installed content path (source) or the project root (dest) —
@@ -25,7 +26,7 @@ import { assertPathWithinProjectRoot, resolveWriteParentDir } from './fs-project
 // (a scoped identity of the `@scope/package` shape), which `path.join` folds
 // into the same platform-native segments as `root` itself.
 function bundlePath(root: string, manifestName: string): string {
-  return path.join(root, '.frontx', 'ai', manifestName);
+  return path.join(root, FRONTX_NAMESPACE_ROOT, 'ai', manifestName);
 }
 
 function isEnoent(error: unknown): boolean {
@@ -35,15 +36,13 @@ function isEnoent(error: unknown): boolean {
 /** Real `BundleExistsFn` — true when something stands at the bundle path,
  * decided with `lstat` semantics rather than `existsSync`'s.
  *
- * DANGLING-SYMLINK-INVISIBLE FIX (MEDIUM, reproduced against the built
- * binary): `existsSync` FOLLOWS the final path component, so a dangling
- * symlink left at `.frontx/ai/<manifestName>/` — its own target already
- * removed, the link itself still present — read as absent. That let
- * `delete` on a name's last target report success with no `aiBundleResidue`
- * while the dangling link survived on disk, which is exactly the state
- * `createFsCopyBundleFn`'s own fix below has to defend against on the next
- * `apply`. `lstat` reports the entry AT that path without dereferencing it:
- * a symlink is "there" whether or not what it points to is, matching how
+ * `existsSync` FOLLOWS the final path component, so a dangling symlink left
+ * at `<root>/.frontx/ai/<manifestName>/` — its own target already removed,
+ * the link itself still present — would read as absent. That is exactly the
+ * state `createFsCopyBundleFn`'s own handling below has to defend against on
+ * the next `apply`, and the reason this function uses `lstat` instead:
+ * `lstat` reports the entry AT that path without dereferencing it, so a
+ * symlink is "there" whether or not what it points to is, matching how
  * `assertPathWithinProjectRoot`'s own dangling-symlink handling (`./
  * fs-project-io.ts`) already treats a dangling link as a real entry rather
  * than an ordinary not-yet-existing path. Only `ENOENT` — nothing at all

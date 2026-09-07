@@ -1956,7 +1956,6 @@ export async function run(argv: string[], deps: CliDeps): Promise<CommandOutcome
 
 // --- process entrypoint ---
 
-/* c8 ignore start -- process wiring exercised by running the built binary, not unit tests */
 // A write's completion callback fires once that chunk has actually been
 // accepted by the underlying resource (the pipe, file descriptor, or TTY) —
 // the synchronous return value of `.write()` only reports whether the
@@ -1969,27 +1968,96 @@ export async function run(argv: string[], deps: CliDeps): Promise<CommandOutcome
 // consumed. Awaiting this callback before exiting is what lets the envelope's
 // completeness promise (`cpt-frontx-dod-cli-invocation-json-envelope-
 // dispatch`) hold regardless of payload size or destination.
-function writeToStream(stream: NodeJS.WritableStream, text: string): Promise<void> {
-  return new Promise((resolve) => {
-    // The callback runs whether or not the write succeeded (e.g. a reader
-    // that closed its end early reports EPIPE here); either way there is
-    // nothing further this entrypoint can do about a broken destination
-    // stream, and blocking the exit on it would trade one failure mode for a
-    // hang. The exit code the command already computed is what is reported.
-    stream.write(text, () => resolve());
+//
+// A destination that fails mid-write reports that failure to the write's own
+// callback (with the error as its argument) AND separately schedules an
+// `'error'` event on the stream for the SAME failure — the two are not one
+// notification arriving twice, but genuinely independent, and the event is
+// scheduled on the next tick rather than emitted inline. `process.stdout`/
+// `process.stderr` carry no `'error'` listener of their own, and Node's
+// default behavior for an `'error'` event nobody is listening for is to
+// throw and crash the process — so even after the write's callback has
+// already told this function what happened, that separately-scheduled event
+// still lands moments later and aborts the process if nothing is attached to
+// receive it. A listener attached only around one write, then removed once
+// that write's callback resolves, closes too early: the event fires after
+// the removal and finds no listener, which is the exact crash this fixes.
+// The listener below stays attached for the process's lifetime instead —
+// once per stream, covering every write — while the actual EPIPE-vs-other
+// classification is read from the write callback's own error argument, since
+// that is the one place this function can still tell WHICH write failed.
+//
+// `EPIPE` means the reader on the other end closed before consuming
+// everything (`| head`, `| less`, an early `grep -m1`) — an entirely
+// ordinary thing for a caller to do, and the reader's decision, not this
+// command's failure (`cpt-frontx-flow-cli-invocation-run-command`, step
+// 8.1). Anything else — `ENOSPC` writing to a full disk, say — means the
+// output this command already computed did not actually reach its
+// destination intact, and reporting the command's own success/user exit code
+// over that would be its own lie; the caller escalates to the internal-error
+// code instead (step 8.2).
+const streamsWithErrorListener = new WeakSet<NodeJS.WritableStream>();
+function tolerateStreamErrors(stream: NodeJS.WritableStream): void {
+  if (streamsWithErrorListener.has(stream)) return;
+  streamsWithErrorListener.add(stream);
+  stream.on('error', () => {
+    // Deliberately empty: classification happens in the write callback
+    // below, which fires with the same error. This listener exists purely
+    // so that event has somewhere to go instead of crashing the process.
   });
 }
 
+// Exported so a unit test can drive it against a real (if deliberately
+// failing) `Writable` — only `main()` below, which needs `process.stdout`
+// itself and a real OS pipe to prove out, is limited to binary verification.
+export function writeToStream(stream: NodeJS.WritableStream, text: string): Promise<'ok' | 'failed'> {
+  tolerateStreamErrors(stream);
+  return new Promise((resolve) => {
+    stream.write(text, (error) => {
+      if (!error) {
+        resolve('ok');
+        return;
+      }
+      // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-if-broken-pipe
+      // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-broken-pipe-tolerate
+      resolve((error as NodeJS.ErrnoException).code === 'EPIPE' ? 'ok' : 'failed');
+      // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-broken-pipe-tolerate
+      // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-if-broken-pipe
+    });
+  });
+}
+
+// A broken pipe on either stream is already folded into `writeToStream`'s
+// 'ok' result (`inst-run-return-if-broken-pipe` /
+// `inst-run-return-broken-pipe-tolerate`) and never reaches here; this is
+// only the "write genuinely failed" branch, shared by both streams so the
+// escalation is stated once rather than duplicated per call site.
+// @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-if-write-failed
+// @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-write-failed-escalate
+function escalateOnWriteFailure(result: 'ok' | 'failed', exitCode: ExitCode): ExitCode {
+  return result === 'failed' ? EXIT_INTERNAL_ERROR : exitCode;
+}
+// @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-write-failed-escalate
+// @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-if-write-failed
+
+/* c8 ignore start -- process wiring exercised by running the built binary, not unit tests */
 async function main(): Promise<void> {
   // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-invoke
   const argv = process.argv.slice(2);
   // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-invoke
   const deps = createRealDeps();
   const outcome = await run(argv, deps);
-  if (outcome.stdout) await writeToStream(process.stdout, `${outcome.stdout}\n`);
-  if (outcome.stderr) await writeToStream(process.stderr, `${outcome.stderr}\n`);
   // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return
-  process.exit(outcome.exitCode);
+  let exitCode = outcome.exitCode;
+  if (outcome.stdout) {
+    const result = await writeToStream(process.stdout, `${outcome.stdout}\n`);
+    exitCode = escalateOnWriteFailure(result, exitCode);
+  }
+  if (outcome.stderr) {
+    const result = await writeToStream(process.stderr, `${outcome.stderr}\n`);
+    exitCode = escalateOnWriteFailure(result, exitCode);
+  }
+  process.exit(exitCode);
   // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return
 }
 

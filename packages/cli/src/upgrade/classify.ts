@@ -127,8 +127,11 @@ function ancestorSegmentsOf(projectPath: string): string[] {
 // regular file standing where a directory belongs, are both
 // `CONTENT_CONFLICT`. Either way this module treats them identically for
 // classification purposes: no comparison is attempted and the path is
-// recorded doubly-changed.
-type BadAncestor = { kind: 'symlink'; escapesRoot: boolean } | { kind: 'file' };
+// recorded doubly-changed. `path` carries the ancestor's own project-relative
+// location — never the enumerated payload path itself — so a refusal can name
+// which component blocked the path rather than leaving a developer to walk
+// the chain by hand.
+type BadAncestor = { path: string; kind: 'symlink'; escapesRoot: boolean } | { path: string; kind: 'file' };
 
 // Probes every ancestor directory component of `projectPath`, from the
 // project root down to the leaf's parent, through the injected
@@ -161,10 +164,10 @@ async function findBadAncestor(
       cache.set(ancestor, entry);
     }
     if (entry.kind === 'symlink') {
-      return { kind: 'symlink', escapesRoot: canonicalizeFn(ancestor) === null };
+      return { path: ancestor, kind: 'symlink', escapesRoot: canonicalizeFn(ancestor) === null };
     }
     if (entry.kind === 'file') {
-      return { kind: 'file' };
+      return { path: ancestor, kind: 'file' };
     }
   }
   return null;
@@ -233,9 +236,9 @@ export interface ClassifyResult {
   // other names "reconcile the edit", and a caller that only reads
   // `conflictPaths` behaves exactly as it always has.
   uncomparablePaths: string[];
-  // The SUBSET of `uncomparablePaths` recorded because an ancestor symlink's
-  // resolved target escapes the project root, as opposed to one that
-  // resolves inside it or a non-symlink ancestor obstruction. The caller
+  // The SUBSET of `uncomparablePaths` recorded because an ancestor symlink's,
+  // or the LEAF's own, resolved target escapes the project root, as opposed
+  // to one that resolves inside it or a non-symlink obstruction. The caller
   // (`validate.ts`) refuses these with `INVALID_PATH` rather than
   // `CONTENT_CONFLICT` — the same code `commands/apply.ts` already reports
   // for the identical on-disk shape on the apply side — since "this path
@@ -243,6 +246,14 @@ export interface ClassifyResult {
   // fundamental problem than "a symlink stands here, resolve it" and names
   // a different remedy.
   escapingPaths: string[];
+  // One entry per path in `uncomparablePaths`, naming the specific component
+  // that blocked it — the leaf itself, or the offending ancestor — and its
+  // kind. A refusal built from `conflictPaths`/`uncomparablePaths` alone can
+  // only say a path is uncomparable; it cannot say WHY without a developer
+  // walking the chain by hand. `component` equals `path` itself for a leaf
+  // directory or symlink, and names the offending ancestor's own
+  // project-relative location otherwise.
+  uncomparableCauses: { path: string; component: string; kind: 'symlink' | 'file' | 'directory' }[];
   // Nested-target conflicts for this target — the caller refuses with
   // `TARGET_CONFLICT` when this is non-empty.
   nestedConflicts: { target: string; templateName: string }[];
@@ -489,6 +500,7 @@ export async function classifyTarget(input: ClassifyInput): Promise<ClassifyResu
   const conflictPaths: string[] = [];
   const uncomparablePaths: string[] = [];
   const escapingPaths: string[] = [];
+  const uncomparableCauses: { path: string; component: string; kind: 'symlink' | 'file' | 'directory' }[] = [];
   // Shared across every enumerated path below — see `findBadAncestor`'s own
   // doc comment for why this cache is what keeps a directory shared by many
   // paths a single `readDiskEntry` probe rather than one per path.
@@ -524,13 +536,29 @@ export async function classifyTarget(input: ClassifyInput): Promise<ClassifyResu
       // compared at all, so no comparison is attempted; this is not weighed
       // against `UNCHANGED` or any other branch below. Recorded in
       // `uncomparablePaths` too, and in `escapingPaths` on top of that when
-      // the cause is a symlink ancestor whose resolved target escapes the
-      // project root — see `ClassifyResult`'s own doc comments for why the
-      // caller reports each subset differently.
+      // the cause is a symlink — at the leaf itself, or at an ancestor —
+      // whose resolved target escapes the project root — see
+      // `ClassifyResult`'s own doc comments for why the caller reports each
+      // subset differently. A bad ancestor takes precedence over whatever
+      // `diskEntry` itself reports for the leaf: when the ancestor is a
+      // symlink the OS already resolved it transparently while producing
+      // `diskEntry`, so the leaf's own kind may describe content at wherever
+      // that link actually points, never at the path this plan names.
       conflictPaths.push(projectPath);
       uncomparablePaths.push(projectPath);
-      if (badAncestor?.kind === 'symlink' && badAncestor.escapesRoot) {
-        escapingPaths.push(projectPath);
+      if (badAncestor !== null) {
+        uncomparableCauses.push({ path: projectPath, component: badAncestor.path, kind: badAncestor.kind });
+        if (badAncestor.kind === 'symlink' && badAncestor.escapesRoot) {
+          escapingPaths.push(projectPath);
+        }
+      } else {
+        // The leaf itself is the bad component (every ancestor cleared).
+        // `diskEntry.kind` is `'directory'` or `'symlink'` here — the only
+        // two ways to reach this branch with `badAncestor === null`.
+        uncomparableCauses.push({ path: projectPath, component: projectPath, kind: diskEntry.kind as 'directory' | 'symlink' });
+        if (diskEntry.kind === 'symlink' && canonicalizeFn(projectPath) === null) {
+          escapingPaths.push(projectPath);
+        }
       }
       // @cpt-end:cpt-frontx-algo-upgrade-changeset-classify:p1:inst-cls-record-not-regular
       continue;
@@ -632,7 +660,7 @@ export async function classifyTarget(input: ClassifyInput): Promise<ClassifyResu
   // operations together with its `SKIPPED` paths.
   return {
     exclusionRoots: candidateExclusionRoots,
-    operations, skipped, conflictPaths, uncomparablePaths, escapingPaths, nestedConflicts };
+    operations, skipped, conflictPaths, uncomparablePaths, escapingPaths, uncomparableCauses, nestedConflicts };
   // @cpt-end:cpt-frontx-algo-upgrade-changeset-classify:p1:inst-cls-return-ops
   // @cpt-end:cpt-frontx-algo-upgrade-changeset-classify:p1:inst-cls-return-conflict
   // @cpt-end:cpt-frontx-algo-upgrade-changeset-classify:p1:inst-cls-if-any-conflict

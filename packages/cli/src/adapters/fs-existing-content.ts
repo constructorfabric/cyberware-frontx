@@ -172,6 +172,42 @@ export function createFsReadInstalledContentFn(repoRoot: string): ReadInstalledC
   };
 }
 
+// The shallowest component of `target`'s own path — the project root
+// excluded, `target` itself included — that exists on disk as something other
+// than a directory, reported as the `ContentItem` occupying it, or `null` when
+// every component is either an ordinary directory or does not exist yet.
+//
+// A non-directory here blocks everything beneath it: no file can be created
+// under a regular file, and a symlink standing on the way cannot be compared
+// against declared content (`architecture/ADR/0021-project-upgrade-
+// mechanism.md`). Reporting the SHALLOWEST such component rather than the
+// deepest is what makes the refusal actionable — it names the one entry a
+// developer has to resolve, and nothing below it can be inspected anyway.
+//
+// `lstat`, not `stat`: a symlink standing on the path is itself the blocking
+// entry, and dereferencing it would report on whatever it aliases instead.
+// Its content is the same uncomparable marker the walk below uses for a
+// symlink it finds inside the target, so one rule covers both positions.
+function blockingComponentOf(repoRoot: string, target: string): ContentItem | null {
+  if (target === '.') return null; // the project root itself is the walk's own ground
+  const segments = target.split('/');
+  for (let depth = 1; depth <= segments.length; depth++) {
+    const relativePath = segments.slice(0, depth).join('/');
+    const absolute = path.join(repoRoot, relativePath);
+    let stat: fs.Stats;
+    try {
+      stat = fs.lstatSync(absolute);
+    } catch {
+      return null; // nothing exists from here down: an ordinary not-yet-created target
+    }
+    if (stat.isDirectory()) continue;
+    return stat.isSymbolicLink()
+      ? { path: relativePath, content: SYMLINK_CONTENT_MARKER }
+      : { path: relativePath, content: fs.readFileSync(absolute, 'utf-8') };
+  }
+  return null;
+}
+
 /**
  * Real `ReadExistingContentFn` — every real file already on disk under a
  * project-relative `target` (which may legitimately be `.`, the project
@@ -182,6 +218,20 @@ export function createFsReadInstalledContentFn(repoRoot: string): ReadInstalledC
 export function createFsReadExistingContentFn(repoRoot: string): ReadExistingContentFn {
   return async function readExistingContent(target: string): Promise<ContentItem[]> {
     const absolute = path.join(repoRoot, target);
+    // A component of `target`'s own path, at or above it, may be occupied by
+    // something that is not a directory. Canonicalization
+    // (`createFsCanonicalizeTargetFn`, `./fs-project-io.ts`) proves `target`
+    // resolves inside the project root and resolves every symlink along the
+    // way, but it never asserts that each component IS a directory, so a
+    // regular file introduced since registration survives it untouched.
+    // Nothing can be created beneath such a component, so reporting it here —
+    // at its own project-relative path, as the entry that occupies it — is
+    // what lets reconciliation refuse the payload paths beneath it by name
+    // (`scaffold/existing-content.ts`'s `findBadAncestorComponent`) instead of
+    // letting the write reach the filesystem and come back as a bare `ENOTDIR`
+    // the pipeline can only report as an internal failure.
+    const blocked = blockingComponentOf(repoRoot, target);
+    if (blocked !== null) return [blocked];
     if (!fs.existsSync(absolute)) return [];
     // `target` itself is the walk's root, so items come back template-root-
     // relative already; re-root them under `target` here (never `.`, the

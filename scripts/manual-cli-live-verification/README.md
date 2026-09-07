@@ -35,8 +35,10 @@ mkdir -p /tmp/frontx-live/fresh && cd /tmp/frontx-live/fresh
 CLI=/absolute/path/to/gears-frontx/packages/cli/dist/cli.js
 ```
 
-A note on `--json`: pipe it to a file before parsing. A plan or delete listing runs past 64 KB and a
-shell pipeline truncates it mid-string, which looks like malformed JSON from the CLI.
+A note on `--json`: redirect it to a file before parsing. A plan or delete listing can run well past
+one pipe buffer, and a file is easier to inspect byte-for-byte with `jq`/`cat` than a terminal — the
+CLI itself waits for the full write to complete before exiting, so a full-reading pipe or redirect
+always receives the complete payload regardless of size.
 
 ```bash
 node "$CLI" delete . --dry-run --json > /tmp/plan.json

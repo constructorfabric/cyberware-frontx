@@ -251,6 +251,10 @@ describe('validateUpgrade (cpt-frontx-algo-upgrade-changeset-validate)', () => {
         { target: 'app2', path: 'app2/blocked.ts' },
       ]),
       uncomparableConflicts: [{ target: 'app2', path: 'app2/blocked.ts' }],
+      // Names the specific component blamed — the leaf itself, since no
+      // ancestor was involved — so a developer reads what is actually wrong
+      // on disk rather than walking the path by hand.
+      uncomparableCauses: [{ target: 'app2', path: 'app2/blocked.ts', component: 'app2/blocked.ts', kind: 'directory' }],
     });
     // Each cause is named with its own remedy, in one sentence per cause —
     // never collapsed into a single disjunction a reader has to guess from.
@@ -258,6 +262,7 @@ describe('validateUpgrade (cpt-frontx-algo-upgrade-changeset-validate)', () => {
     expect(result.message).toContain('cannot be compared against the payload at all');
     expect(result.message).toContain('app1/drift.ts');
     expect(result.message).toContain('app2/blocked.ts');
+    expect(result.message).toContain('a directory stands at the path');
   });
 
   it('refuses INVALID_PATH, ahead of CONTENT_CONFLICT, when an ancestor symlink resolves outside the project root', async () => {
@@ -299,6 +304,33 @@ describe('validateUpgrade (cpt-frontx-algo-upgrade-changeset-validate)', () => {
     // The unrelated CONTENT_CONFLICT on app2 is never reported: containment
     // is checked, and refused, before content.
     expect(result.message).not.toContain('app2/drift.ts');
+  });
+
+  // The LEAF itself, not only an ancestor, can be a symlink whose resolved
+  // target escapes the project root — `apply`'s own pre-flight containment
+  // check already reports `INVALID_PATH` for this identical on-disk shape
+  // (it resolves the whole absolute path, symlinks included); before this
+  // fix `classifyTarget` only ever consulted `canonicalizeFn` for a bad
+  // ANCESTOR, so the identical leaf shape refused with `CONTENT_CONFLICT`
+  // instead — the wrong code for the more fundamental problem.
+  it('refuses INVALID_PATH when the LEAF itself is a symlink whose resolved target escapes the project root', async () => {
+    const entry = baseEntry({ targets: ['app'] });
+    const { resolvePayload } = makeResolvePayload({
+      'origin-a': payload({ origin: 'origin-a', version: '1.0.0', files: new Map([['leaf.txt', 'old']]) }),
+      'origin-b': payload({ origin: 'origin-b', version: '2.0.0', files: new Map([['leaf.txt', 'new']]) }),
+    });
+    const readDiskEntry = fakeReadDiskEntry({ '/repo/app/leaf.txt': symlinkEntry });
+    const canonicalizeFn = (raw: string): string | null => (raw === 'app/leaf.txt' ? null : raw);
+
+    const result = await validateUpgrade(
+      baseInput({ entry, document: makeDocument('my-template', entry), resolvePayload, readDiskEntry, canonicalizeFn }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('INVALID_PATH');
+    expect(result.details).toEqual({ paths: [{ target: 'app', path: 'app/leaf.txt' }] });
+    expect(result.message).toContain('could not be proven to stay inside the project root');
   });
 
   it('refuses TARGET_CONFLICT when newly-claimed ground nests another registered template\'s target', async () => {

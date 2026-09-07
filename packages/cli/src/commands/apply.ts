@@ -372,6 +372,18 @@ async function computePayloadForTarget(
   return payload;
 }
 
+// Names the specific component `cause` blames for making `path` uncomparable
+// — the payload path itself (a symlink stands there), or the offending
+// ancestor directory component (a symlink or a regular file stands where a
+// directory is required) — so a refusal tells a developer, for example,
+// `"app2/dir" is a regular file` rather than leaving them to walk the chain
+// by hand.
+function describePathCause(path: string, cause: { component: string; kind: 'symlink' | 'file' } | undefined): string {
+  if (cause === undefined) return path; // defensive: every uncomparable path carries a cause
+  if (cause.component === path) return `${path} (a symlink stands at the path)`;
+  return `${path} (ancestor "${cause.component}" is a ${cause.kind}, not a directory)`;
+}
+
 // The ONE place the `CONTENT_CONFLICT` message for an unrecorded target's
 // content conflicts is composed — isolated into its own function rather
 // than inlined at the one call site below.
@@ -380,28 +392,34 @@ async function computePayloadForTarget(
 // `ExistingContentPartitions`) unions two internally-distinct causes —
 // content that differs from the payload's declared text
 // (`inst-ec-add-conflict`) and a path that cannot be compared at all because
-// a symlink stands at it or on the way to it (`inst-ec-add-symlink-
-// conflict`) — into one flat list (`contentConflicts`/`paths` here).
-// `uncomparablePaths` (same type) is the SUBSET of that list caused by the
-// symlink case — populated at `inst-ec-add-symlink-conflict`, never at
-// `inst-ec-add-conflict` — so this function can partition `paths` by
-// membership in it: a path the symlink branch refused is named as
-// uncomparable, everything else as differing, and a developer is never sent
-// looking for a content difference that does not exist. Either clause is
-// omitted entirely when its list is empty — a batch refused for one cause
-// alone reads as one sentence about that cause, not a disjunction inviting
-// the reader to guess.
-function describeContentConflictCause(paths: readonly string[], uncomparable: readonly string[]): string {
+// a symlink or a regular file stands at it or on the way to it
+// (`inst-ec-add-symlink-conflict`) — into one flat list
+// (`contentConflicts`/`paths` here). `uncomparablePaths` (same type) is the
+// SUBSET of that list caused by the latter case — populated at
+// `inst-ec-add-symlink-conflict`, never at `inst-ec-add-conflict` — so this
+// function can partition `paths` by membership in it: a path that branch
+// refused is named as uncomparable, together with the specific component
+// `uncomparableCauses` blames, everything else as differing, and a developer
+// is never sent looking for a content difference that does not exist. Either
+// clause is omitted entirely when its list is empty — a batch refused for
+// one cause alone reads as one sentence about that cause, not a disjunction
+// inviting the reader to guess.
+function describeContentConflictCause(
+  paths: readonly string[],
+  uncomparable: readonly string[],
+  uncomparableCauses: readonly { path: string; component: string; kind: 'symlink' | 'file' }[],
+): string {
   const uncomparableSet = new Set(uncomparable);
   const differing = paths.filter((candidate) => !uncomparableSet.has(candidate));
+  const causeByPath = new Map(uncomparableCauses.map((cause) => [cause.path, cause]));
   const clauses: string[] = [];
   if (differing.length > 0) {
     clauses.push(`differs from what the template's payload declares at: ${differing.join(', ')}`);
   }
   if (uncomparable.length > 0) {
     clauses.push(
-      'cannot be compared against the payload at all — a symlink stands at the path, or on the way to it — at: ' +
-        `${uncomparable.join(', ')}`,
+      'cannot be compared against the payload at all: ' +
+        uncomparable.map((path) => describePathCause(path, causeByPath.get(path))).join(', '),
     );
   }
   return `Aborted — existing content ${clauses.join('; and it ')}; nothing written.`;
@@ -707,6 +725,12 @@ export async function runApplyPipeline(
   // (or above) the path rather than because its content differs — see the
   // refusal's own comment below for why the distinction reaches the report.
   const uncomparableConflictPaths: string[] = [];
+  // One entry per `uncomparableConflictPaths` member, naming the specific
+  // component (the path itself, or an ancestor) that made it so — see
+  // `describePathCause` above and `ExistingContentPartitions.uncomparableCauses`
+  // (`scaffold/existing-content.ts`) for why the refusal names each path's
+  // own cause rather than leaving a developer to find it.
+  const uncomparableCauses: { path: string; component: string; kind: 'symlink' | 'file' }[] = [];
   const undecidedAdditionalPaths: string[] = [];
   // `--adopt-existing`'s own contract is to leave an undeclared on-disk path
   // untouched — but the real existing-content walk (`adapters/fs-existing-
@@ -738,6 +762,7 @@ export async function runApplyPipeline(
     identicalByEntry.set(entry, new Set(partitions.identicalFiles));
     contentConflictPaths.push(...partitions.contentConflicts);
     uncomparableConflictPaths.push(...partitions.uncomparablePaths);
+    uncomparableCauses.push(...partitions.uncomparableCauses);
     if (!adoptExisting) {
       undecidedAdditionalPaths.push(...partitions.additionalPaths);
     } else if (partitions.additionalPaths.length > 0) {
@@ -860,10 +885,10 @@ export async function runApplyPipeline(
         // guess. `details` carries the subset too: a machine caller acts
         // differently on "resolve this link" than on "reconcile this edit",
         // and could not tell them apart from the union alone.
-        describeContentConflictCause(contentConflictPaths, uncomparableConflictPaths),
+        describeContentConflictCause(contentConflictPaths, uncomparableConflictPaths, uncomparableCauses),
       details:
         uncomparableConflictPaths.length > 0
-          ? { paths: contentConflictPaths, uncomparablePaths: uncomparableConflictPaths }
+          ? { paths: contentConflictPaths, uncomparablePaths: uncomparableConflictPaths, uncomparableCauses }
           : { paths: contentConflictPaths },
     };
     // @cpt-end:cpt-frontx-flow-cli-scaffolding-add-template:p1:inst-add-return-existing-conflict

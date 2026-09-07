@@ -485,6 +485,73 @@ describe('classifyTarget (cpt-frontx-algo-upgrade-changeset-classify)', () => {
     expect(result.escapingPaths).toEqual([]);
   });
 
+  // --- LEAF symlink escaping the project root: `apply`'s own per-payload-
+  // path containment check reports this as `INVALID_PATH` (it resolves the
+  // whole absolute path, symlinks included); before this fix classification
+  // reported it as an ordinary `CONTENT_CONFLICT`, since only an ANCESTOR
+  // symlink's escape was ever checked — the leaf's own `diskEntry.kind ===
+  // 'symlink'` branch never consulted `canonicalizeFn` at all. Both engines
+  // must agree.
+
+  it("reports the LEAF itself as escaping when canonicalizeFn proves its own resolved target leaves the project root", async () => {
+    const result = await classifyTarget(
+      baseInput({
+        baseline: payload({ 'leaf.txt': 'old' }),
+        candidate: payload({ 'leaf.txt': 'new' }),
+        readDiskEntry: fakeReadDiskEntry({ '/repo/packages/app/leaf.txt': symlinkEntry }),
+        canonicalizeFn: (raw) => (raw === 'packages/app/leaf.txt' ? null : raw),
+      }),
+    );
+
+    expect(result.conflictPaths).toEqual(['packages/app/leaf.txt']);
+    expect(result.uncomparablePaths).toEqual(['packages/app/leaf.txt']);
+    expect(result.escapingPaths).toEqual(['packages/app/leaf.txt']);
+  });
+
+  it('does not mark a LEAF symlink resolving inside the project as escaping', async () => {
+    const result = await classifyTarget(
+      baseInput({
+        baseline: payload({ 'leaf.txt': 'old' }),
+        candidate: payload({ 'leaf.txt': 'new' }),
+        readDiskEntry: fakeReadDiskEntry({ '/repo/packages/app/leaf.txt': symlinkEntry }),
+        canonicalizeFn: identityCanonicalize,
+      }),
+    );
+
+    expect(result.uncomparablePaths).toEqual(['packages/app/leaf.txt']);
+    expect(result.escapingPaths).toEqual([]);
+  });
+
+  // --- uncomparableCauses: naming the specific offending component --------
+
+  it('names the leaf itself as the cause when the leaf is a directory or a symlink', async () => {
+    const result = await classifyTarget(
+      baseInput({
+        baseline: payload({}),
+        candidate: payload({ 'leaf.txt': 'new' }),
+        readDiskEntry: fakeReadDiskEntry({ '/repo/packages/app/leaf.txt': directoryEntry }),
+      }),
+    );
+
+    expect(result.uncomparableCauses).toEqual([
+      { path: 'packages/app/leaf.txt', component: 'packages/app/leaf.txt', kind: 'directory' },
+    ]);
+  });
+
+  it('names the offending ancestor, not the leaf, when an ancestor is the bad component', async () => {
+    const result = await classifyTarget(
+      baseInput({
+        baseline: payload({}),
+        candidate: payload({ 'vendor/lib.ts': 'content' }),
+        readDiskEntry: fakeReadDiskEntry({ '/repo/packages/app/vendor': fileEntry('not-a-directory') }),
+      }),
+    );
+
+    expect(result.uncomparableCauses).toEqual([
+      { path: 'packages/app/vendor/lib.ts', component: 'packages/app/vendor', kind: 'file' },
+    ]);
+  });
+
   // --- 8. an undeclared symlink is never enumerated -----------------------
 
   it('never enumerates, compares, or conflicts on a developer symlink at a path neither payload declares', async () => {

@@ -82,6 +82,21 @@ function describeConflictPaths(conflicts: readonly { target: string; path: strin
   return conflicts.map((conflict) => `${conflict.target}:${conflict.path}`).join(', ');
 }
 
+// Names the specific component `cause` blames for making `target:path`
+// uncomparable, so a developer reads what is actually wrong on disk instead
+// of having to walk the path themselves. `component === path` means the leaf
+// itself is the offender (a directory or a symlink standing exactly where
+// the payload declares a regular file); any other `component` names the
+// offending ancestor between the project root and that leaf.
+function describeCause(target: string, path: string, cause: { component: string; kind: string } | undefined): string {
+  const location = `${target}:${path}`;
+  if (cause === undefined) return location; // defensive: every uncomparable path carries a cause
+  if (cause.component === path) {
+    return `${location} (a ${cause.kind} stands at the path)`;
+  }
+  return `${location} (ancestor "${cause.component}" is a ${cause.kind}, not a directory)`;
+}
+
 // Composes the `CONTENT_CONFLICT` message naming each of the two causes
 // `contentConflicts` unions, with its own remedy — mirroring
 // `commands/apply.ts`'s own `describeContentConflictCause` in shape and
@@ -93,16 +108,20 @@ function describeConflictPaths(conflicts: readonly { target: string; path: strin
 // a symlink or a regular file at an ancestor directory component — has moved
 // nothing "away from" the baseline; telling a developer it did sends them
 // looking for a content difference that does not exist, so that cause is
-// named separately from genuine drift. Either clause is omitted entirely
-// when its own list is empty, so a refusal caused by one class alone reads
-// as one sentence about that cause, not a disjunction inviting a guess.
+// named separately from genuine drift, and each such path is named together
+// with the specific component that blocked it. Either clause is omitted
+// entirely when its own list is empty, so a refusal caused by one class
+// alone reads as one sentence about that cause, not a disjunction inviting a
+// guess.
 function describeConflictCause(
   name: string,
   conflicts: readonly { target: string; path: string }[],
   uncomparable: readonly { target: string; path: string }[],
+  uncomparableCauses: readonly { target: string; path: string; component: string; kind: string }[],
 ): string {
   const uncomparableKeys = new Set(uncomparable.map((conflict) => `${conflict.target}\u0000${conflict.path}`));
   const differing = conflicts.filter((conflict) => !uncomparableKeys.has(`${conflict.target}\u0000${conflict.path}`));
+  const causeByKey = new Map(uncomparableCauses.map((cause) => [`${cause.target}\u0000${cause.path}`, cause]));
   const clauses: string[] = [];
   if (differing.length > 0) {
     clauses.push(
@@ -112,9 +131,10 @@ function describeConflictCause(
   }
   if (uncomparable.length > 0) {
     clauses.push(
-      `${uncomparable.length} file(s) cannot be compared against the payload at all — a directory or a symlink ` +
-        'stands at the path, or a symlink or a regular file stands at an ancestor directory component: ' +
-        describeConflictPaths(uncomparable),
+      `${uncomparable.length} file(s) cannot be compared against the payload at all: ` +
+        uncomparable
+          .map((conflict) => describeCause(conflict.target, conflict.path, causeByKey.get(`${conflict.target}\u0000${conflict.path}`)))
+          .join(', '),
     );
   }
   return `"${name}"'s upgrade was refused: ${clauses.join('; and ')}.`;
@@ -403,6 +423,12 @@ export async function validateUpgrade(input: ValidateInput): Promise<ValidateOut
   // `commands/apply.ts`'s own pre-flight containment check already settled
   // for the identical on-disk shape on the apply side.
   const escapingConflicts: { target: string; path: string }[] = [];
+  // One entry per `uncomparableConflicts` member, naming the specific
+  // component (the leaf itself, or an ancestor) that made it uncomparable —
+  // see `ClassifyResult.uncomparableCauses` and `describeCause` above for why
+  // the report names each path's own cause rather than leaving a developer
+  // to find it.
+  const uncomparableCauses: { target: string; path: string; component: string; kind: string }[] = [];
   const targetConflicts: { target: string; contestingTarget: string; contestingTemplateName: string }[] = [];
 
   // @cpt-begin:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-foreach-target
@@ -426,10 +452,13 @@ export async function validateUpgrade(input: ValidateInput): Promise<ValidateOut
     skipped.push(...result.skipped);
     const uncomparableForTarget = new Set(result.uncomparablePaths);
     const escapingForTarget = new Set(result.escapingPaths);
+    const causeForTarget = new Map(result.uncomparableCauses.map((cause) => [cause.path, cause]));
     for (const path of result.conflictPaths) {
       contentConflicts.push({ target, path });
       if (uncomparableForTarget.has(path)) uncomparableConflicts.push({ target, path });
       if (escapingForTarget.has(path)) escapingConflicts.push({ target, path });
+      const cause = causeForTarget.get(path);
+      if (cause !== undefined) uncomparableCauses.push({ target, path, component: cause.component, kind: cause.kind });
     }
     for (const nested of result.nestedConflicts) {
       targetConflicts.push({ target, contestingTarget: nested.target, contestingTemplateName: nested.templateName });
@@ -454,8 +483,8 @@ export async function validateUpgrade(input: ValidateInput): Promise<ValidateOut
       code: 'INVALID_PATH',
       message:
         `"${name}"'s upgrade was refused: ${escapingConflicts.length} path(s) could not be proven to stay inside the ` +
-        'project root — an ancestor directory component resolves through a symlink whose target escapes it: ' +
-        `${describeConflictPaths(escapingConflicts)}.`,
+        'project root — the path itself, or an ancestor directory component, resolves through a symlink whose target ' +
+        `escapes it: ${describeConflictPaths(escapingConflicts)}.`,
       details: { paths: escapingConflicts },
     };
     // @cpt-end:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-return-escaping-ancestor
@@ -468,10 +497,10 @@ export async function validateUpgrade(input: ValidateInput): Promise<ValidateOut
     return {
       ok: false,
       code: 'CONTENT_CONFLICT',
-      message: describeConflictCause(name, contentConflicts, uncomparableConflicts),
+      message: describeConflictCause(name, contentConflicts, uncomparableConflicts, uncomparableCauses),
       details:
         uncomparableConflicts.length > 0
-          ? { conflicts: contentConflicts, uncomparableConflicts }
+          ? { conflicts: contentConflicts, uncomparableConflicts, uncomparableCauses }
           : { conflicts: contentConflicts },
     };
     // @cpt-end:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-return-target-fail

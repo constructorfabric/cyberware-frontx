@@ -1,7 +1,11 @@
 // @cpt-algo:cpt-frontx-algo-cli-scaffolding-existing-content:p1
-import { describe, expect, it } from 'vitest';
+import path from 'node:path';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { afterEach, describe, expect, it } from 'vitest';
 import { reconcileExistingContent, SYMLINK_CONTENT_MARKER } from '../scaffold/existing-content';
 import { computeExclusionRoots } from '../scaffold/effective-ownership';
+import { createFsReadExistingContentFn } from '../adapters/fs-existing-content';
 import type { ContentItem } from '../scaffold/types';
 import type { ReadExistingContentFn, ReadInstalledContentFn } from '../scaffold/existing-content';
 
@@ -25,7 +29,13 @@ describe('reconcileExistingContent', () => {
       readExistingContent: fakeReadExistingContent([]),
     });
 
-    expect(result).toEqual({ uncomparablePaths: [], identicalFiles: [], contentConflicts: [], additionalPaths: [] });
+    expect(result).toEqual({
+      uncomparablePaths: [],
+      uncomparableCauses: [],
+      identicalFiles: [],
+      contentConflicts: [],
+      additionalPaths: [],
+    });
   });
 
   it('classifies a payload path whose on-disk content matches exactly as identicalFiles', async () => {
@@ -273,6 +283,40 @@ describe('reconcileExistingContent', () => {
     expect(result.additionalPaths.sort()).toEqual(['app/dir', 'app/realdir/file.txt']);
   });
 
+  // A component at or ABOVE the target can be occupied by a regular file too,
+  // and nothing can be created beneath it. Canonicalizing the target proves it
+  // resolves inside the project root; it does not prove every component of it
+  // is a directory, so the walk reaches the root rather than stopping at the
+  // target's own depth.
+  it('reports a payload path as contentConflicts when the target itself is occupied by a regular file', async () => {
+    const result = await reconcileExistingContent({
+      target: 'dst',
+      exclusionRoots: [],
+      installedContentPath: 'inv/t',
+      readInstalledContent: fakeReadInstalledContent([{ path: 'pkg/z.txt', content: 'FROM-PAYLOAD' }]),
+      // What the real read reports for this shape: the blocking component
+      // itself, at its own project-relative path.
+      readExistingContent: fakeReadExistingContent([{ path: 'dst', content: 'FILE-AT-TARGET' }]),
+    });
+
+    expect(result.contentConflicts).toEqual(['dst/pkg/z.txt']);
+    expect(result.uncomparablePaths).toEqual(['dst/pkg/z.txt']);
+    expect(result.identicalFiles).toEqual([]);
+  });
+
+  it('reports a payload path as contentConflicts when a component ABOVE the target is a regular file', async () => {
+    const result = await reconcileExistingContent({
+      target: 'parent/child',
+      exclusionRoots: [],
+      installedContentPath: 'inv/t',
+      readInstalledContent: fakeReadInstalledContent([{ path: 'pkg/z.txt', content: 'FROM-PAYLOAD' }]),
+      readExistingContent: fakeReadExistingContent([{ path: 'parent', content: 'FILE-ABOVE-TARGET' }]),
+    });
+
+    expect(result.contentConflicts).toEqual(['parent/child/pkg/z.txt']);
+    expect(result.uncomparablePaths).toEqual(['parent/child/pkg/z.txt']);
+  });
+
   // The other half of the same distinction: an ordinary differing file is a
   // content conflict and is NOT named uncomparable, so a refusal listing
   // both causes attributes each path to the right one.
@@ -355,5 +399,155 @@ describe('reconcileExistingContent', () => {
     expect(result.identicalFiles).toEqual(['app/src/index.ts']);
     expect(result.contentConflicts).toEqual([]);
     expect(result.additionalPaths).toEqual(['other/link']);
+  });
+
+  // --- a REGULAR FILE standing where a directory is required, not only a
+  // symlink — the real `readExistingContent` walk never descends into a
+  // regular file either (there is nothing beneath a file to descend into),
+  // so it reports the file itself, at its own path, exactly like a symlinked
+  // directory — and a payload path beneath it is exactly as invisible to the
+  // two-map lookup as one beneath a symlink is. Before this fix, only a
+  // `SYMLINK_CONTENT_MARKER` entry counted as an obstruction; an ordinary
+  // file entry at the identical position was invisible to the ancestor walk,
+  // so the payload path underneath it looked like nothing on disk, and
+  // `commands/apply.ts` reached its own `writeFileFn` and failed with a raw
+  // `ENOTDIR: not a directory, mkdir ...` — exit 2, `INTERNAL` — rather than
+  // this module's own structured `CONTENT_CONFLICT`.
+
+  it('reports a payload path as contentConflicts when a directory ancestor is an ordinary REGULAR FILE, never a silent no-op', async () => {
+    const roots = computeExclusionRoots({ target: '.', excludedSubtrees: [], projectOwnedRoots: [] });
+
+    const result = await reconcileExistingContent({
+      target: '.',
+      exclusionRoots: roots,
+      installedContentPath: '/inventory/my-template',
+      readInstalledContent: fakeReadInstalledContent([{ path: 'app2/dir/sub/a.txt', content: 'TEMPLATE-CONTENT' }]),
+      readExistingContent: fakeReadExistingContent([
+        // A plain file stands where a directory is required — never
+        // descended into by the real walk, so `app2/dir/sub/a.txt` never
+        // appears as its own entry.
+        { path: 'app2/dir', content: 'PROTECTED-ANCESTOR-FILE' },
+      ]),
+    });
+
+    expect(result.contentConflicts).toEqual(['app2/dir/sub/a.txt']);
+    expect(result.uncomparablePaths).toEqual(['app2/dir/sub/a.txt']);
+    expect(result.uncomparableCauses).toEqual([{ path: 'app2/dir/sub/a.txt', component: 'app2/dir', kind: 'file' }]);
+    expect(result.identicalFiles).toEqual([]);
+    // The file itself is foreign, undeclared ground — reported as
+    // `additionalPaths`, never silently overwritten or adopted.
+    expect(result.additionalPaths).toEqual(['app2/dir']);
+  });
+
+  it('catches a regular-file ancestor two directory levels above the payload path, not only the immediate parent', async () => {
+    const roots = computeExclusionRoots({ target: 'pkg', excludedSubtrees: [], projectOwnedRoots: [] });
+
+    const result = await reconcileExistingContent({
+      target: 'pkg',
+      exclusionRoots: roots,
+      installedContentPath: '/inventory/my-template',
+      readInstalledContent: fakeReadInstalledContent([{ path: 'sub/dir/deep/file.txt', content: 'x' }]),
+      readExistingContent: fakeReadExistingContent([{ path: 'pkg/sub/dir', content: 'PROTECTED-ANCESTOR-FILE' }]),
+    });
+
+    expect(result.contentConflicts).toEqual(['pkg/sub/dir/deep/file.txt']);
+    expect(result.uncomparableCauses).toEqual([{ path: 'pkg/sub/dir/deep/file.txt', component: 'pkg/sub/dir', kind: 'file' }]);
+  });
+
+  // The SHALLOWEST bad ancestor wins — it is the one that actually blocks
+  // the path, since nothing beneath a non-directory entry can exist on a
+  // real filesystem regardless of what a deeper ancestor might otherwise
+  // report; the deeper "symlink" entry cannot honestly coexist with it on a
+  // real filesystem, but the deterministic precedence is still worth pinning
+  // so the two causes can never both fire for the same path.
+  it('names the shallowest bad ancestor when checking a payload path several levels deep', async () => {
+    const roots = computeExclusionRoots({ target: '.', excludedSubtrees: [], projectOwnedRoots: [] });
+
+    const result = await reconcileExistingContent({
+      target: '.',
+      exclusionRoots: roots,
+      installedContentPath: '/inventory/my-template',
+      readInstalledContent: fakeReadInstalledContent([{ path: 'a/b/c/leaf.txt', content: 'x' }]),
+      readExistingContent: fakeReadExistingContent([{ path: 'a/b', content: 'SHALLOW-FILE' }]),
+    });
+
+    expect(result.uncomparableCauses).toEqual([{ path: 'a/b/c/leaf.txt', component: 'a/b', kind: 'file' }]);
+  });
+
+  // A symlink AT the payload path itself is still named with `component`
+  // equal to `path` — the leaf-symlink case `inst-ec-if-symlink-component`
+  // already covered before this fix, unaffected by broadening the ancestor
+  // check to non-symlink entries.
+  it('names the payload path itself as the cause when the symlink stands exactly there, not an ancestor', async () => {
+    const result = await reconcileExistingContent({
+      target: '.',
+      exclusionRoots: [],
+      installedContentPath: 'inv/t',
+      readInstalledContent: fakeReadInstalledContent([{ path: 'app/leaf.txt', content: 'TEMPLATE' }]),
+      readExistingContent: fakeReadExistingContent([{ path: 'app/leaf.txt', content: SYMLINK_CONTENT_MARKER }]),
+    });
+
+    expect(result.uncomparableCauses).toEqual([{ path: 'app/leaf.txt', component: 'app/leaf.txt', kind: 'symlink' }]);
+  });
+});
+
+// --- `target` itself is no longer a directory, against a REAL filesystem --
+//
+// `apply`'s own pre-flight canonicalization (`createFsCanonicalizeTargetFn`,
+// `../adapters/fs-project-io.ts`) proves a batch's target resolves inside the
+// project root and resolves every symlink along its own path, but it never
+// verifies every path component is actually a directory — a regular file
+// standing at (or above) `target` survives that canonicalization untouched.
+// Before this fix, `createFsReadExistingContentFn` called `fs.readdirSync`
+// on `target` unconditionally once it existed at all, which throws `ENOTDIR`
+// for a non-directory `target` — uncaught, since this reconciliation step
+// runs in `runApplyPipeline` BEFORE its own try/catch begins, bypassing every
+// structured refusal the pipeline otherwise builds. A fake `ReadExistingContentFn`
+// cannot honestly exercise this (it never calls `fs.readdirSync` at all), so
+// this is pinned against the real adapter.
+describe('createFsReadExistingContentFn — target itself is not a directory', () => {
+  let repoRoot: string | undefined;
+
+  afterEach(async () => {
+    if (repoRoot !== undefined) {
+      await rm(repoRoot, { recursive: true, force: true });
+      repoRoot = undefined;
+    }
+  });
+
+  it('reports the blocking component itself, rather than throwing ENOTDIR, when target is a regular file', async () => {
+    repoRoot = await mkdtemp(path.join(tmpdir(), 'frontx-existing-content-target-file-'));
+    await mkdir(path.join(repoRoot, 'app2'), { recursive: true });
+    await writeFile(path.join(repoRoot, 'app2', 'dir'), 'PROTECTED-TARGET-FILE', 'utf-8');
+    const readExistingContent = createFsReadExistingContentFn(repoRoot);
+
+    const items = await readExistingContent('app2/dir');
+
+    // Naming the component is what lets reconciliation refuse the payload
+    // paths beneath it by name. Reporting `[]` would say "nothing is here",
+    // which is the one thing that is not true: something is here, and it is
+    // exactly what makes the target unusable.
+    expect(items).toEqual([{ path: 'app2/dir', content: 'PROTECTED-TARGET-FILE' }]);
+  });
+
+  it('reports the shallowest blocking component when one stands ABOVE the target', async () => {
+    repoRoot = await mkdtemp(path.join(tmpdir(), 'frontx-existing-content-above-target-'));
+    await writeFile(path.join(repoRoot, 'parent'), 'FILE-ABOVE-TARGET', 'utf-8');
+    const readExistingContent = createFsReadExistingContentFn(repoRoot);
+
+    const items = await readExistingContent('parent/child');
+
+    expect(items).toEqual([{ path: 'parent', content: 'FILE-ABOVE-TARGET' }]);
+  });
+
+  it('still walks normally when target is an ordinary directory', async () => {
+    repoRoot = await mkdtemp(path.join(tmpdir(), 'frontx-existing-content-target-dir-'));
+    await mkdir(path.join(repoRoot, 'app'), { recursive: true });
+    await writeFile(path.join(repoRoot, 'app', 'a.txt'), 'content', 'utf-8');
+    const readExistingContent = createFsReadExistingContentFn(repoRoot);
+
+    const items = await readExistingContent('app');
+
+    expect(items).toEqual([{ path: 'app/a.txt', content: 'content' }]);
   });
 });

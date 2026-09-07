@@ -150,12 +150,14 @@ frontx upgrade @acme/starter-repo --restore
 
 The CLI tracks every registered template's origin and applied targets in one
 `.frontx/project.json`, and upgrades each registered template independently.
-`frontx seed` can bootstrap a project from the CLI's own built-in default
-templates in one step, but those defaults are local `path:` origins resolvable
-only inside this monorepo's own checkout — `register` + `apply` is the way to
-start a project anywhere else. See [QUICK_START.md](QUICK_START.md) for the
-full command walkthrough, including `seed`, `delete`, and `ownership`, and
-AI-tooling usage.
+`frontx seed` can register and apply the CLI's own built-in default templates
+in one call, but those defaults are `path:` origins resolved relative to the
+directory being seeded, so a bare empty target has nothing to resolve against
+— the template must already be vendored into it first (see
+[QUICK_START.md](QUICK_START.md) for the exact steps). `register` + `apply` is
+the way to start a project anywhere else, with no vendoring step required. See
+[QUICK_START.md](QUICK_START.md) for the full command walkthrough, including
+`seed`, `delete`, and `ownership`, and AI-tooling usage.
 
 ### The FrontX CLI
 

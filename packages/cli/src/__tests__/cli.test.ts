@@ -1,9 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
+import { Writable } from 'node:stream';
 import {
   parseInvocation,
   helpOutcome,
   usageText,
   run,
+  writeToStream,
   EXIT_SUCCESS,
   EXIT_USER_ERROR,
   EXIT_INTERNAL_ERROR,
@@ -1980,5 +1982,82 @@ describe('dispatch: delete (cpt-frontx-flow-cli-scaffolding-delete-target)', () 
 
     expect(outcome.exitCode).toBe(EXIT_SUCCESS);
     expect(written().templates.foo.targets).toEqual([]);
+  });
+});
+
+// A real `Writable` whose `_write` fails with a caller-supplied error. Going
+// through the base class's actual internals (rather than stubbing `.write`
+// or `.emit` directly) means the SAME two-notification hazard `writeToStream`
+// exists to survive is the one exercised here: Node's own `onwriteError`
+// path both invokes this write's callback with the error AND independently
+// schedules a real `'error'` event for it — there is nothing fake about
+// either notification, only about which destination is failing.
+class FailingWritable extends Writable {
+  constructor(private readonly failure: NodeJS.ErrnoException) {
+    super();
+  }
+  override _write(_chunk: unknown, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+    callback(this.failure);
+  }
+}
+
+function makeErrnoException(code: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(`simulated ${code}`), { code });
+}
+
+// process.stdout/stderr crashing on an unhandled 'error' event is a real,
+// built-in EventEmitter behavior (`cpt-frontx-flow-cli-invocation-run-
+// command`, step 8.1/8.2) — this listens for it directly rather than trusting
+// that a promise settling means nothing else could still bring the process
+// down, since that gap is exactly what the previous fix missed.
+async function runWithUncaughtExceptionCapture<T>(work: () => Promise<T>): Promise<{ result: T; uncaught: unknown[] }> {
+  const uncaught: unknown[] = [];
+  const onUncaught = (error: unknown) => uncaught.push(error);
+  process.on('uncaughtException', onUncaught);
+  try {
+    const result = await work();
+    // An 'error' event Node schedules via `process.nextTick` for the SAME
+    // write failure lands after this function's own callback-driven promise
+    // already resolved; yielding once more gives it a chance to surface
+    // before this assertion is made.
+    await new Promise((resolve) => setImmediate(resolve));
+    return { result, uncaught };
+  } finally {
+    process.off('uncaughtException', onUncaught);
+  }
+}
+
+describe('writeToStream (cpt-frontx-flow-cli-invocation-run-command, step 8)', () => {
+  it('delivers a normal write and resolves "ok"', async () => {
+    const chunks: string[] = [];
+    const stream = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(String(chunk));
+        callback();
+      },
+    });
+
+    const result = await writeToStream(stream, 'payload');
+
+    expect(result).toBe('ok');
+    expect(chunks).toEqual(['payload']);
+  });
+
+  it('treats a broken pipe (EPIPE) as harmless and does not crash the process', async () => {
+    const stream = new FailingWritable(makeErrnoException('EPIPE'));
+
+    const { result, uncaught } = await runWithUncaughtExceptionCapture(() => writeToStream(stream, 'payload'));
+
+    expect(result).toBe('ok');
+    expect(uncaught).toEqual([]);
+  });
+
+  it('reports a non-EPIPE write failure as failed, without crashing the process either', async () => {
+    const stream = new FailingWritable(makeErrnoException('ENOSPC'));
+
+    const { result, uncaught } = await runWithUncaughtExceptionCapture(() => writeToStream(stream, 'payload'));
+
+    expect(result).toBe('failed');
+    expect(uncaught).toEqual([]);
   });
 });

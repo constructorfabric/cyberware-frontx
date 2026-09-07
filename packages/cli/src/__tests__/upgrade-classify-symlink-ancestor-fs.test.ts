@@ -30,6 +30,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { classifyTarget } from '../upgrade/classify';
 import type { ClassifyInput } from '../upgrade/classify';
 import { createFsReadDiskEntryFn } from '../adapters/fs-upgrade-io';
+import { createFsCanonicalizeTargetFn } from '../adapters/fs-project-io';
 import type { ResolvedPayload } from '../upgrade/types';
 
 function payload(files: Record<string, string>): ResolvedPayload {
@@ -284,6 +285,86 @@ describe('classifyTarget against a real filesystem — symlinked ancestor direct
       }
     });
   }
+
+  // --- the escaping branch, pinned against a REAL canonicalizer ----------
+  //
+  // Every scenario above uses `identityCanonicalize` (`raw => raw`), which
+  // can never report an escape — so `escapingPaths`/`INVALID_PATH` (as
+  // opposed to the internal-symlink `CONTENT_CONFLICT` case every scenario
+  // above already pins) was never exercised against a real filesystem here,
+  // only against a fake `canonicalizeFn` in `upgrade-classify.test.ts`. Wired
+  // to the real `createFsCanonicalizeTargetFn` (`../adapters/fs-project-io.ts`
+  // — the same containment resolution `apply`'s own pre-flight uses), for
+  // both shapes that can escape: an ancestor symlink, and the leaf itself.
+
+  it('reports an ancestor symlink whose REAL target escapes the project root as escaping, against the real canonicalizer', async () => {
+    repoRoot = await mkdtemp(path.join(tmpdir(), 'frontx-upgrade-ancestor-escape-'));
+    const outside = await mkdtemp(path.join(tmpdir(), 'frontx-upgrade-outside-'));
+    await writeFile(path.join(outside, 'lib.ts'), 'OUTSIDE-CONTENT', 'utf-8');
+    const ws = path.join(repoRoot, 'workspace');
+    await mkdir(ws, { recursive: true });
+    await symlink(outside, path.join(ws, 'vendor'));
+
+    const result = await classifyTarget(
+      baseInput({
+        baseline: payload({ 'vendor/lib.ts': 'old' }),
+        candidate: payload({ 'vendor/lib.ts': 'new' }),
+        canonicalizeFn: createFsCanonicalizeTargetFn(repoRoot),
+      }),
+    );
+
+    expect(result.conflictPaths).toEqual(['workspace/vendor/lib.ts']);
+    expect(result.uncomparablePaths).toEqual(['workspace/vendor/lib.ts']);
+    expect(result.escapingPaths).toEqual(['workspace/vendor/lib.ts']);
+    expect(result.operations).toEqual([]);
+    expect(await readFile(path.join(outside, 'lib.ts'), 'utf-8')).toBe('OUTSIDE-CONTENT');
+
+    await rm(outside, { recursive: true, force: true });
+  });
+
+  it('reports the LEAF itself as escaping when it is a symlink whose REAL target leaves the project root, against the real canonicalizer', async () => {
+    repoRoot = await mkdtemp(path.join(tmpdir(), 'frontx-upgrade-leaf-escape-'));
+    const outside = await mkdtemp(path.join(tmpdir(), 'frontx-upgrade-outside-'));
+    await writeFile(path.join(outside, 'secret.txt'), 'OUTSIDE-CONTENT', 'utf-8');
+    const ws = path.join(repoRoot, 'workspace');
+    await mkdir(ws, { recursive: true });
+    await symlink(path.join(outside, 'secret.txt'), path.join(ws, 'leaf.txt'));
+
+    const result = await classifyTarget(
+      baseInput({
+        baseline: payload({ 'leaf.txt': 'old' }),
+        candidate: payload({ 'leaf.txt': 'new' }),
+        canonicalizeFn: createFsCanonicalizeTargetFn(repoRoot),
+      }),
+    );
+
+    expect(result.conflictPaths).toEqual(['workspace/leaf.txt']);
+    expect(result.uncomparablePaths).toEqual(['workspace/leaf.txt']);
+    expect(result.escapingPaths).toEqual(['workspace/leaf.txt']);
+    expect(result.operations).toEqual([]);
+    expect(await readFile(path.join(outside, 'secret.txt'), 'utf-8')).toBe('OUTSIDE-CONTENT');
+
+    await rm(outside, { recursive: true, force: true });
+  });
+
+  it('does NOT report an ancestor symlink whose REAL target stays inside the project root as escaping, against the real canonicalizer', async () => {
+    repoRoot = await mkdtemp(path.join(tmpdir(), 'frontx-upgrade-ancestor-internal-'));
+    const ws = path.join(repoRoot, 'workspace');
+    await mkdir(path.join(ws, 'real-vendor'), { recursive: true });
+    await writeFile(path.join(ws, 'real-vendor', 'lib.ts'), 'old', 'utf-8');
+    await symlink(path.join(ws, 'real-vendor'), path.join(ws, 'vendor'));
+
+    const result = await classifyTarget(
+      baseInput({
+        baseline: payload({ 'vendor/lib.ts': 'old' }),
+        candidate: payload({ 'vendor/lib.ts': 'new' }),
+        canonicalizeFn: createFsCanonicalizeTargetFn(repoRoot),
+      }),
+    );
+
+    expect(result.uncomparablePaths).toEqual(['workspace/vendor/lib.ts']);
+    expect(result.escapingPaths).toEqual([]);
+  });
 
   // --- control: an upgrade whose payload never passes through the bad
   // ancestor at all must classify normally, refusing nothing --------------

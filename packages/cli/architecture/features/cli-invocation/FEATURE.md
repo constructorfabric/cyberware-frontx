@@ -72,6 +72,7 @@ User-facing interactions that start with an actor and describe the end-to-end fl
 **Error Scenarios**:
 - The dispatched behavior reports a user/input error (for example an unresolvable template reference or a refused conflicting assembly): the entrypoint surfaces the behavior's report and exits with the user-error code.
 - The dispatched behavior fails unexpectedly: the entrypoint surfaces a failure and exits with the internal-error code.
+- The stream a command's output is being written to fails partway through delivery: a reader that closed its end early (a broken pipe) is not the dispatched behavior's failure and does not change the exit code it computed; any other write failure is surfaced as the internal-error code instead, since the outcome already computed can no longer be trusted as fully delivered.
 - In `--json` mode, the dispatched behavior would otherwise require an interactive decision the caller must make (for example `delete` confirming a removal): the entrypoint never prompts and never reads stdin; it renders the decision as `{"ok": false, "error": {"code": "CONFIRMATION_REQUIRED", ...}}` on stdout and exits with the user-error code, exactly as any other `ok: false` outcome.
 
 **Steps**:
@@ -91,6 +92,10 @@ User-facing interactions that start with an actor and describe the end-to-end fl
 6. [x] - `p1` - The entrypoint maps the dispatched behavior's outcome to an exit code — success, user error, or internal error — identically whether or not `--json` was requested. - `inst-run-map-exit`
 7. [x] - `p1` - **IF** `--json` was requested, the entrypoint renders the dispatched behavior's outcome as the single envelope value on stdout — `{"ok": true, "data": {...}}` or `{"ok": false, "error": {"code", "message", "details"}}` — as the only content on that stream; **ELSE** it renders the same outcome as the human-readable form. - `inst-run-render-output`
 8. [x] - `p1` - **RETURN** the process exits with the mapped exit code once the rendered output has fully reached its stream — the exit never races a backpressured pipe or redirect, regardless of payload size — after the dispatched behavior completes or reports its outcome. - `inst-run-return`
+   1. [x] - `p1` - **IF** the stream's reader closes its end before that delivery completes (a broken pipe) - `inst-run-return-if-broken-pipe`
+      1. [x] - `p1` - the process still exits with the exit code already mapped in step 6; the closed reader is the reader's own decision, not a failure of the dispatched behavior. - `inst-run-return-broken-pipe-tolerate`
+   2. [x] - `p1` - **IF** the write fails for any other reason - `inst-run-return-if-write-failed`
+      1. [x] - `p1` - the process exits with the internal-error code instead of the one mapped in step 6, since the outcome already computed can no longer be trusted as fully delivered. - `inst-run-return-write-failed-escalate`
 
 ### Show Usage or Handle an Unrecognized Command
 
@@ -235,6 +240,7 @@ The system **MUST**, when a dispatched command is invoked with `--json`, render 
 - [x] Running the executable with an unrecognized command token emits usage (or, in `--json` mode, `{"ok": false, "error": {"code": "INVALID_INPUT", ...}}`) and exits with the user-error code. (`target`)
 - [x] Running `help` (or `-h`/`--help`) with additional, unrecognized trailing arguments is refused with `INVALID_INPUT` and the user-error exit code, never the success code a clean help request reaches. (`target`)
 - [x] A dispatched behavior's user/input failure exits with the user-error code and an unexpected failure exits with the internal-error code. (`target`) — every dispatched command feature is now delivered, and the mapping is covered by the dispatcher's own tests, including an unexpected failure exiting with the internal-error code
+- [x] A large `--json` payload piped into a reader that stops reading before EOF (for example `| head`) does not crash the process or print an unhandled-error stack, and the process exits with the exit code the dispatched behavior computed. (`target`)
 - [x] No command behavior is redefined in this feature; each dispatched behavior is referenced by its canonical ID. (`target`)
 - [x] The command surface is part of `cpt-frontx-interface-cli`; an incompatible change to it requires a major version bump per `cpt-frontx-adr-artifact-versioning-and-distribution`. (`target`)
 - [x] The command surface dispatched matches DESIGN §3.2 "CLI": `install`, `register`, `unregister`, `list`, `update-local`, `validate` (including `validate --project`), `assemble`, `apply`, `seed`, `delete`, `upgrade` (including `upgrade --restore`, a flag rather than a second command), `ownership add|remove|list`. (`target`) — the surface named here matches DESIGN, and every command-owning feature it dispatches to is delivered; this AC does not assert those commands are ready, only that this feature's own dispatch table is complete
