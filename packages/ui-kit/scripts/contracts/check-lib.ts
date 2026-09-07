@@ -93,6 +93,44 @@ export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchem
   return { added, removed, narrowed, compatible: removed.length === 0 && narrowed.length === 0 };
 }
 
+// gts-ts's own `checkCompatibility(..., 'backward')` diffs a component's OWN
+// properties/required the same shallow way `diffPassthroughSchema` diffs the
+// passthrough surface - but empirically (see check-lib.compat-e2e.test.ts,
+// M9) its BACKWARD direction only ever flags a prop that both (a) existed in
+// the old schema and (b) was already required there, then disappeared; it
+// never inspects whether a prop gained `required` status (new prop, or an
+// existing optional one tightened), because that shape only shows up in the
+// FORWARD direction's `forward_errors`, which this tool's `compat` command
+// never reads. For a component's PROPS SCHEMA - the shape a consumer's call
+// site must satisfy - "does an old caller's props object still validate"
+// is exactly what `is_backward_compatible` claims to answer, so a newly
+// required prop (or an old prop simply vanishing, required or not - a rename
+// looks exactly like this) is a real backward break the library's own
+// implementation misses. This closes that gap locally, the same way
+// `diffPassthroughSchema` above closes the analogous gap for forwarded props.
+export interface OwnPropsSchemaLike {
+  properties?: Record<string, unknown>;
+  required?: string[];
+}
+
+export interface OwnPropsDiff {
+  removedProps: string[];
+  newlyRequiredProps: string[];
+  compatible: boolean;
+}
+
+export function diffOwnPropsSchema(oldSchema: OwnPropsSchemaLike, newSchema: OwnPropsSchemaLike): OwnPropsDiff {
+  const oldProps = oldSchema.properties ?? {};
+  const newProps = newSchema.properties ?? {};
+  const oldRequired = new Set(oldSchema.required ?? []);
+  const newRequired = new Set(newSchema.required ?? []);
+
+  const removedProps = Object.keys(oldProps).filter((name) => !(name in newProps));
+  const newlyRequiredProps = [...newRequired].filter((name) => !oldRequired.has(name));
+
+  return { removedProps, newlyRequiredProps, compatible: removedProps.length === 0 && newlyRequiredProps.length === 0 };
+}
+
 export interface CompatDecisionInput {
   component: string;
   oldMajor: number;
@@ -100,6 +138,7 @@ export interface CompatDecisionInput {
   gtsBackwardCompatible: boolean;
   gtsBackwardErrors: string[];
   passthroughDiff?: PassthroughDiff;
+  ownPropsDiff?: OwnPropsDiff;
 }
 
 export interface CompatVerdict {
@@ -108,16 +147,17 @@ export interface CompatVerdict {
 }
 
 // The decision rule T4 specifies: a contract that is backward-incompatible
-// (by either signal - gts-ts's own schema-body comparison, or the
-// passthrough structural diff above) is only acceptable when the contract
-// major in its $id moved, because that is the one visible acknowledgement
-// that consumers built against the old major are expected to break. An
-// unchanged major carrying an incompatible change would ship a props schema
-// that silently rejects code that used to validate.
+// (by any signal - gts-ts's own schema-body comparison, the passthrough
+// structural diff above, or the own-props diff above) is only acceptable
+// when the contract major in its $id moved, because that is the one visible
+// acknowledgement that consumers built against the old major are expected to
+// break. An unchanged major carrying an incompatible change would ship a
+// props schema that silently rejects code that used to validate.
 export function decideCompat(input: CompatDecisionInput): CompatVerdict {
-  const { component, oldMajor, newMajor, gtsBackwardCompatible, gtsBackwardErrors, passthroughDiff } = input;
+  const { component, oldMajor, newMajor, gtsBackwardCompatible, gtsBackwardErrors, passthroughDiff, ownPropsDiff } = input;
   const passthroughIncompatible = passthroughDiff !== undefined && !passthroughDiff.compatible;
-  const incompatible = !gtsBackwardCompatible || passthroughIncompatible;
+  const ownPropsIncompatible = ownPropsDiff !== undefined && !ownPropsDiff.compatible;
+  const incompatible = !gtsBackwardCompatible || passthroughIncompatible || ownPropsIncompatible;
 
   if (!incompatible) {
     return { status: 'pass', notes: [`${component}: backward compatible`] };
@@ -125,6 +165,8 @@ export function decideCompat(input: CompatDecisionInput): CompatVerdict {
 
   const reasons = [
     ...gtsBackwardErrors,
+    ...(ownPropsDiff?.removedProps.map((prop) => `own prop "${prop}" removed`) ?? []),
+    ...(ownPropsDiff?.newlyRequiredProps.map((prop) => `own prop "${prop}" became required`) ?? []),
     ...(passthroughDiff?.removed.map((prop) => `passthrough: prop "${prop}" removed`) ?? []),
     ...(passthroughDiff?.narrowed.map((entry) => `passthrough: prop "${entry.prop}" ${entry.reason}`) ?? []),
   ];
@@ -169,9 +211,14 @@ export function synthesizeVersionedId(id: string, minor: number): string {
 
 // Maps a list of changed file paths (package-relative, as `git diff
 // --relative` reports them) to the component directories under
-// src/components/ they touch. A file outside src/components/ - compile.ts,
-// package.json, a fixture - maps to nothing, which is the correct answer:
-// the guard only cares about components, not the tooling that compiles them.
+// src/components/ they touch. A file outside src/components/ - a fixture, a
+// test - maps to nothing here, which is the correct answer for THIS
+// function: it only ever answers "which directory's own files changed",
+// never "which components does this change affect" - a change under
+// scripts/contracts/** that reshapes every compiled contract (the compiler,
+// the extractor, the metamodel, a generated passthrough file) is a
+// DIFFERENT question, answered by touchesSharedContractTooling below, not by
+// widening this regex.
 export function mapChangedFilesToComponents(changedFiles: string[]): Set<string> {
   const components = new Set<string>();
   for (const file of changedFiles) {
@@ -181,16 +228,95 @@ export function mapChangedFilesToComponents(changedFiles: string[]): Set<string>
   return components;
 }
 
+const CONTRACTS_TOOLING_PREFIX = 'scripts/contracts/';
+
+// Files under scripts/contracts/ that are neither shared build/extraction
+// logic nor a hand-authored input to it: the guard/compat/coverage
+// implementation itself (a bug fix here cannot change what any component
+// compiles to - re-checking every covered component because check.ts
+// changed would be circular, since check.ts is what performs that check),
+// its own unit tests, and prose. Everything else directly under
+// scripts/contracts/ (compile.ts, extract.ts, ids.ts, freshness.ts,
+// testing.ts, base.component.json, ui-component.meta.json, every generated
+// passthrough file) participates in producing or comparing EVERY covered
+// component's compiled output, so a change to any of it invalidates the
+// "only the touched directory needs re-checking" assumption mapChangedFilesToComponents
+// makes (M6 - the review's own name for exactly this blind spot).
+const NON_TOOLING_CONTRACTS_FILES = new Set(['check.ts', 'check-lib.ts', 'check-lib.test.ts', 'covered.json', 'PILOT-NOTES.md']);
+
+// Whether any changed file is shared contract-compiling machinery (see
+// NON_TOOLING_CONTRACTS_FILES above for what is deliberately excluded).
+// check.ts's guard treats "yes" as a reason to re-evaluate freshness for
+// EVERY entry in covered.json, not just the components whose own directory
+// changed - a compiler/extractor/metamodel edit can silently reshape a
+// component's compiled contract without touching that component's own
+// files at all.
+export function touchesSharedContractTooling(changedFiles: string[]): boolean {
+  return changedFiles.some((file) => {
+    if (!file.startsWith(CONTRACTS_TOOLING_PREFIX)) return false;
+    const rest = file.slice(CONTRACTS_TOOLING_PREFIX.length);
+    if (rest.startsWith('__fixtures__/')) return false;
+    if (rest.endsWith('.test.ts')) return false;
+    return !NON_TOOLING_CONTRACTS_FILES.has(rest);
+  });
+}
+
+// A base-ref contract file `resolveRenameSource` can compare a "not found at
+// this path" unit against - `path` is package-relative (matches
+// `checkCompatForUnit`'s own relPath convention), `id` is the contract's own
+// `$id`, `stem` is the filename with `.contract.json` stripped (the same
+// "stem" `ContractUnit` uses).
+export interface BaseRefContractEntry {
+  path: string;
+  id: string;
+  stem: string;
+}
+
+// Which base-ref contract path (if any) is the right thing to diff a
+// contract unit's CURRENT compiled JSON against, when the unit's own path
+// did not exist at the base ref (M7). Three escalating signals:
+//  1. git's own rename detection named an old path for this exact new path
+//     (the ordinary case: a plain `git mv` plus content edits within git's
+//     similarity threshold);
+//  2. a base-ref contract's own $id matches the unit's current $id - the id
+//     survives a directory rename even when the accompanying content change
+//     drops file similarity below git's rename threshold, so `-M` alone
+//     would call it a delete+add;
+//  3. a base-ref contract shares the unit's stem under a different path - a
+//     directory rename with enough content churn that neither of the above
+//     caught it, but the two are still "the same component" by name.
+// Undefined means genuinely new: nothing at the base ref plausibly is this
+// contract's prior version, so treating it as new (no baseline to compare
+// against) is the honest answer, not a masked breaking change.
+export function resolveRenameSource(input: {
+  currentPath: string;
+  currentId: string;
+  currentStem: string;
+  renamedFrom?: string;
+  baseContracts: BaseRefContractEntry[];
+}): string | undefined {
+  if (input.renamedFrom) return input.renamedFrom;
+  const byId = input.baseContracts.find((entry) => entry.id === input.currentId && entry.path !== input.currentPath);
+  if (byId) return byId.path;
+  const byStem = input.baseContracts.find((entry) => entry.stem === input.currentStem && entry.path !== input.currentPath);
+  return byStem?.path;
+}
+
 export interface GuardEvaluationInput {
   component: string;
   covered: boolean;
   overlayExists: boolean;
   artifactsFresh: boolean;
+  // False when the component's own directory no longer exists on disk -
+  // touched (git still lists its deleted files) but gone, not merely edited.
+  // Optional and defaulted true so every pre-existing call site (and test)
+  // keeps meaning exactly what it meant before this field existed.
+  componentExists?: boolean;
 }
 
 export interface GuardResult {
   component: string;
-  status: 'covered-ok' | 'covered-violation' | 'uncovered-info';
+  status: 'covered-ok' | 'covered-violation' | 'uncovered-info' | 'component-removed';
   message: string;
 }
 
@@ -201,7 +327,20 @@ export interface GuardResult {
 // promises for Button: an overlay must exist, and the committed artifacts
 // must be exactly what a fresh compile produces.
 export function evaluateGuard(input: GuardEvaluationInput): GuardResult {
-  const { component, covered, overlayExists, artifactsFresh } = input;
+  const { component, covered, overlayExists, artifactsFresh, componentExists = true } = input;
+  // A deleted directory is a designed outcome (M10), not a crash: only a
+  // problem when covered.json still names a component that no longer
+  // exists - an untouched-by-coverage deletion is exactly as uninteresting
+  // as any other uncovered change.
+  if (!componentExists) {
+    return covered
+      ? {
+          component,
+          status: 'component-removed',
+          message: `${component}: directory removed but still listed in covered.json - remove it from covered.json`,
+        }
+      : { component, status: 'uncovered-info', message: `${component}: directory removed - nothing to check` };
+  }
   if (!covered) {
     return {
       component,

@@ -8,12 +8,15 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCoverageReport,
   decideCompat,
+  diffOwnPropsSchema,
   diffPassthroughSchema,
   evaluateGuard,
   extractContractMajor,
   jsonDiff,
   mapChangedFilesToComponents,
+  resolveRenameSource,
   synthesizeVersionedId,
+  touchesSharedContractTooling,
 } from './check-lib';
 
 describe('jsonDiff', () => {
@@ -78,6 +81,33 @@ describe('diffPassthroughSchema', () => {
   });
 });
 
+describe('diffOwnPropsSchema', () => {
+  it('is compatible when nothing was removed and nothing newly became required', () => {
+    const diff = diffOwnPropsSchema({ properties: { label: {} }, required: [] }, { properties: { label: {}, icon: {} }, required: [] });
+    expect(diff).toEqual({ removedProps: [], newlyRequiredProps: [], compatible: true });
+  });
+
+  it('reports a removed own prop regardless of whether it was required', () => {
+    const diff = diffOwnPropsSchema({ properties: { label: {}, icon: {} }, required: [] }, { properties: { label: {} }, required: [] });
+    expect(diff.removedProps).toEqual(['icon']);
+    expect(diff.compatible).toBe(false);
+  });
+
+  it('reports a prop that newly became required, whether it is new or pre-existing', () => {
+    const diff = diffOwnPropsSchema(
+      { properties: { label: {} }, required: [] },
+      { properties: { label: {}, id: {} }, required: ['label', 'id'] },
+    );
+    expect(diff.newlyRequiredProps.sort()).toEqual(['id', 'label']);
+    expect(diff.compatible).toBe(false);
+  });
+
+  it('is unaffected by a prop that was already required and stays required', () => {
+    const diff = diffOwnPropsSchema({ properties: { label: {} }, required: ['label'] }, { properties: { label: {} }, required: ['label'] });
+    expect(diff).toEqual({ removedProps: [], newlyRequiredProps: [], compatible: true });
+  });
+});
+
 describe('decideCompat', () => {
   const base = { component: 'button', oldMajor: 1, newMajor: 1, gtsBackwardCompatible: true, gtsBackwardErrors: [] };
 
@@ -104,6 +134,15 @@ describe('decideCompat', () => {
     });
     expect(verdict.status).toBe('fail');
     expect(verdict.notes[0]).toContain('passthrough: prop "form" removed');
+  });
+
+  it('fails on an incompatible own-props diff alone, even when gts-ts reports backward compatible', () => {
+    const verdict = decideCompat({
+      ...base,
+      ownPropsDiff: { removedProps: [], newlyRequiredProps: ['id'], compatible: false },
+    });
+    expect(verdict.status).toBe('fail');
+    expect(verdict.notes[0]).toContain('own prop "id" became required');
   });
 });
 
@@ -140,6 +179,89 @@ describe('mapChangedFilesToComponents', () => {
   });
 });
 
+describe('touchesSharedContractTooling', () => {
+  it('is false when nothing under scripts/contracts changed', () => {
+    expect(touchesSharedContractTooling(['src/components/button/button.tsx', 'package.json'])).toBe(false);
+  });
+
+  it('is true for the compiler, the extractor, ids, the metamodel and the base schema', () => {
+    for (const file of [
+      'scripts/contracts/compile.ts',
+      'scripts/contracts/extract.ts',
+      'scripts/contracts/ids.ts',
+      'scripts/contracts/ui-component.meta.json',
+      'scripts/contracts/base.component.json',
+    ]) {
+      expect(touchesSharedContractTooling([file])).toBe(true);
+    }
+  });
+
+  it('is true for a generated passthrough file', () => {
+    expect(touchesSharedContractTooling(['scripts/contracts/generated/passthrough.base_ui_button.json'])).toBe(true);
+  });
+
+  it('is false for the guard/compat implementation, its own tests, fixtures, covered.json and pilot notes', () => {
+    for (const file of [
+      'scripts/contracts/check.ts',
+      'scripts/contracts/check-lib.ts',
+      'scripts/contracts/check-lib.test.ts',
+      'scripts/contracts/extract.test.ts',
+      'scripts/contracts/__fixtures__/cva-aliased.fixture.tsx',
+      'scripts/contracts/covered.json',
+      'scripts/contracts/PILOT-NOTES.md',
+    ]) {
+      expect(touchesSharedContractTooling([file])).toBe(false);
+    }
+  });
+});
+
+describe('resolveRenameSource', () => {
+  const baseContracts = [
+    { path: 'src/components/accordion/accordion-item.contract.json', id: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~', stem: 'accordion-item' },
+  ];
+
+  it('prefers gits own rename detection when it named a source path', () => {
+    const source = resolveRenameSource({
+      currentPath: 'src/components/accordion/accordion-part.contract.json',
+      currentId: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_part.v1~',
+      currentStem: 'accordion-part',
+      renamedFrom: 'src/components/accordion/accordion-item.contract.json',
+      baseContracts,
+    });
+    expect(source).toBe('src/components/accordion/accordion-item.contract.json');
+  });
+
+  it('falls back to matching by $id when git named no rename source', () => {
+    const source = resolveRenameSource({
+      currentPath: 'src/components/accordion-part/accordion-item.contract.json',
+      currentId: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~',
+      currentStem: 'accordion-item',
+      baseContracts,
+    });
+    expect(source).toBe('src/components/accordion/accordion-item.contract.json');
+  });
+
+  it('falls back to matching by stem when neither rename detection nor $id matched', () => {
+    const source = resolveRenameSource({
+      currentPath: 'src/components/accordion-v2/accordion-item.contract.json',
+      currentId: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v2~',
+      currentStem: 'accordion-item',
+      baseContracts,
+    });
+    expect(source).toBe('src/components/accordion/accordion-item.contract.json');
+  });
+
+  it('is undefined when nothing at the base ref matches by any signal - genuinely new', () => {
+    const source = resolveRenameSource({
+      currentPath: 'src/components/data-table/data-table.contract.json',
+      currentId: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.data_table.v1~',
+      currentStem: 'data-table',
+      baseContracts,
+    });
+    expect(source).toBeUndefined();
+  });
+});
+
 describe('evaluateGuard', () => {
   it('is informational, not a violation, for a touched component outside covered.json', () => {
     const result = evaluateGuard({ component: 'accordion', covered: false, overlayExists: false, artifactsFresh: false });
@@ -161,6 +283,17 @@ describe('evaluateGuard', () => {
   it('passes when a covered component has an overlay and fresh artifacts', () => {
     const result = evaluateGuard({ component: 'button', covered: true, overlayExists: true, artifactsFresh: true });
     expect(result.status).toBe('covered-ok');
+  });
+
+  it('violates with a fix hint when a covered component directory was removed', () => {
+    const result = evaluateGuard({ component: 'button', covered: true, overlayExists: false, artifactsFresh: false, componentExists: false });
+    expect(result.status).toBe('component-removed');
+    expect(result.message).toContain('remove it from covered.json');
+  });
+
+  it('is informational, not a violation, when a removed component was never covered', () => {
+    const result = evaluateGuard({ component: 'button', covered: false, overlayExists: false, artifactsFresh: false, componentExists: false });
+    expect(result.status).toBe('uncovered-info');
   });
 });
 

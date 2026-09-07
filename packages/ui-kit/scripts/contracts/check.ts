@@ -8,9 +8,9 @@
 // filesystem and calls gts-ts.
 //
 // Usage:
-//   npm run contracts:check -- compat --base <git-ref>
-//   npm run contracts:check -- guard --base <git-ref>
-//   npm run contracts:coverage
+//   npm run contracts:check -- compat --base <git-ref> [--json]
+//   npm run contracts:check -- guard --base <git-ref> [--json]
+//   npm run contracts:coverage [-- --json]
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -21,11 +21,15 @@ import { GTS } from '@globaltypesystem/gts-ts';
 import {
   buildCoverageReport,
   decideCompat,
+  diffOwnPropsSchema,
   diffPassthroughSchema,
   evaluateGuard,
   extractContractMajor,
   mapChangedFilesToComponents,
+  resolveRenameSource,
   synthesizeVersionedId,
+  touchesSharedContractTooling,
+  type BaseRefContractEntry,
   type CompatVerdict,
   type DirectoryExportCoverage,
   type GuardResult,
@@ -94,6 +98,63 @@ function gitDiffNameOnly(args: string[]): string[] {
   return output.split('\n').filter((line) => line.length > 0);
 }
 
+// `-M`: rename detection, so a plain `git mv` (with content edits still
+// within git's similarity threshold) reports one R### line naming both
+// paths, rather than a delete of the old path plus an unrelated add of the
+// new one. Committed history only (base...HEAD) - matches every other
+// base-ref lookup in this file; a working-tree-only rename falls through to
+// resolveRenameSource's $id/stem scan instead (M7).
+function gitDiffNameStatusRenames(args: string[]): string[] {
+  const output = execFileSync('git', ['diff', '--name-status', '-M', '--relative', ...args], { cwd: kitRoot, encoding: 'utf8' });
+  return output.split('\n').filter((line) => line.length > 0);
+}
+
+// New contract.json path -> old path, for every rename `-M` recognized
+// between `base` and HEAD. `checkCompatForUnit` consults this first, before
+// falling back to resolveRenameSource's $id/stem scan (M7).
+function contractRenameMap(base: string): Map<string, string> {
+  const renames = new Map<string, string>();
+  for (const line of gitDiffNameStatusRenames([`${base}...HEAD`])) {
+    const fields = line.split('\t');
+    if (!fields[0].startsWith('R')) continue;
+    const [, oldPath, newPath] = fields;
+    if (newPath && newPath.endsWith('.contract.json')) renames.set(newPath, oldPath);
+  }
+  return renames;
+}
+
+// Every `*.contract.json` committed at `base`, with its own `$id` and stem -
+// the pool `resolveRenameSource`'s id/stem scan searches when a unit's
+// current path did not exist at `base` and git's own rename detection named
+// nothing for it (M7). An empty result (no `src/components` tree at `base`,
+// an unresolvable ref) degrades to "nothing to match against", the same as
+// finding no match - not a hard failure of `compat` itself.
+function listBaseRefContracts(base: string): BaseRefContractEntry[] {
+  const prefix = packagePrefix();
+  let output: string;
+  try {
+    output = execFileSync('git', ['ls-tree', '-r', '--name-only', base, '--', `${prefix}src/components`], {
+      cwd: kitRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch {
+    return [];
+  }
+  const entries: BaseRefContractEntry[] = [];
+  for (const line of output.split('\n')) {
+    if (!line.endsWith('.contract.json')) continue;
+    const relPath = line.slice(prefix.length);
+    const raw = gitShow(base, relPath);
+    if (raw === undefined) continue;
+    const id = (JSON.parse(raw) as CompiledContract).$id;
+    const fileName = relPath.split('/').pop() ?? relPath;
+    const stem = fileName.slice(0, -'.contract.json'.length);
+    entries.push({ path: relPath, id, stem });
+  }
+  return entries;
+}
+
 function gitUntrackedFiles(): string[] {
   const output = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: kitRoot, encoding: 'utf8' });
   return output.split('\n').filter((line) => line.length > 0);
@@ -141,17 +202,43 @@ function listContractUnits(): ContractUnit[] {
   return units;
 }
 
-function checkCompatForUnit(unit: ContractUnit, base: string): CompatVerdict & { component: string; isNew: boolean } {
+function checkCompatForUnit(
+  unit: ContractUnit,
+  base: string,
+  renames: Map<string, string>,
+  baseContracts: BaseRefContractEntry[],
+): CompatVerdict & { component: string; isNew: boolean } {
   const { directory, stem: component } = unit;
   const relPath = `src/components/${directory}/${component}.contract.json`;
   const newRaw = readFileSync(join(kitRoot, relPath), 'utf8');
-  const oldRaw = gitShow(base, relPath);
+  const newContract = JSON.parse(newRaw) as CompiledContract;
+
+  // Absent at `relPath` does not by itself mean "new" (M7): a renamed
+  // directory or overlay stem means the exact path never existed at `base`
+  // even though the contract itself did, under a different path - declaring
+  // it "new" without checking would mask a breaking change riding along with
+  // the rename. resolveRenameSource escalates through git's own rename
+  // detection, then an $id match, then a stem match before giving up.
+  let oldRaw = gitShow(base, relPath);
+  let renamedFromNote = '';
+  if (oldRaw === undefined) {
+    const sourcePath = resolveRenameSource({
+      currentPath: relPath,
+      currentId: newContract.$id,
+      currentStem: component,
+      renamedFrom: renames.get(relPath),
+      baseContracts,
+    });
+    if (sourcePath) {
+      oldRaw = gitShow(base, sourcePath);
+      renamedFromNote = ` (renamed from ${sourcePath})`;
+    }
+  }
   if (oldRaw === undefined) {
     return { component, isNew: true, status: 'pass', notes: [`${component}: new contract (absent at ${base})`] };
   }
 
   const oldContract = JSON.parse(oldRaw) as CompiledContract;
-  const newContract = JSON.parse(newRaw) as CompiledContract;
   const oldMajor = extractContractMajor(oldContract.$id);
   const newMajor = extractContractMajor(newContract.$id);
 
@@ -187,6 +274,14 @@ function checkCompatForUnit(unit: ContractUnit, base: string): CompatVerdict & {
   gts.register(newSynthetic);
   const result = gts.checkCompatibility(bareId(oldSynthetic.$id), bareId(newSynthetic.$id), 'backward');
 
+  // gts-ts's own backward check misses a newly required own prop and a
+  // vanished own prop that was never required (a rename looks exactly like
+  // one of these) - see check-lib.ts's diffOwnPropsSchema comment (M9) for
+  // why `is_backward_compatible` alone understates a real breaking change
+  // here, confirmed empirically against the real library rather than
+  // assumed from reading it.
+  const ownPropsDiff = diffOwnPropsSchema(oldContract, newContract);
+
   const verdict = decideCompat({
     component,
     oldMajor,
@@ -194,25 +289,33 @@ function checkCompatForUnit(unit: ContractUnit, base: string): CompatVerdict & {
     gtsBackwardCompatible: result.is_backward_compatible,
     gtsBackwardErrors: result.backward_errors,
     passthroughDiff,
+    ownPropsDiff,
   });
-  return { component, isNew: false, ...verdict };
+  return { component, isNew: false, status: verdict.status, notes: verdict.notes.map((note) => `${note}${renamedFromNote}`) };
 }
 
-function runCompat(base: string): void {
+function runCompat(base: string, options: { json: boolean }): void {
   const units = listContractUnits().filter((unit) =>
     existsSync(join(COMPONENTS_DIR, unit.directory, `${unit.stem}.contract.json`)),
   );
   if (units.length === 0) {
-    console.log('compat: no components carry a contract.json yet - nothing to check.');
+    if (options.json) console.log(JSON.stringify({ command: 'compat', base, failed: false, results: [] }));
+    else console.log('compat: no components carry a contract.json yet - nothing to check.');
     return;
   }
 
-  let failed = false;
-  for (const unit of units) {
-    const result = checkCompatForUnit(unit, base);
-    const label = result.isNew ? 'NEW' : result.status === 'pass' ? 'PASS' : 'FAIL';
-    console.log(`[${label}] ${result.notes.join(' ')}`);
-    if (result.status === 'fail') failed = true;
+  const renames = contractRenameMap(base);
+  const baseContracts = listBaseRefContracts(base);
+  const results = units.map((unit) => checkCompatForUnit(unit, base, renames, baseContracts));
+  const failed = results.some((result) => result.status === 'fail');
+
+  if (options.json) {
+    console.log(JSON.stringify({ command: 'compat', base, failed, results }));
+  } else {
+    for (const result of results) {
+      const label = result.isNew ? 'NEW' : result.status === 'pass' ? 'PASS' : 'FAIL';
+      console.log(`[${label}] ${result.notes.join(' ')}`);
+    }
   }
   if (failed) process.exit(1);
 }
@@ -254,63 +357,96 @@ function tryListExportedDeclarationNames(directory: string): string[] {
   }
 }
 
-function runGuard(base: string): void {
-  const touched = mapChangedFilesToComponents(changedFilesSince(base));
-  const covered = new Set(loadCovered());
+function runGuard(base: string, options: { json: boolean }): void {
+  const changedFiles = changedFilesSince(base);
+  const covered = loadCovered();
+  const touchedDirectly = mapChangedFilesToComponents(changedFiles);
+  // A change to shared compiling machinery can reshape any covered
+  // component's compiled output without touching that component's own
+  // directory at all (M6) - re-evaluate every covered entry, not just the
+  // directories the diff happens to name.
+  const toolingChanged = touchesSharedContractTooling(changedFiles);
+  const touched = toolingChanged ? new Set([...touchedDirectly, ...covered]) : touchedDirectly;
 
   if (touched.size === 0) {
-    console.log('guard: no component files changed - nothing to check.');
+    if (options.json) console.log(JSON.stringify({ command: 'guard', base, violated: false, toolingChanged, results: [] }));
+    else console.log('guard: no component files changed - nothing to check.');
     return;
   }
+  if (toolingChanged && !options.json) {
+    console.log('guard: shared contract tooling changed - re-checking every covered component for freshness.');
+  }
 
+  const coveredSet = new Set(covered);
   let violated = false;
   const results: GuardResult[] = [];
   for (const component of [...touched].sort()) {
-    const stems = overlayStems(component);
-    const { totalExports } = componentExportCoverage(component);
-    // A covered compound directory must have every export described, not
-    // merely one overlay - a directory that touches "overlayExists" by
-    // coincidence (its root overlay happens to exist) while a sibling part's
-    // overlay is missing or stale would otherwise pass silently.
-    const overlayExists = stems.length > 0 && stems.length === totalExports;
-    const isCovered = covered.has(component);
-    // Freshness only needs computing (and can only be computed - it calls
-    // compileContract, which throws without an overlay) for a covered
-    // component that actually has every overlay; evaluateGuard already fails
-    // an incomplete covered component before this matters.
-    const artifactsFresh =
-      isCovered && overlayExists ? stems.every((stem) => isComponentFresh(component, stem)) : false;
-    const result = evaluateGuard({ component, covered: isCovered, overlayExists, artifactsFresh });
+    // A deleted directory must never crash an unguarded readdirSync (M10):
+    // check existence once, up front, and route through evaluateGuard's
+    // dedicated outcome instead of letting overlayStems/componentExportCoverage
+    // throw ENOENT past the print loop below.
+    const componentExists = existsSync(join(COMPONENTS_DIR, component));
+    let overlayExists = false;
+    let artifactsFresh = false;
+    if (componentExists) {
+      const stems = overlayStems(component);
+      const { totalExports } = componentExportCoverage(component);
+      // A covered compound directory must have every export described, not
+      // merely one overlay - a directory that touches "overlayExists" by
+      // coincidence (its root overlay happens to exist) while a sibling
+      // part's overlay is missing or stale would otherwise pass silently.
+      overlayExists = stems.length > 0 && stems.length === totalExports;
+      const isCovered = coveredSet.has(component);
+      // Freshness only needs computing (and can only be computed - it calls
+      // compileContract, which throws without an overlay) for a covered
+      // component that actually has every overlay; evaluateGuard already
+      // fails an incomplete covered component before this matters.
+      artifactsFresh = isCovered && overlayExists ? stems.every((stem) => isComponentFresh(component, stem)) : false;
+    }
+    const result = evaluateGuard({ component, covered: coveredSet.has(component), overlayExists, artifactsFresh, componentExists });
     results.push(result);
-    if (result.status === 'covered-violation') violated = true;
+    if (result.status === 'covered-violation' || result.status === 'component-removed') violated = true;
   }
 
-  for (const result of results) {
-    const label = result.status === 'covered-violation' ? 'FAIL' : result.status === 'covered-ok' ? 'PASS' : 'INFO';
-    console.log(`[${label}] ${result.message}`);
+  if (options.json) {
+    console.log(JSON.stringify({ command: 'guard', base, violated, toolingChanged, results }));
+  } else {
+    for (const result of results) {
+      const label =
+        result.status === 'covered-violation' || result.status === 'component-removed'
+          ? 'FAIL'
+          : result.status === 'covered-ok'
+            ? 'PASS'
+            : 'INFO';
+      console.log(`[${label}] ${result.message}`);
+    }
   }
   if (violated) process.exit(1);
 }
 
-function runCoverage(): void {
+function runCoverage(options: { json: boolean }): void {
   const all = listComponentDirs();
   const covered = loadCovered();
   const report = buildCoverageReport(all, covered);
-  console.log(`${report.coveredCount} of ${report.total} components covered by contracts.`);
-  if (report.uncovered.length === 0) return;
-
   // covered.json is a human-curated allowlist (the guard's gate, grown one
   // directory at a time); the fraction here is the live, filesystem-derived
   // count of what already has a contract - a compound directory can read
   // "4 of 4 exports" and simply not be promoted into covered.json yet, which
   // is a different, more actionable fact than "0 of 63" was ever able to say.
   const byDirectory = new Map(all.map((directory) => [directory, componentExportCoverage(directory)]));
+  const uncovered = report.uncovered.map((component) => byDirectory.get(component) ?? { directory: component, totalExports: 0, coveredExports: 0, skippedNonComponents: [] });
+
+  if (options.json) {
+    console.log(JSON.stringify({ command: 'coverage', total: report.total, coveredCount: report.coveredCount, uncovered }));
+    return;
+  }
+
+  console.log(`${report.coveredCount} of ${report.total} components covered by contracts.`);
+  if (uncovered.length === 0) return;
   console.log('Not yet in covered.json (n of m exports already have a contract):');
-  for (const component of report.uncovered) {
-    const coverage = byDirectory.get(component);
-    const skipped = coverage?.skippedNonComponents ?? [];
-    const skippedNote = skipped.length > 0 ? ` (skipped, not components: ${skipped.join(', ')})` : '';
-    console.log(`  - ${component}: ${coverage?.coveredExports ?? 0} of ${coverage?.totalExports ?? 0} exports${skippedNote}`);
+  for (const coverage of uncovered) {
+    const skippedNote = coverage.skippedNonComponents.length > 0 ? ` (skipped, not components: ${coverage.skippedNonComponents.join(', ')})` : '';
+    console.log(`  - ${coverage.directory}: ${coverage.coveredExports} of ${coverage.totalExports} exports${skippedNote}`);
   }
 }
 
@@ -318,10 +454,18 @@ function parseBaseArg(args: string[]): string {
   const index = args.indexOf('--base');
   const value = index === -1 ? undefined : args[index + 1];
   if (!value) {
-    console.error('Usage: contracts:check <compat|guard> --base <git-ref>');
+    console.error('Usage: contracts:check <compat|guard> --base <git-ref> [--json]');
     process.exit(1);
   }
   return value;
+}
+
+// `--json` is an opt-in flag every subcommand honours the same way (N6): a
+// stable, machine-readable object on stdout instead of the human-oriented
+// log lines, so a programmatic caller (the CI policy wrapper below, a
+// dashboard, a bot) has something better than scraping console output.
+function parseJsonFlag(args: string[]): boolean {
+  return args.includes('--json');
 }
 
 function invokedDirectly(): boolean {
@@ -332,18 +476,19 @@ function invokedDirectly(): boolean {
 
 if (invokedDirectly()) {
   const [command, ...rest] = process.argv.slice(2);
+  const json = parseJsonFlag(rest);
   switch (command) {
     case 'compat':
-      runCompat(parseBaseArg(rest));
+      runCompat(parseBaseArg(rest), { json });
       break;
     case 'guard':
-      runGuard(parseBaseArg(rest));
+      runGuard(parseBaseArg(rest), { json });
       break;
     case 'coverage':
-      runCoverage();
+      runCoverage({ json });
       break;
     default:
-      console.error('Usage: contracts:check <compat --base <git-ref> | guard --base <git-ref> | coverage>');
+      console.error('Usage: contracts:check <compat --base <git-ref> | guard --base <git-ref> | coverage> [--json]');
       process.exit(1);
   }
 }
