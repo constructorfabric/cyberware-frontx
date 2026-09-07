@@ -356,6 +356,22 @@ jobs:
             # ordinary lockfile drift still fails loudly here.
             if [ -n "${FRONTX_SUBSTITUTE_UNPUBLISHED_PINS:-}" ]; then
               npm install --no-audit --no-fund
+              # #524, reproduced here: an `npm install` that has to RECONCILE
+              # an out-of-sync manifest - exactly what the substitution above
+              # forces - drops template-shell's own `file:.` self-link entry
+              # (packages/framework depends on the shell by name; the root
+              # `overrides` resolves that name back to the shell itself, and
+              # the reconciling install writes a lockfile missing that entry
+              # entirely). See scripts/template-lockfile-selflink-check.mjs
+              # for the full mechanism and why that guard tells a developer
+              # never to "fix" a broken COMMITTED lockfile this way - it does
+              # not apply here, since nothing this block touches is ever
+              # written back to git: this is a second install in the same
+              # ephemeral copy, once package.json and package-lock.json are
+              # already mutually consistent from the first, and it only adds
+              # the one now-missing self-link package back (verified: "added
+              # 1 package"), it does not reconcile anything else.
+              npm install --no-audit --no-fund
             else
               npm ci
             fi
