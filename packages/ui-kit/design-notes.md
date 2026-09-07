@@ -1,10 +1,10 @@
 # UI Kit — Design
 
 Status: in development (MVP)
-Repo-doc only, not published with the package. Backing CDSL artifacts (PRD
-requirement, DESIGN component, FEATURE) are planned; until they land the
-package is covered by an `[[ignore]]` entry in `.cf-studio/config/artifacts.toml`
-(same interim state as `@gears-frontx/telemetry`).
+Repo-doc only, not published with the package. The package owns its artifact
+chain under `architecture/` (PRD, DESIGN, the component-contracts FEATURE) and is
+registered as a child system in `.cf-studio/config/artifacts.toml`; this file
+carries the working notes that do not belong in those artifacts.
 
 > **History.** The kit was designed and prototyped in the now-retired gears-web
 > repository (issue gears-web#7): first as a shadcn-style source registry, then
@@ -104,8 +104,8 @@ the `sidebar` / `data-table` exclusions above intact.
   opened with the 19-component set so templates can consume the kit while the
   remaining MVP components land. The original gates now guard the *stable*
   (`latest`) release instead: the full MVP component set, #495 approving the
-  package's architecture ownership, traceability, and version policy, and the
-  required CDSL artifacts replacing the temporary `artifacts.toml` ignore.
+  package's architecture ownership, traceability, and version policy. The
+  CDSL artifacts that used to be on this list now exist under `architecture/`.
 
 ## Component set (MVP, 31 components)
 
@@ -420,5 +420,5 @@ Architecture's build bullet).
    kitchen-sink app and composition recipes should cover the whole set once
    rather than be extended right after the stable release.
 6. Composition recipes (incl. the mockup building blocks) + kitchen-sink to
-   full coverage; satisfy the #495 gates, remove the temporary
-   artifact ignore, then cut the first stable (`latest`) version.
+   full coverage; satisfy the #495 gates, then cut the first stable
+   (`latest`) version.

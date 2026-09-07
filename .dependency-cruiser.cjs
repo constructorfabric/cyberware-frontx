@@ -269,8 +269,13 @@ module.exports = {
 
     // Interim isolation while #495 defines UI Kit's architecture ownership and
     // dependency policy. Keep these rules outside CDSL markers: no accepted ADR
-    // owns this boundary yet. Replace them with the approved, traced policy when
-    // the temporary artifacts.toml ignore is removed.
+    // owns this boundary yet. The artifacts.toml ignore this note used to be
+    // keyed to is gone - ui-kit now owns its artifact chain and is registered
+    // as a child system - but that closed the traceability gap, not this one:
+    // what the package may depend on, and who may depend on it, is still
+    // undecided. These rules therefore stay as the enforcement of that policy
+    // until an accepted decision (#495) replaces them with a traced one. See
+    // packages/ui-kit/architecture/DESIGN.md section 3.4.
     {
       name: 'frontx-ui-kit-interim-not-imported-by-ecosystem',
       severity: 'error',

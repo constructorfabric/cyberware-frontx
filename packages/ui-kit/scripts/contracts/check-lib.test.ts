@@ -16,6 +16,7 @@ import {
   mapChangedFilesToComponents,
   resolveRenameSource,
   synthesizeVersionedId,
+  skippedPassthroughNote,
   touchesSharedContractTooling,
 } from './check-lib';
 
@@ -179,6 +180,22 @@ describe('mapChangedFilesToComponents', () => {
   });
 });
 
+describe('skippedPassthroughNote', () => {
+  it('reports a skipped signal when the base has passthrough types but none for this origin', () => {
+    expect(skippedPassthroughNote('button', 'base_ui_button', false, true)).toBe(
+      'button: inherited-surface signal skipped - the base ref carries no passthrough type for origin "base_ui_button"',
+    );
+  });
+
+  it('is silent when the base carries the origin\'s own file', () => {
+    expect(skippedPassthroughNote('button', 'base_ui_button', true, true)).toBeUndefined();
+  });
+
+  it('is silent when the base carries no passthrough type at all', () => {
+    expect(skippedPassthroughNote('button', 'base_ui_button', false, false)).toBeUndefined();
+  });
+});
+
 describe('touchesSharedContractTooling', () => {
   it('is false when nothing under scripts/contracts changed', () => {
     expect(touchesSharedContractTooling(['src/components/button/button.tsx', 'package.json'])).toBe(false);
@@ -200,10 +217,17 @@ describe('touchesSharedContractTooling', () => {
     expect(touchesSharedContractTooling(['scripts/contracts/generated/passthrough.base_ui_button.json'])).toBe(true);
   });
 
-  it('is false for the guard/compat implementation, its own tests, fixtures, covered.json and pilot notes', () => {
+  // freshness.ts imports jsonDiff from check-lib.ts, so this module sits on
+  // every covered component's comparison path: a change here can flip every
+  // freshness verdict without touching a single component directory. Only
+  // check.ts - which nothing in that path imports - stays excluded.
+  it('is true for the shared comparison logic', () => {
+    expect(touchesSharedContractTooling(['scripts/contracts/check-lib.ts'])).toBe(true);
+  });
+
+  it('is false for the guard/compat entry point, its own tests, fixtures, covered.json and pilot notes', () => {
     for (const file of [
       'scripts/contracts/check.ts',
-      'scripts/contracts/check-lib.ts',
       'scripts/contracts/check-lib.test.ts',
       'scripts/contracts/extract.test.ts',
       'scripts/contracts/__fixtures__/cva-aliased.fixture.tsx',

@@ -1224,16 +1224,14 @@ export function compileContract(directory: string, exportStem: string = director
     ]);
     passthroughRef = { $ref: passthroughTypeId(extraction.passthroughOrigin) };
   } else if (extraction.inheritedProps.length > 0) {
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
     // Inherited props exist but no origin could be resolved for them -
     // exactly the case a silent extractor would have dropped them in.
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-refuse
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
     throw new Error(
       `${exportStem}: ${extraction.inheritedProps.length} inherited prop(s) found (e.g. "${extraction.inheritedProps[0].name}") ` +
         `but no passthrough origin could be resolved from ${directory}.tsx's props type - cannot generate a ` +
         `passthrough type to declare them in`,
     );
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-refuse
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
   }
 

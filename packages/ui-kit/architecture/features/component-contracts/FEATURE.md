@@ -105,8 +105,8 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 4. [x] - `p1` - **IF** the directory carries no overlay - `inst-no-overlay`
    1. [x] - `p1` - Name the directory and **RETURN** a non-zero exit - `inst-no-overlay-exit`
 5. [x] - `p1` - **FOR EACH** overlay in the directory, compile the contract and the metamodel instance and write both beside the component - `inst-compile-each`
-6. [x] - `p1` - Write the shared inherited-surface type when the component resolves an origin for it - `inst-write-passthrough`
-7. [x] - `p1` - **RETURN** each written path to the developer - `inst-report-paths`
+6. [x] - `p1` - **RETURN** each written path to the developer as it is written - `inst-report-paths`
+7. [x] - `p1` - Write the shared inherited-surface type when the component resolves an origin for it, reporting that path too - `inst-write-passthrough`
 
 ### Guard A Change Against The Base Reference
 
@@ -148,7 +148,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 
 **Input**: The path of a component's source file.
 
-**Output**: One extraction per exported React component - its variant axes and defaults, its declared props, its inherited props, the origin of its inherited surface, and a note for every shape the walk could not classify.
+**Output**: One extraction per exported React component - its variant axes and defaults, its declared props, its inherited props, the origin of its inherited surface, and a note for each thing the walk could not read: an unresolvable variant declaration, a conflicting axis or default, an unclassifiable heritage node, a property with no declaration behind it.
 
 **Steps**:
 1. [x] - `p1` - Build a TypeScript program over the component's source using the package's own shipping-source compiler options - `inst-ex-program`
@@ -161,8 +161,9 @@ Prose describing a component can only be reviewed by a person, one screen at a t
    1. [x] - `p1` - Record it the same way, for the same reason - `inst-ex-default-conflict-note`
 7. [x] - `p1` - Resolve the origin of the inherited surface from the outermost heritage member the walk can place - `inst-ex-origin`
 8. [x] - `p1` - **FOR EACH** resolved property of the props type, classify it as declared here or inherited by where its declaration lives - `inst-ex-props`
-9. [x] - `p1` - Record every shape the walk cannot classify instead of dropping it - `inst-ex-cannot`
-10. [x] - `p1` - **RETURN** one extraction per exported component, with both prop lists ordered by name - `inst-ex-return`
+9. [x] - `p1` - Record a heritage node the walk cannot classify as a note, instead of silently returning with the props behind it unaccounted for - `inst-ex-cannot`
+10. [x] - `p1` - Record a property the checker resolves but no declaration backs, and skip it, rather than reporting an invented declaration site for it - `inst-ex-undeclared-prop`
+11. [x] - `p1` - **RETURN** one extraction per exported component, with both prop lists ordered by name - `inst-ex-return`
 
 ### Overlay Admission
 
@@ -170,7 +171,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 
 **Input**: The artifact being compiled and the parsed overlay document.
 
-**Output**: The admitted overlay, or a refusal naming the offence.
+**Output**: The admitted overlay, or a refusal naming the offence. The first four checks read the document alone and run as it is parsed; the last needs the extraction and so runs once the overlay has been returned, against the component's real props.
 
 **Steps**:
 1. [x] - `p1` - **IF** the overlay carries a field the code owns - `inst-oa-machine-owned`
@@ -179,9 +180,9 @@ Prose describing a component can only be reviewed by a person, one screen at a t
    1. [x] - `p1` - Refuse, naming the field and its position in the document - `inst-oa-unknown-field-refuse`
 3. [x] - `p1` - **IF** the component the overlay declares is not the one being compiled - `inst-oa-name-mismatch`
    1. [x] - `p1` - Refuse, naming both - `inst-oa-name-mismatch-refuse`
-4. [x] - `p1` - **IF** the overlay references a prop the component does not declare - `inst-oa-absent-prop`
+4. [x] - `p1` - **RETURN** the admitted overlay - `inst-oa-return`
+5. [x] - `p1` - **IF** the admitted overlay references a prop the component does not declare - `inst-oa-absent-prop`
    1. [x] - `p1` - Refuse, naming the prop - `inst-oa-absent-prop-refuse`
-5. [x] - `p1` - **RETURN** the admitted overlay - `inst-oa-return`
 
 ### Contract Compilation
 
@@ -195,8 +196,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 1. [x] - `p1` - Select the extraction whose exported component is the one being compiled, failing when no export matches - `inst-cc-select`
 2. [x] - `p1` - **IF** the extraction could not resolve a variant declaration - `inst-cc-axis-failure`
    1. [x] - `p1` - Fail rather than emit a contract silently missing its axes - `inst-cc-axis-failure-refuse`
-3. [x] - `p1` - **IF** the component inherits props and no origin was resolved for them - `inst-cc-orphan-inherited`
-   1. [x] - `p1` - Fail, naming the props no type could declare - `inst-cc-orphan-refuse`
+3. [x] - `p1` - Fail when the component inherits props and no origin was resolved for them, naming the props no type could have declared - `inst-cc-orphan-inherited`
 4. [x] - `p1` - Turn each variant axis into an enumerated property carrying its default - `inst-cc-axes`
 5. [x] - `p1` - Leave a prop the inherited surface already declares to that surface, failing when the two declare conflicting shapes - `inst-cc-owner-conflict`
 6. [x] - `p1` - Represent a declared prop that has no schema equivalent as an annotated property recorded as a slot - `inst-cc-slots`
@@ -225,7 +225,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 **Output**: The shared type for that origin, or a refusal.
 
 **Steps**:
-1. [x] - `p1` - Declare each inherited prop under the origin's own type, giving a schema shape where one exists and leaving the rest unconstrained - `inst-ps-props`
+1. [x] - `p1` - Declare each inherited prop under the origin's own type, giving a schema shape where one exists and leaving the rest unconstrained; the props that carry no consumer-visible shape at all - the element key and the forwarded ref - are left out entirely - `inst-ps-props`
 2. [x] - `p1` - Admit the accessibility and data attribute families by pattern rather than by name - `inst-ps-patterns`
 3. [x] - `p1` - Record which components the type was generated from, and leave the type open so a component's own contract can close its surface instead - `inst-ps-open`
 4. [x] - `p1` - **IF** compiling one component would change the shape another component on the same origin already relies on - `inst-ps-collision`
@@ -310,6 +310,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
    1. [x] - `p1` - Report the contract as new and **RETURN** a pass - `inst-cu-new-return`
 4. [x] - `p1` - Register both revisions under distinct synthesized versions, so the type system can compare two states of what is otherwise one identifier - `inst-cu-register`
 5. [x] - `p1` - Compare the inherited-surface type at both revisions, reading the origin from the contract as it shipped rather than from the source as it is now - `inst-cu-passthrough`
+   1. [x] - `p1` - **IF** the base reference carries passthrough types but none for this origin, because the origin key itself changed - report the inherited-surface signal as skipped for that origin, without refusing the change - `inst-cu-passthrough-skipped`
 6. [x] - `p1` - **RETURN** the decision for this contract - `inst-cu-decide`
 
 ### Guard Scope And Verdicts
@@ -343,8 +344,8 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 
 **Steps**:
 1. [x] - `p1` - Count the component directories and the ones the allowlist covers - `inst-cv-count`
-2. [x] - `p1` - **FOR EACH** uncovered directory, report its described exports against its component exports, naming the exports that are correctly not components - `inst-cv-uncovered`
-3. [x] - `p1` - **RETURN** the report, which never sets an exit code - `inst-cv-return`
+2. [x] - `p1` - **FOR EACH** uncovered directory, pair its described exports with its component exports and the exports that are correctly not components - `inst-cv-uncovered`
+3. [x] - `p1` - **RETURN** the report by whichever output path was asked for, setting no exit code either way - `inst-cv-return`
 
 ### Conformance Suite Construction
 
@@ -417,7 +418,7 @@ The system **MUST** compile an admitted overlay and an extraction into a closed 
 
 - [x] `p2` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-identifiers`
 
-The system **MUST** construct every contract, instance and inherited-surface identifier from one vendor namespace and one token derivation, so that a contract is a type derived from the kit's abstract base type and an instance is not a type at all, and **MUST** expose the patterns that recognize each shape rather than leaving callers to write their own.
+The system **MUST** construct every contract, instance and inherited-surface identifier from one vendor namespace, so that a contract is a type derived from the kit's abstract base type and an instance is not a type at all, and **MUST** expose the patterns that recognize each shape rather than leaving callers to write their own. A component identifier's token is derived from the component's directory name; an inherited-surface identifier takes the origin key the extractor already produced in that token form, so no second derivation applies to it.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-identifiers`
@@ -465,7 +466,7 @@ The system **MUST** provide a reusable suite that fails a component's unit run w
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-compatibility`
 
-The system **MUST** decide a contract's backward compatibility from three signals - the type system's own verdict, the declared-prop diff and the inherited-surface diff - **MUST** treat an addition as compatible and a removal, a narrowing or a newly required prop as not, and **MUST** accept an incompatible difference only when the contract's own major moved, naming every reason either way.
+The system **MUST** decide a contract's backward compatibility from three signals - the type system's own verdict, the declared-prop diff and the inherited-surface diff - **MUST** treat an addition as compatible and a removal, a narrowing or a newly required prop as not, and **MUST** accept an incompatible difference only when the contract's own major moved, naming every reason either way. Where the inherited-surface signal cannot be computed because the base reference carries no file for this contract's origin - the case where the origin key itself changed - the system **MUST** report that signal as skipped rather than let its absence read as agreement.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-compat-decision`
@@ -479,7 +480,7 @@ The system **MUST** decide a contract's backward compatibility from three signal
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-guard-scope`
 
-The system **MUST** hold to the full standard only the components a change touches that are also opted into coverage, **MUST** widen that scope to every covered component when the shared contract tooling itself changed, and **MUST** treat a touched but uncovered component as information rather than as a failure.
+The system **MUST** hold to the full standard only the components a change touches that are also opted into coverage, **MUST** widen that scope to every covered component when any file that produces or compares a compiled contract changed - the extractor, the compiler, the identifier and schema inputs, the freshness comparison and the shared comparison logic it depends on - and **MUST** treat a touched but uncovered component as information rather than as a failure. Only the guard's own entry point is excluded from that widening, because nothing on the comparison path imports it and re-checking on it would be circular.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-guard`
@@ -516,6 +517,7 @@ The system **MUST** report the described set against the component set, with a p
 - [x] Removing a prop, making an optional prop required, or dropping a value from a variant axis is refused at an unchanged contract major and accepted with the major moved, in both cases naming every reason; adding a prop is accepted either way.
 - [x] A contract whose file moved is compared against its earlier path rather than reported as new.
 - [x] A change touching a component that is not opted into coverage passes with that component reported as not yet requiring a contract.
-- [x] A change to the shared contract tooling re-checks every covered component, not only the ones the change touched.
+- [x] A change to any file on the compile-or-compare path - the shared comparison logic included - re-checks every covered component, not only the ones the change touched; a change to the guard's own entry point does not.
+- [x] A contract whose inherited-surface origin key changed reports that signal as skipped rather than passing silently on its absence.
 - [x] A covered component whose directory has been removed fails the guard, naming the allowlist entry to remove.
 - [x] The coverage report prints the described set against the component set and sets no exit code, whatever the numbers are.

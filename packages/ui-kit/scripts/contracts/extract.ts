@@ -893,6 +893,7 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
           if (axisNames.has(propName)) continue;
 
           const declarations = prop.getDeclarations() ?? [];
+          // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-undeclared-prop
           if (declarations.length === 0) {
             // A synthetic/computed property symbol (e.g. one instantiated
             // from a mapped type like `Record<'a' | 'b', string>`) carries
@@ -904,6 +905,7 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
             cannotExtract.push(`prop "${propName}": no declaration found (a synthetic/computed property symbol) - cannot extract`);
             continue;
           }
+          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-undeclared-prop
           // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-props
           const ownDeclaration = declarations.find((d) => d.getSourceFile().fileName === source.fileName);
           const declaration = ownDeclaration ?? declarations[0];

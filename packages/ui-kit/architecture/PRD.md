@@ -259,9 +259,9 @@ The system **MUST** compare a described component's contract against the same co
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-fr-contract-incremental-coverage`
 
-The system **MUST** apply contract enforcement only to components explicitly opted into coverage, **MUST** report kit-wide coverage without failing on it, and **MUST** re-check every covered component when the shared contract tooling itself changes.
+The system **MUST** apply contract enforcement only to components explicitly opted into coverage, **MUST** report kit-wide coverage without failing on it, and **MUST** re-check every covered component when any part of the machinery that produces or compares a compiled contract changes.
 
-**Threshold**: A change touching an undescribed component passes; a coverage report never sets a non-zero exit; a change to the compiler, the extractor or the shared schemas re-checks every covered component rather than only the touched ones.
+**Threshold**: A change touching an undescribed component passes; a coverage report never sets a non-zero exit; a change to the compiler, the extractor, the shared schemas, the freshness comparison or the comparison logic those depend on re-checks every covered component rather than only the touched ones.
 
 **Rationale**: A gate switched on across a whole kit starts almost entirely red and is switched off within a week. Scoping it to the change under review lets coverage expand as a by-product of ordinary work.
 
@@ -442,7 +442,8 @@ None owned here. The package is distributed under the root PRD's package-registr
 
 | Dependency | Description | Criticality |
 |------------|-------------|-------------|
-| Headless component primitives | Supply the behaviour and accessibility of the components the kit styles, so the kit owns appearance and composition rather than interaction mechanics. | p1 |
+| Headless component primitives | Supply the behaviour and accessibility of the components the kit styles, so the kit owns appearance and composition rather than interaction mechanics. Two components take their behaviour from a second primitive library rather than the main one. | p1 |
+| Component capability libraries | Supply the model layers a handful of components could not implement themselves: the data grid, charting, the command palette, calendar and date arithmetic, the carousel, resizable panels, and the icon set. Each belongs to the component that needs it. They are installed with the package whether or not those components are imported; keeping them out of a consumer's build is the package build's per-entry emission, which is what `cpt-frontx-ui-kit-nfr-selective-cost` measures. | p2 |
 | React | The rendering model the components are written against, taken as a peer dependency so a consuming application owns the version. | p1 |
 | Variant-authoring library | Declares each component's variant axes and defaults in the code, which is what makes those axes machine-readable rather than documented by hand. | p1 |
 | TypeScript compiler API | Reads a component's prop surface for the contract compiler; the reason a contract can be derived rather than transcribed. | p1 |
@@ -464,3 +465,5 @@ None owned here. The package is distributed under the root PRD's package-registr
 | The compiler recognizes only some primitive families, so a component built on another cannot be described at all. | Parts of the kit are structurally out of reach of the knowledge layer. | The limit is stated in this PRD's assumptions and the compiler refuses loudly rather than emitting a contract with an invented surface. Extending it is design work on the compiler, not configuration. |
 | Contracts stay inside the repository, so the check that matters to a product cannot run in the product. | The knowledge layer guards the kit's own changes but not an agent's output in a consuming project. | Recorded as `cpt-frontx-ui-kit-fr-contract-distribution`, unbuilt and marked as such rather than implied by the layer's existence. |
 | The kit's own prose documentation drifts from the component set it describes. | An agent reads a description that does not match the installed surface. | The documentation guard holds every exported component to having an indexed document; the drift risk that remains is in the prose bodies, which no check reads. |
+| The vendor namespace the contract identifiers are built on is not settled: a shorter form and a form carrying a design segment were both proposed and neither was chosen. | Every committed contract, instance and inherited-surface type carries the namespace in its own identifier, so the migration cost rises with every component described. | The namespace lives in one constant, so the change itself stays a one-line edit. The decision is to be taken before coverage grows past the pilot components, which is the point at which the rewrite stops being cheap. |
+| Whether a type-system runtime is expected to act on the meaning fields, or only to validate and store them, is unanswered. | If a runtime acts on them, the fields currently held as prose have to move into the validator-read half, changing every compiled contract's shape. | The two halves are produced from one routing map rather than two hand-maintained lists, so the move is a change to that map and a recompile. The trigger is the answer to that question in the ecosystem's type-substrate decision. |

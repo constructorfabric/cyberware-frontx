@@ -28,6 +28,7 @@ import {
   mapChangedFilesToComponents,
   resolveRenameSource,
   synthesizeVersionedId,
+  skippedPassthroughNote,
   touchesSharedContractTooling,
   type BaseRefContractEntry,
   type CompatVerdict,
@@ -129,6 +130,26 @@ function contractRenameMap(base: string): Map<string, string> {
 // nothing for it (M7). An empty result (no `src/components` tree at `base`,
 // an unresolvable ref) degrades to "nothing to match against", the same as
 // finding no match - not a hard failure of `compat` itself.
+// Whether the base ref carries any generated passthrough type at all. This
+// separates "the origin key changed, so the file for THIS origin is missing"
+// - a real skipped comparison worth reporting - from "the base predates
+// generated passthrough types entirely", where there is nothing to compare
+// against for any component and silence is correct. Degrades to false on an
+// unresolvable ref, the same way listBaseRefContracts degrades to empty.
+function baseRefHasAnyPassthrough(base: string): boolean {
+  const prefix = packagePrefix();
+  try {
+    const output = execFileSync(
+      'git',
+      ['ls-tree', '-r', '--name-only', base, '--', `${prefix}scripts/contracts/generated`],
+      { cwd: kitRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    return output.split('\n').some((line) => line.endsWith('.json'));
+  } catch {
+    return false;
+  }
+}
+
 function listBaseRefContracts(base: string): BaseRefContractEntry[] {
   const prefix = packagePrefix();
   let output: string;
@@ -210,6 +231,7 @@ function checkCompatForUnit(
   base: string,
   renames: Map<string, string>,
   baseContracts: BaseRefContractEntry[],
+  baseHasAnyPassthrough: boolean,
 ): CompatVerdict & { component: string; isNew: boolean } {
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-read
   const { directory, stem: component } = unit;
@@ -263,6 +285,7 @@ function checkCompatForUnit(
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough
   const origin = passthroughOriginFromContract(newContract);
   let passthroughDiff: ReturnType<typeof diffPassthroughSchema> | undefined;
+  let skippedNote: string | undefined;
   if (origin) {
     const newPassthroughPath = join(GENERATED_DIR, `passthrough.${origin}.json`);
     if (existsSync(newPassthroughPath)) {
@@ -272,6 +295,9 @@ function checkCompatForUnit(
       if (oldPassthroughRaw !== undefined) {
         passthroughDiff = diffPassthroughSchema(JSON.parse(oldPassthroughRaw), newPassthrough);
       }
+      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
+      skippedNote = skippedPassthroughNote(component, origin, oldPassthroughRaw !== undefined, baseHasAnyPassthrough);
+      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
     }
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough
@@ -309,7 +335,9 @@ function checkCompatForUnit(
     passthroughDiff,
     ownPropsDiff,
   });
-  return { component, isNew: false, status: verdict.status, notes: verdict.notes.map((note) => `${note}${renamedFromNote}`) };
+  const notes = verdict.notes.map((note) => `${note}${renamedFromNote}`);
+  if (skippedNote !== undefined) notes.push(skippedNote);
+  return { component, isNew: false, status: verdict.status, notes };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-decide
 }
 
@@ -325,7 +353,8 @@ function runCompat(base: string, options: { json: boolean }): void {
 
   const renames = contractRenameMap(base);
   const baseContracts = listBaseRefContracts(base);
-  const results = units.map((unit) => checkCompatForUnit(unit, base, renames, baseContracts));
+  const baseHasAnyPassthrough = baseRefHasAnyPassthrough(base);
+  const results = units.map((unit) => checkCompatForUnit(unit, base, renames, baseContracts, baseHasAnyPassthrough));
   const failed = results.some((result) => result.status === 'fail');
 
   if (options.json) {
@@ -357,11 +386,9 @@ function componentExportCoverage(directory: string): DirectoryExportCoverage {
   // A directory whose main file the extractor cannot resolve (wrong name, no
   // component-shaped export) reports 0 total exports rather than crashing a
   // report that is never supposed to fail the build.
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-uncovered
   const componentNames = tryExtractComponentNames(directory);
   const skippedNonComponents = tryListExportedDeclarationNames(directory).filter((name) => !componentNames.includes(name));
   return { directory, totalExports: componentNames.length, coveredExports: overlayStems(directory).length, skippedNonComponents };
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-uncovered
 }
 
 function tryExtractComponentNames(directory: string): string[] {
@@ -470,8 +497,10 @@ function runCoverage(options: { json: boolean }): void {
   // count of what already has a contract - a compound directory can read
   // "4 of 4 exports" and simply not be promoted into covered.json yet, which
   // is a different, more actionable fact than "0 of 63" was ever able to say.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-uncovered
   const byDirectory = new Map(all.map((directory) => [directory, componentExportCoverage(directory)]));
   const uncovered = report.uncovered.map((component) => byDirectory.get(component) ?? { directory: component, totalExports: 0, coveredExports: 0, skippedNonComponents: [] });
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-uncovered
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-return
   if (options.json) {
@@ -479,7 +508,6 @@ function runCoverage(options: { json: boolean }): void {
     return;
   }
 
-  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-coverage-exit
   console.log(`${report.coveredCount} of ${report.total} components covered by contracts.`);
   if (uncovered.length === 0) return;
   console.log('Not yet in covered.json (n of m exports already have a contract):');
@@ -487,7 +515,6 @@ function runCoverage(options: { json: boolean }): void {
     const skippedNote = coverage.skippedNonComponents.length > 0 ? ` (skipped, not components: ${coverage.skippedNonComponents.join(', ')})` : '';
     console.log(`  - ${coverage.directory}: ${coverage.coveredExports} of ${coverage.totalExports} exports${skippedNote}`);
   }
-  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-coverage-exit
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-return
 }
 
@@ -538,7 +565,9 @@ if (invokedDirectly()) {
     // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-dispatch-guard
     // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-dispatch-coverage
     case 'coverage':
+      // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-coverage-exit
       runCoverage({ json });
+      // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-coverage-exit
       break;
     // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-dispatch-coverage
     // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-unknown-subcommand

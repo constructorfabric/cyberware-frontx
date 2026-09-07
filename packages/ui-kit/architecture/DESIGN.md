@@ -69,8 +69,8 @@ The package is a full member of the published-libraries layer that is deliberate
 
 **ADR coverage references:**
 
-- `cpt-frontx-adr-ai-tooling-framework-packaging`
-- `cpt-frontx-adr-default-type-substrate-provider`
+- `cpt-frontx-adr-ai-tooling-framework-packaging` - establishes the kit mechanism this package is the second adopter of, and the reserved resource prefix its own kit is to carry. The kit itself is decided and unbuilt.
+- `cpt-frontx-adr-default-type-substrate-provider` - fixes the concrete type-definition specification the contract harness names its identifiers in and takes one of its three compatibility signals from. The dependency is on the specification's own build-time library, taken as a development dependency by the harness; nothing here reaches the runtime provider or the port it implements, and no published artifact carries it.
 
 ### 1.3 Architecture Layers
 
@@ -144,11 +144,11 @@ The hand-authored overlay may not restate a fact the compiler reads from the cod
 
 A component stylesheet may consume only variables the token system defines, plus the variables the underlying primitive supplies at runtime for positioning and animation. It may not declare a raw colour or an off-scale metric. The rule is asserted over the stylesheets themselves rather than left to review.
 
-#### UIKIT-3 - A published-libraries member that is not core
+#### UIKIT-3 - A standalone published-libraries member that is not core
 
 - [x] `p2` - **ID**: `cpt-frontx-ui-kit-constraint-ui-committed-member`
 
-The package is a member of the published-libraries layer and holds neither of that layer's two optional properties: it is not *core*, because it is committed to a UI framework, and it is not *standalone*, because it depends on the primitive libraries it wraps. Reading "not core" as "not a member" is exactly the conflation the root design keeps the properties apart to prevent ([root DESIGN §1.3](../../../architecture/DESIGN.md#13-architecture-layers)). No ecosystem contract is permitted to privilege this package over another library in the same role.
+The package is a member of the published-libraries layer holding one of that layer's two independent properties and not the other. It is not *core*, because it is committed to a UI framework. It is *standalone*, because standalone means declaring no intra-ecosystem package dependency, and the package declares none - the libraries it wraps are all external. Reading "not core" as "neither property" is exactly the conflation the root design keeps the two apart to prevent ([root DESIGN §1.3](../../../architecture/DESIGN.md#13-architecture-layers)); a UI-committed library that depends on no other member is precisely the case that separation admits. No ecosystem contract is permitted to privilege this package over another library in the same role.
 
 #### UIKIT-4 - Contract artifacts are repository artifacts
 
@@ -365,7 +365,9 @@ Two path shapes are deliberately not public: the internal component module layou
 
 ### 3.4 Internal Dependencies
 
-The package declares no dependency on another ecosystem package. It is a member of the published-libraries layer that holds neither the core nor the standalone property (UIKIT-3): it is not standalone because it depends on the primitive libraries it wraps, but those are external, not intra-ecosystem.
+The package declares no dependency on another ecosystem package, which is what makes it standalone (UIKIT-3). Every library it does depend on is external; being committed to a UI framework costs it the core property, not the standalone one.
+
+What the package may depend on, and which members may depend on it, is not yet settled by an accepted decision. Until one lands, that policy is enforced by the repository's interim dependency-cruiser rules, which hold the package isolated in both directions: no existing ecosystem package may acquire a dependency on it, and it may acquire none of its own. Those rules are deliberately untraced - there is no decision for them to cite yet - and they remain the enforcement of this boundary until there is.
 
 **Dependency Rules** (per project conventions):
 - No import of template territory
@@ -383,6 +385,24 @@ The package declares no dependency on another ecosystem package. It is a member 
 **Dependency Rules** (per project conventions):
 - Behaviour comes from a primitive; a component does not reimplement interaction mechanics the primitive provides
 - A primitive's appearance decisions are overridden through the token vocabulary, never adopted
+
+#### Component capability libraries
+
+| Dependency Module | Interface Used | Purpose |
+|-------------------|----------------|---------|
+| Data-grid library | Table model, column definitions, row selection, pagination | Supplies the data-table component's model layer, which is why that component's props carry type parameters the contract compiler can only record as slots. |
+| Charting library | Chart primitives | Supplies the chart component's rendering. |
+| Command-palette library | Filterable command list | Supplies the command component's matching and keyboard model. |
+| Date libraries | Calendar rendering and date arithmetic | Supply the calendar and date-picker components. |
+| Carousel library | Carousel engine | Supplies the carousel component. |
+| Resizable-panels library | Panel group and drag handles | Supplies the resizable component. |
+| Icon set | Icon components | The kit's icon vocabulary, referenced by components that render icons. |
+| Secondary primitive library | Headless behaviour for two components | Supplies the behaviour of the two components not built on the main primitive family. Their inherited surface resolves no origin the contract compiler recognizes, which is why they are outside contract coverage today. |
+
+**Dependency Rules** (per project conventions):
+- Each of these belongs to the component that needs it; none becomes a kit-wide concern, and none is re-exported
+- A component's appearance stays on the token vocabulary regardless of what its capability library ships (UIKIT-2)
+- `cpt-frontx-ui-kit-nfr-selective-cost` is about what reaches a consumer's *bundle*, not what reaches its install graph: these are runtime dependencies of the package and are installed whether or not the components needing them are imported. Keeping them out of an unimporting consumer's build is the per-entry emission the package build is responsible for.
 
 #### Variant authoring
 
@@ -452,8 +472,15 @@ Two facts about the current state are worth stating so they are not read as desi
 
 The package is also the second adopter of the Constructor Studio kit mechanism, reserving its own resource prefix so its resources cannot collide with the AI tooling framework's (`cpt-frontx-adr-ai-tooling-framework-packaging`). That kit is decided and unbuilt; this design describes no part of it as existing.
 
+Two decisions inside the knowledge layer are open, and both get more expensive the longer coverage grows:
+
+- **The vendor namespace the contract identifiers are built on.** A shorter form and a form carrying a design segment were both proposed and neither was settled. The identifier construction keeps the namespace in a single constant precisely so the change stays a one-line edit, but every committed contract, instance and generated inherited-surface type carries the namespace in its own identifier, so the cost of changing it is proportional to the described set. Trigger: settle it before coverage grows past the pilot components.
+- **Whether a type-system runtime is expected to act on the meaning fields, or only to validate and store them.** Today the split between the block a validator reads and the block that is prose assumes the latter. If the answer becomes the former, the prose fields move into the validator-read block and the prose block folds away. The routing map is the single edit point for that move, which is why the split is expressed as a map rather than as two hand-maintained lists. Trigger: the answer to that question in the type-substrate decision.
+
 ## 5. Traceability
 
+- **PRD**: [PRD.md](./PRD.md)
+- **ADRs**: [root ADR/](../../../architecture/ADR/) - this package owns no ADR of its own; the decisions it answers to are `cpt-frontx-adr-ai-tooling-framework-packaging` and `cpt-frontx-adr-default-type-substrate-provider`, both root-owned.
 - **Features**: [features/](./features/)
 - **Root chain**: [PRD](../../../architecture/PRD.md), [DESIGN](../../../architecture/DESIGN.md), [DECOMPOSITION](../../../architecture/DECOMPOSITION.md)
 

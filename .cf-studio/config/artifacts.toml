@@ -21,6 +21,10 @@ reason = "In-package demos exercise a package's public surface rather than imple
 patterns = ["*/demo/*"]
 
 [[ignore]]
+reason = "Extractor fixtures are inputs to a test, not implementable source: each one is a deliberately shaped component written so the extractor's own suite can assert what it reads out of it, so no instruction exists for a marker to point at. They are .tsx and reach the scan through the packages/ + .tsx catch-all rather than through ui-kit's own scripts entry, which is .ts only. Structural and permanent - this is not a placeholder for missing artifacts and must never be given an expiry."
+patterns = ["packages/ui-kit/scripts/contracts/__fixtures__/*"]
+
+[[ignore]]
 reason = "These globs cover template territory — top-level directories carrying a frontx-template.json manifest — outside the ecosystem artifact universe (cpt-frontx-adr-template-territory-traceability); residue markers bind nothing and are removed as files are touched — no active FEATURE artifact backs this template territory"
 patterns = ["template-shell/**", "template-mfe/**", "template-design-guardrails/**"]
 
@@ -303,13 +307,17 @@ extensions = [".ts"]
 # FEATURE required, because `required` flags do not inherit and the explicit-artifact-list form
 # validates while enforcing nothing. DECOMPOSITION and ADR are omitted rather than declared
 # optional: a member never owns a DECOMPOSITION, and this member owns no decision of its own yet.
-# Two codebase paths because two trees carry markers: `src` holds the components the contracts
-# describe (.tsx) and the kit-wide guards beside them (.ts), and `scripts` holds the contract
-# harness (.ts only - the fixtures under scripts/contracts/__fixtures__ are .tsx and are deliberately
-# left unscanned, being inputs to the extractor's own tests rather than implementable source). Both
-# paths would also be reached by the root system's packages/ + .ts/.tsx/.mjs catch-all now that the
-# ignore is gone; they are declared here anyway so this member's scanned surface is stated by the
-# member's own registration rather than inherited from a catch-all that could change.
+# Two codebase paths. `scripts` holds the contract harness, which carries the markers today. `src`
+# holds the components those contracts describe: nothing under it is marked - the kit-wide guards
+# beside the components are `*.test.ts` and are excluded by the test ignore above - and it is
+# registered anyway because it is the subject the harness reads and the DESIGN's component-surface
+# component, so markers belong there as soon as component-level instructions exist to carry. A
+# scanned file with no marker is not a defect; an unscanned tree that later needs one is.
+# Both paths would also be reached by the root system's packages/ + .ts/.tsx/.mjs catch-all now
+# that the package-wide ignore is gone; they are declared here anyway so this member's scanned
+# surface is stated by the member's own registration rather than inherited from a catch-all that
+# could change. The `.tsx` fixtures under scripts/contracts/__fixtures__ are reached by that same
+# catch-all and are excluded by their own [[ignore]] entry above.
 [[systems.children]]
 name = "UI Kit"
 slug = "ui-kit"

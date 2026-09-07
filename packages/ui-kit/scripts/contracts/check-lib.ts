@@ -135,6 +135,25 @@ export function diffOwnPropsSchema(oldSchema: OwnPropsSchemaLike, newSchema: Own
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
 }
 
+// A component re-based onto a different primitive part changes its passthrough
+// ORIGIN key, so `gitShow` looks for `passthrough.<new origin>.json` at the base
+// ref and finds nothing. `passthroughDiff` then stays undefined and `decideCompat`
+// reads the missing signal as "nothing incompatible" - the inherited surface
+// changed wholesale and no one is told. This does not make the change a refusal
+// (the old and new surfaces are not comparable prop-by-prop), but the skipped
+// signal has to be visible in the report rather than inferred from its absence.
+// A base ref carrying no generated passthrough type at all is the genuine
+// first-contract case and stays silent.
+export function skippedPassthroughNote(
+  component: string,
+  origin: string,
+  baseHasOriginFile: boolean,
+  baseHasAnyPassthrough: boolean,
+): string | undefined {
+  if (baseHasOriginFile || !baseHasAnyPassthrough) return undefined;
+  return `${component}: inherited-surface signal skipped - the base ref carries no passthrough type for origin "${origin}"`;
+}
+
 export interface CompatDecisionInput {
   component: string;
   oldMajor: number;
@@ -251,18 +270,26 @@ export function mapChangedFilesToComponents(changedFiles: string[]): Set<string>
 const CONTRACTS_TOOLING_PREFIX = 'scripts/contracts/';
 
 // Files under scripts/contracts/ that are neither shared build/extraction
-// logic nor a hand-authored input to it: the guard/compat/coverage
-// implementation itself (a bug fix here cannot change what any component
-// compiles to - re-checking every covered component because check.ts
-// changed would be circular, since check.ts is what performs that check),
-// its own unit tests, and prose. Everything else directly under
-// scripts/contracts/ (compile.ts, extract.ts, ids.ts, freshness.ts,
-// testing.ts, base.component.json, ui-component.meta.json, every generated
-// passthrough file) participates in producing or comparing EVERY covered
-// component's compiled output, so a change to any of it invalidates the
-// "only the touched directory needs re-checking" assumption mapChangedFilesToComponents
+// logic nor a hand-authored input to it: the guard's own entry point (a bug
+// fix in check.ts cannot change what any component compiles to, and
+// re-checking every covered component because check.ts changed would be
+// circular, since check.ts is what performs that check), its unit tests,
+// and prose. Everything else directly under scripts/contracts/ (compile.ts,
+// extract.ts, ids.ts, freshness.ts, testing.ts, check-lib.ts,
+// base.component.json, ui-component.meta.json, every generated passthrough
+// file) participates in producing or comparing EVERY covered component's
+// compiled output, so a change to any of it invalidates the "only the
+// touched directory needs re-checking" assumption mapChangedFilesToComponents
 // makes (M6 - the review's own name for exactly this blind spot).
-const NON_TOOLING_CONTRACTS_FILES = new Set(['check.ts', 'check-lib.ts', 'check-lib.test.ts', 'covered.json', 'PILOT-NOTES.md']);
+//
+// check-lib.ts belongs on the participating side despite holding the guard's
+// own decision rules, and was wrongly excluded here: freshness.ts imports
+// jsonDiff from this module, so every freshness verdict for every covered
+// component runs through this file. A jsonDiff change can flip all of them
+// while touching no component directory - exactly the blind spot the widening
+// exists to close. The circularity argument covers check.ts alone, which
+// nothing in the comparison path imports.
+const NON_TOOLING_CONTRACTS_FILES = new Set(['check.ts', 'check-lib.test.ts', 'covered.json', 'PILOT-NOTES.md']);
 
 // Whether any changed file is shared contract-compiling machinery (see
 // NON_TOOLING_CONTRACTS_FILES above for what is deliberately excluded).
