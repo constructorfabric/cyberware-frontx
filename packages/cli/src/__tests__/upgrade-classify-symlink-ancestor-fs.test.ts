@@ -1,25 +1,30 @@
 // @cpt-algo:cpt-frontx-algo-upgrade-changeset-classify:p1
 //
-// Real-filesystem coverage for the symlinked-ANCESTOR defect (PR review
-// round five, reproduced against the built binary): `classifyTarget`
-// (`../upgrade/classify.ts`) refused fail-closed on a symlinked LEAF, but an
-// ancestor directory component between `target` and the leaf that was
-// itself a symlink was simply followed by the OS on every read — so a plan
-// naming `workspace/dir/sub/b.txt` actually compared, and would have let the
-// commit algorithm land, content at wherever `workspace/dir` really pointed.
+// Real-filesystem coverage for `classifyTarget`'s (`../upgrade/classify.ts`)
+// ancestor probe: `readDiskEntry` is `lstat`-based on the full leaf path
+// only, which correctly reports a symlinked LEAF, but any directory
+// component between the project root and the leaf that is itself a symlink
+// (or an ordinary regular file, where a directory is required) is simply
+// followed — or fails to resolve through — transparently by the OS on every
+// read, unless this module's own ancestor probe catches it first. A plan
+// naming `workspace/dir/sub/b.txt` where `workspace/dir` was such a
+// component would otherwise compare, and let the commit algorithm land,
+// content at wherever the bad component actually resolves to, never at the
+// path the plan names.
 //
 // `fakeReadDiskEntry` (`./upgrade-classify.test.ts`) cannot honestly exercise
 // this: a fake keyed by absolute path string can trivially "get it right"
 // for whichever path a test happens to look up, but it can never reproduce
 // what the REAL `lstat`-based seam does when an intermediate path segment is
 // a symlink — the OS resolves it transparently on the way to the leaf,
-// which is exactly the behavior this fix has to defend against. This suite
-// uses the real `createFsReadDiskEntryFn` (`../adapters/fs-upgrade-io.ts`)
-// against a real temporary directory with real symlinks, mirroring
+// which is exactly the behavior this suite has to defend against. It uses
+// the real `createFsReadDiskEntryFn` (`../adapters/fs-upgrade-io.ts`) against
+// a real temporary directory with real symlinks, mirroring
 // `fs-containment.test.ts`'s own real-temp-directory convention for the
-// identical reason that file states for the apply-side containment escape.
+// identical reason on the apply side.
 import path from 'node:path';
 import { mkdtemp, mkdir, rm, symlink, rename, writeFile, readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { classifyTarget } from '../upgrade/classify';
@@ -139,6 +144,149 @@ describe('classifyTarget against a real filesystem — symlinked ancestor direct
       'workspace/dir/sub/add.txt': 'ADD',
     });
   });
+
+  // --- the full matrix: every ancestor shape × every operation class -----
+  //
+  // Six of eleven claimed ancestor shapes are pinned here — {leaf is a
+  // symlink, an ancestor BELOW the target is a symlink, the TARGET ITSELF is
+  // a symlink, an ancestor ABOVE the target is a symlink, an ancestor is a
+  // DANGLING symlink, an ancestor is an ordinary REGULAR FILE} — crossed
+  // with every operation class {ADD, REPLACE, REMOVE}, against a real
+  // filesystem. Each
+  // case asserts both that classification refuses fail-closed and that the
+  // content standing behind the bad ancestor is byte-for-byte unchanged —
+  // classification never writes anything, but pinning that behavior here
+  // catches a future change to this module that starts doing so from ever
+  // reaching a released build unnoticed.
+  type OpCase = 'ADD' | 'REPLACE' | 'REMOVE';
+  const OP_CASES: OpCase[] = ['ADD', 'REPLACE', 'REMOVE'];
+
+  // Every scenario pre-creates the SAME leaf content ('PROTECTED') regardless
+  // of `op`: classification's fail-closed refusal on a bad ancestor does not
+  // depend on what the leaf itself would otherwise resolve to, so one fixed
+  // disk shape exercises all three operation classes identically.
+  function payloadsFor(op: OpCase, leafRel: string): { baseline: ResolvedPayload; candidate: ResolvedPayload } {
+    if (op === 'ADD') return { baseline: payload({}), candidate: payload({ [leafRel]: 'candidate-new' }) };
+    if (op === 'REMOVE') return { baseline: payload({ [leafRel]: 'PROTECTED' }), candidate: payload({}) };
+    return { baseline: payload({ [leafRel]: 'PROTECTED' }), candidate: payload({ [leafRel]: 'candidate-new' }) };
+  }
+
+  interface Scenario {
+    name: string;
+    leafRel: string;
+    setup: (repoRoot: string) => Promise<{ target: string }>;
+    verifyUnchanged: (repoRoot: string) => Promise<void>;
+  }
+
+  const scenarios: Scenario[] = [
+    {
+      name: 'leaf itself is a symlink aliasing another real file',
+      leafRel: 'leaf.txt',
+      async setup(root) {
+        await mkdir(path.join(root, 'workspace'), { recursive: true });
+        await writeFile(path.join(root, 'protected-real.txt'), 'PROTECTED', 'utf-8');
+        await symlink(path.join('..', 'protected-real.txt'), path.join(root, 'workspace', 'leaf.txt'));
+        return { target: 'workspace' };
+      },
+      async verifyUnchanged(root) {
+        expect(await readFile(path.join(root, 'protected-real.txt'), 'utf-8')).toBe('PROTECTED');
+      },
+    },
+    {
+      name: 'an ancestor BELOW the target is a symlink',
+      leafRel: 'dir/sub/leaf.txt',
+      async setup(root) {
+        const ws = path.join(root, 'workspace');
+        await mkdir(path.join(ws, 'dir', 'sub'), { recursive: true });
+        await writeFile(path.join(ws, 'dir', 'sub', 'leaf.txt'), 'PROTECTED', 'utf-8');
+        await mkdir(path.join(root, 'stash'), { recursive: true });
+        await rename(path.join(ws, 'dir'), path.join(root, 'stash', 'dir'));
+        await symlink(path.join('..', 'stash', 'dir'), path.join(ws, 'dir'));
+        return { target: 'workspace' };
+      },
+      async verifyUnchanged(root) {
+        expect(await readFile(path.join(root, 'stash', 'dir', 'sub', 'leaf.txt'), 'utf-8')).toBe('PROTECTED');
+      },
+    },
+    {
+      name: 'the TARGET ITSELF is a symlink',
+      leafRel: 'dir/sub/leaf.txt',
+      async setup(root) {
+        const ws = path.join(root, 'workspace');
+        await mkdir(path.join(ws, 'dir', 'sub'), { recursive: true });
+        await writeFile(path.join(ws, 'dir', 'sub', 'leaf.txt'), 'PROTECTED', 'utf-8');
+        await mkdir(path.join(root, 'stash'), { recursive: true });
+        await rename(ws, path.join(root, 'stash', 'workspacereal'));
+        await symlink(path.join('stash', 'workspacereal'), ws);
+        return { target: 'workspace' };
+      },
+      async verifyUnchanged(root) {
+        expect(await readFile(path.join(root, 'stash', 'workspacereal', 'dir', 'sub', 'leaf.txt'), 'utf-8')).toBe('PROTECTED');
+      },
+    },
+    {
+      name: 'an ancestor ABOVE the target is a symlink',
+      leafRel: 'leaf.txt',
+      async setup(root) {
+        await mkdir(path.join(root, 'stash', 'real-workspace', 'app'), { recursive: true });
+        await writeFile(path.join(root, 'stash', 'real-workspace', 'app', 'leaf.txt'), 'PROTECTED', 'utf-8');
+        await symlink(path.join('stash', 'real-workspace'), path.join(root, 'workspace'));
+        return { target: 'workspace/app' };
+      },
+      async verifyUnchanged(root) {
+        expect(await readFile(path.join(root, 'stash', 'real-workspace', 'app', 'leaf.txt'), 'utf-8')).toBe('PROTECTED');
+      },
+    },
+    {
+      name: 'an ancestor is a DANGLING symlink',
+      leafRel: 'dir/sub/leaf.txt',
+      async setup(root) {
+        await mkdir(path.join(root, 'workspace'), { recursive: true });
+        await symlink(path.join('nowhere', 'does-not-exist'), path.join(root, 'workspace', 'dir'));
+        return { target: 'workspace' };
+      },
+      async verifyUnchanged(root) {
+        // Nothing exists behind a dangling link — the only thing to protect
+        // is that classification never materializes the dangling target.
+        expect(existsSync(path.join(root, 'nowhere'))).toBe(false);
+      },
+    },
+    {
+      name: 'an ancestor is an ordinary REGULAR FILE, standing where a directory is required',
+      leafRel: 'dir/sub/leaf.txt',
+      async setup(root) {
+        await mkdir(path.join(root, 'workspace'), { recursive: true });
+        await writeFile(path.join(root, 'workspace', 'dir'), 'PROTECTED-ANCESTOR-FILE', 'utf-8');
+        return { target: 'workspace' };
+      },
+      async verifyUnchanged(root) {
+        expect(await readFile(path.join(root, 'workspace', 'dir'), 'utf-8')).toBe('PROTECTED-ANCESTOR-FILE');
+      },
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    describe(scenario.name, () => {
+      for (const op of OP_CASES) {
+        it(`refuses fail-closed for ${op}, and leaves the content behind the bad ancestor byte-for-byte unchanged`, async () => {
+          repoRoot = await mkdtemp(path.join(tmpdir(), 'frontx-upgrade-ancestor-matrix-'));
+          const { target } = await scenario.setup(repoRoot);
+          const { baseline, candidate } = payloadsFor(op, scenario.leafRel);
+          const expectedProjectPath = target === '.' ? scenario.leafRel : `${target}/${scenario.leafRel}`;
+
+          const result = await classifyTarget(baseInput({ target, baseline, candidate }));
+
+          expect(result.conflictPaths).toEqual([expectedProjectPath]);
+          expect(result.uncomparablePaths).toEqual([expectedProjectPath]);
+          expect(result.operations).toEqual([]);
+          await scenario.verifyUnchanged(repoRoot);
+        });
+      }
+    });
+  }
+
+  // --- control: an upgrade whose payload never passes through the bad
+  // ancestor at all must classify normally, refusing nothing --------------
 
   it('leaves an unrelated real symlinked directory elsewhere in the target — never an ancestor of any enumerated payload path — entirely untouched', async () => {
     repoRoot = await mkdtemp(path.join(tmpdir(), 'frontx-upgrade-ancestor-'));

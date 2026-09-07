@@ -13,7 +13,11 @@
 //
 // Pure logic behind injected seams — no direct filesystem access here,
 // matching every other scaffold/manifest module's convention. The real
-// fs-backed adapter is `../adapters/fs-ai-bundle.ts`.
+// fs-backed adapter is `../adapters/fs-ai-bundle.ts`, which joins whatever
+// root it is given straight onto `.frontx/ai/<manifestName>/` with no repo
+// root of its own to fall back to — so every `root`/`sourceRoot`/`destRoot`
+// below is ALWAYS an absolute filesystem path, never one a caller expects
+// this module or its adapter to resolve against something else.
 export type BundleExistsFn = (root: string, manifestName: string) => Promise<boolean>;
 export type CopyBundleFn = (sourceRoot: string, destRoot: string, manifestName: string) => Promise<void>;
 export type RemoveBundleFn = (root: string, manifestName: string) => Promise<void>;
@@ -31,6 +35,11 @@ export type RemoveBundleFn = (root: string, manifestName: string) => Promise<voi
 // `FIRST_TARGET_GAINED` variant is the only one that carries the field at
 // all.
 export type AiBundleTransition =
+  // `installedContentPath` is the SAME absolute path `ContributionEntry`
+  // carries (`scaffold/types.ts`'s own doc comment) — `bundleExists`/
+  // `copyBundle` above read it as a root to join `.frontx/ai/<manifestName>/`
+  // onto directly, so a caller that passed anything else would have that
+  // path resolved against whatever the process happens to be running from.
   | { kind: 'FIRST_TARGET_GAINED'; installedContentPath: string }
   | { kind: 'LAST_TARGET_LOST' }
   | { kind: 'NO_TRANSITION' };

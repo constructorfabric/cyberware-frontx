@@ -317,11 +317,11 @@ describe('validateContentSelfContainment - tsconfig `paths` mappings', () => {
     expect(result.status).toBe('VALIDATED');
   });
 
-  // CodeRabbit review finding on #493: `files`/`include`/`exclude` and
-  // `compilerOptions.typeRoots`/`outDir` name paths too. `include` is the
-  // sharpest of them - it is how a tsconfig pulls source files from outside the
-  // template straight into its own program, which is the same escape a `paths`
-  // mapping expresses with a different spelling.
+  // `files`/`include`/`exclude` and `compilerOptions.typeRoots`/`outDir`
+  // name paths too. `include` is the sharpest of them - it is how a
+  // tsconfig pulls source files from outside the template straight into
+  // its own program, which is the same escape a `paths` mapping expresses
+  // with a different spelling.
   it('an `include` glob anchored outside the template root is a violation', async () => {
     const { listPayloadFiles, resolveDeclaredExclusion, readFile } = fakeTemplate({
       'packages/framework/tsconfig.json': JSON.stringify({ include: ['src/**/*', '../../../shared/**/*'] }),

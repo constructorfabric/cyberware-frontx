@@ -39,8 +39,8 @@ working starting point; what you build on top is yours.
 - **The MFE runtime, pre-wired** — screens are contributed by microfrontends and
   appear in the menu automatically; no central screen registry to maintain.
 - **Demo microfrontends** (`src-app/mfe_packages`, added separately via
-  [`frontx-template-mfe`](../template-mfe/README.md)) — `demo-mfe` (Hello World,
-  Profile, Current Theme, UIKit Elements, Widgets Host), a minimal `_blank-mfe`
+  `frontx-template-mfe`) — `demo-mfe` (Hello World, Profile, Current Theme,
+  UIKit Elements, Widgets Host), a minimal `_blank-mfe`
   to copy from, and two widget fixtures. A shell-only seed has zero MFEs; the
   host, build, and manifest pipeline all work with none present. These ship to be
   read and copied and stay out of your running app; `src-app/mfe_packages/README.md`
@@ -133,8 +133,8 @@ npm run dev:all
 
 A shell-only project has no MFEs yet, so `dev:all` just runs the host, and
 `generate:mfe-manifests` writes an empty manifest set — both expected, not
-errors. Add MFE packages by registering and applying
-[`frontx-template-mfe`](../template-mfe/README.md) at `src-app/mfe_packages`:
+errors. Add MFE packages by registering and applying `frontx-template-mfe`
+at `src-app/mfe_packages`:
 
 ```bash
 frontx register <mfe-origin>

@@ -29,26 +29,25 @@
 // one here would silently add a seventh, undeclared term to that one
 // shared formula.
 //
-// SYMLINK-INVISIBLE FIX (found in PR review, reproduced against the built
-// binary): `readdirSync(..., { withFileTypes: true })` reports a symlink
-// dirent as neither `isDirectory()` nor `isFile()`, so a symlink already
-// standing at a TARGET path used to be skipped by this walk exactly like the
-// "fifo, socket, or device" entries it was written to ignore. That made
-// `readExistingContent` (this file's OTHER walk, feeding
+// SYMLINK-INVISIBLE FIX: `readdirSync(..., { withFileTypes: true })` reports
+// a symlink dirent as neither `isDirectory()` nor `isFile()`, so a symlink
+// already standing at a TARGET path would otherwise be skipped by this walk
+// exactly like the "fifo, socket, or device" entries it is written to
+// ignore — leaving `readExistingContent` (this file's OTHER walk, feeding
 // `reconcileExistingContent`'s "existing" side) blind to it: a declared
 // payload path that a developer (or, one target over in the same batch, the
-// pipeline itself) had already turned into a symlink aliasing a DIFFERENT
-// on-disk file looked exactly like a brand-new path, and `commands/apply.ts`
-// materialized straight through it, following the link into the aliased
-// file and overwriting content `--adopt-existing` had promised to leave
-// alone. `readExistingContent`'s walk below now reports a symlink dirent as
-// an OCCUPIED existing entry — never silently dropped — while still never
-// descending into it (matching this walk's own "deliberately simple, no
-// symlink-cycle handling" scope, and the reproduced defect is a symlinked
-// FILE, not a symlinked directory). `readInstalledContent`'s walk keeps
-// skipping a symlink outright: a TEMPLATE's own payload is a different data
-// source entirely (never expected to contain one), and is not this fix's
-// target.
+// pipeline itself) has already turned into a symlink aliasing a DIFFERENT
+// on-disk file would look exactly like a brand-new path, and
+// `commands/apply.ts` would materialize straight through it, following the
+// link into the aliased file and overwriting content `--adopt-existing`
+// promises to leave alone. `readExistingContent`'s walk below instead
+// reports a symlink dirent as an OCCUPIED existing entry — never silently
+// dropped — while still never descending into it (matching this walk's own
+// "deliberately simple, no symlink-cycle handling" scope; the case this
+// guards against is a symlinked FILE, not a symlinked directory).
+// `readInstalledContent`'s walk keeps skipping a symlink outright: a
+// TEMPLATE's own payload is a different data source entirely (never
+// expected to contain one), and is not this fix's target.
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ContentItem } from '../scaffold/types';
@@ -81,19 +80,18 @@ const PAYLOAD_SKIP_DIR = 'node_modules';
 // adopted-path snapshot-then-reread verification does — reports it
 // identically both times when nothing about that symlink actually changed.
 //
-// DIRECTORY-SYMLINK FIX (found in PR review, reproduced against the built
-// binary): the marker's DEFINITION now lives in `../scaffold/existing-
-// content.ts`, imported from there rather than restated here. A symlinked
-// DIRECTORY anywhere above a payload path defeated reconciliation entirely
-// (this walk never descends into a symlinked directory, so it never even
-// reports an entry for a path beneath one — a gap distinct from, and worse
-// than, the symlinked-FILE case this marker originally existed to cover);
-// closing it required `reconcileExistingContent` itself to recognize "a
-// symlink stands here" as a fact about the RAW read, before its own
-// ownership filter narrows things down. A value both this adapter (the
-// writer of it) and that algorithm (now also a reader of it) have to agree
-// on has exactly one honest home — see that module's own doc comment on the
-// constant for the full reasoning.
+// DIRECTORY-SYMLINK FIX: the marker's DEFINITION lives in
+// `../scaffold/existing-content.ts`, imported from there rather than
+// restated here — a value both this adapter (the writer of it) and that
+// algorithm (now also a reader of it) have to agree on has exactly one
+// honest home. A symlinked DIRECTORY anywhere above a payload path defeats
+// reconciliation entirely: this walk never descends into a symlinked
+// directory, so it never even reports an entry for a path beneath one — a
+// gap distinct from, and worse than, the symlinked-FILE case this marker
+// covers. Closing it requires `reconcileExistingContent` itself to
+// recognize "a symlink stands here" as a fact about the RAW read, before
+// its own ownership filter narrows things down — see that module's own doc
+// comment on the constant for the full reasoning.
 
 // `skipInstallOutput` distinguishes the two callers below, and the distinction
 // is load-bearing rather than cosmetic:
@@ -152,13 +150,15 @@ function listFilesRecursive(
 
 /**
  * Real `ReadInstalledContentFn` — every real file reachable under a
- * template's installed content path, template-relative. `installedContentPath`
- * is either an ABSOLUTE local-inventory path or a PROJECT-RELATIVE local
- * `path:` origin folder (`scaffold/assembler.ts`'s own `ResolvedTemplate`
- * doc comment on this asymmetry, pre-existing and not this adapter's to
- * resolve) — both are handled by joining against `repoRoot` only when the
- * given path is not already absolute, `path.join` leaving an absolute path
- * untouched.
+ * template's installed content path, template-relative. The batch-staging
+ * pipeline (`scaffold/assembler.ts`) always hands this an ABSOLUTE
+ * `installedContentPath` (`scaffold/types.ts`'s `ContributionEntry` doc
+ * comment states that as the one rule), so `repoRoot` here is not needed to
+ * interpret it — this factory still accepts one, and still joins a relative
+ * path against it with `path.join` leaving an already-absolute one untouched,
+ * because `createFsReadInstalledContentFn` is also this package's public
+ * export (`index.ts`) for callers outside the staged-assembly pipeline, who
+ * are free to hand it a path relative to a repo root they supply themselves.
  */
 export function createFsReadInstalledContentFn(repoRoot: string): ReadInstalledContentFn {
   return async function readInstalledContent(installedContentPath: string): Promise<ContentItem[]> {

@@ -33,11 +33,11 @@ export function projectStatePath(repoRoot: string): string {
 }
 // @cpt-end:cpt-frontx-algo-composed-provenance-project-state-io:p1:inst-psio-locate
 
-// DEFECT FIX (ADR-0019 "More Information"): the OLD per-template
-// `.frontx/provenance.json` record this feature's own header (`./types.ts`)
-// says is "slated for deletion once callers migrate" — never itself read by
-// this module's normal logic, referenced here ONLY so `loadProjectStateDocument`
-// can detect the one combination the ADR requires be refused rather than
+// The OLD per-template `.frontx/provenance.json` record — this feature's
+// own header (`./types.ts`) says it is "slated for deletion once callers
+// migrate" — is never itself read by this module's normal logic; it is
+// referenced here ONLY so `loadProjectStateDocument` can detect the one
+// combination ADR-0019 ("More Information") requires be refused rather than
 // silently treated as an empty project: this legacy file present with no
 // `.frontx/project.json` alongside it.
 function legacyProvenancePath(repoRoot: string): string {
@@ -129,14 +129,14 @@ async function loadProjectStateDocument(
 
   // @cpt-begin:cpt-frontx-algo-composed-provenance-project-state-io:p1:inst-psio-if-absent
   if (raw === null) {
-    // DEFECT FIX (ADR-0019 "More Information"): the absence of
-    // `.frontx/project.json` is deliberately NOT a failure on its own — the
-    // marked default below stands for every ordinary empty project. The ONE
-    // combination the ADR requires be refused instead is this absence PLUS a
-    // legacy `.frontx/provenance.json` alongside it: a repository an older
-    // CLI version created, never migrated to this single-document model.
-    // Guessing a translation from that old per-template record is explicitly
-    // out of scope; the developer recreates or re-registers instead.
+    // The absence of `.frontx/project.json` is deliberately NOT a failure on
+    // its own — the marked default below stands for every ordinary empty
+    // project. The ONE combination ADR-0019 ("More Information") requires be
+    // refused instead is this absence PLUS a legacy `.frontx/
+    // provenance.json` alongside it: a repository an older CLI version
+    // created, never migrated to this single-document model. Guessing a
+    // translation from that old per-template record is explicitly out of
+    // scope; the developer recreates or re-registers instead.
     const legacyPath = legacyProvenancePath(repoRoot);
     const legacyRaw = await readProjectStateFn(legacyPath);
     if (legacyRaw !== null) {

@@ -93,10 +93,10 @@ function carrierKind(fileRelPath: string): CarrierKind | null {
 // Untrusted carrier JSON may spell a path with Windows separators (authored
 // on Windows, or simply copied verbatim from a Windows machine) - a
 // backslash-separated relative escape (`..\..\shared`) split ONLY on `/`
-// survives as one opaque segment that never matches `..`, so the escape is
-// missed entirely (CodeRabbit review finding on #493). Every path-arithmetic
-// helper below normalizes to POSIX separators as its first step, so this is
-// the one place backslash-vs-forward-slash is ever decided.
+// survives as one opaque segment that never matches `..`, so the escape
+// would be missed entirely. Every path-arithmetic helper below normalizes
+// to POSIX separators as its first step, so this is the one place
+// backslash-vs-forward-slash is ever decided.
 function toPosixSeparators(value: string): string {
   return value.replace(/\\/g, '/');
 }
@@ -235,11 +235,10 @@ const TSCONFIG_SINGLE_PATH_OPTIONS = [
 // The same, for the `compilerOptions` fields whose value is an ARRAY of paths.
 const TSCONFIG_PATH_LIST_OPTIONS = ['typeRoots', 'rootDirs'] as const;
 
-// Every path-like specifier a tsconfig file's own shape declares (A2 review
-// finding on #493 widened this from `paths` alone to `extends` and
-// `references[].path`; a CodeRabbit finding widened it again to the file-list
-// fields; a later review round completed the `compilerOptions` tables above -
-// same file, same parse, same escape semantics throughout).
+// Every path-like specifier a tsconfig file's own shape declares — `paths`,
+// `extends`, `references[].path`, the file-list fields, and the
+// `compilerOptions` tables above — same file, same parse, same escape
+// semantics throughout.
 // `paths` mapping entries resolve against `baseUrl` (default `.`); everything
 // else here resolves against the tsconfig file's OWN directory instead, per
 // TypeScript's own resolution rule for each.
@@ -256,7 +255,7 @@ function extractTsconfigSpecifiers(fileRelPath: string, parsed: unknown): PathSp
     // An absolute/home-relative `baseUrl` REPLACES the tsconfig directory
     // entirely rather than being joined onto it (matching real path
     // resolution) - joining first would hide the escape inside a
-    // concatenated string that no longer looks absolute (A1 review finding).
+    // concatenated string that no longer looks absolute.
     const baseDir = isAbsoluteOrHomeRelative(rawBaseUrl) ? rawBaseUrl : posixJoin(tsconfigDir, rawBaseUrl);
 
     const paths = co['paths'];
@@ -425,12 +424,12 @@ function resolvesOutsideRoot(baseDir: string, rawPath: string): boolean {
   // absolute tsconfig `baseUrl`) or an absolute `rawPath` (e.g. an
   // `npm install`/`npm link`-written absolute `file:` specifier) each escape
   // on their own - joining first would corrupt the segment count instead of
-  // rejecting outright (see A1 review finding on #493).
+  // rejecting outright.
   if (isAbsoluteOrHomeRelative(baseDir) || isAbsoluteOrHomeRelative(rawPath)) return true;
   // `posixJoin` already normalizes each segment it's given; normalizing the
   // joined result again here is a deliberate belt-and-suspenders step right
-  // at the split, so this line never again depends on every upstream caller
-  // having normalized correctly (CodeRabbit review finding on #493).
+  // at the split, so this line never depends on every upstream caller having
+  // normalized correctly.
   const combined = toPosixSeparators(posixJoin(baseDir, rawPath));
   const segments: string[] = [];
   for (const segment of combined.split('/')) {
@@ -514,13 +513,13 @@ export async function validateContentSelfContainment(
     if (kind === null) continue;
 
     // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-parse-carrier
-    // A carrier this check cannot inspect is a REJECTION, not a skip. Both
-    // failure paths below used to `continue`, which made "we could not look"
-    // indistinguishable from "we looked and it was clean" - the one shape a
-    // validation gate must never have, since silence is also what a pass
-    // looks like (review finding on #493). The file was enumerated as the
-    // template's own payload, so a template shipping a carrier nobody can
-    // read cannot be certified self-contained.
+    // A carrier this check cannot inspect is a REJECTION, not a skip. If
+    // either failure path below simply `continue`d, "we could not look"
+    // would be indistinguishable from "we looked and it was clean" - the
+    // one shape a validation gate must never have, since silence is also
+    // what a pass looks like. The file was enumerated as the template's own
+    // payload, so a template shipping a carrier nobody can read cannot be
+    // certified self-contained.
     let raw: string;
     try {
       raw = await readFile(`${templateDir}/${fileRelPath}`);

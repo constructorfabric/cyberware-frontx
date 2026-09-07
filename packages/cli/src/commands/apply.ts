@@ -22,7 +22,7 @@
 // independently-reformulated resolve-and-check path for either flow.
 // `runApplyPipeline` itself is the ONE shared apply mechanism `apply`'s own
 // dispatch and `commands/seed-repository.ts` both call after seed's own
-// project-state-creation/default-registration steps — per this checkpoint's
+// project-state-creation/default-registration steps — per this package's
 // own "no second formulation" discipline.
 import path from 'node:path';
 import { uniformApply } from '../scaffold/assembler';
@@ -49,26 +49,26 @@ import { parseLocalOrigin } from '../resolver/types';
 import type { FetchFn, ListFolderFilesFn, PathExistsFn } from '../resolver/types';
 import { joinUnderTarget } from '../paths/relative-path';
 import type { ErrorCode } from '../envelope';
-// DEFECT FIX (PR review, reproduced against the built binary): `apply`'s own
-// blanket `catch` at the end of `runApplyPipeline` used to report EVERY
-// thrown failure as `INTERNAL`, including two deliberate, typed refusals
-// that already know their own honest error code —
-// `PathContainmentError` (`../adapters/fs-project-io.ts`, thrown by
-// `createFsWriteProjectStateFn` when `.frontx` itself resolves outside the
-// project root through a symlink) and `ExistingSymlinkDestinationError`
-// (same file, thrown by `createFsWriteFileFn` when a payload path already
-// exists as a symlink). `upgrade/commit.ts` fixed the identical mistake for
-// the upgrade engine by RETHROWING `PathContainmentError` for `cli.ts`'s own
-// top-level `run()` catch to map — this file does NOT rethrow, because
-// `seed` (`commands/seed-repository.ts`) reads `details.writtenPaths` off
-// THIS function's own RETURNED outcome to roll back; a rethrow here would
-// hand seed an exception it never gets a chance to catch cleanly, exactly
-// the bug `runApplyPipeline`'s own pre-existing generic catch below was
-// already written to prevent for every OTHER thrown failure. A deliberate,
-// typed refusal must never arrive as `INTERNAL`: that code tells a caller
-// the CLI itself broke, when in fact the CLI worked correctly and the tree
-// it was pointed at is the problem — the same distinction `PathContainmentError`
-// and `ExistingSymlinkDestinationError` already carry in their own names.
+// `apply`'s own blanket `catch` at the end of `runApplyPipeline` must not
+// report two deliberate, typed refusals as `INTERNAL`: `PathContainmentError`
+// (`../adapters/fs-project-io.ts`, thrown by `createFsWriteProjectStateFn`
+// when `.frontx` itself resolves outside the project root through a
+// symlink) and `ExistingSymlinkDestinationError` (same file, thrown by
+// `createFsWriteFileFn` when a payload path already exists as a symlink)
+// already know their own honest error code and must be mapped to it before
+// the generic catch below ever sees them. Unlike `upgrade/commit.ts`, which
+// handles the identical case for the upgrade engine by RETHROWING
+// `PathContainmentError` for `cli.ts`'s own top-level `run()` catch to map,
+// this file does NOT rethrow: `seed` (`commands/seed-repository.ts`) reads
+// `details.writtenPaths` off THIS function's own RETURNED outcome to roll
+// back, and a rethrow here would hand seed an exception it never gets a
+// chance to catch cleanly — exactly what `runApplyPipeline`'s own generic
+// catch below is written to prevent for every OTHER thrown failure. A
+// deliberate, typed refusal must never arrive as `INTERNAL`: that code
+// tells a caller the CLI itself broke, when in fact the CLI worked
+// correctly and the tree it was pointed at is the problem — the same
+// distinction `PathContainmentError` and `ExistingSymlinkDestinationError`
+// already carry in their own names.
 import { PathContainmentError, ExistingSymlinkDestinationError } from '../adapters/fs-project-io';
 import type { RemoveProjectFileFn } from '../upgrade/types';
 
@@ -140,8 +140,8 @@ function collectLocalOriginFolders(document: ProjectStateDocument, canonicalizeF
  * (`../scaffold/registered-manifest.ts`), the ONE shared formulation that
  * correctly resolves BOTH a remote (inventory-installed) and a local
  * `path:`-registered name's current manifest, rather than `inventory.lookup`
- * alone (which silently returns `[]` for a local origin — the bug this
- * checkpoint's live check surfaced). `commands/ownership.ts`'s own
+ * alone (which silently returns `[]` for a local origin).
+ * `commands/ownership.ts`'s own
  * `buildRecordedTargets` calls the identical shared function for the
  * identical join.
  */
@@ -344,8 +344,8 @@ export async function resolveAndCheckBatch(
 }
 
 // Mirrors `existing-content.ts`'s own (unexported) `computePayloadSet`
-// exactly — restated here rather than imported (that module is finished
-// this checkpoint) so materialization writes precisely the payload paths
+// exactly — restated here rather than imported (that function is private to
+// that module) so materialization writes precisely the payload paths
 // reconciliation itself judged, never a second, independently-recomputed
 // idea of what the payload is. The one part of "what the payload is" that
 // is NOT restated here is the manifest/`.frontx`-namespace exclusion:
@@ -373,39 +373,24 @@ async function computePayloadForTarget(
 }
 
 // The ONE place the `CONTENT_CONFLICT` message for an unrecorded target's
-// content conflicts is composed — isolated into its own function (rather
-// than inlined at the one call site below) specifically so it is ready to
-// receive per-path cause attribution the moment reconciliation's own return
-// shape can carry it, without the call site itself needing to change again.
+// content conflicts is composed — isolated into its own function rather
+// than inlined at the one call site below.
 //
-// ATTRIBUTION GAP (fifth review round, flagged rather than closed here):
 // `contentConflicts` (`scaffold/existing-content.ts`'s own
 // `ExistingContentPartitions`) unions two internally-distinct causes —
 // content that differs from the payload's declared text
 // (`inst-ec-add-conflict`) and a path that cannot be compared at all because
 // a symlink stands at it or on the way to it (`inst-ec-add-symlink-
-// conflict`) — into one flat list before this function ever sees it, so this
-// message can only name BOTH possible causes for the whole path list, never
-// which path has which. Reconciliation itself already knows the difference
-// at the moment it decides where to push each path; this file does not, and
-// cannot honestly re-derive it without re-implementing that module's own
-// (unexported) `collectSymlinkPaths`/`ancestorDirsBelowTarget` walk here — a
-// second, independently-reasoned formulation of a rule that module already
-// owns, which this codebase's "one formulation" discipline rules out.
-//
-// The exact upstream change this function is waiting for: extend
-// `ExistingContentPartitions` (`scaffold/existing-content.ts`) with a fourth
-// field — e.g. `uncomparablePaths: string[]`, a SUBSET of `contentConflicts`
-// — populated at `inst-ec-add-symlink-conflict` (push to both lists) but not
-// at `inst-ec-add-conflict` (push to `contentConflicts` only). That is an
-// additive, backward-compatible change to the type (existing callers reading
-// only `contentConflicts` keep working unchanged). That field now exists,
-// and this function partitions `paths` by membership in it: a path the
-// symlink branch refused is named as uncomparable, everything else as
-// differing, so a developer is never sent looking for a content difference
-// that does not exist. Either clause is omitted entirely when its list is
-// empty — a batch refused for one cause alone reads as one sentence about
-// that cause, not a disjunction inviting the reader to guess.
+// conflict`) — into one flat list (`contentConflicts`/`paths` here).
+// `uncomparablePaths` (same type) is the SUBSET of that list caused by the
+// symlink case — populated at `inst-ec-add-symlink-conflict`, never at
+// `inst-ec-add-conflict` — so this function can partition `paths` by
+// membership in it: a path the symlink branch refused is named as
+// uncomparable, everything else as differing, and a developer is never sent
+// looking for a content difference that does not exist. Either clause is
+// omitted entirely when its list is empty — a batch refused for one cause
+// alone reads as one sentence about that cause, not a disjunction inviting
+// the reader to guess.
 function describeContentConflictCause(paths: readonly string[], uncomparable: readonly string[]): string {
   const uncomparableSet = new Set(uncomparable);
   const differing = paths.filter((candidate) => !uncomparableSet.has(candidate));
@@ -431,50 +416,45 @@ export interface ApplyPipelineDeps extends ResolveAndCheckDeps {
   bundleExistsFn: BundleExistsFn;
   copyBundleFn: CopyBundleFn;
   removeBundleFn: RemoveBundleFn;
-  // CONTAINMENT ESCAPE FIX: proves an individual payload path stays inside
-  // `repoRoot`, symlinks resolved, immediately before `writeFileFn` is
-  // called for it — see this file's own containment-fix comment below for
-  // why canonicalizing the batch's own TARGET is not enough. Curried over
+  // Proves an individual payload path stays inside `repoRoot`, symlinks
+  // resolved, immediately before `writeFileFn` is called for it — see this
+  // file's own comment about per-payload-path containment below for why
+  // canonicalizing the batch's own TARGET is not enough. Curried over
   // the caller's own applicable root (`createFsAssertPathWithinRootFn`,
   // `../adapters/fs-project-io.ts`) at the `cli.ts` dispatch site, exactly
   // as `canonicalizeFn` already is.
   assertPathWithinRootFn: AssertPathWithinRootFn;
-  // ATOMICITY FIX (PR review, reproduced against the built binary,
-  // `inst-add-rollback-writes`): the two seams `rollbackWrittenPaths` below
-  // needs to make "nothing recorded" also mean "nothing left" — reused
-  // rather than reinvented. `removeProjectFileFn` is the SAME
+  // The two seams `rollbackWrittenPaths` below needs to make "nothing
+  // recorded" also mean "nothing left" (`inst-add-rollback-writes`) —
+  // reused rather than reinvented. `removeProjectFileFn` is the SAME
   // `RemoveProjectFileFn` shape `commands/delete.ts` already calls to remove
   // one `toDelete` entry, and the SAME real adapter
   // (`createFsRemoveProjectFileFn`, `../adapters/fs-project-io.ts`) already
   // wired into `CliDeps` for `register`/`unregister`/`ownership`/`delete`. A
   // second, independently-named "remove one file" seam for this call site
   // would be a second formulation of a rule this package has already
-  // settled once. `removeEmptyDirFn` was `commands/seed-repository.ts`'s own
-  // seam alone until this fix — see `RemoveEmptyDirFn`'s own doc comment
-  // below for why it now lives here instead, shared by both callers.
+  // settled once. `removeEmptyDirFn` lives here, shared by both this
+  // pipeline and `commands/seed-repository.ts`'s own rollback — see
+  // `RemoveEmptyDirFn`'s own doc comment below for why.
   removeProjectFileFn: RemoveProjectFileFn;
   removeEmptyDirFn: RemoveEmptyDirFn;
 }
 
-// MOVED HERE from `commands/seed-repository.ts` (ATOMICITY FIX, PR review,
-// reproduced against the built binary): `seed`'s own rollback was the only
-// caller that could remove a directory a failed batch's writes brought into
-// being, but `apply` itself needed the identical capability the moment its
-// own post-materialization refusals started rolling back their writes too
-// (`rollbackWrittenPaths` below) — a directory apply's own writes create and
-// leave empty on a refusal is exactly as much apply's to remove as one
-// seed's writes create, for the identical reason `seed`'s own doc comment
-// already gave: no existing seam can remove a DIRECTORY (every other
-// project-state seam reads/writes the one `.frontx/project.json` FILE, or
-// removes a single file). One type, imported by both callers, rather than
-// two independently-declared copies of the same function shape.
+// Shared by both `apply`'s own post-materialization rollback
+// (`rollbackWrittenPaths` below) and `commands/seed-repository.ts`'s own
+// rollback: a directory a failed batch's writes brought into being and left
+// empty on a refusal is exactly as much apply's to remove as one seed's
+// writes create, for the identical reason — no existing seam can remove a
+// DIRECTORY (every other project-state seam reads/writes the one
+// `.frontx/project.json` FILE, or removes a single file). One type,
+// imported by both callers, rather than two independently-declared copies
+// of the same function shape.
 export type RemoveEmptyDirFn = (absolutePath: string) => Promise<void>;
 
-// ATOMICITY FIX (PR review, reproduced against the built binary,
-// `inst-add-rollback-writes`): the ONE shared removal formulation both
-// `apply`'s own post-materialization rollback and `seed`'s own rollback
-// (`commands/seed-repository.ts`'s `rollbackSeedWrites`) call, rather than
-// two independently duplicated directory-pruning walks. Removes every file
+// The ONE shared removal formulation both `apply`'s own post-materialization
+// rollback and `seed`'s own rollback (`commands/seed-repository.ts`'s
+// `rollbackSeedWrites`) call (`inst-add-rollback-writes`), rather than two
+// independently duplicated directory-pruning walks. Removes every file
 // in `writtenPaths` (project-relative to `repoRoot` — exactly the shape
 // `ApplyBatchOutcome`'s own `details.writtenPaths` already carries), then
 // prunes every directory those removals leave empty, deepest-first,
@@ -488,17 +468,17 @@ export type RemoveEmptyDirFn = (absolutePath: string) => Promise<void>;
 // would otherwise still see it standing.
 //
 // `dirsThisCallCreated` is what keeps the pruning honest, and it is not
-// optional. OVER-PRUNING FIX (found by re-running this round's own fix
-// against the built binary, before it shipped): the first version of this
-// walk pruned every emptied ancestor up to `repoRoot`, which quietly deleted
-// a directory the DEVELOPER created and this batch merely wrote into.
-// Reproduced: a project with its own empty `app/`, a payload declaring
-// `app/dir/file.txt`, and a post-materialization refusal — the rollback
-// removed the file, then `app/dir`, then `app` itself, and the developer's
-// directory was gone with nothing in the report mentioning it. A rollback
-// may only undo what the call itself did; a directory already standing when
-// materialization began is not this call's to remove, however empty the
-// file's removal leaves it. So the walk climbs only through directories
+// optional: pruning every emptied ancestor up to `repoRoot` — rather than
+// only directories THIS CALL created — would quietly delete a directory the
+// DEVELOPER created and this batch merely wrote into. For example, a
+// project with its own empty `app/`, a payload declaring `app/dir/
+// file.txt`, and a post-materialization refusal: pruning to root would
+// remove the file, then `app/dir`, then `app` itself, taking the
+// developer's own directory with it and reporting nothing about it. A
+// rollback may only undo what the call itself did; a directory already
+// standing when materialization began is not this call's to remove,
+// however empty the file's removal leaves it. So the walk climbs only
+// through directories
 // named in this set, and stops at the first one that is not — the set
 // `runApplyPipeline` fills in its pre-write pass, BEFORE any write, which is
 // the only moment "was this already here" is still answerable at all. A
@@ -515,26 +495,24 @@ export type RemoveEmptyDirFn = (absolutePath: string) => Promise<void>;
 // function is ever asked to remove is a file THIS CALL itself brought into
 // being.
 //
-// BUNDLE-ROLLBACK FIX (fifth review round, reproduced against the built
-// binary): a refusal reached AFTER the AI-extension bundle step
-// (`inst-add-materialize-bundle`) but rolled back by an unconditional call
-// here used to remove only `writtenPaths` — the ordinary payload files —
-// and leave every `.frontx/ai/<name>/` bundle THIS CALL itself materialized
-// standing. Reproduced live: a two-template batch, each shipping both a
-// payload file and a bundle, refused during the project-state RECORD step
-// (an EACCES on a read-only `.frontx`) before either name committed; the
-// payload files were correctly removed, but both bundle directories
-// survived, `targets: []` for both names, and `validate --project` reported
-// PASS over ground no state document mentioned — precisely the class of
-// defect `cpt-frontx-dod-cli-scaffolding-uniform-apply`'s own DoD text rules
-// out ("nothing recorded" must also mean "nothing left"). `.frontx/ai/
-// <name>/` is CLI-owned ground by `architecture/ADR/0031-template-ownership-
-// boundary-declaration.md` — no template ever claims or writes it — so
-// removing a bundle THIS CALL created is this rollback reclaiming its own
-// ground, the identical discipline `createFsCopyBundleFn`'s own
-// `clearBundleDestination` already rests on for the analogous "this path is
-// the CLI's alone, so clearing whatever stands there is never a destructive
-// guess" reasoning.
+// A refusal reached AFTER the AI-extension bundle step
+// (`inst-add-materialize-bundle`) must roll back every `.frontx/ai/
+// <name>/` bundle THIS CALL itself materialized, not only `writtenPaths` —
+// the ordinary payload files. Otherwise, consider a two-template batch
+// where each name ships both a payload file and a bundle, refused during
+// the project-state RECORD step (an EACCES on a read-only `.frontx`) before
+// either name committed: the payload files would be correctly removed, but
+// both bundle directories would survive with `targets: []` for both names,
+// and `validate --project` would report PASS over ground no state document
+// mentions — precisely what `cpt-frontx-dod-cli-scaffolding-uniform-apply`'s
+// own DoD text rules out ("nothing recorded" must also mean "nothing
+// left"). `.frontx/ai/<name>/` is CLI-owned ground by `architecture/ADR/
+// 0031-template-ownership-boundary-declaration.md` — no template ever
+// claims or writes it — so removing a bundle THIS CALL created is this
+// rollback reclaiming its own ground, the identical discipline
+// `createFsCopyBundleFn`'s own `clearBundleDestination` already rests on
+// for the analogous "this path is the CLI's alone, so clearing whatever
+// stands there is never a destructive guess" reasoning.
 //
 // `bundledNamesThisCall` carries EXACTLY the names this call's own bundle
 // step materialized a bundle for — never a name whose bundle already stood
@@ -589,11 +567,10 @@ export async function rollbackWrittenPaths(
 
 // The ONE trailing clause every refusal message below composes from
 // `writtenPaths` — never a per-call-site restatement of the same sentence.
-// DEFECT FIX (PR review, reproduced against the built binary): the clause
-// used to always say "remain on disk", which became a lie the moment a
-// refusal started rolling those same paths back (`rollbackWrittenPaths`
-// above) — a message cannot honestly say both "nothing was recorded" and
-// "N files remain on disk" in the same breath. `removed` names which of the
+// The clause must not always say "remain on disk": once a refusal starts
+// rolling those same paths back (`rollbackWrittenPaths` above), a message
+// cannot honestly say both "nothing was recorded" and "N files remain on
+// disk" in the same breath. `removed` names which of the
 // two is true for THIS call site: `false` only for the one refusal that
 // still cannot roll back (a mid-record-loop failure after an earlier name
 // in the same batch already committed, `recordedAnyThisCall`'s own doc
@@ -614,44 +591,54 @@ export function describeWrittenPaths(writtenPaths: readonly string[], removed: b
     : ` ${writtenPaths.length} file(s) this batch already wrote remain on disk: ${writtenPaths.join(', ')}.`;
 }
 
-// BUNDLE-ROLLBACK FIX (fifth review round): the trailing clause naming which
-// AI-extension bundles a rollback removed — the honesty `describeWrittenPaths`
-// already owes `writtenPaths` extended to `bundledNamesThisCall`. A separate
-// function, not folded into `describeWrittenPaths` itself, because the two
-// lists answer different questions (which PAYLOAD FILES were written vs.
-// which NAMES got a bundle) and a batch can have one without the other (a
+// The trailing clause naming which AI-extension bundles this call
+// materialized — the honesty `describeWrittenPaths` already owes
+// `writtenPaths` extended to `bundledNamesThisCall`, with the identical
+// `removed` discriminant: a bundle a rollback actually removed and a bundle
+// left standing (the one case a rollback deliberately does not run — an
+// earlier name in the same batch already committed its targets to the
+// project state store) are different facts on disk, and a caller acting on
+// this message — most of all `seed`, whose own rollback reads
+// `details.bundledNames` to know what is left for it to remove regardless
+// of which of the two is true — needs to know which. A separate function,
+// not folded into `describeWrittenPaths` itself, because the two lists
+// answer different questions (which PAYLOAD FILES were written vs. which
+// NAMES got a bundle) and a batch can have one without the other (a
 // content-conflict refusal never reaches the bundle step at all, so calling
 // this with an empty set there composes no clause — `writtenPaths.length ===
 // 0` in `describeWrittenPaths` already keeps THAT function silent for the
-// symmetrical reason). Only ever called at a rollback call site where the
-// removal actually ran — see `rollbackWrittenPaths`'s own doc comment for why
-// the narrow "an earlier name already committed" exception is upheld by
-// never CALLING that function in the first place, rather than by this
-// function guessing which names are exempt.
+// symmetrical reason).
 //
 // Exported for the identical reason `describeWrittenPaths` is: this
-// function's own output is now the SECOND trailing clause `commands/seed-
+// function's own output is the SECOND trailing clause `commands/seed-
 // repository.ts`'s `stripWrittenPathsClause` must recognize and strip back
 // off `applyResult.message` before composing its own wrapper text — seed's
 // rollback runs AFTER apply already composed this exact sentence, so
 // whatever it said about `bundledNamesThisCall` at that moment may no longer
 // be true once seed's OWN rollback also runs.
-export function describeBundleRollback(bundledNamesThisCall: ReadonlySet<string>): string {
+export function describeBundleRollback(bundledNamesThisCall: ReadonlySet<string>, removed: boolean): string {
   if (bundledNamesThisCall.size === 0) return '';
   const names = [...bundledNamesThisCall];
-  return ` ${names.length} AI-extension bundle(s) this batch had materialized have also been removed as part of ` +
-    `this refusal: ${names.join(', ')}.`;
+  return removed
+    ? ` ${names.length} AI-extension bundle(s) this batch had materialized have also been removed as part of ` +
+        `this refusal: ${names.join(', ')}.`
+    : ` ${names.length} AI-extension bundle(s) this batch had materialized remain on disk: ${names.join(', ')}.`;
 }
 
 // The `details.bundledNames` fragment every refusal below spreads in
-// alongside `writtenPaths` — present only when this rollback actually
-// removed at least one bundle, exactly mirroring `writtenPaths` itself only
-// ever appearing in `details` when non-empty. Exists so `seed-repository.ts`
-// can recover WHICH names `describeBundleRollback` named, the same way it
-// already recovers `writtenPaths` from `details` — a message-only record
-// (`bundledNamesThisCall` itself never survives past this function's own
-// return) would leave seed's own `stripWrittenPathsClause` nothing to
-// reconstruct the exact clause to strip.
+// alongside `writtenPaths` — present whenever this call materialized at
+// least one bundle, regardless of whether THIS refusal is the one that
+// rolls it back: a bundle left standing (the earlier-name-already-committed
+// case) is exactly as much this call's own doing as one it just removed,
+// and a caller deciding what is left on disk — `seed`'s own rollback most of
+// all — needs the name either way, the same reason `writtenPaths` itself
+// spreads into `details` unconditionally rather than only when a removal
+// happened. Exists so `seed-repository.ts` can recover WHICH names
+// `describeBundleRollback` named, the same way it already recovers
+// `writtenPaths` from `details` — a message-only record (`bundledNamesThisCall`
+// itself never survives past this function's own return) would leave seed's
+// own `stripWrittenPathsClause` nothing to reconstruct the exact clause to
+// strip.
 function bundledNamesDetail(bundledNamesThisCall: ReadonlySet<string>): { bundledNames: string[] } | Record<string, never> {
   return bundledNamesThisCall.size > 0 ? { bundledNames: [...bundledNamesThisCall] } : {};
 }
@@ -721,18 +708,17 @@ export async function runApplyPipeline(
   // refusal's own comment below for why the distinction reaches the report.
   const uncomparableConflictPaths: string[] = [];
   const undecidedAdditionalPaths: string[] = [];
-  // DEFECT FIX (PR review, reproduced against the built binary): `--adopt-
-  // existing`'s own contract is to leave an undeclared on-disk path
+  // `--adopt-existing`'s own contract is to leave an undeclared on-disk path
   // untouched — but the real existing-content walk (`adapters/fs-existing-
   // content.ts`) reports neither `isFile()` nor `isDirectory()` for a
   // symlink dirent, so a DECLARED payload path that is ITSELF a
   // pre-existing symlink is invisible to reconciliation: it looks exactly
-  // like a brand-new path, and materialization below writes straight
-  // through it. Reproduced live: two targets in the same batch, one an
-  // adopted additional path, the other a declared payload path that is a
-  // symlink aliasing it — the write for the second silently overwrote the
-  // first's content, the exact thing `--adopt-existing` promised not to
-  // do. This module has no seam that can SEE a symlink before writing (that
+  // like a brand-new path, and materialization below would write straight
+  // through it. For example, two targets in the same batch, one an adopted
+  // additional path, the other a declared payload path that is a symlink
+  // aliasing it: writing the second would silently overwrite the first's
+  // content — the exact thing `--adopt-existing` promises not to do. This
+  // module has no seam that can SEE a symlink before writing (that
   // seam lives in `adapters/`); what it CAN do honestly is snapshot every
   // adopted path's content now, before anything is written, and verify it
   // again after materialization (below) — detection, not prevention, but
@@ -766,7 +752,7 @@ export async function runApplyPipeline(
   // @cpt-end:cpt-frontx-flow-cli-scaffolding-add-template:p1:inst-add-existing-content
   // @cpt-end:cpt-frontx-state-cli-scaffolding-assembly-op:p1:inst-as-checked-reconciled
 
-  // CONTAINMENT ESCAPE FIX: canonicalizing the batch's own TARGET
+  // Canonicalizing the batch's own TARGET
   // (`canonicalizeBatch` above) proves the target resolves inside the
   // project root, symlinks resolved — it says nothing about a path segment
   // BELOW the target (an `app/src` a developer or attacker replaced with a
@@ -786,25 +772,24 @@ export async function runApplyPipeline(
   // Probed here rather than in a pass of its own so the two questions asked
   // of the same path set are asked once, walking it once.
   //
-  // ORDERING FIX (fifth review round, reproduced against the built binary,
-  // `inst-add-if-escape`): this check used to run AFTER the two existing-
-  // content refusals just below, so a payload path reaching this batch
-  // through a symlinked ancestor that escapes the project root — a
-  // containment problem — was reported as `CONTENT_CONFLICT` instead of
-  // `INVALID_PATH` whenever `scaffold/existing-content.ts`'s own symlink
-  // detection (`inst-ec-if-symlink-component`) happened to see the same path
-  // first, since that detection cannot tell an INTERNAL symlink (a project
-  // legitimately containing its own links) apart from one that escapes
-  // outside it — both are simply "uncomparable" to reconciliation. Nothing
-  // was ever written outside the project either way (reconciliation's own
-  // refusal already aborted before any write), but the two refusals name
-  // different remedies: `INVALID_PATH` says "this path cannot be proven to
-  // stay inside the project", `CONTENT_CONFLICT` says "resolve or remove the
-  // symlink", and a developer chasing the wrong one wastes a diagnosis step.
-  // Containment is the more fundamental question — whether a path is even
-  // addressable inside the project at all — so it is now decided FIRST, and
-  // this whole pass moved ahead of the two returns below accordingly; an
-  // escaping path is `INVALID_PATH` even when it would also have been
+  // This containment check (`inst-add-if-escape`) must run BEFORE the two
+  // existing-content refusals just below, not after: a payload path reaching
+  // this batch through a symlinked ancestor that escapes the project root —
+  // a containment problem — would otherwise be reported as
+  // `CONTENT_CONFLICT` instead of `INVALID_PATH` whenever `scaffold/
+  // existing-content.ts`'s own symlink detection (`inst-ec-if-symlink-
+  // component`) happens to see the same path first, since that detection
+  // cannot tell an INTERNAL symlink (a project legitimately containing its
+  // own links) apart from one that escapes outside it — both are simply
+  // "uncomparable" to reconciliation. Nothing is ever written outside the
+  // project either way (reconciliation's own refusal already aborts before
+  // any write), but the two refusals name different remedies: `INVALID_PATH`
+  // says "this path cannot be proven to stay inside the project",
+  // `CONTENT_CONFLICT` says "resolve or remove the symlink", and a developer
+  // chasing the wrong one wastes a diagnosis step. Containment is the more
+  // fundamental question — whether a path is even addressable inside the
+  // project at all — so it is decided FIRST, ahead of the two returns below:
+  // an escaping path is `INVALID_PATH` even when it would also have been
   // `contentConflicts` under reconciliation's own, coarser test.
   // @cpt-begin:cpt-frontx-flow-cli-scaffolding-add-template:p1:inst-add-if-escape
   const invalidPaths: string[] = [];
@@ -864,18 +849,17 @@ export async function runApplyPipeline(
         // exist, and the remedy is different in each case (edit or remove
         // the file, versus resolve the link).
         //
-        // ATTRIBUTION GAP (fifth review round): this still names ONE cause
-        // for the WHOLE path list rather than which path has which cause —
-        // reconciliation (`scaffold/existing-content.ts`) tracks the two
+        // Reconciliation (`scaffold/existing-content.ts`) tracks the two
         // branches (`inst-ec-add-symlink-conflict` vs. `inst-ec-add-conflict`)
-        // separately internally but its OWN return type, `ExistingContent
-        // Partitions`, now also reports `uncomparablePaths` — the SUBSET of
-        // `contentConflicts` the symlink branch refused — so this message
-        // can say which path has which cause instead of offering the reader
-        // a disjunction to guess from. `details` carries the subset too: a
-        // machine caller acts differently on "resolve this link" than on
-        // "reconcile this edit", and could not tell them apart from the
-        // union alone.
+        // separately internally, and its OWN return type,
+        // `ExistingContentPartitions`, reports `uncomparablePaths` — the
+        // SUBSET of `contentConflicts` the symlink branch refused. Passing
+        // that subset through to `describeContentConflictCause` below lets
+        // the message name WHICH path has which cause, rather than naming
+        // both possible causes for the whole list and leaving the reader to
+        // guess. `details` carries the subset too: a machine caller acts
+        // differently on "resolve this link" than on "reconcile this edit",
+        // and could not tell them apart from the union alone.
         describeContentConflictCause(contentConflictPaths, uncomparableConflictPaths),
       details:
         uncomparableConflictPaths.length > 0
@@ -901,22 +885,21 @@ export async function runApplyPipeline(
   }
   // @cpt-end:cpt-frontx-flow-cli-scaffolding-add-template:p1:inst-add-if-existing-conflict
 
-  // DEFECT FIX (PR review, reproduced against the built binary): a thrown
-  // write failure (EACCES, ENOSPC, or any other exception this pipeline
-  // does not itself convert to a structured refusal) used to propagate
-  // straight out of this function — `seed`'s own caller had no return
-  // value to roll back FROM. Everything below that can still write or
-  // refuse now runs inside one `try`, so every exit from here on is the
-  // same honest, structured shape every EARLIER refusal above already
-  // returns — `writtenPaths` names exactly what this call actually wrote
-  // before stopping, rather than leaving the caller to guess (or assume
-  // "nothing written", which only the checks ABOVE this point can honestly
-  // claim).
+  // A thrown write failure (EACCES, ENOSPC, or any other exception this
+  // pipeline does not itself convert to a structured refusal) must not
+  // propagate straight out of this function — `seed`'s own caller has no
+  // return value to roll back FROM if it does. Everything below that can
+  // still write or refuse runs inside one `try`, so every exit from here on
+  // is the same honest, structured shape every EARLIER refusal above
+  // already returns — `writtenPaths` names exactly what this call actually
+  // wrote before stopping, rather than leaving the caller to guess (or
+  // assume "nothing written", which only the checks ABOVE this point can
+  // honestly claim).
   const writtenPaths: string[] = [];
-  // ATOMICITY FIX (PR review, reproduced against the built binary,
-  // `inst-add-rollback-writes`/`inst-add-if-write-refusal`): true from the
-  // moment this call's FIRST project-state commit (`mutateProjectState`
-  // below) succeeds. Every refusal below this point rolls back
+  // True from the moment this call's FIRST project-state commit
+  // (`mutateProjectState` below) succeeds
+  // (`inst-add-rollback-writes`/`inst-add-if-write-refusal`). Every refusal
+  // below this point rolls back
   // `writtenPaths` unconditionally EXCEPT one already committed a name's
   // targets to the project state store during THIS call — rolling back
   // `writtenPaths` there would delete files a just-recorded project-state
@@ -930,11 +913,11 @@ export async function runApplyPipeline(
   // recorded name's files honestly left in place rather than corrupted by
   // an overzealous rollback.
   let recordedAnyThisCall = false;
-  // BUNDLE-ROLLBACK FIX (fifth review round): names this call's own bundle
-  // step (`inst-add-materialize-bundle` below) actually materialized a
-  // bundle for — filled in as that loop runs, read by every
-  // `rollbackWrittenPaths` call site below it. Declared here (empty) rather
-  // than at the bundle loop itself so the two refusals that can fire BEFORE
+  // Names this call's own bundle step (`inst-add-materialize-bundle` below)
+  // actually materialized a bundle for — filled in as that loop runs, read
+  // by every `rollbackWrittenPaths` call site below it. Declared here
+  // (empty) rather than at the bundle loop itself so the two refusals that
+  // can fire BEFORE
   // that loop ever runs (the adopted-content-corrupted check just below)
   // pass a set that is correctly, structurally empty — nothing has been
   // bundled yet at that point in this call, not merely "none reported".
@@ -957,14 +940,13 @@ export async function runApplyPipeline(
     }
     // @cpt-end:cpt-frontx-flow-cli-scaffolding-add-template:p1:inst-add-materialize
 
-    // DEFECT FIX (PR review, reproduced against the built binary): verifies
-    // every `--adopt-existing`-adopted path snapshotted above
-    // (`adoptedSnapshots`, see its own comment for the reproduced
-    // mechanism) still reads exactly as it did before the writes just
-    // above. Detection, not prevention — the write already happened
-    // through ground this module has no seam to inspect beforehand — but
-    // the batch is refused and nothing below is recorded, rather than
-    // reporting success over content it silently corrupted.
+    // Verifies every `--adopt-existing`-adopted path snapshotted above
+    // (`adoptedSnapshots`, see its own comment for the mechanism) still
+    // reads exactly as it did before the writes just above. Detection, not
+    // prevention — the write already happened through ground this module
+    // has no seam to inspect beforehand — but the batch is refused and
+    // nothing below is recorded, rather than reporting success over content
+    // it silently corrupted.
     // @cpt-begin:cpt-frontx-flow-cli-scaffolding-add-template:p1:inst-add-if-adopted-corrupted
     if (adoptedSnapshots.length > 0) {
       const rereadByTarget = new Map<string, Map<string, string>>();
@@ -980,10 +962,11 @@ export async function runApplyPipeline(
       }
       if (corruptedAdoptedPaths.length > 0) {
         // @cpt-begin:cpt-frontx-flow-cli-scaffolding-add-template:p1:inst-add-return-adopted-corrupted
-        // ATOMICITY FIX (`inst-add-rollback-writes`): reached before the
-        // record loop below ever runs, so `recordedAnyThisCall` is always
-        // false here — every file this call wrote is unconditionally safe
-        // to remove. `bundledNamesThisCall` is always structurally empty at
+        // Reached before the record loop below ever runs, so
+        // `recordedAnyThisCall` is always false here — every file this call
+        // wrote is unconditionally safe to remove
+        // (`inst-add-rollback-writes`). `bundledNamesThisCall` is always
+        // structurally empty at
         // this point too (the AI-extension bundle loop runs AFTER this
         // check, never before it), so `describeBundleRollback` composes no
         // clause here — passed through anyway so this call site does not
@@ -1006,7 +989,7 @@ export async function runApplyPipeline(
             `batch altered it anyway at: ${corruptedAdoptedPaths.join(', ')} (a declared payload path elsewhere in ` +
             'this batch is very likely a symlink aliasing one of these locations); nothing was recorded, and' +
             describeWrittenPaths(writtenPaths, true) +
-            describeBundleRollback(bundledNamesThisCall),
+            describeBundleRollback(bundledNamesThisCall, true),
           details: { paths: corruptedAdoptedPaths, writtenPaths },
         };
         // @cpt-end:cpt-frontx-flow-cli-scaffolding-add-template:p1:inst-add-return-adopted-corrupted
@@ -1033,8 +1016,8 @@ export async function runApplyPipeline(
           copyBundle: deps.copyBundleFn,
           removeBundle: deps.removeBundleFn,
         });
-        // BUNDLE-ROLLBACK FIX (fifth review round): recorded only on an
-        // actual `'materialized'` outcome — a `'no-op'` (the template's
+        // Recorded only on an actual `'materialized'` outcome — a `'no-op'`
+        // (the template's
         // payload carries no bundle at all) never wrote anything to
         // `.frontx/ai/<name>/`, so nothing about it belongs in the set a
         // rollback below would otherwise spend a (harmless but pointless)
@@ -1042,24 +1025,19 @@ export async function runApplyPipeline(
         // this loop only ever requests the `FIRST_TARGET_GAINED` transition.
         if (bundleOutcome === 'materialized') bundledNamesThisCall.add(entry.templateName);
       } catch (error) {
-        // The CLI-owned bundle copy (`adapters/fs-ai-bundle.ts`'s
-        // `createFsCopyBundleFn`) refuses fail-closed, the same way, when its
-        // own destination cannot be proven to stay inside the project root —
-        // surfaced here as a real refusal rather than an unhandled crash.
-        // DEFECT FIX (PR review, reproduced against the built binary): this
-        // refusal is reached AFTER the main payload materialize loop above
-        // has already written this batch's files, and BEFORE the record
-        // loop below has committed anything for ANY name this call —
-        // `recordedAnyThisCall` is always false here, so every file this
-        // call wrote, and every bundle an EARLIER iteration of this same loop
-        // already materialized (`bundledNamesThisCall`), is unconditionally
-        // safe to remove (`inst-add-rollback-writes`); `writtenPaths` still
-        // names the files in `details` for the caller's own audit, but the
-        // message now says they were removed, not that they remain. The
-        // name whose OWN bundle copy just threw is never added to
-        // `bundledNamesThisCall` in the first place (the `if` above this
-        // `catch` is never reached for it), so this rollback is never asked
-        // to remove a bundle that was never actually written.
+        // Every failure reaching this `catch` is reached AFTER the main
+        // payload materialize loop above has already written this batch's
+        // files, and BEFORE the record loop below has committed anything for
+        // ANY name this call — `recordedAnyThisCall` is always false here, so
+        // every file this call wrote, and every bundle an EARLIER iteration
+        // of this same loop already materialized (`bundledNamesThisCall`),
+        // is unconditionally safe to remove (`inst-add-rollback-writes`);
+        // `writtenPaths` still names the files in `details` for the caller's
+        // own audit, but the message now says they were removed, not that
+        // they remain. The name whose OWN bundle copy just threw is never
+        // added to `bundledNamesThisCall` in the first place (the `if` above
+        // this `catch` is never reached for it), so this rollback is never
+        // asked to remove a bundle that was never actually written.
         await rollbackWrittenPaths(
           repoRoot,
           writtenPaths,
@@ -1069,19 +1047,45 @@ export async function runApplyPipeline(
           deps.removeBundleFn,
           bundledNamesThisCall,
         );
+        const bundleFailureDetails = {
+          name: entry.templateName,
+          ...(writtenPaths.length > 0 ? { writtenPaths } : {}),
+          ...bundledNamesDetail(bundledNamesThisCall),
+        };
+        // A thrown failure here is not one thing: `createFsCopyBundleFn`
+        // (`adapters/fs-ai-bundle.ts`) refuses fail-closed with
+        // `PathContainmentError` when its own destination cannot be proven
+        // to stay inside the project root, and that is the one case this
+        // catch may honestly call `INVALID_PATH` — the same discrimination
+        // the pipeline's own outer catch already applies to a write refusal
+        // reached later, at the record step. Anything else — a permission
+        // error reading the source bundle or writing the destination, a
+        // missing source directory, disk exhaustion — is a real but
+        // different problem: the bundle was never proven to escape the
+        // project, it simply could not be copied, and reporting it as a
+        // containment escape sends whoever reads the refusal chasing a
+        // symlink that is not there.
+        if (error instanceof PathContainmentError) {
+          return {
+            ok: false,
+            code: 'INVALID_PATH',
+            message:
+              `Aborted — the AI-extension bundle for "${entry.templateName}" could not be proven to stay inside the ` +
+              `project root: ${error.message}` +
+              describeWrittenPaths(writtenPaths, true) +
+              describeBundleRollback(bundledNamesThisCall, true),
+            details: bundleFailureDetails,
+          };
+        }
         return {
           ok: false,
-          code: 'INVALID_PATH',
+          code: 'INTERNAL',
           message:
-            `Aborted — the AI-extension bundle for "${entry.templateName}" could not be proven to stay inside the ` +
-            `project root: ${error instanceof Error ? error.message : String(error)}` +
+            `Aborted — the AI-extension bundle for "${entry.templateName}" could not be materialized: ` +
+            `${error instanceof Error ? error.message : String(error)}` +
             describeWrittenPaths(writtenPaths, true) +
-            describeBundleRollback(bundledNamesThisCall),
-          details: {
-            name: entry.templateName,
-            ...(writtenPaths.length > 0 ? { writtenPaths } : {}),
-            ...bundledNamesDetail(bundledNamesThisCall),
-          },
+            describeBundleRollback(bundledNamesThisCall, true),
+          details: bundleFailureDetails,
         };
       }
     }
@@ -1104,11 +1108,11 @@ export async function runApplyPipeline(
         // `TEMPLATE_NOT_REGISTERED` for any name with no project-state entry,
         // so every name reaching here was already confirmed registered.
         // Guarded rather than asserted so a caller-supplied fake document
-        // cannot turn this into a thrown TypeError. ATOMICITY FIX: rolls
-        // back only when no earlier name in this same batch has already
-        // committed (`recordedAnyThisCall`'s own doc comment above) — this
-        // defensive branch can in principle be reached after an earlier
-        // name's `mutateProjectState` call already succeeded.
+        // cannot turn this into a thrown TypeError. Rolls back only when no
+        // earlier name in this same batch has already committed
+        // (`recordedAnyThisCall`'s own doc comment above) — this defensive
+        // branch can in principle be reached after an earlier name's
+        // `mutateProjectState` call already succeeded.
         if (!recordedAnyThisCall) {
           await rollbackWrittenPaths(
             repoRoot,
@@ -1126,10 +1130,10 @@ export async function runApplyPipeline(
           message:
             `Template "${name}" was staged but is no longer registered.` +
             describeWrittenPaths(writtenPaths, !recordedAnyThisCall) +
-            (recordedAnyThisCall ? '' : describeBundleRollback(bundledNamesThisCall)),
+            describeBundleRollback(bundledNamesThisCall, !recordedAnyThisCall),
           details:
-            writtenPaths.length > 0 || (!recordedAnyThisCall && bundledNamesThisCall.size > 0)
-              ? { ...(writtenPaths.length > 0 ? { writtenPaths } : {}), ...(recordedAnyThisCall ? {} : bundledNamesDetail(bundledNamesThisCall)) }
+            writtenPaths.length > 0 || bundledNamesThisCall.size > 0
+              ? { ...(writtenPaths.length > 0 ? { writtenPaths } : {}), ...bundledNamesDetail(bundledNamesThisCall) }
               : undefined,
         };
       }
@@ -1141,17 +1145,26 @@ export async function runApplyPipeline(
         deps.writeProjectStateFn,
       );
       if (!written.ok) {
-        // ATOMICITY FIX: see the defensive branch just above for why this
-        // rollback is conditional on `recordedAnyThisCall` rather than
-        // unconditional like the two earlier (pre-record-loop) refusals. This
-        // is the branch the fifth review round's own reproduction hits: two
-        // scratch templates, `.frontx` made read-only, `apply` on both —
-        // `mutateProjectState`'s temp-file write fails EACCES on the FIRST
-        // name this loop tries to record, so `recordedAnyThisCall` is still
-        // false and both names' payload files AND both names' bundles
-        // (`bundledNamesThisCall`, populated by the bundle loop above, which
-        // already ran to completion for both names before this record loop
-        // ever started) are rolled back together here.
+        // See the defensive branch just above for why this rollback is
+        // conditional on `recordedAnyThisCall` rather than unconditional
+        // like the two earlier (pre-record-loop) refusals. A
+        // multi-name batch whose record loop already committed an EARLIER
+        // name before a LATER name's own record step fails this way (a
+        // read-only `.frontx`, or a document a concurrent writer changed
+        // underneath this call) reaches here with `recordedAnyThisCall`
+        // true, and this rollback correctly does nothing — the earlier
+        // name's files and bundle are its own just-committed record, not
+        // this refusal's to remove.
+        //
+        // What is NOT conditional is REPORTING what is true either way:
+        // `writtenPaths`/`bundledNamesThisCall` name every payload file and
+        // bundle this call brought into being regardless of which later
+        // name's record step failed, so `details` and the message below
+        // carry both unconditionally — `describeWrittenPaths`/
+        // `describeBundleRollback`'s own `removed` argument is what tells
+        // the reader (and `seed`'s own rollback, which reads exactly these
+        // fields to know what is left for it to clean up) whether THIS
+        // refusal actually removed them or left them standing.
         if (!recordedAnyThisCall) {
           await rollbackWrittenPaths(
             repoRoot,
@@ -1169,10 +1182,10 @@ export async function runApplyPipeline(
           message:
             written.message +
             describeWrittenPaths(writtenPaths, !recordedAnyThisCall) +
-            (recordedAnyThisCall ? '' : describeBundleRollback(bundledNamesThisCall)),
+            describeBundleRollback(bundledNamesThisCall, !recordedAnyThisCall),
           details:
-            writtenPaths.length > 0 || (!recordedAnyThisCall && bundledNamesThisCall.size > 0)
-              ? { ...(writtenPaths.length > 0 ? { writtenPaths } : {}), ...(recordedAnyThisCall ? {} : bundledNamesDetail(bundledNamesThisCall)) }
+            writtenPaths.length > 0 || bundledNamesThisCall.size > 0
+              ? { ...(writtenPaths.length > 0 ? { writtenPaths } : {}), ...bundledNamesDetail(bundledNamesThisCall) }
               : undefined,
         };
       }
@@ -1189,9 +1202,9 @@ export async function runApplyPipeline(
     // @cpt-end:cpt-frontx-flow-cli-scaffolding-add-template:p1:inst-add-return-done
     // @cpt-begin:cpt-frontx-flow-cli-scaffolding-add-template:p1:inst-add-if-write-refusal
   } catch (error) {
-    // ATOMICITY FIX (`inst-add-rollback-writes`): unconditional whenever no
-    // name in this call has yet been recorded — see `recordedAnyThisCall`'s
-    // own doc comment above for the one narrow case where it must NOT run.
+    // Unconditional whenever no name in this call has yet been recorded
+    // (`inst-add-rollback-writes`) — see `recordedAnyThisCall`'s own doc
+    // comment above for the one narrow case where it must NOT run.
     const canRollback = !recordedAnyThisCall;
     if (canRollback) {
       await rollbackWrittenPaths(
@@ -1204,24 +1217,30 @@ export async function runApplyPipeline(
         bundledNamesThisCall,
       );
     }
-    const bundleClause = canRollback ? describeBundleRollback(bundledNamesThisCall) : '';
-    const bundleDetail = canRollback ? bundledNamesDetail(bundledNamesThisCall) : {};
+    // `canRollback` decides whether the removal above ran, never whether
+    // `bundledNamesThisCall` is reported: a bundle this call materialized is
+    // this call's own doing whether or not THIS refusal is the one that
+    // rolls it back, so both the message and `details` name it either way —
+    // `describeBundleRollback`'s own `removed` argument (mirroring
+    // `describeWrittenPaths`'s identical one just below) is what keeps the
+    // wording honest about which of the two is true.
+    const bundleClause = describeBundleRollback(bundledNamesThisCall, canRollback);
+    const bundleDetail = bundledNamesDetail(bundledNamesThisCall);
 
-    // DEFECT FIX (PR review, reproduced against the built binary): a
-    // deliberate, typed refusal — `PathContainmentError` (thrown by
+    // A deliberate, typed refusal — `PathContainmentError` (thrown by
     // `createFsWriteProjectStateFn` when `.frontx` itself resolves outside
     // the project root through a symlink introduced since the pre-flight
     // check) or `ExistingSymlinkDestinationError` (thrown by
     // `createFsWriteFileFn` when a payload path already exists as a
-    // symlink) — used to fall straight through to the generic `INTERNAL`
-    // branch below, exactly like any other unrecognized exception. Both are
+    // symlink) — must not fall straight through to the generic `INTERNAL`
+    // branch below, as any other unrecognized exception would. Both are
     // discriminated here, BEFORE the generic fallback, into the SAME
     // structured code every OTHER refusal for their own class of problem
     // already uses elsewhere in this file (`INVALID_PATH` for a containment
     // escape, `CONTENT_CONFLICT` for an existing-symlink destination) — see
     // this file's own import comment for why this is a RETURN, never a
-    // rethrow, unlike `upgrade/commit.ts`'s identical fix for the same two
-    // error classes.
+    // rethrow, unlike `upgrade/commit.ts`'s handling of the same two error
+    // classes.
     // @cpt-begin:cpt-frontx-flow-cli-scaffolding-add-template:p1:inst-add-return-write-refusal
     if (error instanceof PathContainmentError) {
       return {
@@ -1241,8 +1260,7 @@ export async function runApplyPipeline(
     }
     // @cpt-end:cpt-frontx-flow-cli-scaffolding-add-template:p1:inst-add-return-write-refusal
 
-    // DEFECT FIX (PR review, reproduced against the built binary): any
-    // OTHER thrown failure materializing this batch — converted to the
+    // Any OTHER thrown failure materializing this batch is converted to the
     // same honest, structured shape, `writtenPaths` naming whatever this
     // call actually wrote before the failure, so `seed`'s own rollback
     // (`commands/seed-repository.ts`) has something real to undo instead of

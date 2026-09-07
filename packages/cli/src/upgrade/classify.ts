@@ -70,75 +70,104 @@ function diskContentOf(entry: DiskEntry): string | null {
   return entry.kind === 'file' ? entry.content : null;
 }
 
-// SYMLINK-ANCESTOR FIX (PR review round five, reproduced against the built
-// binary): `readDiskEntry` is `lstat`-based on the FULL leaf path only
-// (`../adapters/fs-upgrade-io.ts`'s own header), which correctly reports a
-// symlinked LEAF as `'symlink'` — but an intermediate directory component
-// between `target` and the leaf that is itself a symlink is simply followed
-// by the OS on every read of a path beneath it, exactly as it would be for
-// any other path traversal. `inst-cls-if-not-regular` below refused
-// fail-closed on the leaf case only; a plan naming
-// `app/dir/sub/b.txt` where `app/dir` was a symlink actually compared and
-// then landed content through whatever `app/dir` pointed at, while reporting
-// the plan as touching `app/dir/sub/b.txt` — a mismatch between what the
-// plan named and what was actually written, for EVERY operation class
-// (`ADD`, `REPLACE`, `REMOVE`, `UNCHANGED` alike), not only a `REPLACE`.
+// A payload path where the disk holds a directory or a symlink instead of a
+// regular file cannot be compared at all — the rule this module's own header
+// cites (`architecture/ADR/0021-project-upgrade-mechanism.md`, "Decision
+// Outcome"). The identical hazard applies one level up: `readDiskEntry` is
+// `lstat`-based on the full leaf path only (`../adapters/fs-upgrade-io.ts`'s
+// own header), so it correctly reports a symlinked LEAF as `'symlink'`, but
+// an intermediate directory component between the project root and the leaf
+// that is itself a symlink is simply followed by the OS on every read of a
+// path beneath it — a plan naming `app/dir/sub/b.txt` would compare, and let
+// the commit algorithm land, content at wherever `app/dir` actually points,
+// while still reporting the plan as touching `app/dir/sub/b.txt`.
 //
-// `../scaffold/existing-content.ts`'s `collectSymlinkPaths` /
-// `ancestorDirsBelowTarget` is the sibling formulation that already closed
-// the identical hole on the apply side — but it is shaped around a full-tree
-// walk (`ReadExistingContentFn` enumerates everything reachable under
-// `target` in one call, so a symlinked directory the walk refuses to
-// descend into simply reports itself and nothing beneath it), and its own
-// `ancestorDirsBelowTarget` helper is a private, unexported function this
-// module has no way to import without either widening that module's public
-// surface (outside this change's ownership — `scaffold/**` belongs to
-// another agent) or introducing a second import boundary this package does
-// not otherwise cross for a single free function. This module's own
-// `readDiskEntry` is a per-path probe, not a walk, so the two sides need
-// their own, differently-shaped formulations of the SAME rule rather than
-// one shared function — the rule itself (`architecture/ADR/0021-project-
-// upgrade-mechanism.md`: "a payload path where the disk holds a directory
-// or a symlink instead of a regular file cannot be compared at all and
-// refuses the same way, fail-closed, with CONTENT_CONFLICT") is what stays
-// singular; only its two mechanical realizations differ.
+// The probe below covers the WHOLE chain from the project root down to the
+// leaf's parent — `target`'s own path component included, not only the
+// components strictly below it. `target` is a string recorded in the
+// project state store, never canonicalized by this engine the way `apply`'s
+// pre-flight canonicalizes a batch's own target before reconciliation ever
+// runs — so a `target` that is itself a symlink, or that sits beneath one,
+// reaches this classification unresolved, and carries the identical hazard
+// any other ancestor does.
 //
-// `target` may be `.` (the project root, zero path segments) — mirrors
-// `ancestorDirsBelowTarget`'s own handling of that case exactly.
-function ancestorDirsBelowTarget(projectPath: string, target: string): string[] {
+// An ancestor that is an ordinary regular FILE — neither a directory nor a
+// symlink — is exactly as uncomparable as a symlinked one: a directory is
+// required at that position for the leaf to exist beneath it at all, and a
+// plain file standing there instead means the leaf cannot be reached on disk
+// the way the payload declares it — a failure this module classifies rather
+// than one the commit algorithm's own write should ever have to discover.
+//
+// `../scaffold/existing-content.ts`'s own `collectSymlinkPaths` /
+// `ancestorDirsBelowTarget` closes the identical ancestor-symlink hole on
+// the apply side, but it is shaped around a full-tree walk
+// (`ReadExistingContentFn` enumerates everything reachable under `target` in
+// one call) and its own `ancestorDirsBelowTarget` is a private, unexported
+// function of a module this package does not otherwise import a free
+// function from (`scaffold/**` belongs to another agent this round). This
+// module's own `readDiskEntry` is a per-path probe, not a walk, so the two
+// sides carry their own, differently-shaped realizations of the SAME rule
+// rather than one shared function — the rule itself stays singular; only
+// its two mechanical realizations differ.
+function ancestorSegmentsOf(projectPath: string): string[] {
   const segments = projectPath.split('/');
-  const targetDepth = target === '.' ? 0 : target.split('/').length;
   const ancestors: string[] = [];
-  for (let depth = targetDepth + 1; depth < segments.length; depth++) {
+  for (let depth = 1; depth < segments.length; depth++) {
     ancestors.push(segments.slice(0, depth).join('/'));
   }
   return ancestors;
 }
 
-// Probes every ancestor directory component of `projectPath` below `target`
-// through the injected `readDiskEntry` seam, short-circuiting on the first
-// symlink found. `cache` is shared across every enumerated path in one
+// What an ancestor probe found standing where a directory is required. Not a
+// plain boolean: the caller (`inst-cls-if-not-regular`) reports the two
+// symlink outcomes differently at the validate layer — a symlink whose
+// resolved target escapes the project root is `INVALID_PATH` (this module
+// never returns a refusal code itself; it only classifies and lets the
+// caller decide), while a symlink that resolves inside the project, and a
+// regular file standing where a directory belongs, are both
+// `CONTENT_CONFLICT`. Either way this module treats them identically for
+// classification purposes: no comparison is attempted and the path is
+// recorded doubly-changed.
+type BadAncestor = { kind: 'symlink'; escapesRoot: boolean } | { kind: 'file' };
+
+// Probes every ancestor directory component of `projectPath`, from the
+// project root down to the leaf's parent, through the injected
+// `readDiskEntry` seam, returning the first one that cannot stand as a
+// directory. `cache` is shared across every enumerated path in one
 // `classifyTarget` call (declared once by the caller, at
 // `inst-cls-foreach-path`'s own loop below) so a directory shared by many
 // enumerated paths — a common `src/` or `app/` prefix — costs exactly one
 // `readDiskEntry` call for the whole classification, never one per path
 // beneath it.
-async function hasSymlinkAncestor(
+//
+// A symlink ancestor's escape verdict is decided by `canonicalizeFn` — the
+// SAME containment resolution `inst-cls-if-newly-claimed-nested` above
+// already threads through this module for the nesting check, never a
+// second, independently-formulated walk. Handed the ancestor's own
+// project-relative path, it resolves every symlink along the way exactly as
+// it would for a target string, and reports `null` when the resolved
+// location escapes the project root.
+async function findBadAncestor(
   projectPath: string,
-  target: string,
   repoRoot: string,
   cache: Map<string, DiskEntry>,
   readDiskEntry: ReadDiskEntryFn,
-): Promise<boolean> {
-  for (const ancestor of ancestorDirsBelowTarget(projectPath, target)) {
+  canonicalizeFn: (raw: string) => string | null,
+): Promise<BadAncestor | null> {
+  for (const ancestor of ancestorSegmentsOf(projectPath)) {
     let entry = cache.get(ancestor);
     if (entry === undefined) {
       entry = await readDiskEntry(path.join(repoRoot, ancestor));
       cache.set(ancestor, entry);
     }
-    if (entry.kind === 'symlink') return true;
+    if (entry.kind === 'symlink') {
+      return { kind: 'symlink', escapesRoot: canonicalizeFn(ancestor) === null };
+    }
+    if (entry.kind === 'file') {
+      return { kind: 'file' };
+    }
   }
-  return false;
+  return null;
 }
 
 export interface ClassifyInput {
@@ -193,6 +222,27 @@ export interface ClassifyResult {
   // upgrade with `CONTENT_CONFLICT` when this is non-empty
   // (`inst-cls-if-any-conflict` / `inst-cls-return-conflict`).
   conflictPaths: string[];
+  // The SUBSET of `conflictPaths` recorded because the disk shape at (or
+  // above) the path cannot be compared at all — a directory or a symlink at
+  // the leaf, or a symlink or a regular file standing at an ancestor
+  // component — rather than because the candidate and the disk each
+  // genuinely moved away from the baseline. Mirrors `scaffold/existing-
+  // content.ts`'s own `ExistingContentPartitions.uncomparablePaths` (a
+  // different module, the SAME distinction) so the two engines' refusals
+  // read alike: one cause names "resolve the link or the directory", the
+  // other names "reconcile the edit", and a caller that only reads
+  // `conflictPaths` behaves exactly as it always has.
+  uncomparablePaths: string[];
+  // The SUBSET of `uncomparablePaths` recorded because an ancestor symlink's
+  // resolved target escapes the project root, as opposed to one that
+  // resolves inside it or a non-symlink ancestor obstruction. The caller
+  // (`validate.ts`) refuses these with `INVALID_PATH` rather than
+  // `CONTENT_CONFLICT` — the same code `commands/apply.ts` already reports
+  // for the identical on-disk shape on the apply side — since "this path
+  // cannot be proven to stay inside the project" is a different, more
+  // fundamental problem than "a symlink stands here, resolve it" and names
+  // a different remedy.
+  escapingPaths: string[];
   // Nested-target conflicts for this target — the caller refuses with
   // `TARGET_CONFLICT` when this is non-empty.
   nestedConflicts: { target: string; templateName: string }[];
@@ -437,9 +487,11 @@ export async function classifyTarget(input: ClassifyInput): Promise<ClassifyResu
 
   const operations: UpgradeOperation[] = [];
   const conflictPaths: string[] = [];
-  // Shared across every enumerated path below — see `hasSymlinkAncestor`'s
-  // own doc comment for why this cache is what keeps a directory shared by
-  // many paths a single `readDiskEntry` probe rather than one per path.
+  const uncomparablePaths: string[] = [];
+  const escapingPaths: string[] = [];
+  // Shared across every enumerated path below — see `findBadAncestor`'s own
+  // doc comment for why this cache is what keeps a directory shared by many
+  // paths a single `readDiskEntry` probe rather than one per path.
   const ancestorEntryCache = new Map<string, DiskEntry>();
 
   // @cpt-begin:cpt-frontx-algo-upgrade-changeset-classify:p1:inst-cls-foreach-path
@@ -459,18 +511,27 @@ export async function classifyTarget(input: ClassifyInput): Promise<ClassifyResu
     // while producing `diskEntry` itself, so a leaf that LOOKS like an
     // ordinary file or absence here may in fact be reporting on whatever
     // the symlink actually points at, not on the path this plan names. See
-    // `hasSymlinkAncestor`'s own doc comment for the full defect and why
-    // this is this module's own formulation of the sibling rule
+    // `findBadAncestor`'s own doc comment for the full defect and why this
+    // is this module's own formulation of the sibling rule
     // `../scaffold/existing-content.ts` already applies on the apply side.
-    const symlinkAncestor = await hasSymlinkAncestor(projectPath, target, repoRoot, ancestorEntryCache, readDiskEntry);
+    const badAncestor = await findBadAncestor(projectPath, repoRoot, ancestorEntryCache, readDiskEntry, canonicalizeFn);
     const carriedByPayload = baselineContent !== null || candidateContent !== null;
-    if (carriedByPayload && (diskEntry.kind === 'directory' || diskEntry.kind === 'symlink' || symlinkAncestor)) {
+    if (carriedByPayload && (diskEntry.kind === 'directory' || diskEntry.kind === 'symlink' || badAncestor !== null)) {
       // @cpt-begin:cpt-frontx-algo-upgrade-changeset-classify:p1:inst-cls-record-not-regular
-      // Fail-closed: a directory or a symlink — at the leaf, or at any
-      // ancestor directory component below `target` — cannot be compared
-      // at all, so no comparison is attempted — this is not weighed
-      // against `UNCHANGED` or any other branch below.
+      // Fail-closed: a directory or a symlink at the leaf, a symlink at any
+      // ancestor directory component, or a regular file standing where an
+      // ancestor directory component belongs — none of these can be
+      // compared at all, so no comparison is attempted; this is not weighed
+      // against `UNCHANGED` or any other branch below. Recorded in
+      // `uncomparablePaths` too, and in `escapingPaths` on top of that when
+      // the cause is a symlink ancestor whose resolved target escapes the
+      // project root — see `ClassifyResult`'s own doc comments for why the
+      // caller reports each subset differently.
       conflictPaths.push(projectPath);
+      uncomparablePaths.push(projectPath);
+      if (badAncestor?.kind === 'symlink' && badAncestor.escapesRoot) {
+        escapingPaths.push(projectPath);
+      }
       // @cpt-end:cpt-frontx-algo-upgrade-changeset-classify:p1:inst-cls-record-not-regular
       continue;
     }
@@ -571,7 +632,7 @@ export async function classifyTarget(input: ClassifyInput): Promise<ClassifyResu
   // operations together with its `SKIPPED` paths.
   return {
     exclusionRoots: candidateExclusionRoots,
-    operations, skipped, conflictPaths, nestedConflicts };
+    operations, skipped, conflictPaths, uncomparablePaths, escapingPaths, nestedConflicts };
   // @cpt-end:cpt-frontx-algo-upgrade-changeset-classify:p1:inst-cls-return-ops
   // @cpt-end:cpt-frontx-algo-upgrade-changeset-classify:p1:inst-cls-return-conflict
   // @cpt-end:cpt-frontx-algo-upgrade-changeset-classify:p1:inst-cls-if-any-conflict

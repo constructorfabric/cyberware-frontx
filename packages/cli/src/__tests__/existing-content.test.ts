@@ -230,17 +230,17 @@ describe('reconcileExistingContent', () => {
     expect(result.additionalPaths).toEqual(['sub/dir/frontx-template.json']);
   });
 
-  // DIRECTORY-SYMLINK FIX (PR review defect 1, reproduced against the built
-  // binary — variant A, the symlink stands INSIDE the target). The real
-  // `readExistingContent` walk (`adapters/fs-existing-content.ts`) never
-  // descends into a symlinked directory: it reports the symlink itself, at
-  // its own path, and nothing beneath it. Before this fix, a payload path
-  // hidden beneath such a symlink looked exactly like a brand-new path —
-  // `existing.get(payloadPath)` was `undefined` — so it was reported as
-  // neither `contentConflicts` nor `additionalPaths`, and materialization
-  // would write straight through the link into whatever it actually
-  // pointed at (here, `app/realdir/file.txt`, which this fake models as a
-  // REAL file the walk reports normally, exactly as the real walk would).
+  // Directory-symlink case, variant A: the symlink stands INSIDE the
+  // target. The real `readExistingContent` walk
+  // (`adapters/fs-existing-content.ts`) never descends into a symlinked
+  // directory: it reports the symlink itself, at its own path, and nothing
+  // beneath it. A payload path hidden beneath such a symlink must not be
+  // treated as a brand-new path merely because `existing.get(payloadPath)`
+  // is `undefined` — reporting it as neither `contentConflicts` nor
+  // `additionalPaths` would let materialization write straight through the
+  // link into whatever it actually points at (here, `app/realdir/file.txt`,
+  // which this fake models as a REAL file the walk reports normally,
+  // exactly as the real walk would).
   it('reports a payload path as contentConflicts when a directory ANCESTOR inside the target is a symlink, never as a silent no-op', async () => {
     const roots = computeExclusionRoots({ target: '.', excludedSubtrees: [], projectOwnedRoots: [] });
 

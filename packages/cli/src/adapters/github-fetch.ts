@@ -15,15 +15,17 @@ import type { FetchFn, FetchResult } from '../resolver/types';
 // Anything outside that range, or non-hex, is refused rather than
 // half-trusted.
 //
-// MEASURED, not assumed — and an earlier `/^[0-9a-f]{40}$/` here meant pinning
-// never fired in production at all. GitHub names a tarball's single root
-// directory `<owner>-<repo>-<sha>`, and that `<sha>` is the ABBREVIATED form:
-// a real fetch of this repository's own branch yielded
-// `gs-layer-gears-frontx-ee3d661/` — seven characters. Requiring forty
-// rejected it, `extractPinnedSha` returned `undefined`, and `register` silently
-// recorded the typed, moving branch ref instead. The unit tests passed
-// throughout because their fixture used a synthetic 40-character SHA, a shape
-// GitHub never produces; only a live fetch exposed it.
+// MEASURED, not assumed: GitHub names a tarball's single root directory
+// `<owner>-<repo>-<sha>`, and that `<sha>` is the ABBREVIATED form — a real
+// fetch of this repository's own branch yields `gs-layer-gears-
+// frontx-ee3d661/`, seven characters. A pattern requiring a full forty hex
+// characters would reject every such directory: `extractPinnedSha` would
+// return `undefined`, and `register` would silently record the typed,
+// moving branch ref instead. Unit tests would pass throughout that failure,
+// since a fixture built around a synthetic 40-character SHA never exercises
+// the abbreviated shape GitHub actually produces — only a live fetch
+// surfaces the gap, which is why this pattern is validated against the
+// measured range rather than a fixed length.
 //
 // Seven is the lower bound because that is what GitHub emits; forty is the
 // upper bound because that is a full SHA. Nothing shorter is accepted, so a
@@ -122,14 +124,11 @@ interface UnpackedGithubTarball {
   files: Record<string, string>;
   // The commit SHA recovered from the tarball's own top-level directory
   // name, when that segment's last `-`-separated component validates as a
-  // hex SHA in the 7-to-40 form GitHub actually emits there (`GIT_SHA_PATTERN`
-  // — this said "full 40-character" until the third review round found it,
-  // the last of three statements of a rule the code stopped applying once
-  // measurement showed the abbreviated form is what arrives).
-  // `undefined` when the archive carried no
-  // top-level segment at all (pathological) or the last component does not
-  // look like a SHA — an absent pin is honest; a wrong one recorded as
-  // immutable is not (`inst-resolve-pin`).
+  // hex SHA in the 7-to-40 form GitHub actually emits there
+  // (`GIT_SHA_PATTERN`). `undefined` when the archive carried no top-level
+  // segment at all (pathological) or the last component does not look like
+  // a SHA — an absent pin is honest; a wrong one recorded as immutable is
+  // not (`inst-resolve-pin`).
   pinnedRef?: string;
 }
 
@@ -221,10 +220,7 @@ function unpackGithubTarball(url: string, tarballBytes: Buffer): UnpackedGithubT
 // addressing nothing. So this returns `undefined`, never a best-effort
 // guess, whenever the candidate does not match `GIT_SHA_PATTERN` — the 7-to-40
 // hex form GitHub's tarball root directory actually carries, as that
-// pattern's own comment sets out. This sentence used to say "not exactly 40
-// hex characters", describing the rule that measurement had already replaced
-// and that made pinning never fire at all; one of the two statements of it
-// was corrected a round ago and this one was missed.
+// pattern's own comment sets out.
 function extractPinnedSha(topLevelDir: string | undefined): string | undefined {
   if (topLevelDir === undefined) return undefined;
   const lastDash = topLevelDir.lastIndexOf('-');

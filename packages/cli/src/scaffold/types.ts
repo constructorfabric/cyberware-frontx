@@ -75,12 +75,17 @@ export type ReadContentItemsFn = (entry: InventoryEntry) => Promise<ContentItem[
 export interface ContributionEntry {
   templateName: string;
   target: string;
-  // The template's installed content path — a project-relative directory
-  // for a local `path:` origin, or the local inventory's own installed
-  // content path for a remote origin (`inventory/TemplateInventory.ts`'s
-  // `install`/`lookup`). Read by later pipeline steps (existing-content
-  // reconciliation, materialization) — this algorithm reads no content
-  // itself.
+  // The template's installed content path — ALWAYS an absolute filesystem
+  // path, one rule regardless of origin kind: the local inventory's own
+  // installed content path for a remote origin
+  // (`inventory/TemplateInventory.ts`'s `install`/`lookup`, joined against the
+  // always-absolute inventory root), or a local `path:` origin's canonical
+  // folder joined against the applicable project root
+  // (`scaffold/assembler.ts`'s `resolveRegisteredTemplate`, the one place
+  // this field is produced). Read by later pipeline steps (existing-content
+  // reconciliation, materialization, the AI-bundle seams) — this algorithm
+  // reads no content itself, but every reader downstream is entitled to use
+  // this value directly, with no repo root of its own to join it against.
   installedContentPath: string;
   excludedSubtrees: string[];
   // The six-term subtraction's own output for this (template, target) pair —

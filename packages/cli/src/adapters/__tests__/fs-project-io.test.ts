@@ -81,11 +81,11 @@ describe('createFsListPayloadFilesFn', () => {
     expect(files).toEqual(['packages/auth/package.json']);
   });
 
-  // CodeRabbit review finding on #493: skipping every dot-prefixed entry
-  // opened a completeness hole in the exact guard this branch adds - a
-  // carrier (`package.json`) nested under a hidden directory went
-  // uninspected. `node_modules` is the only exclusion; a dot-prefixed
-  // directory is ordinary template content and is walked.
+  // Skipping every dot-prefixed entry would open a completeness hole in the
+  // exact guard this branch adds - a carrier (`package.json`) nested under a
+  // hidden directory would go uninspected. `node_modules` is the only
+  // exclusion; a dot-prefixed directory is ordinary template content and is
+  // walked.
   it('descends into a dot-prefixed directory found while walking, and includes files inside it', async () => {
     const dir = await makeTemplate();
     await mkdir(path.join(dir, 'packages', '.turbo'), { recursive: true });

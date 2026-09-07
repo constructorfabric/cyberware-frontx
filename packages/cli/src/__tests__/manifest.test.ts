@@ -328,8 +328,8 @@ describe('validateCommand', () => {
 });
 
 // Real-fs coverage of validateCommand's content-self-containment seams
-// (review round on #493, and the seam split that replaced the single
-// per-subtree `ListContentOwnedFilesFn` with `ListPayloadFilesFn` +
+// (following the seam split that replaced the single per-subtree
+// `ListContentOwnedFilesFn` with `ListPayloadFilesFn` +
 // `ResolveDeclaredExclusionFn`): the adapter-level throws
 // (fs-project-io.test.ts) and validateCommand's throw-to-FAIL conversion
 // (the fake-throw cases above) are each proven separately; these drive the

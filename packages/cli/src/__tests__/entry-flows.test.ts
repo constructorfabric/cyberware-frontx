@@ -22,6 +22,7 @@ import type { BundleExistsFn, CopyBundleFn, RemoveBundleFn } from '../scaffold/a
 import type { ReadExistingContentFn, ReadInstalledContentFn } from '../scaffold/existing-content';
 import type { AssertPathWithinRootFn, ContentItem, WriteFileFn } from '../scaffold/types';
 import type { ProjectStateDocument, ReadProjectStateFn, WriteProjectStateFn } from '../project-state/types';
+import { PathContainmentError } from '../adapters/fs-project-io';
 import type { ReadFileFn } from '../manifest/types';
 import type { InventoryEntry } from '../inventory/types';
 import { InventoryState } from '../inventory/types';
@@ -129,7 +130,7 @@ function makeHarness() {
   // `readProjectStateFn`/`writeProjectStateFn` above already share for
   // exactly the project state path, and over the SAME in-memory `files`
   // map for any OTHER absolute path — `rollbackSeedWrites`'s own
-  // `writtenPaths` cleanup (DEFECT FIX, PR review) reuses this identical
+  // `writtenPaths` cleanup reuses this identical
   // seam to remove whatever payload files a failed apply phase reported as
   // written, so this fake must genuinely model "remove whatever is really
   // at this absolute path" rather than unconditionally nulling project
@@ -610,18 +611,17 @@ describe('runApplyPipeline — materializing a batch (cpt-frontx-flow-cli-scaffo
     expect(h.readProjectStateDocument().templates['template-a'].targets).toEqual(['apps/foo']);
   });
 
-  // ATOMICITY FIX (PR review, reproduced against the built binary, defect 6
-  // — "apply is not atomic across the AI-bundle step"): `runApplyPipeline`
-  // materializes a batch's payload BEFORE the AI-bundle step, which can
-  // still refuse. This USED TO report `INVALID_PATH` with the payload left
-  // genuinely on disk — "nothing recorded" did not also mean "nothing
-  // left", so `validate --project` would PASS over content no state
-  // document mentioned. `apply` now rolls back its own writes on exactly
-  // this refusal (this call never committed anything to the project state
-  // store, so every file it wrote is unambiguously its own to remove) —
-  // `details.writtenPaths` still names what WAS written, but the message
-  // now says it was removed, and the payload is genuinely gone.
-  it('rolls back the payload, and reports it as removed, when the AI-bundle step refuses after materializing', async () => {
+  // `runApplyPipeline` materializes a batch's payload BEFORE the AI-bundle
+  // step, which can still refuse — this call never committed anything to
+  // the project state store, so every file it wrote is unambiguously its
+  // own to remove (`details.writtenPaths` still names what WAS written, but
+  // the message says it was removed, and the payload is genuinely gone).
+  // The code is `INTERNAL`, not `INVALID_PATH`: an ordinary thrown error
+  // (a permission error, a missing source, disk exhaustion) is a real
+  // failure to copy the bundle, never itself proof the destination escapes
+  // the project root — that narrower diagnosis belongs only to the
+  // `PathContainmentError` case covered by the sibling test below.
+  it('rolls back the payload, and reports INTERNAL with it removed, when the AI-bundle step throws an ordinary error', async () => {
     const h = makeHarness();
     h.registerInstalled('template-a', manifest('template-a'), [{ path: 'src/index.ts', content: 'hello' }]);
     h.seedProjectState({
@@ -638,7 +638,9 @@ describe('runApplyPipeline — materializing a batch (cpt-frontx-flow-cli-scaffo
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.code).toBe('INVALID_PATH');
+    expect(result.code).toBe('INTERNAL');
+    expect(result.message).toContain('could not be materialized');
+    expect(result.message).not.toContain('could not be proven to stay inside the project root');
     expect(result.details?.writtenPaths).toEqual(['apps/foo/src/index.ts']);
     expect(result.message).toContain('apps/foo/src/index.ts');
     expect(result.message).toContain('removed');
@@ -648,17 +650,44 @@ describe('runApplyPipeline — materializing a batch (cpt-frontx-flow-cli-scaffo
     expect(h.readProjectStateDocument().templates['template-a'].targets).toEqual([]);
   });
 
-  // BUNDLE-ROLLBACK FIX (fifth review round, DEFECT 1, reproduced against the
-  // built binary): a refusal reached AFTER the AI-extension bundle step had
-  // ALREADY materialized a bundle for one or more names, but during the
-  // LATER project-state record step (a two-name batch, both bundles
-  // successfully copied, then the very first `mutateProjectState` write
-  // throws — modeling a read-only `.frontx` on a real filesystem), used to
-  // roll back only the payload files and leave every bundle this call itself
-  // materialized standing: `targets: []` for both names, yet both bundle
-  // directories still on disk, which a later `validate --project` would PASS
-  // over despite naming nothing in the state document. Both names' bundles
-  // must now come back out with the payload.
+  // The sibling case: the bundle copy's OWN fail-closed containment refusal
+  // (`PathContainmentError`, thrown by the real `createFsCopyBundleFn` when
+  // its destination cannot be proven to stay inside the project root) is
+  // the one thrown failure this step still reports as `INVALID_PATH` — the
+  // discrimination the generic error case above proves does NOT apply here.
+  it('reports INVALID_PATH, not INTERNAL, when the AI-bundle step throws its own PathContainmentError', async () => {
+    const h = makeHarness();
+    h.registerInstalled('template-a', manifest('template-a'), [{ path: 'src/index.ts', content: 'hello' }]);
+    h.seedProjectState({
+      formatVersion: 1,
+      templates: { 'template-a': registeredEntry('github:acme/template-a@v1') },
+      projectOwnedRoots: [],
+    });
+    h.deps.bundleExistsFn = vi.fn(async () => true);
+    h.deps.copyBundleFn = vi.fn(async () => {
+      throw new PathContainmentError('/repo/.frontx/ai/template-a', '/repo');
+    });
+
+    const result = await runApplyPipeline({ templates: { 'template-a': ['apps/foo'] } }, REPO_ROOT, false, h.deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('INVALID_PATH');
+    expect(result.message).toContain('could not be proven to stay inside the project root');
+    expect(h.files.get('/repo/apps/foo/src/index.ts')).toBeUndefined();
+    expect(h.readProjectStateDocument().templates['template-a'].targets).toEqual([]);
+  });
+
+  // BUNDLE-ROLLBACK FIX: a refusal reached AFTER the AI-extension bundle
+  // step had ALREADY materialized a bundle for one or more names, but
+  // during the LATER project-state record step (a two-name batch, both
+  // bundles successfully copied, then the very first `mutateProjectState`
+  // write throws — modeling a read-only `.frontx` on a real filesystem),
+  // must not roll back only the payload files and leave every bundle this
+  // call itself materialized standing: `targets: []` for both names, yet
+  // both bundle directories still on disk, which a later `validate
+  // --project` would PASS over despite naming nothing in the state
+  // document. Both names' bundles must come back out with the payload.
   it('also removes every AI-extension bundle this call materialized when the record step throws before anything committed', async () => {
     const h = makeHarness();
     h.registerInstalled('template-a', manifest('template-a'), [{ path: 'ta.txt', content: 'a' }]);
@@ -708,6 +737,130 @@ describe('runApplyPipeline — materializing a batch (cpt-frontx-flow-cli-scaffo
     expect(result.details?.writtenPaths).toEqual(expect.arrayContaining(['ta/ta.txt', 'tb/tb.txt']));
   });
 
+  // The one case a rollback deliberately does NOT run: an earlier name in
+  // the SAME batch already committed its targets to the project state store
+  // before a LATER name's own record step fails. `recordedAnyThisCall` is
+  // true here, so `writtenPaths`/`bundledNamesThisCall` are correctly left
+  // standing rather than removed — but the cli-scaffolding FEATURE still
+  // promises `details.bundledNames` "regardless of whether the rollback
+  // ran", precisely because `seed` (which always deletes the whole project
+  // state document on any refusal, committed name or not) reads that exact
+  // field to know which bundles are still its own to remove. Reported here
+  // by making the SECOND name's own project-state write throw — the two
+  // scratch templates a real read-only `.frontx` would produce this from are
+  // not reproducible against the built binary at all: both `mutateProjectState`
+  // calls in the record loop run back to back with no macrotask-level yield
+  // between the first write completing and the second one starting (the real
+  // read/write seams are synchronous `fs.*Sync` calls wrapped in `async`
+  // functions), so no external process — or even a timer in the same
+  // process — can land a permission change in that window. This is the
+  // deterministic equivalent: the first name's write genuinely succeeds
+  // (`recordedAnyThisCall` becomes true), and the second's throws.
+  it('still reports bundledNames — as remaining, not removed — when an earlier name already committed before a later name\'s write throws', async () => {
+    const h = makeHarness();
+    h.registerInstalled('template-a', manifest('template-a'), [{ path: 'ta.txt', content: 'a' }]);
+    h.registerInstalled('template-b', manifest('template-b'), [{ path: 'tb.txt', content: 'b' }]);
+    h.templateHasBundle.add('template-a');
+    h.templateHasBundle.add('template-b');
+    h.seedProjectState({
+      formatVersion: 1,
+      templates: {
+        'template-a': registeredEntry('github:acme/template-a@v1'),
+        'template-b': registeredEntry('github:acme/template-b@v1'),
+      },
+      projectOwnedRoots: [],
+    });
+    const realWrite = h.deps.writeProjectStateFn;
+    let writeCalls = 0;
+    h.deps.writeProjectStateFn = vi.fn(async (absolutePath: string, content: string) => {
+      writeCalls++;
+      if (writeCalls === 1) return realWrite(absolutePath, content);
+      throw new Error('simulated EACCES on the second name\'s own record-step write');
+    });
+
+    const result = await runApplyPipeline(
+      { templates: { 'template-a': ['ta'], 'template-b': ['tb'] } },
+      REPO_ROOT,
+      false,
+      h.deps,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('INTERNAL');
+    // Both bundles were materialized before the record loop ever started,
+    // and NEITHER is removed — this refusal cannot roll back once a name in
+    // this same batch already committed.
+    expect(h.deps.removeBundleFn).not.toHaveBeenCalled();
+    expect(h.projectHasBundle.has('template-a')).toBe(true);
+    expect(h.projectHasBundle.has('template-b')).toBe(true);
+    // Exactly one of the two names committed its target; the other did not.
+    const committedCount = [
+      h.readProjectStateDocument().templates['template-a'].targets.length,
+      h.readProjectStateDocument().templates['template-b'].targets.length,
+    ].filter((count) => count > 0).length;
+    expect(committedCount).toBe(1);
+    // The heart of the fix: `bundledNames` names BOTH bundles this call
+    // materialized, not only the committed name's — `seed`'s own rollback
+    // needs the uncommitted name's bundle named here to clean it up, and the
+    // message says plainly that these remain rather than falsely claiming a
+    // removal that never ran.
+    expect(result.details?.bundledNames).toEqual(expect.arrayContaining(['template-a', 'template-b']));
+    expect(result.message).toContain('AI-extension bundle');
+    expect(result.message).toContain('remain on disk');
+    expect(result.message).not.toContain('have also been removed');
+  });
+
+  // The mirror of the throw above, hitting the OTHER broken call site: the
+  // second name's own `mutateProjectState` call returns `{ ok: false }`
+  // (its OWN read of the just-committed document fails to parse) rather
+  // than throwing — the record loop's `!written.ok` branch, not the
+  // pipeline's outer `catch`.
+  it('still reports bundledNames when an earlier name already committed and a later name\'s own read fails to parse', async () => {
+    const h = makeHarness();
+    h.registerInstalled('template-a', manifest('template-a'), [{ path: 'ta.txt', content: 'a' }]);
+    h.registerInstalled('template-b', manifest('template-b'), [{ path: 'tb.txt', content: 'b' }]);
+    h.templateHasBundle.add('template-a');
+    h.templateHasBundle.add('template-b');
+    h.seedProjectState({
+      formatVersion: 1,
+      templates: {
+        'template-a': registeredEntry('github:acme/template-a@v1'),
+        'template-b': registeredEntry('github:acme/template-b@v1'),
+      },
+      projectOwnedRoots: [],
+    });
+    // Two reads succeed genuinely (the pipeline's own initial resolve, then
+    // the first name's own `mutateProjectState` read) before the third read
+    // — the SECOND name's own `mutateProjectState` read of the document the
+    // first name's write just produced — returns unparseable content,
+    // exactly as a document a concurrent writer corrupted underneath this
+    // call would.
+    const realRead = h.deps.readProjectStateFn;
+    let readCalls = 0;
+    h.deps.readProjectStateFn = vi.fn(async (absolutePath: string) => {
+      readCalls++;
+      return readCalls <= 2 ? realRead(absolutePath) : 'not valid json {{{';
+    });
+
+    const result = await runApplyPipeline(
+      { templates: { 'template-a': ['ta'], 'template-b': ['tb'] } },
+      REPO_ROOT,
+      false,
+      h.deps,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('PROJECT_INVALID');
+    expect(h.deps.removeBundleFn).not.toHaveBeenCalled();
+    expect(h.projectHasBundle.has('template-a')).toBe(true);
+    expect(h.projectHasBundle.has('template-b')).toBe(true);
+    expect(result.details?.bundledNames).toEqual(expect.arrayContaining(['template-a', 'template-b']));
+    expect(result.message).toContain('AI-extension bundle');
+    expect(result.message).toContain('remain on disk');
+  });
+
   // The mirror case, run BACKWARDS per the review's own instruction: a batch
   // that adds a SECOND target to a name that already had one (and therefore
   // already has a bundle from an earlier call) must NOT have that
@@ -753,19 +906,19 @@ describe('runApplyPipeline — materializing a batch (cpt-frontx-flow-cli-scaffo
     expect(second.details?.bundledNames).toBeUndefined();
   });
 
-  // ORDERING FIX (fifth review round, DEFECT 5b, reproduced against the
-  // built binary): a payload path that cannot be proven to stay inside the
-  // project root used to be checked AFTER existing-content reconciliation's
-  // own `contentConflicts` refusal, so an escaping path that reconciliation
-  // ALSO happened to flag (its own symlink test cannot tell an escape apart
-  // from an ordinary internal symlink) was reported as `CONTENT_CONFLICT`
-  // instead of `INVALID_PATH` — the wrong remedy for the actual problem.
-  // This fixture does not need a real symlink to prove the ORDERING: the
-  // same path is made to fail BOTH checks at once (existing content that
-  // genuinely differs, model reconciliation's own refusal cause; and
-  // `assertPathWithinRootFn` throwing for that exact absolute path, modeling
-  // a containment escape) — whichever code wins the race is the one
-  // reported, and it must be `INVALID_PATH`.
+  // ORDERING FIX: a payload path that cannot be proven to stay inside the
+  // project root must be checked BEFORE existing-content reconciliation's
+  // own `contentConflicts` refusal — checking it after would let an
+  // escaping path that reconciliation ALSO happens to flag (its own symlink
+  // test cannot tell an escape apart from an ordinary internal symlink) be
+  // reported as `CONTENT_CONFLICT` instead of `INVALID_PATH`, the wrong
+  // remedy for the actual problem. This fixture does not need a real
+  // symlink to prove the ORDERING: the same path is made to fail BOTH
+  // checks at once (existing content that genuinely differs, modeling
+  // reconciliation's own refusal cause; and `assertPathWithinRootFn`
+  // throwing for that exact absolute path, modeling a containment escape)
+  // — whichever code wins the race is the one reported, and it must be
+  // `INVALID_PATH`.
   it('reports INVALID_PATH ahead of CONTENT_CONFLICT for a path that fails both checks at once', async () => {
     const h = makeHarness();
     h.registerInstalled('template-a', manifest('template-a'), [{ path: 'file.txt', content: 'FROM-TEMPLATE' }]);
@@ -791,9 +944,8 @@ describe('runApplyPipeline — materializing a batch (cpt-frontx-flow-cli-scaffo
     expect(result.details).toEqual({ paths: ['apps/foo/file.txt'] });
   });
 
-  // DEFECT FIX regression (PR review, reproduced against the built binary,
-  // real filesystem): `--adopt-existing`'s own contract is to leave an
-  // undeclared on-disk path untouched, but a DECLARED payload path that is
+  // `--adopt-existing`'s own contract is to leave an undeclared on-disk
+  // path untouched, but a DECLARED payload path that is
   // itself a pre-existing symlink is invisible to existing-content
   // reconciliation (`adapters/fs-existing-content.ts` reports neither
   // `isFile()` nor `isDirectory()` for a symlink dirent) — writing it
@@ -862,10 +1014,10 @@ describe('seedRepository — bootstrap a fresh project (cpt-frontx-flow-cli-scaf
   });
 
   // inst-seed-foreach-default's own error scenario: a non-default name.
-  // DEFECT FIX regression: this refusal is now a pre-flight check, before
-  // `.frontx/project.json` is ever created — so a directory refused this
-  // way is left exactly as it was found, never locked out of a later
-  // `seed` call by a document this same refusal wrote.
+  // This refusal is a pre-flight check, before `.frontx/project.json` is
+  // ever created — so a directory refused this way is left exactly as it
+  // was found, never locked out of a later `seed` call by a document this
+  // same refusal wrote.
   it('refuses TEMPLATE_NOT_REGISTERED for a batch entry that is not one of the CLI\'s official default templates, writing nothing', async () => {
     const h = makeHarness();
 
@@ -877,14 +1029,14 @@ describe('seedRepository — bootstrap a fresh project (cpt-frontx-flow-cli-scaf
     expect(await h.deps.readProjectStateFn(projectStatePath(REPO_ROOT))).toBeNull();
   });
 
-  // DEFECT FIX regression: `seed` previously created `.frontx/project.json`
-  // BEFORE resolving any batch entry, so a default that could not actually
-  // be resolved (e.g. its local origin folder cannot be proven to exist)
-  // left the empty document behind — and `seed`'s own already-seeded guard
-  // then permanently refused the very directory the aborted seed was
-  // supposed to leave untouched. The fix resolves every named default
-  // BEFORE the first write, so this failure leaves nothing behind and a
-  // later `seed` call on the same directory is accepted.
+  // `seed` must not create `.frontx/project.json` BEFORE resolving any
+  // batch entry: if a default cannot actually be resolved (e.g. its local
+  // origin folder cannot be proven to exist), creating the document early
+  // would leave an empty one behind — and `seed`'s own already-seeded guard
+  // would then permanently refuse the very directory the aborted seed was
+  // supposed to leave untouched. Resolving every named default BEFORE the
+  // first write means this failure leaves nothing behind and a later
+  // `seed` call on the same directory is accepted.
   it('leaves no .frontx/project.json when a batch entry names an official default that cannot be resolved, and accepts a later seed', async () => {
     const h = makeHarness();
     h.deps.existsFn = vi.fn(async () => false);
@@ -929,7 +1081,7 @@ describe('seedRepository — bootstrap a fresh project (cpt-frontx-flow-cli-scaf
       }
       throw new Error(`unexpected readFileFn path: ${filePath}`);
     });
-    h.templateContent.set('template-shell', [{ path: 'package.json', content: '{}' }]);
+    h.templateContent.set(`${REPO_ROOT}/template-shell`, [{ path: 'package.json', content: '{}' }]);
 
     const result = await seedRepository(
       REPO_ROOT,
@@ -954,16 +1106,16 @@ describe('seedRepository — bootstrap a fresh project (cpt-frontx-flow-cli-scaf
   // `apply` itself produces for the same on-disk situation, rather than a
   // second, independently-formulated seed-only check.
   //
-  // DEFECT FIX (PR review, reproduced against the built binary): this
-  // refusal is reached AFTER `seed` has already written `.frontx/project.json`
-  // and registered the default — `runApplyPipeline` itself refuses before
-  // writing any payload file, but the state document `seed` wrote earlier
-  // used to survive the refusal, permanently locking the directory out of a
-  // later `seed` call. Rollback now undoes that write on this exact path too.
+  // This refusal is reached AFTER `seed` has already written
+  // `.frontx/project.json` and registered the default — `runApplyPipeline`
+  // itself refuses before writing any payload file, but the state document
+  // `seed` wrote earlier must not survive the refusal, or it would
+  // permanently lock the directory out of a later `seed` call. Rollback
+  // undoes that write on this exact path too.
   it('refuses CONTENT_CONFLICT for a batch target whose on-disk content already differs from the payload, exactly as apply does — and rolls back, leaving the directory seedable again', async () => {
     const h = makeHarness();
     h.deps.readFileFn = vi.fn(async () => JSON.stringify(manifest('@gears-frontx/frontx-template-shell')));
-    h.templateContent.set('template-shell', [{ path: 'package.json', content: '{}' }]);
+    h.templateContent.set(`${REPO_ROOT}/template-shell`, [{ path: 'package.json', content: '{}' }]);
     h.files.set('/repo/package.json', 'not what the template would write');
 
     const batch: UniformApplyBatch = { templates: { '@gears-frontx/frontx-template-shell': ['.'] } };
@@ -986,19 +1138,18 @@ describe('seedRepository — bootstrap a fresh project (cpt-frontx-flow-cli-scaf
     expect(secondAttempt.code).toBe('CONTENT_CONFLICT');
   });
 
-  // DEFECT FIX (PR review, reproduced against the built binary): unlike the
-  // refusal above, the AI-bundle step refuses AFTER `runApplyPipeline`
-  // already materializes the batch's payload — so `apply`'s own outcome
-  // carries `details.writtenPaths` naming a REAL file still on disk.
-  // `seed`'s rollback used to undo only its own two writes (the state
-  // document and the `.frontx` directory it created), leaving that payload
-  // file behind despite reporting failure. It now removes exactly the
-  // paths `apply` named too, so a late refusal leaves the directory exactly
-  // as empty as an early one, and a second seed is accepted.
+  // Unlike the refusal above, the AI-bundle step refuses AFTER
+  // `runApplyPipeline` already materializes the batch's payload — so
+  // `apply`'s own outcome carries `details.writtenPaths` naming a REAL file
+  // still on disk. `seed`'s rollback must not undo only its own two writes
+  // (the state document and the `.frontx` directory it created): it
+  // removes exactly the paths `apply` named too, so a late refusal leaves
+  // the directory exactly as empty as an early one, and a second seed is
+  // accepted.
   it('rolls back a payload file apply already materialized when the apply phase refuses late, leaving the directory seedable again', async () => {
     const h = makeHarness();
     h.deps.readFileFn = vi.fn(async () => JSON.stringify(manifest('@gears-frontx/frontx-template-shell')));
-    h.templateContent.set('template-shell', [{ path: 'package.json', content: '{}' }]);
+    h.templateContent.set(`${REPO_ROOT}/template-shell`, [{ path: 'package.json', content: '{}' }]);
     h.deps.bundleExistsFn = vi.fn(async () => true);
     h.deps.copyBundleFn = vi.fn(async () => {
       throw new Error('simulated bundle copy failure');
@@ -1026,17 +1177,17 @@ describe('seedRepository — bootstrap a fresh project (cpt-frontx-flow-cli-scaf
     expect(secondAttempt.ok).toBe(true);
   });
 
-  // DEFECT FIX (PR review, reproduced against the built binary): `seed` had
-  // no `try`/`catch` around `runApplyPipeline` — a thrown failure (EACCES,
-  // ENOSPC, a native abort) bypassed rollback entirely, propagating out of
-  // `seedRepository` itself with the state document (and any directory it
-  // created) left behind, permanently locking the directory out of a later
-  // `seed`. This throws from the batch's own existing-content reconciliation
-  // — a step `apply.ts` does NOT wrap in its own try (that only covers
-  // materialize-onward, see that file's own comment), so it genuinely
-  // escapes `runApplyPipeline` uncaught and reaches `seedRepository`'s own
-  // new `try`/`catch`, which now returns a structured refusal instead of
-  // throwing, and rolls back exactly as it does for a returned refusal.
+  // `seed` needs a `try`/`catch` around `runApplyPipeline`: without one, a
+  // thrown failure (EACCES, ENOSPC, a native abort) would bypass rollback
+  // entirely, propagating out of `seedRepository` itself with the state
+  // document (and any directory it created) left behind, permanently
+  // locking the directory out of a later `seed`. This throws from the
+  // batch's own existing-content reconciliation — a step `apply.ts` does
+  // NOT wrap in its own try (that only covers materialize-onward, see that
+  // file's own comment), so it genuinely escapes `runApplyPipeline`
+  // uncaught and reaches `seedRepository`'s own `try`/`catch`, which
+  // returns a structured refusal instead of throwing, and rolls back
+  // exactly as it does for a returned refusal.
   it('rolls back and returns a structured refusal, never throwing, when the apply phase throws', async () => {
     const h = makeHarness();
     h.deps.readFileFn = vi.fn(async () => JSON.stringify(manifest('@gears-frontx/frontx-template-shell')));

@@ -11,7 +11,7 @@
 //   check baseline honesty -> resolve candidate (ONCE) -> check candidate's
 //   own recorded-version honesty (restore only) -> check declared identity
 //   -> check no-op -> classify every target -> refuse on the first
-//   conflict class found, never mid-loop
+//   conflict class found, never mid-loop, containment before content
 //
 // Each ordering rule closes one specific correctness hole:
 //   - Baseline honesty BEFORE candidate resolution (`inst-val-check-baseline`
@@ -31,11 +31,19 @@
 //     means a name is never silently re-keyed to a different template's
 //     content, and an upgrade to where the name already is never computes a
 //     plan or consumes the one generation of reversal.
-//   - EVERY target is classified before either conflict check runs
+//   - EVERY target is classified before any conflict check runs
 //     (`inst-val-if-target-fails`, `inst-val-if-nested-conflict`) — no
 //     early return inside the loop — so a refusal always names every
 //     doubly-changed path and every nested conflict in one report, never a
 //     partial one that would require a second run to discover the rest.
+//   - Among the conflict checks, containment is decided before content
+//     (`escapingConflicts` before `contentConflicts`, both inside
+//     `inst-val-if-target-fails`): an ancestor symlink whose resolved target
+//     escapes the project root is refused `INVALID_PATH`, naming a
+//     different, more fundamental problem than "a symlink stands here,
+//     reconcile it" — the same ordering `commands/apply.ts`'s own
+//     pre-flight containment check already settled for the identical
+//     on-disk shape on the apply side.
 import { classifyTarget } from './classify';
 import type { ClassifyInput } from './classify';
 import { versionMatchesRecorded } from './payload';
@@ -63,6 +71,53 @@ function deriveLocalOriginFolder(origin: string, canonicalizeFn: (raw: string) =
   if (relativePath === undefined) return undefined;
   const canonical = canonicalizeFn(relativePath);
   return canonical ?? undefined;
+}
+
+// Renders a `{target, path}` list as `target:path` pairs, joined for a
+// refusal message. Pairing the two rather than listing bare paths matters
+// here specifically because this algorithm classifies MULTIPLE targets in
+// one validation pass — a bare path is ambiguous the moment two targets both
+// carry one at the same project-relative suffix.
+function describeConflictPaths(conflicts: readonly { target: string; path: string }[]): string {
+  return conflicts.map((conflict) => `${conflict.target}:${conflict.path}`).join(', ');
+}
+
+// Composes the `CONTENT_CONFLICT` message naming each of the two causes
+// `contentConflicts` unions, with its own remedy — mirroring
+// `commands/apply.ts`'s own `describeContentConflictCause` in shape and
+// intent (that function partitions a flat path list for one batch; this one
+// partitions `{target, path}` pairs across every target this algorithm just
+// classified, so the two are not the same formulation restated, only the
+// same idea applied to a differently-shaped result). A path recorded because
+// the disk shape is uncomparable — a directory or a symlink at the leaf, or
+// a symlink or a regular file at an ancestor directory component — has moved
+// nothing "away from" the baseline; telling a developer it did sends them
+// looking for a content difference that does not exist, so that cause is
+// named separately from genuine drift. Either clause is omitted entirely
+// when its own list is empty, so a refusal caused by one class alone reads
+// as one sentence about that cause, not a disjunction inviting a guess.
+function describeConflictCause(
+  name: string,
+  conflicts: readonly { target: string; path: string }[],
+  uncomparable: readonly { target: string; path: string }[],
+): string {
+  const uncomparableKeys = new Set(uncomparable.map((conflict) => `${conflict.target}\u0000${conflict.path}`));
+  const differing = conflicts.filter((conflict) => !uncomparableKeys.has(`${conflict.target}\u0000${conflict.path}`));
+  const clauses: string[] = [];
+  if (differing.length > 0) {
+    clauses.push(
+      `${differing.length} file(s) moved away from the baseline without already matching the candidate: ` +
+        describeConflictPaths(differing),
+    );
+  }
+  if (uncomparable.length > 0) {
+    clauses.push(
+      `${uncomparable.length} file(s) cannot be compared against the payload at all — a directory or a symlink ` +
+        'stands at the path, or a symlink or a regular file stands at an ancestor directory component: ' +
+        describeConflictPaths(uncomparable),
+    );
+  }
+  return `"${name}"'s upgrade was refused: ${clauses.join('; and ')}.`;
 }
 
 export type ValidateOutcome =
@@ -175,26 +230,23 @@ export async function validateUpgrade(input: ValidateInput): Promise<ValidateOut
   // @cpt-begin:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-if-resolve-fail
   if (!candidateResolved.ok) {
     // @cpt-begin:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-return-unavailable
-    // STALE-COMMENT FIX (PR review round five): this line propagates
-    // `candidateResolved.code` VERBATIM, whatever `resolvePayload` — the
-    // injected `ResolvePayloadFn` seam this function is handed, never a
-    // hardcoded reference to one concrete implementation — actually
-    // returns. `ResolvePayloadResult`'s own failure arm (`./types.ts`) types
-    // that code as `'ORIGIN_UNAVAILABLE' | 'INVALID_MANIFEST'`, so this
-    // pass-through must compile for either.
+    // This line propagates `candidateResolved.code` VERBATIM, whatever
+    // `resolvePayload` — the injected `ResolvePayloadFn` seam this function
+    // is handed, never a hardcoded reference to one concrete implementation
+    // — actually returns. `ResolvePayloadResult`'s own failure arm
+    // (`./types.ts`) types that code as `'ORIGIN_UNAVAILABLE' |
+    // 'INVALID_MANIFEST'`, so this pass-through must compile for either.
     //
-    // What is FALSE, and what an earlier version of this comment wrongly
-    // claimed and then wrongly defended: that `./payload.ts`'s own
-    // `createResolvePayloadFn` — the one implementation this seam is wired
-    // to outside tests — ever actually produces `INVALID_MANIFEST` for a
-    // legacy-shaped manifest. It does not. `payload.ts`'s own header and its
-    // `readDeclared` helper (verified directly: every `return` in that
-    // module's failure paths, for both the local and the remote branch,
-    // sets `code: 'ORIGIN_UNAVAILABLE'`) fold EVERY unreadable manifest —
-    // legacy-shaped or any other kind of contract violation — into
-    // `ORIGIN_UNAVAILABLE`, on the explicit ground that upgrade's own
-    // FEATURE never lists `INVALID_MANIFEST` among its refusals at all
-    // (`payload.ts`'s `readDeclared`/`resolveLocalPayload`/
+    // `./payload.ts`'s own `createResolvePayloadFn` — the one implementation
+    // this seam is wired to outside tests — never actually produces
+    // `INVALID_MANIFEST` for a legacy-shaped manifest. `payload.ts`'s own
+    // header and its `readDeclared` helper (verified directly: every
+    // `return` in that module's failure paths, for both the local and the
+    // remote branch, sets `code: 'ORIGIN_UNAVAILABLE'`) fold EVERY
+    // unreadable manifest — legacy-shaped or any other kind of contract
+    // violation — into `ORIGIN_UNAVAILABLE`, on the explicit ground that
+    // upgrade's own FEATURE never lists `INVALID_MANIFEST` among its
+    // refusals at all (`payload.ts`'s `readDeclared`/`resolveLocalPayload`/
     // `resolveRemotePayload` comments). `upgrade-payload.test.ts` asserts
     // this directly ("refuses ORIGIN_UNAVAILABLE, never INVALID_MANIFEST").
     //
@@ -337,6 +389,20 @@ export async function validateUpgrade(input: ValidateInput): Promise<ValidateOut
   const exclusionRootsByTarget: Record<string, string[]> = {};
   const skipped: UpgradeSkippedPath[] = [];
   const contentConflicts: { target: string; path: string }[] = [];
+  // The SUBSET of `contentConflicts` refused because the disk shape at (or
+  // above) the path is uncomparable — see `ClassifyResult.uncomparablePaths`
+  // (`./classify.ts`) for why this is tracked apart from a genuine content
+  // drift, and `describeConflictCause` below for how the two read apart in
+  // the refusal message.
+  const uncomparableConflicts: { target: string; path: string }[] = [];
+  // The SUBSET of `uncomparableConflicts` refused because an ancestor
+  // symlink's resolved target escapes the project root — see
+  // `ClassifyResult.escapingPaths`. Checked, and refused, BEFORE
+  // `contentConflicts` below: whether a path is even addressable inside the
+  // project at all is the more fundamental question, exactly the ordering
+  // `commands/apply.ts`'s own pre-flight containment check already settled
+  // for the identical on-disk shape on the apply side.
+  const escapingConflicts: { target: string; path: string }[] = [];
   const targetConflicts: { target: string; contestingTarget: string; contestingTemplateName: string }[] = [];
 
   // @cpt-begin:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-foreach-target
@@ -358,7 +424,13 @@ export async function validateUpgrade(input: ValidateInput): Promise<ValidateOut
     exclusionRootsByTarget[target] = result.exclusionRoots;
     operations.push(...result.operations);
     skipped.push(...result.skipped);
-    for (const path of result.conflictPaths) contentConflicts.push({ target, path });
+    const uncomparableForTarget = new Set(result.uncomparablePaths);
+    const escapingForTarget = new Set(result.escapingPaths);
+    for (const path of result.conflictPaths) {
+      contentConflicts.push({ target, path });
+      if (uncomparableForTarget.has(path)) uncomparableConflicts.push({ target, path });
+      if (escapingForTarget.has(path)) escapingConflicts.push({ target, path });
+    }
     for (const nested of result.nestedConflicts) {
       targetConflicts.push({ target, contestingTarget: nested.target, contestingTemplateName: nested.templateName });
     }
@@ -366,31 +438,41 @@ export async function validateUpgrade(input: ValidateInput): Promise<ValidateOut
   }
   // @cpt-end:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-foreach-target
 
+  // @cpt-begin:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-if-escaping-ancestor
+  // Containment is checked, and refused, before content: whether a path is
+  // even addressable inside the project at all is the more fundamental
+  // question, exactly the ordering `commands/apply.ts`'s own pre-flight
+  // containment check already settled for the identical on-disk shape (an
+  // ancestor symlink whose resolved target escapes the project root) on the
+  // apply side. Every target was classified above before either check runs
+  // — no partial pass is ever returned, and every offending target/path is
+  // named in one report.
+  if (escapingConflicts.length > 0) {
+    // @cpt-begin:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-return-escaping-ancestor
+    return {
+      ok: false,
+      code: 'INVALID_PATH',
+      message:
+        `"${name}"'s upgrade was refused: ${escapingConflicts.length} path(s) could not be proven to stay inside the ` +
+        'project root — an ancestor directory component resolves through a symlink whose target escapes it: ' +
+        `${describeConflictPaths(escapingConflicts)}.`,
+      details: { paths: escapingConflicts },
+    };
+    // @cpt-end:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-return-escaping-ancestor
+  }
+  // @cpt-end:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-if-escaping-ancestor
+
   // @cpt-begin:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-if-target-fails
   if (contentConflicts.length > 0) {
     // @cpt-begin:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-return-target-fail
-    // Every target was classified above before this check runs — no partial
-    // pass is ever returned, and every doubly-changed target/path is named
-    // in one report.
     return {
       ok: false,
       code: 'CONTENT_CONFLICT',
-      // MESSAGE-HONESTY FIX (fifth review round, found by reading this
-      // refusal's own output after the symlink-ancestor fix landed): this
-      // sentence named ONE cause — drift away from the baseline — while
-      // `conflictPaths` unions three. `inst-cls-record-not-regular` also
-      // records a path whose leaf is a directory or a symlink, and now one
-      // whose ancestor directory is a symlink; neither of those has "moved
-      // away from" anything, and a developer told they had went looking for
-      // a content change that does not exist. The remedy differs per cause
-      // (reconcile the edit, versus resolve the link or the directory), so
-      // the message names both rather than collapsing them into whichever
-      // one happens to be more common.
-      message:
-        `"${name}"'s upgrade was refused: ${contentConflicts.length} file(s) cannot be upgraded in place — each has ` +
-        'either moved away from the baseline without already matching the candidate, or stands on (or beneath) a ' +
-        'symlink or a directory, which cannot be compared against the payload at all.',
-      details: { conflicts: contentConflicts },
+      message: describeConflictCause(name, contentConflicts, uncomparableConflicts),
+      details:
+        uncomparableConflicts.length > 0
+          ? { conflicts: contentConflicts, uncomparableConflicts }
+          : { conflicts: contentConflicts },
     };
     // @cpt-end:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-return-target-fail
   }

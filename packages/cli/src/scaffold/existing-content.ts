@@ -20,24 +20,20 @@ import { isTemplatePayloadPath } from '../manifest/types';
 import { joinUnderTarget } from '../paths/relative-path';
 import type { ContentItem } from './types';
 
-// MOVED HERE from `adapters/fs-existing-content.ts` (found in PR review,
-// reproduced against the built binary — see this module's own
-// `inst-ec-if-symlink-component` step below for the full defect this move
-// closes). The marker used to be that adapter's own private way of telling
-// its two content-reading walks apart from an ordinary file; it stayed
-// private because nothing outside the adapter needed to know a given
-// `ContentItem`'s content WAS the marker rather than real bytes. That
-// stopped being true the moment this algorithm needed to treat "a symlink
-// stands here" as a reconciliation-level fact rather than an adapter-level
-// implementation detail: a symlinked DIRECTORY anywhere above a payload
-// path has to make every payload path beneath it uncomparable, and only
-// this module — the one place that walks the payload path set against what
-// exists — can decide that. A value only the WRITER (the adapter) and the
-// READER (this module) agree on has exactly one honest home: the module
-// that reads it and acts on it, with the writer importing the constant
-// rather than each side keeping its own copy that could silently drift
-// apart. `adapters/fs-existing-content.ts` imports this export rather than
-// redefining it.
+// Declared here, not in `adapters/fs-existing-content.ts`: a value only the
+// WRITER (the adapter) and the READER (this module) agree on has exactly
+// one honest home — the module that reads it and acts on it, with the
+// writer importing the constant rather than each side keeping its own copy
+// that could silently drift apart. `adapters/fs-existing-content.ts`
+// imports this export rather than redefining it.
+//
+// The marker exists because this algorithm needs to treat "a symlink stands
+// here" as a reconciliation-level fact, not an adapter-level implementation
+// detail: a symlinked DIRECTORY anywhere above a payload path has to make
+// every payload path beneath it uncomparable (see this module's own
+// `inst-ec-if-symlink-component` step below), and only this module — the
+// one place that walks the payload path set against what exists — can
+// decide that.
 export const SYMLINK_CONTENT_MARKER = '\uFFFF\uFFFFfrontx:existing-content:symlink-cannot-be-compared\uFFFF\uFFFF';
 
 // Injected reader for a template's installed content — every file reachable
@@ -85,8 +81,7 @@ export interface ExistingContentPartitions {
   // behaves exactly as before. It exists because the two causes are one
   // refusal with two different remedies — reconcile the edit, versus resolve
   // the link — and a report that names only the more common one sends a
-  // developer looking for a content difference that does not exist. Added
-  // after the fifth review round observed exactly that message in the wild.
+  // developer looking for a content difference that does not exist.
   uncomparablePaths: string[];
 }
 
@@ -129,9 +124,8 @@ function filterExistingWithinOwnership(
 }
 // @cpt-end:cpt-frontx-algo-cli-scaffolding-existing-content:p1:inst-ec-read-existing
 
-// DIRECTORY-SYMLINK FIX (found in PR review, reproduced against the built
-// binary — variant A, a symlinked directory INSIDE the target; variant B, a
-// symlinked directory inside the PROJECT but outside the target). Neither
+// This function must catch a symlinked directory standing either INSIDE the
+// target or inside the PROJECT but outside the target: neither
 // `readExistingContent` walk (the real one, `adapters/fs-existing-
 // content.ts`, or a test fake standing in for it) ever descends into a
 // symlinked directory it finds — it reports the symlink itself, at its own
@@ -139,14 +133,14 @@ function filterExistingWithinOwnership(
 // invisible to the two-map lookup `inst-ec-if-exists` performs below:
 // `existing.get(payloadPath)` returns `undefined` for a path the walk never
 // produced an entry for, which is indistinguishable from "nothing has ever
-// been written here" — so a payload path standing beneath a symlinked
-// directory used to be treated as brand new, and `commands/apply.ts`
-// materialized straight through the link, silently overwriting whatever the
-// link's target actually held (`fs-containment.test.ts`'s own end-to-end
-// suite already proves the mirror case, a symlinked FILE standing exactly AT
-// a payload path — this is the same defect one directory level up, where the
-// existing-map lookup is empty rather than populated with the wrong
-// content).
+// been written here". Without this check, a payload path standing beneath a
+// symlinked directory would be treated as brand new, and
+// `commands/apply.ts` would materialize straight through the link, silently
+// overwriting whatever the link's target actually held
+// (`fs-containment.test.ts`'s own end-to-end suite already proves the
+// mirror case, a symlinked FILE standing exactly AT a payload path — this
+// is the same risk one directory level up, where the existing-map lookup is
+// empty rather than populated with the wrong content).
 //
 // Built from the RAW existing items — BEFORE `filterExistingWithinOwnership`
 // above narrows them to one target's effective ownership area — because
@@ -222,18 +216,18 @@ export async function reconcileExistingContent(
   // @cpt-begin:cpt-frontx-algo-cli-scaffolding-existing-content:p1:inst-ec-foreach-payload-path
   for (const [payloadPath, payloadContent] of payload) {
     // @cpt-begin:cpt-frontx-algo-cli-scaffolding-existing-content:p1:inst-ec-if-symlink-component
-    // DIRECTORY-SYMLINK FIX (see `collectSymlinkPaths`'s own doc comment
-    // above for the full defect). A symlink — at the payload path itself
-    // (the pre-existing, already-fixed case; see `fs-containment.test.ts`'s
-    // "aliasing another file via symlink" suite) or at ANY directory
-    // component between it and `target` — cannot be compared against the
-    // payload's declared text content, and writing through it lands
-    // somewhere the payload path does not name: the identical ground
-    // `architecture/ADR/0021-project-upgrade-mechanism.md` already settled
-    // for the upgrade engine ("A payload path where the disk holds a
-    // directory or a symlink instead of a regular file cannot be compared
-    // at all and refuses the same way, fail-closed, with CONTENT_CONFLICT"),
-    // applied here to reconciliation rather than restated a second time.
+    // See `collectSymlinkPaths`'s own doc comment above for why this check
+    // exists. A symlink — at the payload path itself (see
+    // `fs-containment.test.ts`'s "aliasing another file via symlink" suite)
+    // or at ANY directory component between it and `target` — cannot be
+    // compared against the payload's declared text content, and writing
+    // through it lands somewhere the payload path does not name: the
+    // identical ground `architecture/ADR/0021-project-upgrade-
+    // mechanism.md` already settled for the upgrade engine ("A payload path
+    // where the disk holds a directory or a symlink instead of a regular
+    // file cannot be compared at all and refuses the same way, fail-closed,
+    // with CONTENT_CONFLICT"), applied here to reconciliation rather than
+    // restated a second time.
     // This check runs BEFORE `inst-ec-if-exists` below, not as a special
     // case of it: `existing.get(payloadPath)` cannot even see a path
     // hidden beneath a symlinked directory (the walk never descended into

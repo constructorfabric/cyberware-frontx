@@ -20,8 +20,8 @@ and the left menu fills in with screens contributed by whatever MFE packages
 are present under `src-app/mfe_packages/`. Until you add one the menu stays
 empty and `generate:mfe-manifests` writes an empty manifest set - both expected.
 
-The packages [`frontx-template-mfe`](../template-mfe/README.md) contributes -
-`demo-mfe` `:3001`, `_blank-mfe` `:3099`, widget fixtures `:3201` / `:3202` - do
+The packages `frontx-template-mfe` contributes - `demo-mfe` `:3001`,
+`_blank-mfe` `:3099`, widget fixtures `:3201` / `:3202` - do
 not change that: they are that template's own examples and stay out of your app,
 per `src-app/mfe_packages/README.md`.
 
@@ -117,8 +117,8 @@ scaffold step deletes it.
 ## Add a microfrontend
 
 MFEs are the unit of composition. `_blank-mfe` (the copy-from scaffold) ships
-with [`frontx-template-mfe`](../template-mfe/README.md), not the shell — register
-and apply it first if `src-app/mfe_packages/_blank-mfe` isn't there yet:
+with `frontx-template-mfe`, not the shell — register and apply it first if
+`src-app/mfe_packages/_blank-mfe` isn't there yet:
 
 ```bash
 frontx register <mfe-origin>

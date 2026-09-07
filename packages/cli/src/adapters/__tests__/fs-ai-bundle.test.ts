@@ -60,12 +60,12 @@ describe('fs-ai-bundle real adapters', () => {
       expect(await bundleExists(sourceRoot, MANIFEST_NAME)).toBe(true);
     });
 
-    // DEFECT 2 (MEDIUM, reproduced against the built binary): `existsSync`
-    // follows the final path component, so a dangling symlink standing at
-    // the bundle path — its own target already removed, the link itself
-    // still present — used to read as absent. `lstat` reports the entry AT
-    // the path without dereferencing it, so a dangling link is "there"
-    // regardless of whether its target is.
+    // A dangling symlink standing at the bundle path — its own target
+    // already removed, the link itself still present — must be reported as
+    // existing: `existsSync` follows the final path component and would
+    // read it as absent, but `lstat` reports the entry AT the path without
+    // dereferencing it, so a dangling link is "there" regardless of whether
+    // its target is.
     it('reports true when the bundle path is a dangling symlink', async () => {
       sourceRoot = await makeDir('frontx-ai-bundle-exists-dangling-');
       const bundleDir = path.join(sourceRoot, '.frontx', 'ai', MANIFEST_NAME);
@@ -96,14 +96,15 @@ describe('fs-ai-bundle real adapters', () => {
       expect(existsSync(path.join(sourceRoot, '.frontx', 'ai', MANIFEST_NAME, 'extension.json'))).toBe(true);
     });
 
-    // DEFECT 1 (HIGH, reproduced against the built binary): `fs.cpSync`
-    // internally dereferences its destination to decide file-vs-directory,
-    // and dereferencing a DANGLING symlink throws a native
-    // `filesystem_error` no JS `try`/`catch` around this call can see,
-    // aborting the whole process. Reproduced exactly: apply a template,
-    // delete its last target (bundle removed), replace
+    // `fs.cpSync` internally dereferences its destination to decide
+    // file-vs-directory, and dereferencing a DANGLING symlink throws a
+    // native `filesystem_error` no JS `try`/`catch` around this call can
+    // see, aborting the whole process — so copying onto a dangling symlink
+    // destination must replace it with a real directory rather than
+    // dereference it. This state arises in practice by applying a template,
+    // deleting its last target (removing the bundle), replacing
     // `.frontx/ai/<identity>` with a symlink to a nonexistent path still
-    // INSIDE the project (so containment allows it), then apply again.
+    // INSIDE the project (so containment allows it), then applying again.
     it('copies successfully onto a dangling symlink destination, replacing it with a real directory', async () => {
       sourceRoot = await makeDir('frontx-ai-bundle-source-');
       destRoot = await makeDir('frontx-ai-bundle-dest-');

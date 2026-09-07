@@ -254,10 +254,10 @@ describe('classifyTarget (cpt-frontx-algo-upgrade-changeset-classify)', () => {
   });
 
   // --- 7b. symlinked ANCESTOR directory component, fail-closed -----------
-  // (PR review round five, reproduced against the built binary: the
-  // leaf-only check above refused a symlinked LEAF but silently followed a
-  // symlinked ANCESTOR — see `../upgrade/classify.ts`'s `hasSymlinkAncestor`
-  // doc comment for the full defect.)
+  // The leaf-only check above refuses a symlinked LEAF, but a symlinked
+  // ANCESTOR must be refused too rather than silently followed — see
+  // `../upgrade/classify.ts`'s `hasSymlinkAncestor` doc comment for the full
+  // reasoning.
 
   it('reports a conflict when an ancestor directory component below target is a symlink, regardless of what the leaf itself reports', async () => {
     const result = await classifyTarget(
@@ -373,6 +373,116 @@ describe('classifyTarget (cpt-frontx-algo-upgrade-changeset-classify)', () => {
 
     expect(result.operations).toEqual([expect.objectContaining({ path: 'packages/app/src/a.ts', op: 'UNCHANGED' })]);
     expect(result.conflictPaths).toEqual([]);
+  });
+
+  // --- 7c. the ancestor probe covers the WHOLE chain, target's own
+  // component included, and distinguishes uncomparable causes -------------
+  // The probe must not start strictly BELOW `target`: `target`'s own path
+  // component — and everything above it — must be probed too. `target` is
+  // a string recorded in the project state store and is never canonicalized
+  // by this engine the way `apply`'s pre-flight canonicalizes a batch's own
+  // target, so a `target` that is itself a symlink can reach classification
+  // unresolved.
+
+  it("refuses fail-closed when target's own path component is a symlink, not only a component below it", async () => {
+    const result = await classifyTarget(
+      baseInput({
+        target: 'packages/app',
+        baseline: payload({ 'dir/sub/b.txt': 'V1' }),
+        candidate: payload({ 'dir/sub/b.txt': 'V2' }),
+        readDiskEntry: fakeReadDiskEntry({
+          // The TARGET's own component, not a component below it.
+          '/repo/packages/app': symlinkEntry,
+          '/repo/packages/app/dir/sub/b.txt': fileEntry('V1'),
+        }),
+      }),
+    );
+
+    expect(result.conflictPaths).toEqual(['packages/app/dir/sub/b.txt']);
+    expect(result.uncomparablePaths).toEqual(['packages/app/dir/sub/b.txt']);
+    expect(result.operations).toEqual([]);
+  });
+
+  it('refuses fail-closed when an ancestor ABOVE the target itself is a symlink', async () => {
+    const result = await classifyTarget(
+      baseInput({
+        target: 'packages/app',
+        baseline: payload({}),
+        candidate: payload({ 'new.ts': 'content' }),
+        readDiskEntry: fakeReadDiskEntry({
+          // 'packages' is a proper ancestor of `target`, not `target` itself.
+          '/repo/packages': symlinkEntry,
+        }),
+      }),
+    );
+
+    expect(result.conflictPaths).toEqual(['packages/app/new.ts']);
+    expect(result.uncomparablePaths).toEqual(['packages/app/new.ts']);
+    expect(result.operations).toEqual([]);
+  });
+
+  it('refuses fail-closed when an ancestor directory component is an ordinary regular file, exactly like a symlink', async () => {
+    const result = await classifyTarget(
+      baseInput({
+        baseline: payload({}),
+        candidate: payload({ 'vendor/lib.ts': 'content' }),
+        readDiskEntry: fakeReadDiskEntry({
+          // A plain file stands where a directory is required.
+          '/repo/packages/app/vendor': fileEntry('not-a-directory'),
+        }),
+      }),
+    );
+
+    expect(result.conflictPaths).toEqual(['packages/app/vendor/lib.ts']);
+    expect(result.uncomparablePaths).toEqual(['packages/app/vendor/lib.ts']);
+    expect(result.escapingPaths).toEqual([]);
+    expect(result.operations).toEqual([]);
+  });
+
+  it('reports an ancestor symlink as escaping when canonicalizeFn proves its resolved target leaves the project root', async () => {
+    const result = await classifyTarget(
+      baseInput({
+        baseline: payload({ 'vendor/lib.ts': 'old' }),
+        candidate: payload({ 'vendor/lib.ts': 'new' }),
+        readDiskEntry: fakeReadDiskEntry({ '/repo/packages/app/vendor': symlinkEntry }),
+        // Only the ancestor actually probed reports an escape — proves the
+        // verdict is read from `canonicalizeFn`, not assumed from the
+        // symlink's mere presence.
+        canonicalizeFn: (raw) => (raw === 'packages/app/vendor' ? null : raw),
+      }),
+    );
+
+    expect(result.conflictPaths).toEqual(['packages/app/vendor/lib.ts']);
+    expect(result.uncomparablePaths).toEqual(['packages/app/vendor/lib.ts']);
+    expect(result.escapingPaths).toEqual(['packages/app/vendor/lib.ts']);
+  });
+
+  it('does not mark an internal ancestor symlink (resolving inside the project) as escaping', async () => {
+    const result = await classifyTarget(
+      baseInput({
+        baseline: payload({ 'vendor/lib.ts': 'old' }),
+        candidate: payload({ 'vendor/lib.ts': 'new' }),
+        readDiskEntry: fakeReadDiskEntry({ '/repo/packages/app/vendor': symlinkEntry }),
+        canonicalizeFn: identityCanonicalize, // never reports an escape
+      }),
+    );
+
+    expect(result.uncomparablePaths).toEqual(['packages/app/vendor/lib.ts']);
+    expect(result.escapingPaths).toEqual([]);
+  });
+
+  it('does not mark a genuinely doubly-changed file as uncomparable — the two causes stay disjoint', async () => {
+    const result = await classifyTarget(
+      baseInput({
+        baseline: payload({ 'src/c.ts': 'base' }),
+        candidate: payload({ 'src/c.ts': 'cand' }),
+        readDiskEntry: fakeReadDiskEntry({ '/repo/packages/app/src/c.ts': fileEntry('local-edit') }),
+      }),
+    );
+
+    expect(result.conflictPaths).toEqual(['packages/app/src/c.ts']);
+    expect(result.uncomparablePaths).toEqual([]);
+    expect(result.escapingPaths).toEqual([]);
   });
 
   // --- 8. an undeclared symlink is never enumerated -----------------------

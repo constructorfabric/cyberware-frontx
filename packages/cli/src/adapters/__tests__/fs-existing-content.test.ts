@@ -1,9 +1,9 @@
-// Real-fs coverage for the SYMLINK-INVISIBLE FIX (found in PR review,
-// reproduced against the built binary): `adapters/fs-existing-content.ts`'s
-// directory walk used to classify entries with `isDirectory()`/`isFile()`
-// only, under which a symlink dirent is neither — so a symlink already
-// standing at a TARGET path was skipped entirely, invisible to
-// `reconcileExistingContent`. This suite proves, against a real filesystem
+// Real-fs coverage for symlink classification in the directory walk:
+// `adapters/fs-existing-content.ts`'s directory walk must not classify
+// entries with `isDirectory()`/`isFile()` alone, under which a symlink
+// dirent is neither — so a symlink already standing at a TARGET path would
+// otherwise be skipped entirely, invisible to `reconcileExistingContent`.
+// This suite proves, against a real filesystem
 // (a fake `ReadExistingContentFn` cannot honestly model a real symlink):
 //
 //   1. `createFsReadExistingContentFn` now reports a symlink as an existing

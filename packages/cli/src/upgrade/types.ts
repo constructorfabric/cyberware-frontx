@@ -202,6 +202,20 @@ export type PresentUpgradePlanFn = (plan: UpgradePlan) => Promise<'approved' | '
 // Every refusal draws from the shared, stable vocabulary
 // `cpt-frontx-adr-cli-machine-readable-output` fixes; this feature
 // introduces none and retires none.
+//
+// `INVALID_PATH` names one specific validation-time refusal:
+// `cpt-frontx-algo-upgrade-changeset-classify` finds an ancestor symlink
+// whose resolved target escapes the project root (`ClassifyResult.
+// escapingPaths`, `./classify.ts`). This is a VALUE `validateUpgrade`
+// decides to hand back before anything is written — the same way
+// `commands/apply.ts`'s own pre-flight containment check returns
+// `INVALID_PATH` as an ordinary outcome of its batch pipeline — and is
+// unrelated to the commit algorithm's own containment escape, which is
+// never one of this vocabulary's values: a TOCTOU race caught during the
+// staged write is reported as a rethrown `PathContainmentError`
+// (`../adapters/fs-upgrade-io.ts`'s own header), mapped to `INVALID_PATH`
+// only once it reaches `cli.ts`'s `run()`, never surfaced as a
+// `CommitOutcome` this type union has to carry.
 export type UpgradeRefusalCode = Extract<
   ErrorCode,
   | 'TEMPLATE_NOT_REGISTERED'
@@ -212,6 +226,7 @@ export type UpgradeRefusalCode = Extract<
   | 'REGISTRATION_CONFLICT'
   | 'CONTENT_CONFLICT'
   | 'TARGET_CONFLICT'
+  | 'INVALID_PATH'
   | 'PROJECT_INVALID'
   | 'INVALID_MANIFEST'
   | 'INTERNAL'

@@ -1,16 +1,17 @@
-// Real-fs coverage for the containment-escape fix: a symlink somewhere
-// under an already-canonicalized project root, or an already-computed
-// deletion/upgrade plan, that resolves OUTSIDE the project entirely.
+// Real-fs coverage for containment across the whole payload, not only the
+// target: a symlink somewhere under an already-canonicalized project root,
+// or an already-computed deletion/upgrade plan, that resolves OUTSIDE the
+// project entirely must be refused.
 //
-// The defect (found in PR review, reproduced against the built binary):
-// registering a local template, then `mkdir -p app && ln -s /somewhere/
-// OUTSIDE app/src`, then `apply`ing the template to target `app`, wrote the
-// template's payload straight into `/somewhere/OUTSIDE` — the target itself
-// (`app`) had been canonicalized and proven to stay inside the project
-// root, but the individual PAYLOAD PATH under it (`app/src/index.ts`) never
-// was, and `fs.writeFileSync`/`fs.mkdirSync`/`fs.cpSync`/`fs.rmSync` all
-// follow a symlink on the way to the final path component regardless of
-// what the caller believes the destination to be.
+// The concrete scenario this guards against: registering a local template,
+// then `mkdir -p app && ln -s /somewhere/OUTSIDE app/src`, then `apply`ing
+// the template to target `app`, would otherwise write the template's
+// payload straight into `/somewhere/OUTSIDE` — the target itself (`app`) is
+// canonicalized and proven to stay inside the project root, but the
+// individual PAYLOAD PATH under it (`app/src/index.ts`) is not, and
+// `fs.writeFileSync`/`fs.mkdirSync`/`fs.cpSync`/`fs.rmSync` all follow a
+// symlink on the way to the final path component regardless of what the
+// caller believes the destination to be.
 //
 // `assertPathWithinProjectRoot` (`../adapters/fs-project-io.ts`) is the ONE
 // shared "is this absolute path inside the root, symlinks resolved" check
@@ -156,13 +157,13 @@ describe('assertPathWithinProjectRoot', () => {
     ).toThrow('/definitely/does/not/exist/frontx-fixture-root');
   });
 
-  // ESCAPE 1 (found in PR review, reproduced against the built binary): a
-  // DANGLING symlink — one that exists but whose own target does not — used
-  // to be treated as an ordinary not-yet-existing path component, because
+  // A DANGLING symlink — one that exists but whose own target does not —
+  // must not be treated as an ordinary not-yet-existing path component:
   // `fs.realpathSync` fails identically for "never existed" and "exists but
-  // its target doesn't", and the old walk could not tell those apart. The OS
-  // still follows a dangling link on write, so this must refuse exactly like
-  // an escaping REAL symlink does.
+  // its target doesn't", so a walk that distinguishes the two cases only by
+  // that failure cannot tell them apart. The OS still follows a dangling
+  // link on write, so this must refuse exactly like an escaping REAL
+  // symlink does.
   it('throws when the final path component is a dangling symlink pointing outside the root', async () => {
     const dir = await makeRoot();
     await mkdir(path.join(dir, 'app'), { recursive: true });
@@ -200,18 +201,16 @@ describe('assertPathWithinProjectRoot', () => {
   });
 });
 
-// SYMLINK-DESTINATION FIX (found in PR review, reproduced against the built
-// binary): `createFsWriteFileFn` used to hand `destPath` straight to
-// `fs.writeFileSync`, which follows a symlink at its FINAL path component
-// exactly as it follows one at an intermediate component. When `destPath`
-// was itself an existing symlink aliasing a DIFFERENT on-disk file — the
-// reproduced defect's exact shape, an INTERNAL alias that
-// `assertPathWithinProjectRoot`'s own escape check passes cleanly since
-// nothing about it ever leaves the project root — the write silently
-// overwrote whatever the link pointed at, exactly what `--adopt-existing`
-// promises never to do. This suite proves the fix directly against a real
-// filesystem, and that an ordinary ANCESTOR symlink (not the final
-// component) is completely unaffected.
+// SYMLINK-DESTINATION FIX: `createFsWriteFileFn` must not hand `destPath`
+// straight to `fs.writeFileSync`, which follows a symlink at its FINAL path
+// component exactly as it follows one at an intermediate component. When
+// `destPath` is itself an existing symlink aliasing a DIFFERENT on-disk
+// file — an INTERNAL alias that `assertPathWithinProjectRoot`'s own escape
+// check passes cleanly since nothing about it ever leaves the project root
+// — an unguarded write would silently overwrite whatever the link pointed
+// at, exactly what `--adopt-existing` promises never to do. This suite
+// proves the fix directly against a real filesystem, and that an ordinary
+// ANCESTOR symlink (not the final component) is completely unaffected.
 describe('createFsWriteFileFn (destination-symlink refusal)', () => {
   let repoRoot: string;
 
@@ -312,10 +311,10 @@ describe('createFsWriteProjectStateFn containment (escape 2 — the project-stat
     return dir;
   }
 
-  // ESCAPE 2 (found in PR review, reproduced against the built binary):
-  // `createFsWriteProjectStateFn` performed no containment check at all — a
-  // `.frontx` symlink escaping the project root let `register`/`unregister`/
-  // `ownership add|remove` write `project.json` anywhere on disk.
+  // `createFsWriteProjectStateFn` must perform a containment check: without
+  // one, a `.frontx` symlink escaping the project root would let
+  // `register`/`unregister`/`ownership add|remove` write `project.json`
+  // anywhere on disk.
   it('refuses to write project.json when .frontx is a symlink leaving the root, writing nothing outside', async () => {
     const dir = await makeRoot();
     outsideDir = await mkdtemp(path.join(tmpdir(), 'frontx-pstate-outside-'));
@@ -337,15 +336,15 @@ describe('createFsWriteProjectStateFn containment (escape 2 — the project-stat
     expect(await readFile(path.join(dir, '.frontx', 'project.json'), 'utf-8')).toBe('{"ok":true}');
   });
 
-  // DANGLING-SYMLINK-INSIDE FIX (found in PR review, reproduced against the
-  // built binary): `.frontx` a DANGLING symlink whose target resolves
-  // INSIDE the project — legitimately ALLOWED by `assertPathWithinProjectRoot`
-  // (the test above, in the outer `describe`, pins that) — but whose
-  // resolved target's own parent directory did not exist yet. The write used
-  // to fail with an uncaught `ENOENT` past every caller's error handling: a
-  // literal `fs.mkdirSync(path.dirname(absolutePath))` creates nothing the
-  // symlink's resolved target needs, since the literal parent (containing
-  // the link itself) already exists.
+  // DANGLING-SYMLINK-INSIDE FIX: a `.frontx` DANGLING symlink whose target
+  // resolves INSIDE the project — legitimately ALLOWED by
+  // `assertPathWithinProjectRoot` (the test above, in the outer `describe`,
+  // pins that) — can have a resolved target whose own parent directory does
+  // not exist yet. A literal `fs.mkdirSync(path.dirname(absolutePath))`
+  // creates nothing the symlink's resolved target needs, since the literal
+  // parent (containing the link itself) already exists, so without
+  // resolving the link first the write would fail with an uncaught `ENOENT`
+  // past every caller's error handling.
   it('writes project.json through a dangling .frontx symlink pointing inside the root, creating its resolved parent chain', async () => {
     const dir = await makeRoot();
     await symlink(path.join('internal', 'nested', 'frontx-real'), path.join(dir, '.frontx'));
@@ -439,12 +438,12 @@ describe('fs-upgrade-io containment (createFsWriteDiskFileFn / createFsRenameDis
     expect(await readFile(path.join(dir, 'app', 'src', 'index.ts'), 'utf-8')).toBe('payload');
   });
 
-  // DANGLING-SYMLINK-INSIDE FIX (found in PR review, reproduced against the
-  // built binary): `app/README.md` a DANGLING symlink whose target resolves
-  // INSIDE the root but whose own parent directory ("app/missing") did not
-  // exist yet. Containment already allows this (`fs-containment.test.ts`'s
-  // own `assertPathWithinProjectRoot` suite above pins that); the write used
-  // to fail with an uncaught `ENOENT` regardless, since `fs.writeFileSync`
+  // DANGLING-SYMLINK-INSIDE FIX: `app/README.md` a DANGLING symlink whose
+  // target resolves INSIDE the root can have its own parent directory
+  // ("app/missing") not exist yet. Containment already allows this
+  // (`fs-containment.test.ts`'s own `assertPathWithinProjectRoot` suite
+  // above pins that); without resolving the link first, the write would
+  // fail with an uncaught `ENOENT` regardless, since `fs.writeFileSync`
   // follows the symlink to a directory nothing had created.
   it('createFsWriteDiskFileFn writes through a dangling symlink pointing inside the root, creating its resolved parent chain', async () => {
     const dir = await makeRoot();
@@ -789,18 +788,17 @@ describe('apply end-to-end containment (runApplyPipeline with the real project-f
   });
 });
 
-// The ORIGINAL DEFECT's own end-to-end reproduction (found in PR review,
-// reproduced against the built binary, and — until now — only half-fixed:
-// `commands/apply.ts` already snapshots an adopted path and refuses
+// End-to-end coverage of the gap a snapshot-and-refuse check alone leaves
+// open: `commands/apply.ts` snapshots an adopted path and refuses
 // `CONTENT_CONFLICT` after the fact if it changed, but that only turns
-// silent corruption into REPORTED corruption; the file is still destroyed
+// silent corruption into REPORTED corruption — the file is still destroyed
 // by the time the refusal fires. This suite proves PREVENTION, through both
 // real adapters this task owns together: `createFsReadExistingContentFn`
-// (the walker that now SEES the symlink, `adapters/fs-existing-content.ts`)
-// and `createFsWriteFileFn` (the writer that now REFUSES to write through
-// one, `adapters/fs-project-io.ts`) — either fix alone already closes this
-// exact reproduction; this suite exercises them together, as production
-// wiring actually does.
+// (the walker that SEES the symlink, `adapters/fs-existing-content.ts`) and
+// `createFsWriteFileFn` (the writer that REFUSES to write through one,
+// `adapters/fs-project-io.ts`) — either one alone already closes this exact
+// scenario; this suite exercises them together, as production wiring
+// actually does.
 describe('apply --adopt-existing end-to-end: a declared payload path aliasing another file via symlink', () => {
   let repoRoot: string;
 
@@ -908,19 +906,18 @@ describe('apply --adopt-existing end-to-end: a declared payload path aliasing an
   });
 });
 
-// DIRECTORY-SYMLINK FIX (PR review defect 1, reproduced against the built
-// binary): neither of the two suites above catches a symlinked DIRECTORY —
-// only a symlinked FILE standing exactly at a payload path. This suite
-// proves the fix at the SAME end-to-end depth (real `createFsReadExisting
-// ContentFn` walker feeding real `reconcileExistingContent`, real
-// `createFsWriteFileFn` writer) for both reproduced variants: A, the
-// symlinked directory stands INSIDE the target; B, it stands inside the
-// project but OUTSIDE the target. Both used to report `ok:true` (variant B)
-// or a too-late `CONTENT_CONFLICT` (variant A, via the adopted-path
-// snapshot check, ONLY after the precious bytes were already overwritten) —
-// this suite proves PREVENTION: the precious file survives, byte for byte,
-// and the batch is refused before a single byte is written through the
-// link.
+// DIRECTORY-SYMLINK FIX: neither of the two suites above catches a
+// symlinked DIRECTORY — only a symlinked FILE standing exactly at a
+// payload path. This suite proves the fix at the SAME end-to-end depth
+// (real `createFsReadExistingContentFn` walker feeding real
+// `reconcileExistingContent`, real `createFsWriteFileFn` writer) for both
+// variants: A, the symlinked directory stands INSIDE the target; B, it
+// stands inside the project but OUTSIDE the target. Without the fix, both
+// would report `ok:true` (variant B) or a too-late `CONTENT_CONFLICT`
+// (variant A, via the adopted-path snapshot check, only after the precious
+// bytes were already overwritten) — this suite proves PREVENTION: the
+// precious file survives, byte for byte, and the batch is refused before a
+// single byte is written through the link.
 describe('apply --adopt-existing end-to-end: a symlinked DIRECTORY standing over a payload path', () => {
   let repoRoot: string;
 
@@ -1065,12 +1062,12 @@ describe('apply --adopt-existing end-to-end: a symlinked DIRECTORY standing over
   });
 });
 
-// DANGLING-SYMLINK-INSIDE FIX for `createFsWriteFileFn` (PR review defect 3,
-// reproduced against the built binary): the last writer in this package that
-// still called `fs.mkdirSync(path.dirname(destPath), ...)` literally instead
-// of `resolveWriteParentDir` — see `createFsWriteProjectStateFn`'s own
-// analogous suite above, and `fs-upgrade-io`'s own analogous suite below it,
-// for the identical fix already proven for every OTHER writer.
+// DANGLING-SYMLINK-INSIDE FIX for `createFsWriteFileFn`: the last writer in
+// this package that still called `fs.mkdirSync(path.dirname(destPath),
+// ...)` literally instead of `resolveWriteParentDir` — see
+// `createFsWriteProjectStateFn`'s own analogous suite above, and
+// `fs-upgrade-io`'s own analogous suite below it, for the identical fix
+// already proven for every OTHER writer.
 describe('createFsWriteFileFn (dangling-symlink-inside parent resolution)', () => {
   let repoRoot: string;
 
@@ -1100,13 +1097,12 @@ describe('createFsWriteFileFn (dangling-symlink-inside parent resolution)', () =
   });
 });
 
-// DEFECT FIX (PR review defect 2, reproduced against the built binary): a
-// deliberate `PathContainmentError` used to fall through `runApplyPipeline`'s
-// blanket catch as `INTERNAL`, exit 2, instead of the `INVALID_PATH` user-
-// error every OTHER containment refusal in this package already reports.
-// This suite reproduces it with `.frontx` itself replaced by a symlink to a
-// directory OUTSIDE the project — the exact shape the review named — through
-// the REAL project-state reader/writer, so the error is thrown from exactly
+// A deliberate `PathContainmentError` must not fall through
+// `runApplyPipeline`'s blanket catch as `INTERNAL`, exit 2 — it needs the
+// same `INVALID_PATH` user-error every OTHER containment refusal in this
+// package already reports. This suite proves it with `.frontx` itself
+// replaced by a symlink to a directory OUTSIDE the project, through the
+// REAL project-state reader/writer, so the error is thrown from exactly
 // where production throws it (`createFsWriteProjectStateFn`'s own
 // containment check, reached from `mutateProjectState` during the record
 // step), never simulated with a fake that throws on command.
@@ -1201,10 +1197,10 @@ describe('apply end-to-end: PathContainmentError from the record step is reporte
     expect(result.code).toBe('INVALID_PATH');
     expect(result.message).toMatch(/outside the project root/);
     expect(result.details).toMatchObject({ path: expect.stringContaining('.frontx') });
-    // ATOMICITY FIX (defect 6): this call never recorded anything (the
-    // record step is exactly where it failed), so the payload it wrote is
-    // unambiguously its own to remove — the file, and the now-empty `app`
-    // directory it created, are both actually gone.
+    // ATOMICITY FIX: this call never recorded anything (the record step is
+    // exactly where it failed), so the payload it wrote is unambiguously
+    // its own to remove — the file, and the now-empty `app` directory it
+    // created, are both actually gone.
     expect(existsSync(path.join(repoRoot, 'app', 'src', 'index.ts'))).toBe(false);
     expect(existsSync(path.join(repoRoot, 'app'))).toBe(false);
     // The document OUTSIDE the project is untouched — the refusal fired
@@ -1213,13 +1209,12 @@ describe('apply end-to-end: PathContainmentError from the record step is reporte
   });
 });
 
-// ATOMICITY FIX (PR review defect 5a/6, reproduced against the built binary
-// — a rolled-back `seed` left 73-99 empty directories behind in the live
-// run): `rollbackWrittenPaths` (`../commands/apply.ts`) is the ONE shared
-// removal formulation both `apply`'s own post-materialization rollback and
-// `seed`'s own rollback (`commands/seed-repository.ts`) call. Proven here
-// directly against a real filesystem, independent of either caller's own
-// batch-resolution machinery.
+// `rollbackWrittenPaths` (`../commands/apply.ts`) is the ONE shared removal
+// formulation both `apply`'s own post-materialization rollback and `seed`'s
+// own rollback (`commands/seed-repository.ts`) call — without it, a
+// rolled-back `seed` can leave dozens of empty directories behind (a live
+// run left 73-99). Proven here directly against a real filesystem,
+// independent of either caller's own batch-resolution machinery.
 describe('rollbackWrittenPaths (real fs): removes written files and prunes the directories they leave empty', () => {
   let repoRoot: string;
 
@@ -1251,8 +1246,7 @@ describe('rollbackWrittenPaths (real fs): removes written files and prunes the d
         path.join(repoRoot, 'apps', 'foo', 'src', 'deep'),
       ]),
       // No bundle materialization in play for this test — the two new
-      // BUNDLE-ROLLBACK FIX arguments (fifth review round) are covered on
-      // their own below.
+      // BUNDLE-ROLLBACK FIX arguments are covered on their own below.
       vi.fn(async () => {}),
       new Set(),
     );
@@ -1337,15 +1331,15 @@ describe('rollbackWrittenPaths (real fs): removes written files and prunes the d
     expect(existsSync(path.join(repoRoot, 'a', 'b'))).toBe(true);
   });
 
-  // BUNDLE-ROLLBACK FIX (fifth review round, DEFECT 1, reproduced against the
-  // built binary): a rollback used to remove only the payload files named in
-  // `writtenPaths`, leaving every `.frontx/ai/<name>/` bundle this same call
-  // materialized standing — `targets: []` for the name, but its CLI-owned
-  // bundle directory still on disk, so a later `validate --project` reported
-  // PASS over ground no state document mentioned. Proven directly here,
-  // independent of `apply`'s own batch machinery: every name in
-  // `bundledNamesThisCall` gets `removeBundleFn` called for it, exactly once,
-  // regardless of whether it also had a payload file in `writtenPaths`.
+  // BUNDLE-ROLLBACK FIX: a rollback must not remove only the payload files
+  // named in `writtenPaths`, leaving every `.frontx/ai/<name>/` bundle this
+  // same call materialized standing — `targets: []` for the name, but its
+  // CLI-owned bundle directory still on disk, so a later `validate
+  // --project` would report PASS over ground no state document mentioned.
+  // Proven directly here, independent of `apply`'s own batch machinery:
+  // every name in `bundledNamesThisCall` gets `removeBundleFn` called for
+  // it, exactly once, regardless of whether it also had a payload file in
+  // `writtenPaths`.
   it('also removes every AI-extension bundle named in bundledNamesThisCall', async () => {
     repoRoot = await mkdtemp(path.join(tmpdir(), 'frontx-rollback-bundles-'));
     const removedBundles: string[] = [];

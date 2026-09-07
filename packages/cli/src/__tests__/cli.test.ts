@@ -278,11 +278,11 @@ describe('usage/help (cpt-frontx-flow-cli-invocation-help)', () => {
     expect(outcome.stderr).toContain('Usage: frontx');
   });
 
-  // Defect #3 from PR review: `frontx nosuchcommand --json` used to write
-  // usage text to stderr and NOTHING to stdout — an unrecognized command
-  // never reached a dispatch case that could parse `--json` out of its own
-  // args, so every known command's own envelope fix left this one path
-  // behind. `--json` mode still gets exactly one JSON value on stdout, per
+  // `frontx nosuchcommand --json` must not write usage text to stderr and
+  // NOTHING to stdout: an unrecognized command never reaches a dispatch
+  // case that could parse `--json` out of its own args, so every known
+  // command's own envelope handling would otherwise leave this one path
+  // behind. `--json` mode gets exactly one JSON value on stdout, per
   // ADR-0042, and nothing on stderr.
   it('emits the shared err envelope on stdout, and nothing on stderr, for an unrecognized command under --json', () => {
     const outcome = helpOutcome(parseInvocation(['nosuchcommand', '--json']));
@@ -769,11 +769,11 @@ describe('dispatch: list (cpt-frontx-flow-template-resolution-list)', () => {
     expect(outcome.stderr).toContain('frontx list [--json]');
   });
 
-  // Defect #4 from PR review: `frontx list --json --jsonl` reported the
-  // refusal on stderr with NOTHING on stdout, even though `--json` was right
-  // there in argv — the near-miss check ran before `jsonMode` was ever
-  // computed. Fixed by reading `jsonMode` first, so the refusal itself
-  // renders through the same envelope every other `--json` failure does.
+  // `frontx list --json --jsonl` must not report the refusal on stderr with
+  // NOTHING on stdout when `--json` is right there in argv: the near-miss
+  // check must not run before `jsonMode` is computed. Reading `jsonMode`
+  // first makes the refusal itself render through the same envelope every
+  // other `--json` failure does.
   it('refuses an unrecognized flag through the shared envelope when --json is also present', async () => {
     const { deps } = makeDeps();
 
@@ -944,10 +944,10 @@ describe('dispatch: validate (cpt-frontx-flow-template-manifest-validate-for-pub
     expect(outcome.exitCode).toBe(EXIT_USER_ERROR);
   });
 
-  // Defect #2 from PR review: `frontx validate tpl --json` printed the
-  // human "PASS: ..." sentence to stdout with no envelope at all — the
-  // pre-publish path never looked at `--json`. Now routes through the same
-  // shared envelope every other command's `--json` mode uses (ADR-0042).
+  // `frontx validate tpl --json` must not print the human "PASS: ..."
+  // sentence to stdout with no envelope: the pre-publish path must look at
+  // `--json` and route through the same shared envelope every other
+  // command's `--json` mode uses (ADR-0042).
   it('emits the shared ok envelope under --json when the manifest passes validation', async () => {
     const manifest = makeManifest('foo', '1.0.0');
     const readFileFn: ReadFileFn = vi.fn(async () => JSON.stringify(manifest));
@@ -1021,11 +1021,11 @@ describe('dispatch: validate --project (cpt-frontx-flow-composed-provenance-vali
     expect(readFileFn).toHaveBeenCalledTimes(1);
   });
 
-  // Defect #1 from PR review, reproduced verbatim: `frontx validate --project
-  // unexpected --json` returned `{"ok":true,"data":{"status":"PASS"}}` at
-  // exit 0 — the extra positional was never even inspected. `validate
-  // --project` now refuses it exactly as every other command refuses an
-  // argument it does not recognize.
+  // `frontx validate --project unexpected --json` must not return
+  // `{"ok":true,"data":{"status":"PASS"}}` at exit 0 while leaving the
+  // extra positional uninspected. `validate --project` refuses an
+  // unrecognized argument exactly as every other command refuses one it
+  // does not recognize.
   it('refuses an unrecognized extra argument rather than silently ignoring it', async () => {
     const { deps } = makeDeps();
 
@@ -1126,11 +1126,11 @@ describe('dispatch: apply (cpt-frontx-flow-cli-scaffolding-add-template)', () =>
     expect(outcome.exitCode).toBe(EXIT_USER_ERROR);
   });
 
-  // Defect #3 from PR review: `apply` parsed `--input`/`--adopt-existing`/
-  // `--json` and silently DROPPED anything else — a caller's typo or stray
-  // positional ran straight through at exit 0. Proves the shared
-  // `rejectUnrecognizedArgs` fix on a command that had NO extra-argument
-  // check at all before this fix, unlike `install`/`list`/`update-local`.
+  // `apply` must not parse `--input`/`--adopt-existing`/`--json` and
+  // silently DROP anything else: a caller's typo or stray positional would
+  // otherwise run straight through at exit 0. Proves `apply` shares the
+  // same `rejectUnrecognizedArgs` check that `install`/`list`/`update-local`
+  // already have.
   it('refuses an unrecognized extra argument rather than silently ignoring it', async () => {
     const { deps } = makeDeps();
 
@@ -1290,7 +1290,13 @@ describe('dispatch: seed (cpt-frontx-flow-cli-scaffolding-seed-repository)', () 
         throw new Error(`unexpected readFileFn path: ${filePath}`);
       }),
     });
-    registerContent('template-shell', [{ path: 'package.json', content: '{}' }]);
+    // A local `path:` origin's `installedContentPath` is the canonical
+    // folder joined against the seed target's own repo root, never the bare
+    // canonical folder alone (`scaffold/assembler.ts`'s `resolveRegisteredTemplate`
+    // — the fix `scaffold/types.ts`'s `ContributionEntry.installedContentPath`
+    // doc comment states as the one rule) — so this suite's fake content
+    // registry is keyed the identical way the real pipeline reads it.
+    registerContent('/tmp/official-repo/template-shell', [{ path: 'package.json', content: '{}' }]);
 
     const outcome = await run(
       [
@@ -1312,14 +1318,13 @@ describe('dispatch: seed (cpt-frontx-flow-cli-scaffolding-seed-repository)', () 
     expect(deps.writeFileFn).toHaveBeenCalledWith(expect.stringContaining('package.json'), '{}');
   });
 
-  // Defect (PR review, reproduced against the built binary): `seed` wrote
-  // `.frontx/project.json` and registered every default BEFORE the apply
-  // phase could still refuse. CONTENT_CONFLICT is the reproduced case: the
-  // refusal itself was reported correctly, but the state document survived
-  // it, so the directory read as permanently "already seeded" from then on.
-  // Rollback now removes that state document (and any `.frontx` directory
-  // `seed` itself created) so a refused `seed` leaves the directory exactly
-  // as it found it.
+  // `seed` must not write `.frontx/project.json` and register every
+  // default BEFORE the apply phase can still refuse. CONTENT_CONFLICT is
+  // the case exercised here: if the refusal is reported correctly but the
+  // state document survives it, the directory would read as permanently
+  // "already seeded" from then on. Rollback removes that state document
+  // (and any `.frontx` directory `seed` itself created) so a refused
+  // `seed` leaves the directory exactly as it found it.
   it('rolls back its own state-document write when the apply phase refuses with CONTENT_CONFLICT, leaving the directory seedable again', async () => {
     const { deps, registerContent, readProjectStateDocument } = makeDeps({
       readFileFn: vi.fn(async (filePath: string) => {
@@ -1342,7 +1347,9 @@ describe('dispatch: seed (cpt-frontx-flow-cli-scaffolding-seed-repository)', () 
         (): ReadExistingContentFn => async () => [{ path: 'package.json', content: 'NOT THE TEMPLATE PAYLOAD' }],
       ),
     });
-    registerContent('template-shell', [{ path: 'package.json', content: '{}' }]);
+    // Keyed by the absolute `installedContentPath` a local `path:` origin now
+    // always carries (see the sibling test above for the full reasoning).
+    registerContent('/tmp/conflict-repo/template-shell', [{ path: 'package.json', content: '{}' }]);
 
     const batchInput = JSON.stringify({ templates: { '@gears-frontx/frontx-template-shell': ['.'] } });
 
@@ -1364,11 +1371,10 @@ describe('dispatch: seed (cpt-frontx-flow-cli-scaffolding-seed-repository)', () 
     expect(parsedSecond.error.code).toBe('CONTENT_CONFLICT');
   });
 
-  // Defect (PR review, reproduced against the built binary): `seed` against
-  // a nonexistent directory used to reach a raw, uncaught `fs` throw several
-  // seams deep, surfacing as exit 2 (the internal-error class) with an EMPTY
-  // stdout under `--json` — never the single envelope `--json` mode owes
-  // every caller for an ordinary, caller-supplied bad path.
+  // `seed` against a nonexistent directory must not reach a raw, uncaught
+  // `fs` throw several seams deep, surfacing as exit 2 (the internal-error
+  // class) with an EMPTY stdout under `--json` — `--json` mode owes every
+  // caller the single envelope for an ordinary, caller-supplied bad path.
   it('exits user-error with INVALID_PATH, emitting one --json envelope on stdout, when <dir> does not exist', async () => {
     const { deps } = makeDeps({
       readSeedDirStateFn: vi.fn(async (): Promise<TargetPathState> => 'absent'),
@@ -1553,18 +1559,17 @@ describe('dispatch: upgrade (cpt-frontx-flow-upgrade-changeset-review-approval, 
     expect(written().templates.foo).toMatchObject({ origin: 'github:acme/foo@v1.0.0', version: '1.0.0' });
   });
 
-  // Defect #5 from PR review: `EXIT_INTERNAL_ERROR` (2) was declared but
-  // unreachable through the envelope path — every render*Outcome failure
-  // branch hardcoded `EXIT_USER_ERROR` (1) regardless of `result.code`, so an
-  // `INTERNAL`-coded outcome (as opposed to a thrown exception, already
-  // covered by `install`'s own "exits internal-error when the dispatched
-  // behavior fails unexpectedly" test) reported itself indistinguishably
-  // from an ordinary refusal. Drives `upgrade`'s own post-commit
-  // inventory-promotion failure: the state-write transition lands, but the
-  // SEPARATE write to the local inventory (`promoteInventory`'s own
-  // `updateLocal` call) fails, which `upgrade/commit.ts` reports as
-  // `INTERNAL` precisely because the transition stands committed while the
-  // promotion did not.
+  // `EXIT_INTERNAL_ERROR` (2) must be reachable through the envelope path:
+  // every render*Outcome failure branch must not hardcode `EXIT_USER_ERROR`
+  // (1) regardless of `result.code`, or an `INTERNAL`-coded outcome (as
+  // opposed to a thrown exception, already covered by `install`'s own
+  // "exits internal-error when the dispatched behavior fails unexpectedly"
+  // test) would report itself indistinguishably from an ordinary refusal.
+  // Drives `upgrade`'s own post-commit inventory-promotion failure: the
+  // state-write transition lands, but the SEPARATE write to the local
+  // inventory (`promoteInventory`'s own `updateLocal` call) fails, which
+  // `upgrade/commit.ts` reports as `INTERNAL` precisely because the
+  // transition stands committed while the promotion did not.
   it('exits with the distinct internal-error code (2) when the outcome carries INTERNAL, not the user-error code (1)', async () => {
     const { readProjectStateFn, writeProjectStateFn, written } = seededProjectState({
       formatVersion: 1,
@@ -1620,10 +1625,10 @@ describe('dispatch: upgrade (cpt-frontx-flow-upgrade-changeset-review-approval, 
 // `envelope.ts` shape under `--json` (cpt-frontx-dod-cli-invocation-json-
 // envelope-dispatch), rather than a bespoke shape of their own.
 describe('dispatch: register (cpt-frontx-flow-composed-provenance-register-template)', () => {
-  // Defect #3 from PR review: `register` took its first non-flag token as
-  // `<origin>` and silently dropped any further positional — proves the
-  // shared `rejectUnrecognizedArgs` fix on a second, previously-unchecked
-  // command (alongside `apply`, `validate`, and `validate --project` above).
+  // `register` must not take its first non-flag token as `<origin>` and
+  // silently drop any further positional — proves `register` shares the
+  // same `rejectUnrecognizedArgs` check as `apply`, `validate`, and
+  // `validate --project` above.
   it('refuses an unrecognized extra argument rather than silently ignoring it', async () => {
     const { deps } = makeDeps();
 

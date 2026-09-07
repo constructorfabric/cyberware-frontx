@@ -19,17 +19,16 @@
 // The residual, honestly-unpinned case is a fetch adapter that reports no
 // pin at all (a non-GitHub host with no adapter support, or a candidate that
 // failed the resolver's own hex-SHA validation): `origin` there is still the
-// typed, possibly-moving reference, exactly as before this fix.
+// typed, possibly-moving reference.
 //
-// A `path:<relative-path>` origin is now resolved through the SAME shared
+// A `path:<relative-path>` origin is resolved through the SAME shared
 // resolver a remote origin goes through
 // (`cpt-frontx-algo-template-resolution-resolve-to-inventory`), never
 // through the local inventory: a local origin has no separate publication to
 // resolve to an immutable form, so it is never installed/tracked there — the
-// resolver's own containment, existence, and manifest-identity checks
-// replace what used to be this file's own independent bypass (`git blame`
-// on this header for that prior version). No fetch, no pin — there is
-// nothing external to pin against.
+// resolver's own containment, existence, and manifest-identity checks are
+// the only checks a local origin gets. No fetch, no pin — there is nothing
+// external to pin against.
 import { readManifestFromContent } from '../manifest/validate-contract';
 import { readProjectState, mutateProjectState } from '../project-state/io';
 import type { ReadProjectStateFn, WriteProjectStateFn, TemplateEntry } from '../project-state/types';
@@ -163,23 +162,22 @@ export async function registerTemplate(
   // @cpt-end:cpt-frontx-algo-composed-provenance-register:p1:inst-cpreg-accept
 
   // @cpt-begin:cpt-frontx-algo-composed-provenance-register:p1:inst-cpreg-install
-  // Marked now, and the earlier reluctance is recorded rather than silently
-  // reversed. The objection was that this call's pinning guarantee is only as
-  // strong as whichever `fetchFn` the caller injected: an adapter reporting no
-  // pin yields an honestly-unpinned `origin` here. True, but that holds of
-  // every seam in this package, and the instruction describes what the system
-  // does — the one production adapter the CLI wires (`createGithubFetchFn`)
-  // pins to the commit its own tarball settled on, verified end-to-end against
-  // a real remote where a branch name came back recorded as a SHA.
+  // This call's pinning guarantee is only as strong as whichever `fetchFn`
+  // the caller injected: an adapter reporting no pin yields an
+  // honestly-unpinned `origin` here. That holds of every seam in this
+  // package, and the instruction describes what the system does — the one
+  // production adapter the CLI wires (`createGithubFetchFn`) pins to the
+  // commit its own tarball settled on, verified end-to-end against a real
+  // remote where a branch name came back recorded as a SHA.
   //
-  // The instruction's shape changed with it: it used to sit under an `IF the
-  // origin's content is not already available in the local inventory` this
-  // code deliberately does not have. That conditional could not stand beside
-  // its own pinning requirement — what a project stores is never the typed ref
-  // but the value the fetch settled on (`cpt-frontx-adr-source-spec-syntax`),
-  // so skipping the fetch because content happens to be present locally would
-  // leave nothing to pin, and a branch that had moved would register as a
-  // no-op. Installing unconditionally is what makes the comparison below
+  // This install must run unconditionally — never gated behind an `IF the
+  // origin's content is not already available in the local inventory`
+  // check — because such a conditional cannot stand beside its own pinning
+  // requirement: what a project stores is never the typed ref but the value
+  // the fetch settled on (`cpt-frontx-adr-source-spec-syntax`), so skipping
+  // the fetch because content happens to be present locally would leave
+  // nothing to pin, and a branch that had moved would register as a no-op.
+  // Installing unconditionally is what makes the comparison below
   // meaningful; a repeat is a refresh.
   const resolved = await resolveOrigin(
     origin,
@@ -407,15 +405,15 @@ export interface ResolvedRegistrationCandidate {
 }
 
 /**
- * DEFECT FIX (seed's own pre-flight, `commands/seed-repository.ts`): resolves
- * and validates `origin` through the IDENTICAL `resolveOrigin` /
+ * Resolves and validates `origin` through the IDENTICAL `resolveOrigin` /
  * `readManifestFields` steps `registerTemplate` above uses, but reads and
- * writes no project state at all — a pure availability probe. `seed` calls
- * this for every batch entry BEFORE its own first write to
- * `.frontx/project.json`, so a batch naming an official default that cannot
- * actually be resolved is refused with the directory left exactly as it was
- * found, rather than discovered only after `seed` has already created the
- * document that a later step then fails to finish populating.
+ * writes no project state at all — a pure availability probe. `seed`
+ * (`commands/seed-repository.ts`) calls this for every batch entry BEFORE
+ * its own first write to `.frontx/project.json`, so a batch naming an
+ * official default that cannot actually be resolved is refused with the
+ * directory left exactly as it was found, rather than discovered only after
+ * `seed` has already created the document that a later step then fails to
+ * finish populating.
  */
 export async function probeRegistration(
   origin: string,

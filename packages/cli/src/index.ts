@@ -60,16 +60,12 @@ export type { ReadManifestResult } from './manifest/validate-contract';
 // preserve one that already exists.
 // The read-side counterpart to pre-publish validation
 // (cpt-frontx-algo-template-manifest-refuse-legacy): refuses a manifest
-// declaring any undeclared field outright.
-//
-// This comment used to end "NOT YET wired into any command or into
-// `readManifestFromContent` - a later checkpoint does that." That checkpoint
-// happened: `manifest/validate-contract.ts`'s `readManifestFromContent`
-// calls `refuseLegacyManifest` before its own contract check, so every
-// command that reads a manifest through it — `register`, `validate`, the
-// assembler, the upgrade engine's payload resolution — refuses a
-// legacy-shaped manifest already. The note survived the wiring and was
-// still telling readers the opposite one review round later.
+// declaring any undeclared field outright. Wired into `manifest/validate-
+// contract.ts`'s `readManifestFromContent`, which calls
+// `refuseLegacyManifest` before its own contract check, so every command
+// that reads a manifest through it — `register`, `validate`, the assembler,
+// the upgrade engine's payload resolution — refuses a legacy-shaped
+// manifest already.
 export { refuseLegacyManifest } from './manifest/refuse-legacy';
 export type { ManifestRefusal, RefuseLegacyResult, ParsedManifestJson } from './manifest/refuse-legacy';
 export { createFsReadFileFn, createFsListPayloadFilesFn, createFsResolveDeclaredExclusionFn } from './adapters/fs-project-io';
@@ -82,12 +78,12 @@ export { MANIFEST_FILENAME } from './manifest/types';
 // checker (P29) and the entry flows (P30) build on this surface.
 export { uniformApply } from './scaffold/assembler';
 export type { UniformApplyResult } from './scaffold/assembler';
-// `scaffold/state.ts`'s `runAssemblyOp` driver and its input/verdict types are
-// no longer re-exported: checkpoint 3 recorded that driver as having zero real
-// callers, and the `uniformApply` rewrite made it impossible to wire to at all.
-// It also carried this state machine's transition markers, which meant the
-// machine looked implemented by code nothing invoked while the live pipeline
-// (`commands/apply.ts`) carried no markers for it.
+// `scaffold/state.ts`'s `runAssemblyOp` driver and its input/verdict types
+// are no longer re-exported: that driver has zero real callers, and the
+// `uniformApply` rewrite made it impossible to wire to at all. It also
+// carried this state machine's transition markers, which would make the
+// machine look implemented by code nothing invokes while the live pipeline
+// (`commands/apply.ts`) carries no markers for it.
 
 // `ReadProjectFileFn` is intentionally NOT re-exported from here again: it is
 // the same shape as upgrade's `ReadProjectFileFn` (already exported below),
@@ -104,12 +100,12 @@ export type {
 
 
 
-// Checkpoint 3+4 — the rewritten uniform batch model's own command surface:
-// `assemble` (stateless preview), `apply` (the ONE materialization mechanism,
-// realizing cpt-frontx-flow-cli-scaffolding-add-template), and `seed`
+// The uniform batch model's own command surface: `assemble` (stateless
+// preview), `apply` (the ONE materialization mechanism, realizing
+// cpt-frontx-flow-cli-scaffolding-add-template), and `seed`
 // (cpt-frontx-flow-cli-scaffolding-seed-repository, which wraps `apply`'s
-// own pipeline rather than duplicating it). Replaces the OLD `seedRepository`/
-// `addTemplate` command surface these three retire.
+// own pipeline rather than duplicating it). These three retire the OLD
+// `seedRepository`/`addTemplate` command surface.
 export { resolveAndCheckBatch, runApplyPipeline } from './commands/apply';
 export type { ApplyBatchOutcome, ApplyBatchTargetRef, ApplyPipelineDeps, ResolveAndCheckDeps, ResolveAndCheckOutcome } from './commands/apply';
 export { assembleBatch } from './commands/assemble';
@@ -125,10 +121,10 @@ export type { ReadTargetPathStateFn, TargetPathState } from './commands/add-temp
 export { createFsReadTargetPathStateFn } from './adapters/fs-target-path';
 
 // F14 Upgrade Change-Set Engine (cpt-frontx-dod-upgrade-changeset-single-engine)
-// There is exactly ONE engine — the rewritten whole-file, name-atomic
-// mechanism `cpt-frontx-adr-project-upgrade-mechanism` fixes, replacing the
+// There is exactly ONE engine — the whole-file, name-atomic mechanism
+// `cpt-frontx-adr-project-upgrade-mechanism` establishes, replacing the
 // retired region-union engine (`upgrade/compute.ts`/`apply.ts`/`rollback.ts`,
-// deleted this checkpoint) entirely. Direct CLI invocation uses these
+// since deleted) entirely. Direct CLI invocation uses these
 // canonical modules internally, through `commands/upgrade.ts`'s own
 // dispatch surface; any external orchestrator reaches this same engine only
 // through the `frontx upgrade` command/invocation surface (`upgradeCommand`,

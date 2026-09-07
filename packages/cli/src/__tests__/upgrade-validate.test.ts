@@ -50,6 +50,8 @@ function makeResolvePayload(fixtures: Record<string, ResolvedPayload | { code: '
 
 const fileEntry = (content: string): DiskEntry => ({ kind: 'file', content });
 const absentEntry: DiskEntry = { kind: 'absent' };
+const directoryEntry: DiskEntry = { kind: 'directory' };
+const symlinkEntry: DiskEntry = { kind: 'symlink' };
 
 function fakeReadDiskEntry(entries: Record<string, DiskEntry> = {}): ReadDiskEntryFn {
   const calls: string[] = [];
@@ -217,6 +219,86 @@ describe('validateUpgrade (cpt-frontx-algo-upgrade-changeset-validate)', () => {
     const calls = (readDiskEntry as ReadDiskEntryFn & { calls: string[] }).calls;
     expect(calls).toContain('/repo/app1/clean.ts');
     expect(calls).toContain('/repo/app1/conflict.ts');
+  });
+
+  it('refuses CONTENT_CONFLICT naming which paths are uncomparable (an unreadable disk shape) apart from which genuinely drifted', async () => {
+    const entry = baseEntry({ targets: ['app1', 'app2'] });
+    const { resolvePayload } = makeResolvePayload({
+      'origin-a': payload({ origin: 'origin-a', version: '1.0.0', files: new Map([['drift.ts', 'base'], ['blocked.ts', 'content']]) }),
+      'origin-b': payload({ origin: 'origin-b', version: '2.0.0', files: new Map([['drift.ts', 'candidate'], ['blocked.ts', 'content']]) }),
+    });
+    const readDiskEntry = fakeReadDiskEntry({
+      // app1: a genuine content drift on 'drift.ts'; 'blocked.ts' already
+      // matches, so it classifies UNCHANGED and never reaches this report.
+      '/repo/app1/drift.ts': fileEntry('local-edit'),
+      '/repo/app1/blocked.ts': fileEntry('content'),
+      // app2: the mirror — 'drift.ts' already matches the candidate
+      // (UNCHANGED), 'blocked.ts' is a directory on disk, uncomparable.
+      '/repo/app2/drift.ts': fileEntry('candidate'),
+      '/repo/app2/blocked.ts': directoryEntry,
+    });
+
+    const result = await validateUpgrade(
+      baseInput({ entry, document: makeDocument('my-template', entry), resolvePayload, readDiskEntry }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('CONTENT_CONFLICT');
+    expect(result.details).toMatchObject({
+      conflicts: expect.arrayContaining([
+        { target: 'app1', path: 'app1/drift.ts' },
+        { target: 'app2', path: 'app2/blocked.ts' },
+      ]),
+      uncomparableConflicts: [{ target: 'app2', path: 'app2/blocked.ts' }],
+    });
+    // Each cause is named with its own remedy, in one sentence per cause —
+    // never collapsed into a single disjunction a reader has to guess from.
+    expect(result.message).toContain('moved away from the baseline without already matching the candidate');
+    expect(result.message).toContain('cannot be compared against the payload at all');
+    expect(result.message).toContain('app1/drift.ts');
+    expect(result.message).toContain('app2/blocked.ts');
+  });
+
+  it('refuses INVALID_PATH, ahead of CONTENT_CONFLICT, when an ancestor symlink resolves outside the project root', async () => {
+    const entry = baseEntry({ targets: ['app1', 'app2'] });
+    const { resolvePayload } = makeResolvePayload({
+      'origin-a': payload({ origin: 'origin-a', version: '1.0.0', files: new Map([['vendor/lib.ts', 'old'], ['drift.ts', 'base']]) }),
+      'origin-b': payload({ origin: 'origin-b', version: '2.0.0', files: new Map([['vendor/lib.ts', 'new'], ['drift.ts', 'candidate']]) }),
+    });
+    const readDiskEntry = fakeReadDiskEntry({
+      // app1's 'vendor' ancestor is a symlink that (per the fake
+      // `canonicalizeFn` below) resolves OUTSIDE the project root.
+      '/repo/app1/vendor': symlinkEntry,
+      '/repo/app1/vendor/lib.ts': fileEntry('old'),
+      // app1's 'drift.ts' matches the candidate already — isolates this
+      // test to the escaping ancestor alone on app1.
+      '/repo/app1/drift.ts': fileEntry('candidate'),
+      // app2 carries an ORDINARY genuine content conflict, unrelated to any
+      // symlink — present to prove the escaping-ancestor refusal preempts
+      // the content-conflict report entirely, rather than merging with it.
+      '/repo/app2/drift.ts': fileEntry('local-edit'),
+      '/repo/app2/vendor': directoryEntry,
+      '/repo/app2/vendor/lib.ts': fileEntry('old'),
+    });
+    // Every ancestor resolves to itself (stays inside the project) EXCEPT
+    // 'app1/vendor', which reports an escape — the one fact this module has
+    // no way to derive from `DiskEntry` alone.
+    const canonicalizeFn = (raw: string): string | null => (raw === 'app1/vendor' ? null : raw);
+
+    const result = await validateUpgrade(
+      baseInput({ entry, document: makeDocument('my-template', entry), resolvePayload, readDiskEntry, canonicalizeFn }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('INVALID_PATH');
+    expect(result.details).toEqual({ paths: [{ target: 'app1', path: 'app1/vendor/lib.ts' }] });
+    expect(result.message).toContain('could not be proven to stay inside the project root');
+    expect(result.message).toContain('app1/vendor/lib.ts');
+    // The unrelated CONTENT_CONFLICT on app2 is never reported: containment
+    // is checked, and refused, before content.
+    expect(result.message).not.toContain('app2/drift.ts');
   });
 
   it('refuses TARGET_CONFLICT when newly-claimed ground nests another registered template\'s target', async () => {

@@ -63,19 +63,19 @@ export function createFsBundleExistsFn(): BundleExistsFn {
   };
 }
 
-// SYMLINK-ABORT FIX (HIGH, reproduced against the built binary): replacing
-// `.frontx/ai/<manifestName>/` with a symlink to a path inside the project
-// that does not exist, then applying again, used to hand `fs.cpSync` a
-// destination whose final component is a symlink. `cpSync` calls
-// `fs.statSync(dest)` internally to decide whether it is copying onto a
-// file or a directory; `statSync` DEREFERENCES a symlink, and dereferencing
-// one whose target does not exist throws libuv's own `filesystem_error` —
-// not a catchable `Error` a JS `try`/`catch` around this module's own
-// `copyBundle` call ever sees, an uncaught C++ exception that aborts the
-// whole process (`libc++abi: terminating due to uncaught exception`). No
-// envelope is emitted, and by the time it aborts the payload for the NEW
-// target may already be on disk while `project.json` still says `targets:
-// []` — the crash lands after materialization, before the record write.
+// SYMLINK-ABORT: replacing `.frontx/ai/<manifestName>/` with a symlink to a
+// path inside the project that does not exist, then applying again, would
+// otherwise hand `fs.cpSync` a destination whose final component is a
+// symlink. `cpSync` calls `fs.statSync(dest)` internally to decide whether
+// it is copying onto a file or a directory; `statSync` DEREFERENCES a
+// symlink, and dereferencing one whose target does not exist throws libuv's
+// own `filesystem_error` — not a catchable `Error` a JS `try`/`catch` around
+// this module's own `copyBundle` call can see, an uncaught C++ exception
+// that aborts the whole process (`libc++abi: terminating due to uncaught
+// exception`). No envelope would be emitted, and by the time it aborts, the
+// payload for the NEW target may already be on disk while `project.json`
+// still says `targets: []` — the crash would land after materialization,
+// before the record write.
 //
 // Removing whatever stands at `dest` before ever calling `cpSync` is
 // therefore not merely a crash-avoidance measure but the behaviour ADR 0031
@@ -90,29 +90,28 @@ export function createFsBundleExistsFn(): BundleExistsFn {
 // directory, or (the ordinary case) nothing at all — is the CLI reclaiming
 // its own ground, not a destructive guess.
 //
-// STALE-MERGE FIX (PR review, below the reporting threshold there but a real
-// hole): an earlier version of this function cleared ONLY a symlink and left
-// a pre-existing real DIRECTORY standing, on the reasoning that `cpSync`'s
-// recursive merge "handles that case correctly". A merge does not handle it
-// correctly — it handles it SILENTLY. A file the previous bundle shipped and
-// the new one dropped survives the copy, because a recursive merge only ever
-// adds and overwrites, never removes. The path where that actually happens
-// is already known and already reported: `delete` can fail to remove a
-// bundle and says so through its own `aiBundleResidue`, leaving a real
-// directory of the OLD bundle's files at exactly this path for the next
-// apply to merge into. The result would be a bundle that is neither the old
-// one nor the new one, with nothing in any report saying so.
+// STALE-MERGE: clearing ONLY a symlink and leaving a pre-existing real
+// DIRECTORY standing is not safe on the reasoning that `cpSync`'s recursive
+// merge "handles that case correctly" — a merge does not handle it
+// correctly, it handles it SILENTLY. A file the previous bundle shipped and
+// the new one dropped would survive the copy, because a recursive merge
+// only ever adds and overwrites, never removes. The path where that
+// actually happens is already known and already reported: `delete` can fail
+// to remove a bundle and says so through its own `aiBundleResidue`, leaving
+// a real directory of the OLD bundle's files at exactly this path for the
+// next apply to merge into — the result would be a bundle that is neither
+// the old one nor the new one, with nothing in any report saying so.
 //
 // So the whole entry is removed, whatever it is. `fs.rmSync` decides what to
 // remove by `lstat`, so a symlink is unlinked as a directory ENTRY — never
 // walked into, never deleting whatever it points at — and a LIVE symlink's
-// real target, reachable from elsewhere in the project, is left untouched
-// exactly as before; only the stale reference at this one path is cleared.
-// The containment guard in `createFsCopyBundleFn` has already refused a
-// `dest` whose real (or dangling-lexical) target lands outside the project
-// root before this ever runs, so the ground being cleared is always inside
-// the project and always the CLI's own. `force: true` keeps "nothing there
-// yet" — the ordinary first apply — a no-op rather than an ENOENT, matching
+// real target, reachable from elsewhere in the project, is left untouched;
+// only the stale reference at this one path is cleared. The containment
+// guard in `createFsCopyBundleFn` has already refused a `dest` whose real
+// (or dangling-lexical) target lands outside the project root before this
+// ever runs, so the ground being cleared is always inside the project and
+// always the CLI's own. `force: true` keeps "nothing there yet" — the
+// ordinary first apply — a no-op rather than an ENOENT, matching
 // `createFsRemoveBundleFn` below, which reclaims the identical ground the
 // identical way.
 function clearBundleDestination(dest: string): void {
@@ -133,26 +132,24 @@ function clearBundleDestination(dest: string): void {
  * already, unlike `WriteFileFn`/`RemoveProjectFileFn`, so no factory-level
  * threading is needed here.
  *
- * DANGLING-SYMLINK-INSIDE FIX (fifth review round, reproduced against the
- * built binary): this called the literal `fs.mkdirSync(path.dirname(dest),
- * ...)` — the last of a class of two writers a prior round's fix missed
- * (`createFsWriteProjectFileFn`, `./fs-project-io.ts`, is the other) when it
- * claimed `resolveWriteParentDir` was already "the single formulation every
- * writer in this package shares". It was not, and the gap is the identical
- * defect `createFsWriteFileFn`'s own DANGLING-SYMLINK-INSIDE FIX already
- * closed there: a dangling `.frontx/ai/<manifestName>` symlink whose lexical
- * target resolves INSIDE the project root is deliberately ALLOWED by
- * `assertPathWithinProjectRoot` above, but the literal `mkdirSync(path.
- * dirname(dest))` creates nothing the link's resolved target needs — the
- * directory containing the link itself already exists. Reproduced live: a
- * dangling internal `.frontx/ai` link produced an uncaught `ENOENT` on the
- * literal parent, reported as `INVALID_PATH` by `apply.ts`'s own generic
- * catch only because that catch happens to fire on ANY thrown error here,
- * not because containment was actually the problem — the real cause (a
- * missing directory) was never the diagnosis the caller received. Now uses
- * the SAME `resolveWriteParentDir` walk `createFsWriteFileFn` and
- * `createFsWriteProjectStateFn` already call, never a fourth independently-
- * reasoned parent-directory resolution. */
+ * DANGLING-SYMLINK-INSIDE: this must not call the literal
+ * `fs.mkdirSync(path.dirname(dest), ...)`. A dangling `.frontx/ai/
+ * <manifestName>` symlink whose lexical target resolves INSIDE the project
+ * root is deliberately ALLOWED by `assertPathWithinProjectRoot` above, but
+ * `path.dirname` on a path through such a link names the directory
+ * containing the LINK, not the directory its resolved target needs — which
+ * the link's own parent already has. A literal `mkdirSync(path.
+ * dirname(dest))` therefore creates nothing useful, and a dangling internal
+ * `.frontx/ai` link throws an uncaught `ENOENT` on that literal parent,
+ * which `apply.ts`'s own generic catch reports as `INVALID_PATH` only
+ * because that catch fires on ANY thrown error here — not because
+ * containment was the problem; the real cause (a missing directory one
+ * level down, at the resolved target) never reaches the caller this way.
+ * This instead uses the SAME `resolveWriteParentDir` walk
+ * `createFsWriteFileFn` and `createFsWriteProjectStateFn` (`./fs-project-
+ * io.ts`) already call, so parent-directory resolution for a path that may
+ * pass through a dangling symlink has exactly one formulation across every
+ * writer in this package, never a second independently-reasoned one. */
 export function createFsCopyBundleFn(): CopyBundleFn {
   return async function copyBundle(sourceRoot: string, destRoot: string, manifestName: string): Promise<void> {
     const source = bundlePath(sourceRoot, manifestName);

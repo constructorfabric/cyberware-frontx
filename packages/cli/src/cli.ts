@@ -257,13 +257,18 @@ export interface CliDeps {
   // shapes are deliberately distinct from this generic one, per `upgrade/
   // types.ts`'s own header).
   removeProjectFile: RemoveProjectFileFn;
-  // `seed` ONLY — rollback (`commands/seed-repository.ts`'s own
-  // `inst-seed-rollback`): removes the `.frontx` directory `seed`'s own
-  // first write may have created, but only when it is still (or once again)
-  // completely empty. No existing seam can do this — every other one here
-  // either reads/writes the ONE `.frontx/project.json` file, or removes a
-  // single file (`removeProjectFile` above, reused as-is for that document
-  // itself) — none can remove a directory.
+  // `apply`'s and `seed`'s own rollback (`commands/apply.ts`'s
+  // `rollbackWrittenPaths`, called from both `runApplyPipeline` directly and
+  // `seed`'s `inst-seed-rollback` through the same pipeline): prunes a
+  // directory a call's own writes brought into being back out, but only when
+  // it is still (or once again) completely empty, and only up to the
+  // directories that call itself created. No existing seam can do this —
+  // every other one here either reads/writes the ONE `.frontx/project.json`
+  // file, or removes a single file (`removeProjectFile` above, reused as-is
+  // for that document itself) — none can remove a directory. `RemoveEmptyDirFn`
+  // itself is declared in `commands/apply.ts`, not `seed-repository.ts`, for
+  // the identical reason: it is that shared rollback's seam now, not a
+  // `seed`-only one.
   removeEmptyDirFn: RemoveEmptyDirFn;
   // `register`/`unregister`/`ownership add|remove|list` — the single
   // project state document's own read/write seams (`.frontx/project.json`).
@@ -342,11 +347,12 @@ export function createRealDeps(): CliDeps {
 }
 
 /**
- * Real `RemoveEmptyDirFn` (`commands/seed-repository.ts`) — removes
- * `absolutePath` only when it exists and is now completely empty; a no-op
- * when it is absent, non-empty, or not a plain directory. `seed`'s own
- * rollback is the ONLY caller: it never forces, never recurses, and never
- * touches anything but the exact directory it is told to reconsider.
+ * Real `RemoveEmptyDirFn` (`commands/apply.ts`) — removes `absolutePath`
+ * only when it exists and is now completely empty; a no-op when it is
+ * absent, non-empty, or not a plain directory. Shared by `apply`'s own
+ * post-materialization rollback and `seed`'s (the same pipeline underneath):
+ * it never forces, never recurses, and never touches anything but the exact
+ * directory it is told to reconsider.
  */
 function createFsRemoveEmptyDirFn(): RemoveEmptyDirFn {
   return async function removeEmptyDir(absolutePath: string): Promise<void> {
@@ -714,16 +720,12 @@ function renderOwnershipListOutcome(result: OwnershipListOutcome, jsonMode: bool
 // shape to report). `ValidateProjectErrorCode` is a CLOSED five-code union
 // (narrower than `ErrorCode`).
 //
-// EXHAUSTIVENESS FIX (fifth review round, reproduced against an isolated
-// `tsc --strict`): a prior round's comment here claimed a sixth code added
-// to the algorithm's own output type "fails at COMPILE time rather than
-// silently falling through to the PASS branch below" — that was false the
-// moment it was written. A `switch` with no `default` is not itself checked
-// for exhaustiveness by TypeScript; an unhandled member simply falls out of
-// the switch with no case having matched, straight into the PASS `return`
-// two lines below — reported as a passing `validate --project`, over a
-// refusal `result.ok` already says is `false`. The `default` branch below is
-// what actually buys the promise: assigning the narrowed `result.code` to a
+// A `switch` with no `default` is not itself checked for exhaustiveness by
+// TypeScript: an unhandled member simply falls out of the switch with no
+// case having matched, straight into the PASS `return` two lines below —
+// reported as a passing `validate --project`, over a refusal `result.ok`
+// already says is `false`. The `default` branch below is what actually buys
+// the exhaustiveness guarantee: assigning the narrowed `result.code` to a
 // `never`-typed binding only compiles when every OTHER case has already
 // excluded every member of the union, so a sixth `ValidateProjectErrorCode`
 // value with no matching `case` above leaves something other than `never`
@@ -1196,16 +1198,16 @@ export async function runCommand(command: KnownCommand, args: string[], deps: Cl
       // a developer who typed `.` is told which directory was refused
       // rather than shown their own shorthand reflected at them.
       const targetDir = path.resolve(dir);
-      // DEFECT FIX (PR review, reproduced against the built binary): a
-      // missing `<dir>`, or one that names an existing FILE, used to reach
-      // `deps.createCanonicalizeTargetFn(targetDir)`/`seedRepository`
-      // several seams deep before failing on a raw, uncaught `fs` throw —
-      // surfacing as exit 2 (the internal-error class) with an EMPTY stdout
-      // under `--json`, never the single envelope `--json` mode owes every
-      // caller. A caller-supplied path that does not exist, or is not a
-      // directory, is an ordinary user error, refused here — before any
-      // other seam is even constructed — with the vocabulary this codebase
-      // already uses for an unusable path.
+      // A missing `<dir>`, or one that names an existing FILE, would
+      // otherwise reach `deps.createCanonicalizeTargetFn(targetDir)`/
+      // `seedRepository` several seams deep before failing on a raw,
+      // uncaught `fs` throw — surfacing as exit 2 (the internal-error
+      // class) with an EMPTY stdout under `--json`, never the single
+      // envelope `--json` mode owes every caller. A caller-supplied path
+      // that does not exist, or is not a directory, is an ordinary user
+      // error, refused here — before any other seam is even constructed —
+      // with the vocabulary this codebase already uses for an unusable
+      // path.
       // @cpt-begin:cpt-frontx-flow-cli-scaffolding-seed-repository:p1:inst-seed-if-invalid-dir
       const targetDirState = await deps.readSeedDirStateFn(targetDir);
       if (targetDirState !== 'directory') {
@@ -1830,22 +1832,20 @@ export function helpOutcome(parsed: ParsedInvocation): CommandOutcome {
     // answer either way, and a truthful one here.
     const jsonMode = parseJsonMode(parsed.args);
 
-    // MARKER-CONTRADICTION FIX (fifth review round, reproduced against the
-    // built binary): `rejectUnrecognizedArgs` here can return exit code 1
-    // (`INVALID_INPUT`/user error) for `frontx help extra`. A prior round
-    // added this call INSIDE `inst-help-return-success`'s own marker pair —
-    // an instruction whose FEATURE text (`cli-invocation/FEATURE.md`) reads
+    // `rejectUnrecognizedArgs` here can return exit code 1
+    // (`INVALID_INPUT`/user error) for `frontx help extra`. This call must
+    // stay OUTSIDE `inst-help-return-success`'s own marker pair — an
+    // instruction whose FEATURE text (`cli-invocation/FEATURE.md`) reads
     // "**RETURN** for no command or an explicit help request, usage is
     // emitted and the process exits with the success code." A marker that
     // brackets a branch capable of exiting 1 while claiming, by the
-    // instruction it cites, that this code path always succeeds is a
+    // instruction it cites, that this code path always succeeds would be a
     // contradiction `cfs validate` cannot see, because it checks that a
     // marker's ID exists in the FEATURE, never that the bracketed code
-    // actually does what that instruction says. This refusal now has its
-    // own instruction (`inst-help-if-unrecognized-args` /
-    // `inst-help-return-unrecognized-args`, added alongside this fix,
-    // renumbered into the contiguous step block) and its own marker pair,
-    // so `inst-help-return-success` below brackets ONLY the return that is
+    // actually does what that instruction says. This refusal has its own
+    // instruction (`inst-help-if-unrecognized-args` /
+    // `inst-help-return-unrecognized-args`) and its own marker pair, so
+    // `inst-help-return-success` below brackets ONLY the return that is
     // actually a success.
     // @cpt-begin:cpt-frontx-flow-cli-invocation-help:p1:inst-help-if-unrecognized-args
     // @cpt-begin:cpt-frontx-state-cli-invocation-run:p1:inst-st-req-help-user-error
@@ -1957,14 +1957,37 @@ export async function run(argv: string[], deps: CliDeps): Promise<CommandOutcome
 // --- process entrypoint ---
 
 /* c8 ignore start -- process wiring exercised by running the built binary, not unit tests */
+// A write's completion callback fires once that chunk has actually been
+// accepted by the underlying resource (the pipe, file descriptor, or TTY) —
+// the synchronous return value of `.write()` only reports whether the
+// stream's internal buffer is now over its high-water mark, and says nothing
+// about whether the OS on the other end of a piped stdout has actually taken
+// the bytes yet. `process.exit()` tears the process down immediately and does
+// not wait for that; calling it right after an unawaited `write()` truncates
+// whatever a slow reader (a pipe, in particular — a redirected file's writes
+// complete fast enough in practice to hide the same race) had not yet
+// consumed. Awaiting this callback before exiting is what lets the envelope's
+// completeness promise (`cpt-frontx-dod-cli-invocation-json-envelope-
+// dispatch`) hold regardless of payload size or destination.
+function writeToStream(stream: NodeJS.WritableStream, text: string): Promise<void> {
+  return new Promise((resolve) => {
+    // The callback runs whether or not the write succeeded (e.g. a reader
+    // that closed its end early reports EPIPE here); either way there is
+    // nothing further this entrypoint can do about a broken destination
+    // stream, and blocking the exit on it would trade one failure mode for a
+    // hang. The exit code the command already computed is what is reported.
+    stream.write(text, () => resolve());
+  });
+}
+
 async function main(): Promise<void> {
   // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-invoke
   const argv = process.argv.slice(2);
   // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-invoke
   const deps = createRealDeps();
   const outcome = await run(argv, deps);
-  if (outcome.stdout) process.stdout.write(`${outcome.stdout}\n`);
-  if (outcome.stderr) process.stderr.write(`${outcome.stderr}\n`);
+  if (outcome.stdout) await writeToStream(process.stdout, `${outcome.stdout}\n`);
+  if (outcome.stderr) await writeToStream(process.stderr, `${outcome.stderr}\n`);
   // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return
   process.exit(outcome.exitCode);
   // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return
@@ -1983,9 +2006,9 @@ try {
   isMainModule = false;
 }
 if (isMainModule || process.env.FRONTX_CLI_FORCE_MAIN === '1') {
-  main().catch((error: unknown) => {
+  main().catch(async (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`${message}\n`);
+    await writeToStream(process.stderr, `${message}\n`);
     process.exit(EXIT_INTERNAL_ERROR);
   });
 }

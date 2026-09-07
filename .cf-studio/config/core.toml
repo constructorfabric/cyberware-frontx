@@ -322,7 +322,7 @@ conf_version = "1.0.0"
 format = "CFS"
 path = "../packages/cyber-pilot-kit-frontx"
 install_mode = "register"
-version = "0.3.0-alpha.3"
+version = "0.3.0-alpha.4"
 tool_risk_fingerprint = "3bdcd30d3029ad80e74c76eb0b57d80ad617a51191eb9d9307b2921c65f5dc16"
 
 [kits.cyber-pilot-kit-frontx.source_provenance]

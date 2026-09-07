@@ -15,6 +15,7 @@
 // `referencedTemplates`, never a content read (that is existing-content
 // reconciliation's job, `./existing-content.ts`, a later pipeline step this
 // algorithm's own Output feeds but does not itself run).
+import path from 'node:path';
 import { computeExclusionRoots } from './effective-ownership';
 import type { CanonicalizeTargetFn } from './conflict-check';
 import type { InventoryEntry, InventoryResult } from '../inventory/types';
@@ -138,11 +139,22 @@ function collectOtherLocalOriginFolders(
 
 interface ResolvedTemplate {
   manifestContent: string;
+  // ALWAYS an absolute filesystem path (`ContributionEntry.installedContentPath`'s
+  // own doc comment states the one rule this field answers to). The inventory
+  // branch below gets that for free — `resolveInstalledContentPathFn` joins
+  // against the inventory root, itself always absolute
+  // (`adapters/github-fetch.ts`'s `resolveInventoryRoot`) — so the local
+  // `path:` branch joins its own canonical, project-relative folder against
+  // `deps.repoRoot` to match, rather than leaving the two branches to hand
+  // callers two different kinds of string under one field name.
   installedContentPath: string;
   // Present only when this name's origin is a local `path:` origin whose
   // resolved directory sits inside the project — the six-term subtraction's
   // "local origin folder" term (`effective-ownership.ts`'s
-  // `EffectiveOwnershipTerms.localOriginFolder`).
+  // `EffectiveOwnershipTerms.localOriginFolder`). Deliberately PROJECT-RELATIVE,
+  // unlike `installedContentPath` above: every consumer of this field
+  // (`collectOtherLocalOriginFolders`, `computeExclusionRoots`) compares it
+  // against project-relative targets, never reads a file through it.
   localOriginFolder?: string;
 }
 
@@ -198,7 +210,32 @@ async function resolveRegisteredTemplate(
     }
     return {
       ok: true,
-      value: { manifestContent: resolved.value.content, installedContentPath: canonical, localOriginFolder: canonical },
+      value: {
+        manifestContent: resolved.value.content,
+        // `canonical` is project-relative, the right shape for
+        // `localOriginFolder` below but not for `installedContentPath`: that
+        // field is the ONE base every reader of a staged entry's template
+        // content and AI bundle resolves paths against, and readers differ in
+        // what they do when handed something relative. `createFsReadInstalledContentFn`
+        // (`adapters/fs-existing-content.ts`) joins it against a repo root it
+        // is separately given, so a relative value only ever works there by
+        // coincidence, when that repo root happens to match this call's own
+        // `deps.repoRoot`. The AI-bundle seams (`scaffold/ai-bundle.ts`'s
+        // `bundleExists`/`copyBundle`, realized in `adapters/fs-ai-bundle.ts`)
+        // take no repo root at all — they join whatever they are given
+        // straight onto `.frontx/ai/<name>/` — so a relative value there
+        // resolves against the CLI process's own working directory instead,
+        // which is only ever correct when that directory happens to be the
+        // project root. Absolute removes the coincidence: joining against
+        // `deps.repoRoot` here, the one place this field is produced for a
+        // local origin, gives every downstream reader an unambiguous base
+        // with nothing left for it to assume, matching the inventory branch
+        // below (`resolveInstalledContentPathFn` already returns an absolute
+        // path there) and the identical join `cli.ts`'s own upgrade-refresh
+        // wiring (`refreshAiBundle`) already performs for a local origin.
+        installedContentPath: path.join(deps.repoRoot, canonical),
+        localOriginFolder: canonical,
+      },
     };
   }
 

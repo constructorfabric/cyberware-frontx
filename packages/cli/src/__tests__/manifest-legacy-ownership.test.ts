@@ -1,12 +1,12 @@
-// Adversarial-review finding (MEDIUM): a manifest carrying a malformed
-// legacy `ownershipBoundaries` category used to be coerced into a
-// well-formed-LOOKING empty boundary (`{ exclusiveSubtrees: [], sharedFiles:
-// [] }`) rather than `undefined`. Every consumer's absence guard (`x ===
-// undefined ? ... : ...`) then never fired, and `uniformApply` filtered
-// every content item against an empty boundary - the template applied ZERO
-// files and still reported success. This suite pins the fix: absent AND
-// malformed both mean "this manifest cannot drive the legacy geometry";
-// only a genuinely well-formed legacy boundary is ever returned.
+// A manifest carrying a malformed legacy `ownershipBoundaries` category must
+// not be coerced into a well-formed-LOOKING empty boundary (`{
+// exclusiveSubtrees: [], sharedFiles: [] }`) rather than `undefined`: every
+// consumer's absence guard (`x === undefined ? ... : ...`) would then never
+// fire, and `uniformApply` would filter every content item against an empty
+// boundary - the template would apply ZERO files and still report success.
+// This suite pins the property: absent AND malformed both mean "this
+// manifest cannot drive the legacy geometry"; only a genuinely well-formed
+// legacy boundary is ever returned.
 import { describe, it, expect } from 'vitest';
 import { readLegacyOwnershipBoundary, readLegacyReferencedTemplates } from '../manifest/legacy-ownership';
 

@@ -325,7 +325,12 @@ describe('uniformApply — staging an explicit batch (cpt-frontx-algo-cli-scaffo
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const [staged] = result.assembly.entries;
-    expect(staged.installedContentPath).toBe('vendor/local-template');
+    // Absolute, not the bare canonical relative folder: every downstream
+    // reader (content reading, the AI-bundle seams) is entitled to use this
+    // value as a root directly, with no repo root of its own to join it
+    // against — see `scaffold/types.ts`'s `ContributionEntry.installedContentPath`
+    // doc comment for the one rule this asserts.
+    expect(staged.installedContentPath).toBe('/repo/vendor/local-template');
     // Both the declared `docs/` AND the local origin's own folder are
     // carved out of the root target's effective ownership.
     expect(isWithinEffectiveOwnership('docs/readme.md', '.', staged.exclusionRoots)).toBe(false);
