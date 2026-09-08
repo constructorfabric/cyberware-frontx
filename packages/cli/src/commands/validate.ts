@@ -11,6 +11,7 @@ import type {
 import { MANIFEST_FILENAME } from '../manifest/types';
 import { validateManifestContract } from '../manifest/validate-contract';
 import { validateContentSelfContainment } from '../manifest/validate-content-self-containment';
+import { NotRegularFileError, UnreachablePathError, PathUnreadableError } from '../adapters/fs-project-io';
 
 export interface ValidateCommandResult {
   ok: boolean;
@@ -35,7 +36,24 @@ export async function validateCommand(
   let raw: string;
   try {
     raw = await readFileFn(manifestPath);
-  } catch {
+  } catch (error) {
+    // A typed refusal from the read seam (`../adapters/fs-project-io.ts`)
+    // means something real stands at `manifestPath` and was inspected — a
+    // FIFO, socket, device, directory, or dangling symlink; a component
+    // above it that is not a directory; or a path the probe accepts but
+    // cannot actually open. None of those is "not found", and reporting them
+    // that way would send a developer looking for a file that is right there
+    // instead of at what actually blocks reading it. Anything else reaching
+    // this catch (including a bare fixture error with no typed shape at all)
+    // is treated as genuine absence, matching this seam's own long-standing
+    // "throws on absence" contract.
+    if (error instanceof NotRegularFileError || error instanceof UnreachablePathError || error instanceof PathUnreadableError) {
+      return {
+        ok: false,
+        exitCode: 1,
+        message: `manifest at "${manifestPath}" could not be read: ${error.message}`,
+      };
+    }
     // @cpt-begin:cpt-frontx-flow-template-manifest-validate-for-publication:p1:inst-if-manifest-absent
     // @cpt-begin:cpt-frontx-flow-template-manifest-validate-for-publication:p1:inst-return-manifest-absent
     return {

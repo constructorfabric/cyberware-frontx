@@ -2,17 +2,28 @@
 // @cpt-algo:cpt-frontx-algo-composed-provenance-project-state-io:p1
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, symlink, writeFile, chmod, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createFsListPayloadFilesFn,
   createFsResolveDeclaredExclusionFn,
+  createFsReadFileFn,
+  createFsReadProjectFileFn,
   createFsReadProjectStateFn,
   createFsWriteProjectStateFn,
   createFsListTargetFilesFn,
   TargetNotDirectoryError,
+  NotRegularFileError,
+  UnreachablePathError,
+  PathUnreadableError,
+  ProjectStateUnreadableError,
 } from '../fs-project-io';
+
+function makeFifo(fifoPath: string): void {
+  execFileSync('mkfifo', [fifoPath]);
+}
 
 // Real-fs coverage for the two adapters behind the content self-containment
 // algorithm's seams: `ListPayloadFilesFn` (enumerates the whole candidate
@@ -350,6 +361,141 @@ describe('createFsResolveDeclaredExclusionFn', () => {
 // covered against fakes in `project-state/__tests__/io.test.ts`; this suite
 // proves the REAL temp-file-then-rename write against a real filesystem,
 // per this file's own existing convention above.
+// Real-fs coverage for the three-way distinction `resolvePathKind` now makes
+// for every non-absent read failure: `NotRegularFileError` (the leaf itself
+// is reachable and stands in the wrong shape), `UnreachablePathError` (a
+// component ABOVE the leaf is not a directory, so the leaf was never
+// reached at all), and `PathUnreadableError` (the leaf resolves to the right
+// shape but the OS refuses to open it). Before this, only `ENOENT` was
+// mapped to a clean answer; every other `lstat` failure — most concretely an
+// ancestor that is not a directory — was rethrown raw, reaching a caller as
+// an unstructured internal error instead of a typed refusal.
+describe('createFsReadFileFn', () => {
+  let root: string;
+
+  afterEach(async () => {
+    if (root) await rm(root, { recursive: true, force: true });
+  });
+
+  async function makeRoot(): Promise<string> {
+    root = await mkdtemp(path.join(tmpdir(), 'frontx-read-file-'));
+    return root;
+  }
+
+  it('throws an ENOENT-shaped error for an absent path', async () => {
+    const dir = await makeRoot();
+    const readFile = createFsReadFileFn();
+
+    await expect(readFile(path.join(dir, 'missing.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('returns the content of a regular file', async () => {
+    const dir = await makeRoot();
+    const filePath = path.join(dir, 'manifest.json');
+    await writeFile(filePath, '{"name":"widget"}', 'utf-8');
+    const readFile = createFsReadFileFn();
+
+    await expect(readFile(filePath)).resolves.toBe('{"name":"widget"}');
+  });
+
+  it('throws NotRegularFileError, rather than hanging, when the path is a FIFO', async () => {
+    const dir = await makeRoot();
+    const fifoPath = path.join(dir, 'frontx-template.json');
+    makeFifo(fifoPath);
+    const readFile = createFsReadFileFn();
+
+    await expect(readFile(fifoPath)).rejects.toBeInstanceOf(NotRegularFileError);
+    await expect(readFile(fifoPath)).rejects.toMatchObject({ kind: 'fifo', filePath: fifoPath });
+  });
+
+  it('throws NotRegularFileError when a directory stands where the file is expected', async () => {
+    const dir = await makeRoot();
+    const dirPath = path.join(dir, 'frontx-template.json');
+    await mkdir(dirPath);
+    const readFile = createFsReadFileFn();
+
+    await expect(readFile(dirPath)).rejects.toMatchObject({ kind: 'directory' });
+  });
+
+  it('throws NotRegularFileError for a dangling symlink', async () => {
+    const dir = await makeRoot();
+    const linkPath = path.join(dir, 'frontx-template.json');
+    await symlink(path.join(dir, 'does-not-exist'), linkPath);
+    const readFile = createFsReadFileFn();
+
+    await expect(readFile(linkPath)).rejects.toMatchObject({ kind: 'dangling-symlink' });
+  });
+
+  // The regression this pins: `.frontx` (or any ancestor) replaced by an
+  // ordinary file makes `lstat` on the path beneath it fail `ENOTDIR`, not
+  // `ENOENT` — before this fix, `resolvePathKind` rethrew that raw, which
+  // reached the CLI's own top-level catch as an unstructured internal error
+  // (empty stdout under `--json`) rather than a typed, reportable refusal.
+  it('throws UnreachablePathError naming the blocking ancestor when a component above the path is not a directory', async () => {
+    const dir = await makeRoot();
+    const blockingFile = path.join(dir, 'frontx-template.json');
+    await writeFile(blockingFile, 'NOT-A-DIR', 'utf-8');
+    const readFile = createFsReadFileFn();
+    const unreachable = path.join(blockingFile, 'nested', 'deeper.json');
+
+    await expect(readFile(unreachable)).rejects.toBeInstanceOf(UnreachablePathError);
+    await expect(readFile(unreachable)).rejects.toMatchObject({ blockingAncestor: blockingFile });
+  });
+
+  it('throws PathUnreadableError for a regular file the probe accepts but cannot open (chmod 000)', async () => {
+    const dir = await makeRoot();
+    const filePath = path.join(dir, 'frontx-template.json');
+    await writeFile(filePath, '{"name":"widget"}', 'utf-8');
+    await chmod(filePath, 0o000);
+    const readFile = createFsReadFileFn();
+
+    try {
+      await expect(readFile(filePath)).rejects.toBeInstanceOf(PathUnreadableError);
+      await expect(readFile(filePath)).rejects.toMatchObject({ errnoCode: 'EACCES' });
+    } finally {
+      await chmod(filePath, 0o644); // restore so afterEach's rm can clean up
+    }
+  });
+});
+
+describe('createFsReadProjectFileFn', () => {
+  let root: string;
+
+  afterEach(async () => {
+    if (root) await rm(root, { recursive: true, force: true });
+  });
+
+  async function makeRoot(): Promise<string> {
+    root = await mkdtemp(path.join(tmpdir(), 'frontx-read-project-file-'));
+    return root;
+  }
+
+  it('returns null for an absent path', async () => {
+    const dir = await makeRoot();
+    const readProjectFile = createFsReadProjectFileFn();
+
+    await expect(readProjectFile(path.join(dir, 'scratch.json'))).resolves.toBeNull();
+  });
+
+  it('returns null when a directory stands where the file is expected (this seam\'s own documented collapse)', async () => {
+    const dir = await makeRoot();
+    const dirPath = path.join(dir, 'scratch.json');
+    await mkdir(dirPath);
+    const readProjectFile = createFsReadProjectFileFn();
+
+    await expect(readProjectFile(dirPath)).resolves.toBeNull();
+  });
+
+  it('throws NotRegularFileError, rather than hanging, when the path is a FIFO', async () => {
+    const dir = await makeRoot();
+    const fifoPath = path.join(dir, 'scratch.json');
+    makeFifo(fifoPath);
+    const readProjectFile = createFsReadProjectFileFn();
+
+    await expect(readProjectFile(fifoPath)).rejects.toMatchObject({ kind: 'fifo' });
+  });
+});
+
 describe('createFsReadProjectStateFn / createFsWriteProjectStateFn', () => {
   let repoDir: string;
 
@@ -371,6 +517,71 @@ describe('createFsReadProjectStateFn / createFsWriteProjectStateFn', () => {
     const result = await readProjectState(path.join(dir, '.frontx', 'project.json'));
 
     expect(result).toBeNull();
+  });
+
+  // Every one of this module's three read-side refusals is wrapped into ONE
+  // `ProjectStateUnreadableError` for this document specifically — never left
+  // to fall through to the generic per-refusal handling every OTHER content
+  // read gets — so `PROJECT_INVALID` is the single code every way this
+  // document can be unusable reports, matching the code already used when
+  // the document is present but malformed (`project-state/io.ts`'s own
+  // `parseProjectStateDocument` failure), rather than the previously
+  // undocumented `CONTENT_CONFLICT` a bare `NotRegularFileError` collapsed
+  // into at the CLI's own top-level catch.
+  it('wraps a FIFO at the document path in ProjectStateUnreadableError (never hangs)', async () => {
+    const dir = await makeRepo();
+    const location = path.join(dir, '.frontx', 'project.json');
+    await mkdir(path.dirname(location), { recursive: true });
+    makeFifo(location);
+    const readProjectState = createFsReadProjectStateFn();
+
+    await expect(readProjectState(location)).rejects.toBeInstanceOf(ProjectStateUnreadableError);
+    try {
+      await readProjectState(location);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ProjectStateUnreadableError);
+      expect((error as ProjectStateUnreadableError).underlying).toBeInstanceOf(NotRegularFileError);
+    }
+  });
+
+  // The exact regression `.frontx` being a plain file (not a directory)
+  // caused for `list`/`register`/`validate --project`: this document's own
+  // path could never be reached, and the raw `ENOTDIR` used to escape as an
+  // unstructured internal error with an empty `--json` stdout.
+  it('wraps an ENOTDIR ancestor (.frontx replaced by a file) in ProjectStateUnreadableError', async () => {
+    const dir = await makeRepo();
+    const frontxPath = path.join(dir, '.frontx');
+    await writeFile(frontxPath, 'NOT-A-DIR', 'utf-8');
+    const location = path.join(frontxPath, 'project.json');
+    const readProjectState = createFsReadProjectStateFn();
+
+    await expect(readProjectState(location)).rejects.toBeInstanceOf(ProjectStateUnreadableError);
+    try {
+      await readProjectState(location);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ProjectStateUnreadableError);
+      expect((error as ProjectStateUnreadableError).underlying).toBeInstanceOf(UnreachablePathError);
+    }
+  });
+
+  it('wraps a permission refusal (chmod 000) in ProjectStateUnreadableError', async () => {
+    const dir = await makeRepo();
+    const location = path.join(dir, '.frontx', 'project.json');
+    await mkdir(path.dirname(location), { recursive: true });
+    await writeFile(location, JSON.stringify({ formatVersion: 1, templates: {}, projectOwnedRoots: [] }), 'utf-8');
+    await chmod(location, 0o000);
+    const readProjectState = createFsReadProjectStateFn();
+
+    try {
+      await expect(readProjectState(location)).rejects.toBeInstanceOf(ProjectStateUnreadableError);
+      try {
+        await readProjectState(location);
+      } catch (error) {
+        expect((error as ProjectStateUnreadableError).underlying).toBeInstanceOf(PathUnreadableError);
+      }
+    } finally {
+      await chmod(location, 0o644); // restore so afterEach's rm can clean up
+    }
   });
 
   it('round-trips a write through a real rename and back through a real read', async () => {

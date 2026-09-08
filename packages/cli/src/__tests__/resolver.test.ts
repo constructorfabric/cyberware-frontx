@@ -6,6 +6,7 @@ import type { StructuredRef } from '../spec-parser/types';
 import type { FetchFn, ListFolderFilesFn, LocalOriginDeps, PathExistsFn, ReadFolderFileFn } from '../resolver/types';
 import type { TemplateManifest } from '../manifest/types';
 import { MANIFEST_FILENAME } from '../manifest/types';
+import { NotRegularFileError } from '../adapters/fs-project-io';
 
 const validRef: StructuredRef = {
   host: 'github',
@@ -322,6 +323,45 @@ describe('resolveToInventory — local "path:" origin', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('INVALID_MANIFEST');
+    expect(listFolderFilesFn).not.toHaveBeenCalled();
+  });
+
+  // The regression this pins: a FIFO (or any other typed refusal) standing
+  // at the manifest path used to be swallowed identically to genuine
+  // absence — `manifestText = ''` — which then reported "manifest is
+  // unparseable: invalid JSON" downstream even though NOTHING was ever
+  // parsed; the manifest was never read at all. A typed refusal now short-
+  // circuits with `CONTENT_CONFLICT`, naming what actually stood in the way,
+  // rather than being handed to the shared identity tail as if the folder
+  // had simply never had a manifest. Genuine absence (a plain, untyped
+  // `Error`, exactly as the sibling test above already fixtures it) still
+  // falls through to that shared tail unchanged — this fix widens what is
+  // refused, it does not narrow what is tolerated.
+  it('refuses CONTENT_CONFLICT, naming what actually blocked the read, when the local manifest read throws a typed refusal', async () => {
+    const listFolderFilesFn = vi.fn();
+    const typedError = new NotRegularFileError('/repo/templates/widget-kit/frontx-template.json', 'fifo');
+    const result = await resolveToInventory(
+      { kind: 'local', origin: 'path:templates/widget-kit' },
+      {
+        fetchFn: noopFetch,
+        local: localDeps(
+          {},
+          {
+            readFolderFileFn: async () => {
+              throw typedError;
+            },
+            listFolderFilesFn,
+          },
+        ),
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('CONTENT_CONFLICT');
+    expect(result.error.message).toContain(typedError.message);
+    // The manifest read short-circuits before the rest of the folder is ever
+    // walked, exactly as the legacy-manifest and absent-manifest cases above.
     expect(listFolderFilesFn).not.toHaveBeenCalled();
   });
 });

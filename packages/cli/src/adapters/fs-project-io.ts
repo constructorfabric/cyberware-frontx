@@ -218,6 +218,85 @@ export class NotRegularFileError extends Error {
   }
 }
 
+/**
+ * A read was refused because `filePath` itself could never be reached at
+ * all: some component ABOVE it (`blockingAncestor`) exists and is not a
+ * directory, so nothing beneath it — regardless of what would otherwise
+ * stand at `filePath` — can be resolved (`ENOTDIR`, the one `lstat` failure
+ * `resolvePathKind` does not fold into plain absence). This is a different
+ * fact from `filePath` being absent (nothing blocks the way; there is simply
+ * nothing at the leaf yet) and from `NotRegularFileError` above (the leaf
+ * itself is reachable and stands in the wrong shape): here the leaf is
+ * unreachable, and its own shape — were it reachable — is not the question.
+ * Naming `blockingAncestor` rather than `filePath` is what makes the refusal
+ * actionable: it is the one entry a caller has to resolve, and nothing below
+ * it can be inspected regardless of what `filePath` itself would have been.
+ */
+export class UnreachablePathError extends Error {
+  readonly filePath: string;
+  readonly blockingAncestor: string;
+
+  constructor(filePath: string, blockingAncestor: string) {
+    super(`"${filePath}" cannot be reached: "${blockingAncestor}" exists and is not a directory.`);
+    this.name = 'UnreachablePathError';
+    this.filePath = filePath;
+    this.blockingAncestor = blockingAncestor;
+  }
+}
+
+/**
+ * A read was refused because `filePath` could not actually be opened, for a
+ * reason `resolvePathKind`'s own `lstat`/`stat` probe cannot see in advance —
+ * most often a permission bit denying read access to the file itself (`chmod
+ * 000`), or denying search access to a directory somewhere along the path
+ * before the probe itself ever runs. This is the third fact this module's
+ * read seams distinguish, beside absence and wrong shape: a path that IS (or
+ * would be) the right shape, but cannot actually be read. `errnoCode` is
+ * carried for diagnostics only — this class exists so a caller never has to
+ * branch on it to decide what happened.
+ */
+export class PathUnreadableError extends Error {
+  readonly filePath: string;
+  readonly errnoCode: string;
+
+  constructor(filePath: string, errnoCode: string) {
+    super(`"${filePath}" could not be read (${errnoCode}): permission was refused, or the path could not be opened.`);
+    this.name = 'PathUnreadableError';
+    this.filePath = filePath;
+    this.errnoCode = errnoCode;
+  }
+}
+
+/**
+ * The single project state document (`.frontx/project.json`) could not be
+ * read, for one of the three reasons `resolvePathKind`/`readRegularFileOrThrow`
+ * distinguish (`NotRegularFileError`/`UnreachablePathError`/`PathUnreadableError`
+ * — `underlying`, below). Every OTHER read seam in this module lets its own
+ * typed refusal travel unwrapped, because whichever command dispatched it
+ * decides the reported code from the refusal's own shape — but this document
+ * is CLI-owned bookkeeping, not template content, and every other way its
+ * content can already be unusable (malformed JSON, an unrecognized
+ * `formatVersion`, a shape violation — `project-state/io.ts`'s own
+ * `parseProjectStateDocument`) already reports the SAME `PROJECT_INVALID`
+ * regardless of cause. Wrapping the three read-side refusals into this one
+ * type, rather than leaving them to fall through to the generic
+ * `NotRegularFileError` handling `cli.ts` gives every OTHER content read
+ * (`CONTENT_CONFLICT`), is what keeps that one promise — "the project state
+ * document is unusable" is one fact with one code, whatever broke it —
+ * instead of the code depending on which layer happened to notice the break.
+ */
+export class ProjectStateUnreadableError extends Error {
+  readonly filePath: string;
+  readonly underlying: NotRegularFileError | UnreachablePathError | PathUnreadableError;
+
+  constructor(filePath: string, underlying: NotRegularFileError | UnreachablePathError | PathUnreadableError) {
+    super(`Project state document at "${filePath}" could not be read: ${underlying.message}`);
+    this.name = 'ProjectStateUnreadableError';
+    this.filePath = filePath;
+    this.underlying = underlying;
+  }
+}
+
 function kindFromStat(stat: fs.Stats): Exclude<NonRegularKind, 'dangling-symlink'> | 'file' {
   if (stat.isFile()) return 'file';
   if (stat.isDirectory()) return 'directory';
@@ -247,13 +326,30 @@ function kindFromStat(stat: fs.Stats): Exclude<NonRegularKind, 'dangling-symlink
  * registered there at all, exactly the false-success class this fix exists
  * to close.
  */
+// `ENOTDIR` on either `lstat` call below means a component ABOVE `filePath`
+// exists and is not a directory — the OS refuses to resolve anything beneath
+// it, so `filePath` itself was never actually inspected. Folding that into
+// `'absent'` would be the exact false success this function exists to
+// refuse: something real (the blocking ancestor) stands in the way, which is
+// a different, more actionable fact than nothing being there at all. Every
+// OTHER `lstat`/`stat` failure (most commonly `EACCES`, a permission refusal
+// on a directory somewhere along the path) means the probe itself could not
+// even determine what stands at `filePath` — a third fact, distinct from
+// both absence and a wrong-but-known shape.
+function throwForLstatFailure(filePath: string, error: unknown): never {
+  if (isErrnoCode(error, 'ENOTDIR')) {
+    throw new UnreachablePathError(filePath, firstNonDirectoryComponentOf(filePath) ?? filePath);
+  }
+  throw new PathUnreadableError(filePath, errnoCodeOf(error));
+}
+
 function resolvePathKind(filePath: string): 'absent' | 'file' | NonRegularKind {
   let lst: fs.Stats;
   try {
     lst = fs.lstatSync(filePath);
   } catch (error) {
     if (isEnoent(error)) return 'absent';
-    throw error;
+    throwForLstatFailure(filePath, error);
   }
   if (!lst.isSymbolicLink()) return kindFromStat(lst);
   let target: fs.Stats;
@@ -261,9 +357,45 @@ function resolvePathKind(filePath: string): 'absent' | 'file' | NonRegularKind {
     target = fs.statSync(filePath); // follows the whole chain, however long
   } catch (error) {
     if (isEnoent(error)) return 'dangling-symlink';
-    throw error;
+    throwForLstatFailure(filePath, error);
   }
   return kindFromStat(target);
+}
+
+/**
+ * Reads `filePath` once `resolvePathKind` has already confirmed it names a
+ * regular file — the one place every read seam below actually opens a file
+ * for content, so the `EACCES`-on-`chmod 000` case (the probe above sees a
+ * perfectly ordinary file; only the OPEN itself is refused) is guarded here
+ * rather than duplicated at each call site.
+ */
+function readRegularFileOrThrow(filePath: string): string {
+  try {
+    return fs.readFileSync(filePath, 'utf-8');
+  } catch (error) {
+    if (isEnoent(error)) throw error; // vanished between the probe and this read: preserve the seam's ordinary absence handling
+    throw new PathUnreadableError(filePath, errnoCodeOf(error));
+  }
+}
+
+/**
+ * Reads `filePath` if (and only if) it resolves to a regular file:
+ * `null` for absence, the file's content for a regular file, and — for
+ * anything else — whichever of `NotRegularFileError`/`UnreachablePathError`/
+ * `PathUnreadableError` honestly names what stood in the way. This is the
+ * one guarded "read a small file honestly" primitive every seam in this
+ * module that is not itself `createFsReadFileFn`/`createFsReadProjectFileFn`/
+ * `createFsReadProjectStateFn` reuses (`fs-inventory-index.ts`'s own local
+ * metadata store, whose `readAll` used to pair a symlink-following
+ * `existsSync` with a bare `readFileSync` and hang on a FIFO exactly as the
+ * three seams below once did) — never a fourth, independently written copy
+ * of the same guard.
+ */
+export function readFileIfRegular(filePath: string): string | null {
+  const kind = resolvePathKind(filePath);
+  if (kind === 'absent') return null;
+  if (kind !== 'file') throw new NotRegularFileError(filePath, kind);
+  return readRegularFileOrThrow(filePath);
 }
 
 /** An `ENOENT`-shaped error matching what `fs.readFileSync` itself throws for
@@ -277,22 +409,27 @@ function enoentError(filePath: string): NodeJS.ErrnoException {
   return error;
 }
 
-/** Real `ReadFileFn` — reads a manifest file; throws (per the seam contract)
- * when absent, and now also throws the typed `NotRegularFileError` rather
- * than blocking forever when a FIFO, socket, device, directory, or dangling
- * symlink stands where the manifest is expected — every caller of this seam
- * already wraps it in its own `try`/`catch` (`scaffold/registered-
- * manifest.ts`, `commands/validate.ts`, `resolver/resolve.ts`'s own local-
- * origin read) and folds ANY thrown failure into the identical "manifest
- * unreadable" refusal it already gives a genuinely absent one, so widening
- * what this seam can throw for needs no matching change at those call
- * sites. */
+/** Real `ReadFileFn` — reads a manifest file; throws the plain `ENOENT`-shaped
+ * error the seam's own contract has always thrown for absence, and one of
+ * three typed refusals for anything else a manifest path can honestly be:
+ * `NotRegularFileError` (a FIFO, socket, device, directory, or dangling
+ * symlink stands there — never blocked on, the way a bare `fs.readFileSync`
+ * on a FIFO with no writer attached would), `UnreachablePathError` (a
+ * component ABOVE the manifest path is not a directory, so the manifest
+ * itself was never actually inspected), or `PathUnreadableError` (the path
+ * resolves to an ordinary file but could not be opened — most commonly a
+ * permission refusal). Every caller that reads a manifest through this seam
+ * (`scaffold/registered-manifest.ts`, `commands/validate.ts`,
+ * `resolver/resolve.ts`'s own local-origin read) wraps it in its own
+ * `try`/`catch`; each decides for itself whether to report a typed refusal's
+ * own honest reason or fold it beside absence, rather than every caller being
+ * forced to agree on one answer for what is, from a caller's own vantage,
+ * sometimes a genuinely different fact. */
 export function createFsReadFileFn(): ReadFileFn {
   return async function readFile(filePath: string): Promise<string> {
-    const kind = resolvePathKind(filePath);
-    if (kind === 'absent') throw enoentError(filePath);
-    if (kind !== 'file') throw new NotRegularFileError(filePath, kind);
-    return fs.readFileSync(filePath, 'utf-8');
+    const content = readFileIfRegular(filePath);
+    if (content === null) throw enoentError(filePath);
+    return content;
   };
 }
 
@@ -322,18 +459,17 @@ export function createFsPathExistsFn(): PathExistsFn {
  * one `null`" for its caller's own reasons, and this fix preserves that
  * collapse rather than narrowing it. What it does NOT preserve is the
  * silent hang a FIFO with no writer attached used to cause: a FIFO, a
- * socket, a device, or a dangling symlink now throws the typed
- * `NotRegularFileError` instead of either blocking forever (the former bare
- * `fs.readFileSync`) or being silently folded into "absent" (which
- * `existsSync`'s own symlink-following would have done for a live one) —
- * none of those four kinds is a directory, so none is covered by the
- * documented collapse above. */
+ * socket, a device, or a dangling symlink throws `NotRegularFileError`; an
+ * ancestor that is not a directory throws `UnreachablePathError`; a path the
+ * probe accepts but cannot actually open (`chmod 000`) throws
+ * `PathUnreadableError` — none of those is a directory, so none is covered
+ * by the documented collapse above. */
 export function createFsReadProjectFileFn(): ReadProjectFileFn {
   return async function readProjectFile(absolutePath: string): Promise<string | null> {
     const kind = resolvePathKind(absolutePath);
     if (kind === 'absent' || kind === 'directory') return null;
     if (kind !== 'file') throw new NotRegularFileError(absolutePath, kind);
-    return fs.readFileSync(absolutePath, 'utf-8');
+    return readRegularFileOrThrow(absolutePath);
   };
 }
 
@@ -380,10 +516,26 @@ export function createFsRemoveProjectFileFn(): RemoveProjectFileFn {
 // document is the only case this seam still answers with `null`.
 export function createFsReadProjectStateFn(): ReadProjectStateFn {
   return async function readProjectState(absolutePath: string): Promise<string | null> {
-    const kind = resolvePathKind(absolutePath);
-    if (kind === 'absent') return null;
-    if (kind !== 'file') throw new NotRegularFileError(absolutePath, kind);
-    return fs.readFileSync(absolutePath, 'utf-8');
+    try {
+      const kind = resolvePathKind(absolutePath);
+      if (kind === 'absent') return null;
+      if (kind !== 'file') throw new NotRegularFileError(absolutePath, kind);
+      return readRegularFileOrThrow(absolutePath);
+    } catch (error) {
+      // Every one of this module's three read-side refusals is wrapped into
+      // the ONE `ProjectStateUnreadableError` here — see that class's own doc
+      // comment for why this specific document, alone among everything this
+      // module reads, folds all three into a single reported fact rather
+      // than letting the dispatcher's generic per-refusal handling apply.
+      if (
+        error instanceof NotRegularFileError ||
+        error instanceof UnreachablePathError ||
+        error instanceof PathUnreadableError
+      ) {
+        throw new ProjectStateUnreadableError(absolutePath, error);
+      }
+      throw error;
+    }
   };
 }
 
@@ -600,6 +752,27 @@ function describeError(error: unknown): string {
 
 function isEnoent(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === 'ENOENT';
+}
+
+// The same narrowing `isEnoent` above performs for one fixed code, opened up
+// to any code so `resolvePathKind`'s catch below can tell an ancestor-is-
+// not-a-directory failure (`ENOTDIR`) apart from every other kind of lstat
+// refusal without a third hand-rolled shape check.
+function isErrnoCode(error: unknown, code: string): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === code;
+}
+
+/** The errno `code` a rejected fs call carries, or `'UNKNOWN'` when the
+ * rejection is not fs-shaped at all — kept a string, not a closed union,
+ * because this package's own typed refusals (`PathUnreadableError` below)
+ * exist precisely so a caller never has to switch on the raw code itself;
+ * it is carried only for a human message and `--json` `details`. */
+function errnoCodeOf(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === 'string') return code;
+  }
+  return 'UNKNOWN';
 }
 
 function toPosixPath(relativePath: string): string {

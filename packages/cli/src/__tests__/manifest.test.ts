@@ -9,7 +9,14 @@ import { tmpdir } from 'node:os';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { validateManifestContract, readManifestFromContent } from '../manifest/validate-contract';
 import { validateCommand } from '../commands/validate';
-import { createFsListPayloadFilesFn, createFsResolveDeclaredExclusionFn, createFsReadFileFn } from '../adapters/fs-project-io';
+import {
+  createFsListPayloadFilesFn,
+  createFsResolveDeclaredExclusionFn,
+  createFsReadFileFn,
+  NotRegularFileError,
+  UnreachablePathError,
+  PathUnreadableError,
+} from '../adapters/fs-project-io';
 import { MANIFEST_FILENAME } from '../manifest/types';
 import type { TemplateManifest, ReadFileFn, ListPayloadFilesFn, ResolveDeclaredExclusionFn } from '../manifest/types';
 
@@ -264,6 +271,25 @@ describe('validateCommand', () => {
     expect(result.ok).toBe(false);
     expect(result.exitCode).toBe(1);
     expect(result.message).toMatch(/manifest not found/i);
+  });
+
+  // A typed refusal from the read seam means the manifest path was actually
+  // inspected and something real stands there — never "not found". Before
+  // this, EVERY thrown failure from `readFileFn` (typed or not) was folded
+  // into the same "manifest not found" message, which for a FIFO/socket/
+  // device/directory/dangling-symlink manifest, an unreachable ancestor, or a
+  // permission refusal, states something untrue: the file IS right there.
+  it.each([
+    ['NotRegularFileError', new NotRegularFileError('/some/template/frontx-template.json', 'fifo')],
+    ['UnreachablePathError', new UnreachablePathError('/some/template/frontx-template.json', '/some/template')],
+    ['PathUnreadableError', new PathUnreadableError('/some/template/frontx-template.json', 'EACCES')],
+  ])('reports the typed refusal honestly rather than "manifest not found" for %s', async (_name, typedError) => {
+    const readFileFn: ReadFileFn = vi.fn().mockRejectedValue(typedError);
+    const result = await validateCommand('/some/template', readFileFn, noPayloadFiles, noDeclaredExclusions);
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(1);
+    expect(result.message).not.toMatch(/manifest not found/i);
+    expect(result.message).toContain(typedError.message);
   });
 
   // inst-else-pass / inst-return-pass

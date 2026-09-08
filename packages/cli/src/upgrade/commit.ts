@@ -8,12 +8,20 @@
 // `cpt-frontx-adr-project-upgrade-mechanism` fixes. The ORDERING below is
 // the entire correctness argument, not an implementation detail:
 //
-//   reclaim stale temp -> materialize every new temp file -> verify every
-//   destination against what classification saw -> only then rename/unlink
-//   -> commit {origin,version} atomically -> promote inventory -> refresh
-//   the AI bundle
+//   reclaim stale temp -> verify no reserved temp path is occupied by
+//   anything but a regular file -> materialize every new temp file -> verify
+//   every destination against what classification saw -> only then
+//   rename/unlink -> commit {origin,version} atomically -> promote inventory
+//   -> refresh the AI bundle
 //
 // Each rule in that chain exists to close one specific failure window:
+//   - Verifying temp occupancy BEFORE any temp file is written is what keeps
+//     a symlink, directory, or special file planted at a destination's own
+//     reserved temp path from ever being written through or renamed into
+//     place - `inst-com-verify-temp-occupancy`. `inst-com-reclaim-stale-temp`
+//     already clears the ONE shape (a regular file) this algorithm's own
+//     litter could ever take there; this step exists for every other shape,
+//     which reclaiming a regular file was never designed to answer.
 //   - Materializing EVERY temp file before touching ANY destination means a
 //     crash mid-materialization leaves every target exactly as it was
 //     (nothing has been renamed yet) - `inst-com-materialize-temp`.
@@ -140,12 +148,23 @@ function tempPath(destAbsolutePath: string): string {
 }
 
 /**
- * `inst-com-reclaim-stale-temp` - removes any file matching
+ * `inst-com-reclaim-stale-temp` - removes any REGULAR FILE matching
  * `RESERVED_TEMP_SUFFIX` already sitting inside any of the plan's targets,
  * left behind by a prior attempt on this name that crashed before landing
  * it. Runs BEFORE any new temp file is materialized, so this attempt's own
  * temp files are never mistaken for stale ones and never collide with a
  * leftover of the same name.
+ *
+ * REGULAR FILE only - the same restriction `deps.listDiskFiles` already
+ * enforces by construction (it never reports a symlink, a directory, or a
+ * special file). That is deliberate here, not a blind spot this function
+ * happens to inherit: a regular file is the only shape THIS algorithm's own
+ * staged write ever produces at a reserved-suffix path, so it is the only
+ * shape this step can reclaim with any confidence that it is reclaiming its
+ * own past litter. Anything else standing at such a path is a different
+ * question `verifyTempOccupancy` below answers, deliberately not folded into
+ * this same walk - see that function's own header for why REFUSAL, not
+ * reclamation, is the answer for those shapes.
  *
  * Scoped to each target's EFFECTIVE OWNERSHIP, which is what the step's own
  * text ("already inside any target's effective ownership") and the DoD both
@@ -186,6 +205,75 @@ async function reclaimStaleTempFiles(
 }
 
 /**
+ * `inst-com-verify-temp-occupancy` - for every `ADD`/`REPLACE` operation,
+ * inspects what already stands at its OWN reserved temporary path
+ * (`tempPath`) before `inst-com-materialize-temp` below ever writes to it.
+ * `REMOVE` never stages one, so this is confined to the same
+ * `addOrReplaceOps` list materialization itself iterates.
+ *
+ * Nothing but this engine's own staged write is entitled to have placed
+ * anything at a path shaped by `RESERVED_TEMP_SUFFIX` - the very reason
+ * `inst-cls-enumerate` excludes it from every comparison and
+ * `inst-com-reclaim-stale-temp` above reclaims a stale REGULAR FILE there.
+ * But a regular file is the ONLY shape this algorithm's own convention ever
+ * produces at that path: `createFsWriteDiskFileFn` (`../adapters/
+ * fs-upgrade-io.ts`) always writes plain file content, never a directory, a
+ * symlink, or a special file. So finding one of THOSE shapes there is proof
+ * that something else placed it, regardless of when or how - and
+ * `createFsWriteDiskFileFn` does not open with `O_NOFOLLOW`: writing through
+ * a live symlink standing at this exact path silently lands the new content
+ * wherever the link actually points, and the rename that follows then moves
+ * the LINK itself - not a regular file - into the destination. That is the
+ * whole failure this check exists to make impossible: a developer's own
+ * file destroyed at a path this engine never named, and a payload
+ * destination left as a symlink instead of the regular file it must always
+ * be.
+ *
+ * REFUSE, never reclaim, is the deliberate choice for every one of these
+ * shapes - unlike `createFsCopyBundleFn`'s `clearBundleDestination`
+ * (`../adapters/fs-ai-bundle.ts`), which unconditionally clears whatever
+ * stands at `.frontx/ai/<manifest-name>/` before every copy. That precedent
+ * does not transfer here. ADR 0031 makes the ENTIRE bundle path CLI-owned
+ * ground at every moment it exists - no template and no developer ever has a
+ * legitimate reason to put anything there, at any time, so clearing it is
+ * reclaiming territory only this package has ever had a claim to. A reserved
+ * TEMP path is a different kind of ground: it sits directly beside a file a
+ * developer owns and edits freely, distinguished from it only by a suffix,
+ * and only for the brief span of one commit attempt. This algorithm cannot
+ * tell a deliberately planted symlink apart from a developer's own
+ * accidental same-named file by inspecting it, and unlike the
+ * always-safe-to-discard bundle folder, guessing wrong here means either
+ * destroying a developer's file through a symlink or silently writing
+ * through content this plan was never reviewed against. Refusing costs the
+ * developer nothing they had before - the upgrade simply does not proceed,
+ * and every target is untouched, exactly like any other refusal this step
+ * returns before the first rename; reclaiming risks the exact destruction
+ * this check exists to prevent. A directory at this exact path is refused
+ * the same way for the same reason: this algorithm never creates one there
+ * either, and `fs.renameSync`'s failure mode for a non-empty directory
+ * standing at its destination is no safer to guess through than a symlink's
+ * is.
+ */
+async function verifyTempOccupancy(
+  addOrReplaceOps: readonly UpgradeOperation[],
+  deps: Pick<CommitDeps, 'repoRoot' | 'readDiskEntry'>,
+): Promise<{ target: string; path: string }[]> {
+  const occupied: { target: string; path: string }[] = [];
+  for (const op of addOrReplaceOps) {
+    const temp = tempPath(destinationPath(deps.repoRoot, op));
+    const entry = await deps.readDiskEntry(temp);
+    // `'file'` (this attempt's own reclaimed-or-untouched scratch ground) and
+    // `'absent'` (the ordinary case) are the only two shapes this engine's
+    // own convention ever produces or expects here - both are safe for
+    // `inst-com-materialize-temp` to overwrite unconditionally next.
+    if (entry.kind === 'directory' || entry.kind === 'symlink' || entry.kind === 'special') {
+      occupied.push({ target: op.target, path: op.path });
+    }
+  }
+  return occupied;
+}
+
+/**
  * `cpt-frontx-algo-upgrade-changeset-commit` - lands an approved
  * `UpgradePlan` through the staged write described in this file's header
  * comment. See `CommitOutcome` for the three shapes this can return.
@@ -217,6 +305,34 @@ export async function commitUpgrade(plan: UpgradePlan, deps: CommitDeps): Promis
     // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-reclaim-stale-temp
     await reclaimStaleTempFiles(plan, deps);
     // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-reclaim-stale-temp
+
+    // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-verify-temp-occupancy
+    const occupiedTempPaths = await verifyTempOccupancy(addOrReplaceOps, deps);
+    // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-verify-temp-occupancy
+
+    // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-if-temp-occupied
+    if (occupiedTempPaths.length > 0) {
+      // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-return-temp-occupied
+      // Nothing has been materialised or touched at this point, for this
+      // destination or any other - this check runs before the first temp
+      // file of THIS attempt is ever written, exactly like
+      // `inst-com-if-drift-detected` below runs before the first rename.
+      // Reuses that same refusal shape (`CONTENT_CONFLICT` / `drifted`)
+      // rather than a second vocabulary for "something is wrong at a
+      // destination's own staging ground" - the caller does not need a new
+      // code to learn it must resolve the offending path and re-run.
+      return {
+        ok: false,
+        code: 'CONTENT_CONFLICT',
+        message:
+          `${plan.name}'s upgrade was refused: ${occupiedTempPaths.length} destination(s) cannot be staged because ` +
+          'something other than a regular file already stands at their reserved temporary path, which this engine ' +
+          'never creates there itself. Nothing was written; remove the offending path(s) and re-run the upgrade.',
+        details: { drifted: occupiedTempPaths },
+      };
+      // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-return-temp-occupied
+    }
+    // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-if-temp-occupied
 
     // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-materialize-temp
     // For EVERY ADD/REPLACE across EVERY target - never destination paths,
@@ -317,8 +433,9 @@ export async function commitUpgrade(plan: UpgradePlan, deps: CommitDeps): Promis
     // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-try
   } catch (caught) {
     // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-catch
-    // Any I/O failure from reclaiming, materializing, verifying, or the
-    // destination-write step lands here - and ONLY those; a promotion or
+    // Any I/O failure from reclaiming, verifying temp occupancy,
+    // materializing, verifying destinations, or the destination-write step
+    // lands here - and ONLY those; a promotion or
     // bundle-refresh failure below is caught by its own separate handler,
     // because those two failures leave the transition COMMITTED while this
     // one must leave NOTHING committed. Folding them together would erase

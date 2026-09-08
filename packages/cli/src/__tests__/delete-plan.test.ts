@@ -55,12 +55,40 @@ const noUnenumerableEntries: ListUnenumerableTargetEntriesFn = async () => [];
 
 // A real project-relative `readFileFn` fake keyed by absolute path — used by
 // the local-origin regression test below, mirroring how `register.ts`
-// itself reads a `path:` origin's manifest directly off disk.
+// itself reads a `path:` origin's manifest directly off disk. Throws the
+// real `.code === 'ENOENT'` shape every genuine `ReadFileFn` implementation
+// throws for a path with nothing at it (`adapters/fs-project-io.ts`'s own
+// `enoentError`) — not merely a message that happens to contain the word,
+// since `scaffold/registered-manifest.ts`'s own absent-vs-unreadable
+// discrimination keys off `error.code`, not the message text.
 function fakeReadFileFn(filesByAbsolutePath: Record<string, string>): ReadFileFn {
   return async (absolutePath: string) => {
     const content = filesByAbsolutePath[absolutePath];
-    if (content === undefined) throw new Error(`ENOENT: no such file at ${absolutePath}`);
+    if (content === undefined) {
+      const error = new Error(`ENOENT: no such file at ${absolutePath}`) as NodeJS.ErrnoException;
+      error.code = 'ENOENT';
+      throw error;
+    }
     return content;
+  };
+}
+
+// A `readFileFn` fake that reports the owning template's manifest as
+// PRESENT but UNREADABLE — a FIFO, a directory, a dangling symlink, or any
+// other non-regular-file shape `NotRegularFileError` names — never an
+// absence. Deliberately not the real `NotRegularFileError` class itself:
+// this suite's own convention keeps command/algorithm-level tests
+// fake-backed (the real adapter's own real-fs coverage lives in
+// `adapters/__tests__/fs-project-io.test.ts` and this package's own
+// `registered-manifest.test.ts`), and the production code's discrimination
+// is structural (anything not ENOENT-shaped propagates), never a check for
+// this one specific class by name.
+function unreadableManifestReadFileFn(unreadablePath: string): ReadFileFn {
+  return async (absolutePath: string) => {
+    if (absolutePath === unreadablePath) {
+      throw new Error(`"${absolutePath}" is a directory, not a regular file — refusing to read it.`);
+    }
+    throw new Error(`unexpected readFileFn path in this fixture: ${absolutePath}`);
   };
 }
 
@@ -372,6 +400,63 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
       expect(result.toDelete).not.toContain(preserved);
     }
     expect(result.toDelete).toContain('src/index.ts');
+  });
+
+  // THE DEFECT this test pins: an owning template's manifest that exists but
+  // is not a regular file (a FIFO, a directory, a dangling symlink) used to
+  // be swallowed by `registered-manifest.ts` into `excludedSubtrees: []`,
+  // the identical answer a genuinely ABSENT manifest gets — silently
+  // widening this target's effective ownership to include ground the
+  // manifest actually declares excluded. Reproduced here exactly as the
+  // live reviewer found it: `t/userland/mine.txt`, a developer's own file
+  // inside a declared `excludedSubtrees` entry, must never appear in
+  // `toDelete` — and, once the manifest cannot be read, this algorithm must
+  // reject rather than compute a plan against a term it could not verify.
+  it('rejects rather than silently widening toDelete when the owning template\'s manifest exists but cannot be read', async () => {
+    const document = doc({ appTemplate: entry(['t'], { origin: 'path:vendor/app-template' }) });
+    const owningManifestPath = '/repo/vendor/app-template/frontx-template.json';
+
+    await expect(
+      computeDeletionPlan(
+        't',
+        '/repo',
+        document,
+        fakeInventory(), // deliberately does not know "appTemplate" — the local-origin read is what must be consulted
+        identityCanonicalize,
+        fakeListTargetFiles({
+          '/repo/t': ['src/index.ts', 'userland/mine.txt'],
+        }),
+        unreadableManifestReadFileFn(owningManifestPath),
+        noUnenumerableEntries,
+      ),
+    ).rejects.toThrow(/not a regular file/);
+  });
+
+  // The same scenario, but with the manifest genuinely ABSENT rather than
+  // unreadable — proves the two facts really do get different answers, not
+  // that this algorithm now refuses every manifest read failure uniformly.
+  // (There is no `userland/` exclusion to enforce here, since nothing
+  // declares one when the manifest cannot be found at all — this is the
+  // accepted, documented trade-off `inst-dp-if-manifest-absent` describes,
+  // not a second regression.)
+  it('does NOT reject, and joins [] instead, when the owning template\'s manifest is genuinely absent rather than unreadable', async () => {
+    const document = doc({ appTemplate: entry(['t'], { origin: 'path:vendor/app-template' }) });
+    const result = await computeDeletionPlan(
+      't',
+      '/repo',
+      document,
+      fakeInventory(),
+      identityCanonicalize,
+      fakeListTargetFiles({
+        '/repo/t': ['src/index.ts'],
+      }),
+      fakeReadFileFn({}), // the manifest path is never populated — ENOENT
+      noUnenumerableEntries,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.toDelete).toContain('t/src/index.ts');
   });
 
   it('resolves an absent target directory to an empty candidate set rather than throwing', async () => {

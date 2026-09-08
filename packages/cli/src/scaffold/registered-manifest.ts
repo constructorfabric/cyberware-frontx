@@ -42,21 +42,67 @@ export interface ResolveRegisteredManifestDeps {
   canonicalizeFn: CanonicalizeTargetFn;
 }
 
-// Returns a registered name's declared `excludedSubtrees`, or `[]` when its
-// manifest genuinely cannot be read (content absent from the inventory,
-// drifted out of contract, or — for a local origin — its folder no longer
-// provable to stay inside the project root). This function only fixes HOW a
-// present manifest is found; a genuinely absent one still fails closed to
-// `[]`, exactly as every prior call site already did.
+// Returns a registered name's declared `excludedSubtrees`. Two distinct
+// facts about a manifest this function could not turn into content are
+// deliberately given DIFFERENT answers, not folded into one:
+//
+// - ABSENT — the inventory holds no entry for a remote-origin name, or, for
+//   a local `path:` origin, nothing exists yet at its manifest path (or its
+//   folder can no longer be proven to stay inside the project root, which
+//   read a manifest from would hit the identical absence one step later
+//   anyway) — resolves to `[]`. There is no exclusion FACT recorded
+//   anywhere for this function to disagree with an empty answer about, and
+//   this is the ordinary shape of a name whose local origin folder a
+//   developer has since removed by hand.
+// - UNREADABLE — something real stands at the local origin's manifest path
+//   but is not a regular file (`deps.readFileFn`'s thrown `NotRegularFile
+//   Error`: a FIFO, a directory, a dangling symlink, ...) — is a DIFFERENT
+//   fact: a real declaration exists there and this function simply could
+//   not read it. Returning `[]` for this case would report "nothing
+//   excluded" over a manifest that may in fact exclude real ground,
+//   silently WIDENING whichever caller trusts this answer to decide what it
+//   is safe to remove (`cpt-frontx-algo-cli-scaffolding-delete-plan`'s own
+//   `inst-dp-if-manifest-unreadable`) — the identical "refuse, don't guess"
+//   discipline every other read seam in this package already gives a FIFO,
+//   never a hang or a silent default. This function does not swallow that
+//   failure: it lets it propagate, so the caller can convert it into its
+//   own structured refusal, exactly as `commands/delete.ts`'s own catch for
+//   this same error already does for the TARGET's own on-disk shape
+//   (`inst-del-if-target-shape-drifted`).
+//
+// A manifest that IS read but fails contract validation (`readManifestFrom
+// Content`'s own `{ ok: false }`) is a THIRD, pre-existing case, unchanged
+// here: it still resolves to `[]` — a manifest that has drifted out of
+// contract is not this function's failure to raise, and every caller
+// already treats an invalid declaration as no declaration at all.
+// @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-manifest-absent
+// @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-manifest-unreadable
 export async function resolveRegisteredExcludedSubtrees(
   name: string,
   origin: string,
   deps: ResolveRegisteredManifestDeps,
 ): Promise<string[]> {
   const content = await resolveRegisteredManifestContent(name, origin, deps);
+  // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-else-manifest-absent-empty
   if (content === undefined) return [];
+  // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-else-manifest-absent-empty
   const manifestResult = readManifestFromContent(content);
   return manifestResult.ok ? manifestResult.manifest.excludedSubtrees : [];
+}
+
+// `error.code === 'ENOENT'` is the one shape every read seam in this package
+// throws for a path that is genuinely absent (`adapters/fs-project-io.ts`'s
+// own `enoentError`, which every real `ReadFileFn` implementation throws
+// verbatim) — checked structurally here rather than imported, since this
+// module stays one layer below `adapters/` and the `ReadFileFn` contract
+// itself (`manifest/types.ts`) documents only the behaviour ("throws...
+// when absent"), never a concrete error class this layer is entitled to
+// depend on. Anything else thrown — `NotRegularFileError` most concretely,
+// but genuinely any other failure this function was not written to expect
+// — is NOT this shape, and is left to propagate rather than being
+// classified here as "absent" too.
+function isAbsentError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === 'ENOENT';
 }
 
 async function resolveRegisteredManifestContent(
@@ -70,10 +116,15 @@ async function resolveRegisteredManifestContent(
     if (canonical === null) return undefined;
     try {
       return await deps.readFileFn(path.join(deps.repoRoot, canonical, MANIFEST_FILENAME));
-    } catch {
-      return undefined;
+    } catch (error) {
+      if (isAbsentError(error)) return undefined;
+      // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-return-manifest-unreadable
+      throw error;
+      // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-return-manifest-unreadable
     }
   }
   const installed = deps.inventory.lookup(name);
   return installed?.content;
 }
+// @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-manifest-unreadable
+// @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-manifest-absent

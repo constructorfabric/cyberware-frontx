@@ -131,14 +131,19 @@ export interface InventoryReadyRecord {
 // names (`code: 'INVALID_MANIFEST'` with `undeclaredFields` populated) and
 // the generic identity-missing refusal `inst-resolve-identity-missing` names
 // (`code: 'INVALID_MANIFEST'` without `undeclaredFields`) from a local
-// origin's own containment/existence refusal (`code: 'INVALID_PATH'`) and
-// from a remote reference naming a host this resolver carries no fetch
-// adapter for (`code: 'INVALID_INPUT'`, `inst-resolve-host-unsupported`),
-// mirroring `ReadManifestResult`'s own additive widening
-// (`manifest/validate-contract.ts`).
+// origin's own containment/existence refusal (`code: 'INVALID_PATH'`), from
+// a remote reference naming a host this resolver carries no fetch adapter
+// for (`code: 'INVALID_INPUT'`, `inst-resolve-host-unsupported`), and from a
+// local origin's manifest existing but standing in a shape a read can never
+// honestly satisfy — a FIFO, socket, device, or dangling symlink; an
+// ancestor that is not a directory; a permission refusal (`code:
+// 'CONTENT_CONFLICT'`, the same code every other unreadable-content refusal
+// in this package reports for "the disk holds something this operation
+// cannot work with") — mirroring `ReadManifestResult`'s own additive
+// widening (`manifest/validate-contract.ts`).
 export interface ResolutionError {
   message: string;
-  code?: 'INVALID_MANIFEST' | 'INVALID_PATH' | 'INVALID_INPUT';
+  code?: 'INVALID_MANIFEST' | 'INVALID_PATH' | 'INVALID_INPUT' | 'CONTENT_CONFLICT';
   undeclaredFields?: string[];
 }
 

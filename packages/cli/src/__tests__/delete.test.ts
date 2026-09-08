@@ -10,7 +10,7 @@ import type { CanonicalizeTargetFn } from '../scaffold/conflict-check';
 import type { ProjectStateDocument, ReadProjectStateFn, WriteProjectStateFn, TemplateEntry } from '../project-state/types';
 import type { ReadFileFn } from '../manifest/types';
 import type { AssertPathWithinRootFn } from '../scaffold/types';
-import { TargetNotDirectoryError } from '../adapters/fs-project-io';
+import { TargetNotDirectoryError, NotRegularFileError } from '../adapters/fs-project-io';
 
 const identityCanonicalize: CanonicalizeTargetFn = (rawTarget) => rawTarget;
 
@@ -75,6 +75,25 @@ const noUnenumerableEntries: ListUnenumerableTargetEntriesFn = async () => [];
 const neverCalledReadFileFn: ReadFileFn = async () => {
   throw new Error('readFileFn should not be called for a remote-origin fixture');
 };
+
+// A `readFileFn` fake reporting the owning template's manifest as PRESENT
+// but UNREADABLE — a FIFO, a directory, a dangling symlink, or any other
+// non-regular-file shape `NotRegularFileError` names — never an absence.
+// Throws the REAL `NotRegularFileError` class (unlike `delete-plan.test.ts`'s
+// own duck-typed stand-in, which tests `computeDeletionPlan`'s pure
+// propagation and never reaches an `instanceof` check): this file exercises
+// `deleteTarget`'s own catch, which specifically narrows on
+// `error instanceof NotRegularFileError` to convert the throw into a
+// structured `CONTENT_CONFLICT`, so the fake has to be a real instance for
+// that catch to actually fire.
+function unreadableManifestReadFileFn(unreadablePath: string): ReadFileFn {
+  return async (absolutePath: string) => {
+    if (absolutePath === unreadablePath) {
+      throw new NotRegularFileError(absolutePath, 'directory');
+    }
+    throw new Error(`unexpected readFileFn path in this fixture: ${absolutePath}`);
+  };
+}
 
 function fakeRemoveFile(): { remove: (absolutePath: string) => Promise<void>; removed: () => string[] } {
   const removedPaths: string[] = [];
@@ -210,6 +229,117 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
     );
 
     expect(result).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
+  });
+
+  // THE DEFECT this pair of tests pins: an owning template's manifest that
+  // exists but cannot be read used to be swallowed into `excludedSubtrees:
+  // []` by `scaffold/registered-manifest.ts`, the identical answer a
+  // genuinely absent manifest gets — so a deletion plan was computed from
+  // an emptied-out exclusion set instead of refusing. `deleteTarget`'s own
+  // `NotRegularFileError` catch (this file's `computePlan`) was ALREADY
+  // written for this case but was unreachable until that swallow was fixed
+  // — these two tests are what prove it is reachable now, in BOTH the
+  // `--dry-run` path and the confirmed `--json --yes` path (the plan is
+  // recomputed before a confirmed deletion, so both must refuse, not only
+  // the first).
+  it('refuses CONTENT_CONFLICT under --dry-run when the owning template\'s manifest exists but is not a regular file, deleting/reading nothing', async () => {
+    const initialDocument: ProjectStateDocument = {
+      formatVersion: 1,
+      templates: { appTemplate: entry(['t'], { origin: 'path:vendor/app-template' }) },
+      projectOwnedRoots: [],
+    };
+    const { read, write } = fakeProjectState(initialDocument);
+    const { remove, removed } = fakeRemoveFile();
+
+    const result = await deleteTarget(
+      't',
+      '/repo',
+      { jsonMode: true, dryRun: true, yes: false },
+      fakeInventory(), // deliberately does not know "appTemplate" — the local-origin read must be what is consulted
+      identityCanonicalize,
+      fakeListTargetFiles({ '/repo/t': ['src/index.ts', 'userland/mine.txt'] }),
+      noUnenumerableEntries,
+      unreadableManifestReadFileFn('/repo/vendor/app-template/frontx-template.json'),
+      remove,
+      noopAssertPathWithinRoot,
+      read,
+      write,
+      neverConfirm(),
+    );
+
+    expect(result).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
+    expect(removed()).toEqual([]);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('refuses CONTENT_CONFLICT on the confirmed --json --yes path too, for the identical unreadable-manifest fixture, deleting/reading nothing', async () => {
+    const initialDocument: ProjectStateDocument = {
+      formatVersion: 1,
+      templates: { appTemplate: entry(['t'], { origin: 'path:vendor/app-template' }) },
+      projectOwnedRoots: [],
+    };
+    const { read, write } = fakeProjectState(initialDocument);
+    const { remove, removed } = fakeRemoveFile();
+
+    const result = await deleteTarget(
+      't',
+      '/repo',
+      { jsonMode: true, dryRun: false, yes: true },
+      fakeInventory(),
+      identityCanonicalize,
+      fakeListTargetFiles({ '/repo/t': ['src/index.ts', 'userland/mine.txt'] }),
+      noUnenumerableEntries,
+      unreadableManifestReadFileFn('/repo/vendor/app-template/frontx-template.json'),
+      remove,
+      noopAssertPathWithinRoot,
+      read,
+      write,
+      neverConfirm(),
+    );
+
+    expect(result).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
+    // The blast radius this fixture's `userland/mine.txt` represents is
+    // exactly what the old fail-open swallow would have swept into
+    // `toDelete` and removed; this assertion is the one that would have
+    // caught it directly, had `result.ok` come back `true`.
+    expect(removed()).toEqual([]);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  // LOW-severity fix: `TARGET_NOT_APPLIED` used to name whatever
+  // `canonicalizeFn` resolved `rawTarget` to, not the spelling the caller
+  // actually typed — harmless when the two coincide (every other fixture in
+  // this file uses `identityCanonicalize`), but a caller told about a
+  // resolved path they never wrote has nothing to act on. A canonicalizer
+  // that actually changes the spelling is what makes the two divergent
+  // enough for this test to tell them apart.
+  it('names the caller\'s own typed spelling in TARGET_NOT_APPLIED, never a canonicalized form they did not write', async () => {
+    const { read, write } = fakeProjectState({ formatVersion: 1, templates: {}, projectOwnedRoots: [] });
+    const { removed } = fakeRemoveFile();
+    const resolvingCanonicalize: CanonicalizeTargetFn = (rawTarget) => `resolved/${rawTarget}`;
+
+    const result = await deleteTarget(
+      './packages/app/',
+      '/repo',
+      { jsonMode: false, dryRun: false, yes: false },
+      fakeInventory(),
+      resolvingCanonicalize,
+      fakeListTargetFiles({}),
+      noUnenumerableEntries,
+      neverCalledReadFileFn,
+      fakeRemoveFile().remove,
+      noopAssertPathWithinRoot,
+      read,
+      write,
+      neverConfirm(),
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'TARGET_NOT_APPLIED',
+      details: { target: './packages/app/' },
+    });
+    expect(removed()).toEqual([]);
   });
 
   it('--dry-run reports the plan without deleting or requiring confirmation', async () => {

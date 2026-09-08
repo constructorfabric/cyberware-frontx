@@ -6,11 +6,18 @@ import {
   usageText,
   run,
   writeToStream,
+  writeInteractiveLineOrEscalate,
   EXIT_SUCCESS,
   EXIT_USER_ERROR,
   EXIT_INTERNAL_ERROR,
 } from '../cli';
-import { PathContainmentError } from '../adapters/fs-project-io';
+import {
+  PathContainmentError,
+  NotRegularFileError,
+  UnreachablePathError,
+  PathUnreadableError,
+  ProjectStateUnreadableError,
+} from '../adapters/fs-project-io';
 import type { CliDeps } from '../cli';
 import { TemplateInventory } from '../inventory/TemplateInventory';
 import { BUNDLE_MARKER } from '../bundle/envelope';
@@ -517,6 +524,64 @@ describe('dispatch: list (cpt-frontx-flow-template-resolution-list)', () => {
     expect(outcome.exitCode).toBe(EXIT_USER_ERROR);
     expect(outcome.stderr).toContain('could not be parsed');
     expect(outcome.stdout).toBeUndefined();
+  });
+
+  // The real `createFsReadProjectStateFn` (`../adapters/fs-project-io.ts`)
+  // wraps every one of its own three read-side refusals (a FIFO/socket/
+  // device/directory/dangling symlink at the document path; an ancestor that
+  // is not a directory; a permission refusal) into ONE `ProjectStateUnreadableError`
+  // specifically so this document's own unreadability always reports
+  // `PROJECT_INVALID` — the same code the malformed-JSON case above already
+  // gets — rather than the `CONTENT_CONFLICT` a bare `NotRegularFileError`
+  // would collapse into at this same dispatcher catch (below).
+  it('refuses with PROJECT_INVALID, not CONTENT_CONFLICT, when the project state document itself is unreadable', async () => {
+    const { deps } = makeDeps({
+      readProjectStateFn: vi.fn(async () => {
+        throw new ProjectStateUnreadableError(
+          '/repo/.frontx/project.json',
+          new NotRegularFileError('/repo/.frontx/project.json', 'fifo'),
+        );
+      }),
+    });
+
+    const outcome = await run(['list', '--json'], deps);
+
+    expect(outcome.exitCode).toBe(EXIT_USER_ERROR);
+    const envelope = JSON.parse(outcome.stdout ?? '') as { ok: boolean; error: { code: string; message: string } };
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe('PROJECT_INVALID');
+    // Carries the UNDERLYING reason, not just a generic "unreadable" label —
+    // a caller told this document is a FIFO knows to remove it, not to
+    // re-run the same command hoping for a different answer.
+    expect(envelope.error.message).toContain('FIFO');
+  });
+
+  // A path read some OTHER content had to inspect (never the project state
+  // document, which is refused above with its own code) reached this exact
+  // shape of refusal too, before `resolvePathKind` distinguished a wrong-
+  // shape leaf (`NotRegularFileError`) from an ancestor that is not a
+  // directory (`UnreachablePathError`) from a permission refusal
+  // (`PathUnreadableError`). All three report `CONTENT_CONFLICT` — the same
+  // code every OTHER "the disk holds something this operation cannot work
+  // with" refusal in this package already uses — rather than an internal
+  // failure with no envelope under `--json`.
+  it.each([
+    ['NotRegularFileError', new NotRegularFileError('/repo/some/manifest.json', 'socket')],
+    ['UnreachablePathError', new UnreachablePathError('/repo/some/manifest.json', '/repo/some')],
+    ['PathUnreadableError', new PathUnreadableError('/repo/some/manifest.json', 'EACCES')],
+  ])('maps %s to CONTENT_CONFLICT with the user-error exit code, never an internal failure', async (_name, typedError) => {
+    const { deps } = makeDeps({
+      readProjectStateFn: vi.fn(async () => {
+        throw typedError;
+      }),
+    });
+
+    const outcome = await run(['list', '--json'], deps);
+
+    expect(outcome.exitCode).toBe(EXIT_USER_ERROR);
+    const envelope = JSON.parse(outcome.stdout ?? '') as { ok: boolean; error: { code: string; message: string } };
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe('CONTENT_CONFLICT');
   });
 
   // Absence is not invalidity: `readProjectState` answers a missing document
@@ -2088,5 +2153,62 @@ describe('writeToStream (cpt-frontx-flow-cli-invocation-run-command, step 8)', (
         }),
     );
     expect(secondUncaught).toEqual([]);
+  });
+});
+
+// `createInteractiveDeletionConfirm`/`createInteractiveUpgradeApproval` used
+// to call `writeToStream` directly and ignore its `'ok' | 'failed'` result —
+// a genuine write failure there (anything but the already-tolerated broken
+// pipe) was silently swallowed and the prompt proceeded as if nothing had
+// gone wrong. Both now route through `writeInteractiveLineOrEscalate`, whose
+// own contract this pins directly: it is the one place that escalation is
+// realized, so proving it here covers both call sites without needing a
+// real interactive `delete`/`upgrade` dispatch wired to a failing stdout.
+describe('writeInteractiveLineOrEscalate (cpt-frontx-flow-cli-invocation-run-command, step 8)', () => {
+  it('resolves without throwing for an ordinary successful write', async () => {
+    const chunks: string[] = [];
+    const stream = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(String(chunk));
+        callback();
+      },
+    });
+
+    await expect(writeInteractiveLineOrEscalate('Would delete:\n  app/src\n', stream)).resolves.toBeUndefined();
+    expect(chunks).toEqual(['Would delete:\n  app/src\n']);
+  });
+
+  it('tolerates a broken pipe (EPIPE) exactly as the final envelope write already does', async () => {
+    const stream = new FailingWritable(makeErrnoException('EPIPE'));
+
+    const { result, uncaught } = await runWithUncaughtExceptionCapture(async () => {
+      await writeInteractiveLineOrEscalate('Would delete:\n  app/src\n', stream);
+      return 'no-throw';
+    });
+
+    expect(result).toBe('no-throw');
+    expect(uncaught).toEqual([]);
+  });
+
+  // The defect this pins: a non-EPIPE write failure used to be silently
+  // swallowed, and the interactive prompt proceeded as if the plan had
+  // actually reached the developer's screen. Now it throws, which — reached
+  // from inside `confirmDeletion`/`presentUpgradePlan` during a real
+  // dispatch — propagates to `run()`'s own catch and escalates to the
+  // internal-error exit code exactly as any other unexpected failure does,
+  // without either command's own outcome shape needing a new field to carry
+  // a failure that is this entrypoint's own writing, not that command's.
+  it('throws for a non-EPIPE write failure instead of silently proceeding', async () => {
+    const stream = new FailingWritable(makeErrnoException('ENOSPC'));
+
+    const { result, uncaught } = await runWithUncaughtExceptionCapture(() =>
+      writeInteractiveLineOrEscalate('Would delete:\n  app/src\n', stream).then(
+        () => 'resolved',
+        () => 'threw',
+      ),
+    );
+
+    expect(result).toBe('threw');
+    expect(uncaught).toEqual([]);
   });
 });

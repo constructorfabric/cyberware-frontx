@@ -167,18 +167,33 @@ export async function computeDeletionPlan(
   // resolves BOTH a remote (inventory-installed) and a local
   // `path:`-registered name's current manifest, rather than
   // `inventory.lookup` alone (which silently returned `[]` for a local
-  // origin — confirmed live as a real bug, not merely the "unreadable
-  // manifest" case this join's fail-closed default was written to tolerate;
-  // `commands/apply.ts`'s/`commands/ownership.ts`'s own claim-builders call
-  // the identical shared function for the identical join). A genuinely
-  // absent or unreadable manifest still joins as `[]`: every other applied
-  // instance of a DIFFERENT template nested under this target is caught
-  // independently below (`inst-dp-find-nested`) regardless of whether this
-  // term is available — that independent check is exactly the safety net
-  // `cpt-frontx-dod-cli-scaffolding-delete`'s own text names it as,
-  // surviving even a manifest that has since drifted (an upgrade narrowing
-  // `excludedSubtrees`) to no longer declare ground a nested template still
-  // actually occupies.
+  // origin — confirmed live as a real bug; `commands/apply.ts`'s/
+  // `commands/ownership.ts`'s own claim-builders call the identical shared
+  // function for the identical join).
+  //
+  // A genuinely ABSENT manifest still joins as `[]` (`inst-dp-if-manifest-
+  // absent`): every other applied instance of a DIFFERENT template nested
+  // under this target is caught independently below (`inst-dp-find-nested`)
+  // regardless of whether this term is available — that independent check
+  // is exactly the safety net `cpt-frontx-dod-cli-scaffolding-delete`'s own
+  // text names it as, surviving even a manifest that has since drifted (an
+  // upgrade narrowing `excludedSubtrees`) to no longer declare ground a
+  // nested template still actually occupies. An UNREADABLE manifest — a
+  // FIFO, a directory, or a dangling symlink standing where it is expected —
+  // is a DIFFERENT fact from absence, and does NOT join as `[]`
+  // (`inst-dp-if-manifest-unreadable`): `resolveRegisteredExcludedSubtrees`
+  // lets that failure propagate rather than swallowing it, so this call
+  // THROWS instead of resolving, uncaught here by design — the same
+  // "propagate to the caller's own structured refusal" shape this
+  // function's own `listTargetFilesFn` call below already relies on for
+  // `TargetNotDirectoryError`, converted the identical way by
+  // `commands/delete.ts`'s own catch around this whole algorithm
+  // (`CONTENT_CONFLICT`, naming the unreadable path). A deletion plan whose
+  // exclusions could not be read must refuse, not silently compute `toDelete`
+  // from an emptied-out exclusion set nobody verified — the independent
+  // `inst-dp-find-nested` safety net protects a DIFFERENT template's own
+  // nested target, never the OWNING template's own declared exclusions,
+  // so it is no substitute for actually reading this manifest.
   const declaredExclusions = await resolveRegisteredExcludedSubtrees(ownerName, ownerEntry.origin, {
     repoRoot,
     inventory,

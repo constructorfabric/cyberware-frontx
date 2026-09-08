@@ -5,10 +5,12 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { joinWithinRoot } from '@gears-frontx/test-support/path-guard';
 import { FsInventoryIndex } from '../fs-inventory-index';
 import { InventoryState } from '../../inventory/types';
+import { NotRegularFileError } from '../fs-project-io';
 
 describe('FsInventoryIndex', () => {
   let root: string;
@@ -103,5 +105,31 @@ describe('FsInventoryIndex', () => {
       content: 'v1',
     });
     expect(JSON.parse(index.toJSON())).toHaveProperty('my-template');
+  });
+
+  // A FIFO standing at `index.json` used to hang every read of this store
+  // forever: the old `readAll()` paired a symlink-following `existsSync`
+  // (answers `true` for a FIFO exactly as readily as for a real index file)
+  // with an unconditional `readFileSync`, which blocks on `open()` for a FIFO
+  // with no writer attached — no stdout, no stderr, no exit, until the
+  // process is killed. `readAll()` now goes through the same guarded
+  // primitive every other read seam in this package uses
+  // (`readFileIfRegular`, `../fs-project-io.ts`), so this resolves
+  // immediately with a typed refusal instead of blocking. Real `mkfifo`, per
+  // this package's own established convention for pinning this exact class
+  // of defect (`fs-upgrade-io.test.ts`) — no fake `ReadFileFn` can stand in
+  // for a real kernel-level blocking `open()`.
+  it('lookup() refuses with NotRegularFileError instead of hanging when index.json is a FIFO', () => {
+    const indexPath = joinWithinRoot(root, 'index.json');
+    execFileSync('mkfifo', [indexPath]);
+    const index = new FsInventoryIndex(root);
+
+    expect(() => index.lookup('anything')).toThrow(NotRegularFileError);
+    try {
+      index.lookup('anything');
+    } catch (error) {
+      expect(error).toBeInstanceOf(NotRegularFileError);
+      expect((error as NotRegularFileError).kind).toBe('fifo');
+    }
   });
 });

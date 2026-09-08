@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { InventoryState } from '../inventory/types';
 import type { InventoryEntry, InventoryIndexPort } from '../inventory/types';
+import { readFileIfRegular } from './fs-project-io';
 
 const INDEX_FILENAME = 'index.json';
 
@@ -66,10 +67,20 @@ export class FsInventoryIndex implements InventoryIndexPort {
     return path.join(this.root, INDEX_FILENAME);
   }
 
+  // `readFileIfRegular` (`./fs-project-io.ts`) is the SAME guard every other
+  // read seam in this package now goes through: a plain `existsSync` +
+  // `readFileSync` pair here — `existsSync` follows a symlink to decide
+  // "does something answer at this path", and answers `true` for a FIFO
+  // exactly as readily as for a real index file — used to reach an
+  // unconditional `readFileSync`, which blocks forever on a FIFO with no
+  // writer attached and hangs `list` (and every other command that touches
+  // the local inventory) with no stdout, no stderr, and no exit. Reusing the
+  // shared primitive rather than restating this check a fourth time is the
+  // whole point: it is the one place this exact class of bug has already
+  // been fixed, and fixing it again here independently is how it drifts.
   private readAll(): Record<string, InventoryEntry> {
-    if (!fs.existsSync(this.indexPath)) return {};
-    const raw = fs.readFileSync(this.indexPath, 'utf-8');
-    if (raw.trim() === '') return {};
+    const raw = readFileIfRegular(this.indexPath);
+    if (raw === null || raw.trim() === '') return {};
     return JSON.parse(raw) as Record<string, InventoryEntry>;
   }
 

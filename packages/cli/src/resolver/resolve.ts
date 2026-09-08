@@ -11,6 +11,7 @@ import { formatTemplateAddress } from '../spec-parser/parse';
 import { narrowBundleToSubtree } from './narrow-subtree';
 import { LOCAL_ORIGIN_PREFIX } from './types';
 import type { FetchFn, ResolveDeps, ResolveOrigin, ResolveResult } from './types';
+import { NotRegularFileError, UnreachablePathError, PathUnreadableError } from '../adapters/fs-project-io';
 
 // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-origin-kind-check
 /**
@@ -100,16 +101,34 @@ async function resolveLocalOrigin(rawOrigin: string, deps: ResolveDeps): Promise
   // unusable is refused by the shared manifest-identity tail below without
   // ever walking the folder's other content (mirrors, for a local origin,
   // the fact that `readManifestFromContent` already unwraps a bundle down to
-  // its manifest entry before validating it). A read failure here (the
-  // manifest absent, or unreadable for any other reason) is not
-  // special-cased: it is handed to the identical tail as an empty string,
-  // which fails the same "no readable manifest" refusal a corrupt remote
-  // manifest already produces, rather than a local-specific second
+  // its manifest entry before validating it). A genuinely absent manifest is
+  // not special-cased: it is handed to the identical tail as an empty
+  // string, which fails the same "no readable manifest" refusal a corrupt
+  // remote manifest already produces, rather than a local-specific second
   // formulation of the same check.
+  //
+  // A TYPED refusal from the read seam is different: something real stands
+  // at the manifest path and was inspected (a FIFO, socket, device,
+  // directory, or dangling symlink; an ancestor that is not a directory; or
+  // a path the probe accepts but cannot actually open) — folding that into
+  // the same empty string this branch uses for absence would report it to
+  // `readManifestFromContent` as unparseable JSON, which is not what
+  // happened: nothing was ever parsed, because nothing was ever read.
+  // Refusing here, naming what actually stood in the way, is what keeps
+  // `register`/`install`/`apply`'s own eventual refusal message truthful.
   let manifestText: string;
   try {
     manifestText = await local.readFolderFileFn(path.join(absoluteDir, MANIFEST_FILENAME));
-  } catch {
+  } catch (error) {
+    if (error instanceof NotRegularFileError || error instanceof UnreachablePathError || error instanceof PathUnreadableError) {
+      return {
+        ok: false,
+        error: {
+          code: 'CONTENT_CONFLICT',
+          message: `Local origin "${rawOrigin}"'s manifest could not be read: ${error.message}`,
+        },
+      };
+    }
     manifestText = '';
   }
   // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-local-path-read

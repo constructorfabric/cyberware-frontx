@@ -101,6 +101,9 @@ import {
   createFsAssertPathWithinRootFn,
   PathContainmentError,
   NotRegularFileError,
+  UnreachablePathError,
+  PathUnreadableError,
+  ProjectStateUnreadableError,
 } from './adapters/fs-project-io';
 
 // --- exit-code state machine (cpt-frontx-state-cli-invocation-run) ---
@@ -394,7 +397,11 @@ function createFsRemoveEmptyDirFn(): RemoveEmptyDirFn {
  * stream, not only the two calls that go through this function by name. A
  * reader that closes early (`| head`) is the reader's own decision on an
  * interactive listing exactly as it is on a `--json` envelope; it must not
- * crash the process either way.
+ * crash the process either way — but the two listings themselves go through
+ * `writeInteractiveLineOrEscalate` (above), not `writeToStream` directly,
+ * so a write failure that is NOT a closed reader still escalates to the
+ * internal-error exit code, exactly as the same failure on the final
+ * envelope write already does.
  */
 /**
  * The answer an interactive prompt gets, with end-of-input resolved to the
@@ -428,10 +435,48 @@ async function askWithDefaultOnEndOfInput(rl: readline.Interface, prompt: string
   });
 }
 
+// @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-if-write-failed
+// @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-write-failed-escalate
+// The escalation `main()` already gives the final envelope write
+// (`escalateOnWriteFailure`) applies to every write this entrypoint makes,
+// per this flow's own error scenario ("any other write failure is surfaced
+// as the internal-error code ... since the outcome already computed can no
+// longer be trusted as fully delivered") — not only the last one. An
+// interactive prompt's own writes (the plan listing, the plan review) used
+// to call `writeToStream` directly and ignore its `'ok' | 'failed'` result,
+// so a genuine write failure there (anything but the already-tolerated
+// broken pipe) was silently swallowed and the prompt proceeded as if nothing
+// had gone wrong — the identical escalation contract without the escalation.
+// Throwing here, rather than returning a status this function's own callers
+// (`ConfirmDeletionFn`/`PresentUpgradePlanFn`, `commands/delete.ts` and
+// `commands/upgrade.ts`'s own dispatch, neither of which is this feature's
+// concern to redefine) would then need a new field to carry, reaches the
+// SAME place every other unexpected failure already reaches: `run()`'s own
+// catch maps any thrown, untyped error to the internal-error exit code —
+// so the escalation is realized without asking either command's own outcome
+// shape to grow a channel for a failure that is this entrypoint's own
+// writing, not that command's.
+// `stream` defaults to `process.stdout` (every real call site's actual
+// destination) but is accepted as a parameter — never hardcoded — for the
+// identical reason `writeToStream` itself is exported: so a unit test can
+// drive this against a real (if deliberately failing) `Writable` rather than
+// only against the live process stream.
+export async function writeInteractiveLineOrEscalate(
+  text: string,
+  stream: NodeJS.WritableStream = process.stdout,
+): Promise<void> {
+  const result = await writeToStream(stream, text);
+  if (result === 'failed') {
+    throw new Error('Failed to write to stdout during an interactive prompt.');
+  }
+}
+// @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-write-failed-escalate
+// @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-if-write-failed
+
 function createInteractiveDeletionConfirm(): ConfirmDeletionFn {
   return async function confirmDeletion(plan): Promise<'confirmed' | 'declined'> {
-    await writeToStream(process.stdout, `Would delete:\n${plan.toDelete.map((p) => `  ${p}`).join('\n') || '  (nothing)'}\n`);
-    await writeToStream(process.stdout, `Would preserve:\n${plan.toPreserve.map((p) => `  ${p}`).join('\n') || '  (nothing)'}\n`);
+    await writeInteractiveLineOrEscalate(`Would delete:\n${plan.toDelete.map((p) => `  ${p}`).join('\n') || '  (nothing)'}\n`);
+    await writeInteractiveLineOrEscalate(`Would preserve:\n${plan.toPreserve.map((p) => `  ${p}`).join('\n') || '  (nothing)'}\n`);
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     try {
       const answer = await askWithDefaultOnEndOfInput(rl, `Delete "${plan.target}"? [y/N] `);
@@ -449,10 +494,13 @@ function createInteractiveDeletionConfirm(): ConfirmDeletionFn {
  * Never constructed or called at all in `--json` mode: `commands/upgrade.ts`
  * wires its own `presentPlan` there instead (see the `upgrade` dispatch case
  * below), which never reads stdin. The rendered plan is written through
- * `writeToStream`, for the same reason `createInteractiveDeletionConfirm`
- * above writes through it rather than `process.stdout.write` directly: the
- * permanent, idempotent 'error' listener that call attaches to the stream
- * also covers every write `readline` performs on it afterward.
+ * `writeInteractiveLineOrEscalate`, for the same reason
+ * `createInteractiveDeletionConfirm` above writes through it rather than
+ * `process.stdout.write` directly: the permanent, idempotent 'error'
+ * listener `writeToStream` attaches to the stream also covers every write
+ * `readline` performs on it afterward, and a write failure that is not a
+ * closed reader escalates to the internal-error exit code instead of being
+ * silently swallowed while the prompt proceeds.
  */
 function createInteractiveUpgradeApproval(): PresentUpgradePlanFn {
   return async function presentUpgradePlan(plan): Promise<'approved' | 'declined'> {
@@ -472,7 +520,7 @@ function createInteractiveUpgradeApproval(): PresentUpgradePlanFn {
       ...reviewable.operations.map((operation) => `  ${operation.op.padEnd(10)} ${operation.path}`),
       ...reviewable.skipped.map((entry) => `  ${'SKIPPED'.padEnd(10)} ${entry.path} (${entry.reason})`),
     ];
-    await writeToStream(process.stdout, `${lines.join('\n')}\n`);
+    await writeInteractiveLineOrEscalate(`${lines.join('\n')}\n`);
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     try {
       const answer = await askWithDefaultOnEndOfInput(rl, `Apply this upgrade for "${plan.name}"? [y/N] `);
@@ -2004,15 +2052,40 @@ export async function run(argv: string[], deps: CliDeps): Promise<CommandOutcome
         ? { exitCode: EXIT_USER_ERROR, stdout: JSON.stringify(envelope) }
         : { exitCode: EXIT_USER_ERROR, stderr: error.message };
     }
+    // The project state document (`.frontx/project.json`) could not be read,
+    // for one of three reasons (`adapters/fs-project-io.ts`'s own
+    // `ProjectStateUnreadableError` doc comment). Reported as `PROJECT_INVALID`
+    // — the SAME code every other way this one document can be unusable
+    // (malformed JSON, an unrecognized `formatVersion`, a shape violation)
+    // already reports, regardless of which of those three reasons broke it —
+    // rather than `CONTENT_CONFLICT`, which stays reserved for template/
+    // payload content elsewhere in this same catch. Checked before the more
+    // generic `NotRegularFileError` branch below since this is the more
+    // specific fact whenever it applies.
+    // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-if-project-state-unreadable
+    if (error instanceof ProjectStateUnreadableError) {
+      const reported = describePathForReport(error.filePath);
+      const message = `Project state document at "${reported}" could not be read: ${error.underlying.message}`;
+      const envelope = err('PROJECT_INVALID', message, { path: reported });
+      // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-project-state-unreadable
+      return parseJsonMode(parsed.args)
+        ? { exitCode: EXIT_USER_ERROR, stdout: JSON.stringify(envelope) }
+        : { exitCode: EXIT_USER_ERROR, stderr: message };
+      // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-project-state-unreadable
+    }
+    // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-if-project-state-unreadable
     // A path the command had to READ is not a regular file — a FIFO, a socket,
-    // a device, a directory or a dangling symlink standing where the project
-    // state document or a template manifest belongs. The adapters refuse to
-    // open it rather than blocking on it, and that refusal reaches here typed
-    // so it can be reported as the same `CONTENT_CONFLICT` the apply, upgrade
-    // and delete engines already answer for "the disk holds something this
+    // a device, a directory or a dangling symlink standing where a template
+    // manifest, an upgrade-engine scratch file, or a local inventory record
+    // belongs (never the project state document — that path is refused above,
+    // wrapped, before it ever reaches here). The adapters refuse to open it
+    // rather than blocking on it, and that refusal reaches here typed so it
+    // can be reported as the same `CONTENT_CONFLICT` the apply, upgrade and
+    // delete engines already answer for "the disk holds something this
     // operation cannot work with": an ordinary, actionable problem with the
     // tree, never an internal failure, and never — under `--json` — an empty
     // stdout where the caller is owed exactly one envelope.
+    // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-if-content-unreadable
     if (error instanceof NotRegularFileError) {
       // Spelled project-relative when the path lies under the directory the
       // command was invoked in, matching every other envelope in this
@@ -2022,10 +2095,49 @@ export async function run(argv: string[], deps: CliDeps): Promise<CommandOutcome
       const reported = describePathForReport(error.filePath);
       const message = `"${reported}" is ${describeNonRegularKindForReport(error.kind)}, not a regular file — refusing to read it.`;
       const envelope = err('CONTENT_CONFLICT', message, { path: reported, kind: error.kind });
+      // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-content-unreadable
       return parseJsonMode(parsed.args)
         ? { exitCode: EXIT_USER_ERROR, stdout: JSON.stringify(envelope) }
         : { exitCode: EXIT_USER_ERROR, stderr: message };
+      // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-content-unreadable
     }
+    // A path a command had to read was never reached at all: some component
+    // ABOVE it exists and is not a directory (`ENOTDIR`), so nothing beneath
+    // it — regardless of what would otherwise stand there — could be
+    // inspected. Reported through the identical `CONTENT_CONFLICT` code as
+    // `NotRegularFileError` above, since a caller experiences both as the
+    // same fact ("the disk holds something this operation cannot work
+    // with"), naming the blocking ancestor rather than the path that was
+    // never reached — that ancestor is the one entry a developer actually
+    // has to resolve.
+    if (error instanceof UnreachablePathError) {
+      const reportedLeaf = describePathForReport(error.filePath);
+      const reportedBlocking = describePathForReport(error.blockingAncestor);
+      const message = `"${reportedLeaf}" cannot be reached: "${reportedBlocking}" exists and is not a directory.`;
+      const envelope = err('CONTENT_CONFLICT', message, { path: reportedLeaf, blockingAncestor: reportedBlocking });
+      // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-content-unreadable
+      return parseJsonMode(parsed.args)
+        ? { exitCode: EXIT_USER_ERROR, stdout: JSON.stringify(envelope) }
+        : { exitCode: EXIT_USER_ERROR, stderr: message };
+      // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-content-unreadable
+    }
+    // A path resolved to the right shape but could not actually be opened —
+    // most often a permission refusal (`chmod 000` on the file itself, or on
+    // a directory somewhere along the path). The same `CONTENT_CONFLICT` code
+    // as the two refusals above, for the identical reason: a caller cannot
+    // act on an internal-error exit for what is an ordinary, actionable
+    // problem with the tree it pointed the CLI at.
+    if (error instanceof PathUnreadableError) {
+      const reported = describePathForReport(error.filePath);
+      const message = `"${reported}" could not be read (${error.errnoCode}): permission was refused, or the path could not be opened.`;
+      const envelope = err('CONTENT_CONFLICT', message, { path: reported, errnoCode: error.errnoCode });
+      // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-content-unreadable
+      return parseJsonMode(parsed.args)
+        ? { exitCode: EXIT_USER_ERROR, stdout: JSON.stringify(envelope) }
+        : { exitCode: EXIT_USER_ERROR, stderr: message };
+      // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-content-unreadable
+    }
+    // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-if-content-unreadable
     // @cpt-end:cpt-frontx-state-cli-invocation-run:p1:inst-st-dispatched-user-error
 
     // The dispatched behavior failed unexpectedly -> internal-error exit code.
