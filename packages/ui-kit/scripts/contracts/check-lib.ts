@@ -50,6 +50,7 @@ export interface PassthroughPropertyLike {
 
 export interface PassthroughSchemaLike {
   properties?: Record<string, PassthroughPropertyLike>;
+  required?: string[];
 }
 
 export interface PassthroughDiff {
@@ -80,17 +81,46 @@ export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchem
     if (!(name in newProps)) continue;
     const oldProp = oldProps[name];
     const newProp = newProps[name];
+
+    // A type constraint that changes, OR that appears where none existed,
+    // both reject a value the old (unconstrained, or differently typed)
+    // prop used to accept - narrowing either way. The reverse - a type
+    // constraint lifted entirely - accepts a strict superset, so it is not
+    // checked here at all.
     if (oldProp.type !== undefined && newProp.type !== undefined && oldProp.type !== newProp.type) {
       narrowed.push({ prop: name, reason: `type changed from "${oldProp.type}" to "${newProp.type}"` });
-      continue;
+    } else if (oldProp.type === undefined && newProp.type !== undefined) {
+      narrowed.push({ prop: name, reason: `type constraint added: "${newProp.type}" where none existed before` });
     }
-    if (oldProp.enum) {
-      const newEnumValues = new Set(newProp.enum ?? []);
+
+    // Same reasoning for enum: a dropped value out of an existing enum, or
+    // a whole enum appearing where the prop previously accepted any value
+    // of its type, both narrow independently of whatever the type check
+    // above found. An enum lifted entirely (the prop keeps its type, just
+    // no enum) is the widening direction and is not flagged.
+    if (oldProp.enum !== undefined && newProp.enum !== undefined) {
+      const newEnumValues = new Set(newProp.enum);
       const droppedValues = oldProp.enum.filter((value) => !newEnumValues.has(value));
       if (droppedValues.length > 0) {
         narrowed.push({ prop: name, reason: `enum value(s) removed: ${droppedValues.join(', ')}` });
       }
+    } else if (oldProp.enum === undefined && newProp.enum !== undefined) {
+      narrowed.push({ prop: name, reason: `enum constraint added: ${newProp.enum.join(', ')} where none existed before` });
     }
+  }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
+
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
+  // A prop that was optional and turns required rejects a value that used
+  // to validate (the prop simply absent) - the same "changed shape" the
+  // type/enum checks above already treat as narrowing, just on the
+  // required list rather than on one property's own constraints.
+  const oldRequired = new Set(oldSchema.required ?? []);
+  const newlyRequired = (newSchema.required ?? []).filter(
+    (name) => name in oldProps && name in newProps && !oldRequired.has(name),
+  );
+  for (const name of newlyRequired) {
+    narrowed.push({ prop: name, reason: 'became required where it was optional (or absent) before' });
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
 

@@ -225,7 +225,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 **Output**: The shared type for that origin, or a refusal.
 
 **Steps**:
-1. [x] - `p1` - Declare each inherited prop under the origin's own type, giving a schema shape where one exists and leaving the rest unconstrained; the props that carry no consumer-visible shape at all - the element key and the forwarded ref - are left out entirely - `inst-ps-props`
+1. [x] - `p1` - Declare each inherited prop under the origin's own type, giving a schema shape where one exists and leaving the rest unconstrained, and list it in the type's own `required` when the extraction reported it as non-optional; the props that carry no consumer-visible shape at all - the element key and the forwarded ref - are left out entirely - `inst-ps-props`
 2. [x] - `p1` - Admit the accessibility and data attribute families by pattern rather than by name - `inst-ps-patterns`
 3. [x] - `p1` - Record which components the type was generated from, and leave the type open so a component's own contract can close its surface instead - `inst-ps-open`
 4. [x] - `p1` - **IF** compiling one component would change the shape another component on the same origin already relies on - `inst-ps-collision`

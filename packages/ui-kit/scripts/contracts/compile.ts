@@ -399,11 +399,23 @@ export function buildPassthroughSchema(
 ): Record<string, unknown> {
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
   const properties: Record<string, ContractProperty> = {};
+  // Mirrors buildPropsAndRequired's own-prop rule (`!prop.optional` ->
+  // required): a primitive that turns an inherited prop required is a real
+  // narrowing of what a consumer may omit, and was invisible to freshness
+  // and compatibility before this list existed - every inherited prop read
+  // as optional regardless of what the checker actually reported. Sorted,
+  // and emitted even when empty (compileContract's own `required` does the
+  // same for own props - "a component with no required own props still
+  // emits `required: []`, not an absent field"), so a fresh compile is
+  // never ambiguous between "nothing required" and "not computed".
+  const required: string[] = [];
   for (const prop of inheritedProps) {
     if (prop.name === 'key' || prop.name === 'ref') continue;
     if (prop.name.startsWith('aria-') || prop.name.startsWith('data-')) continue;
     properties[prop.name] = classifyProviderSafeType(prop.typeText) ?? {};
+    if (!prop.optional) required.push(prop.name);
   }
+  required.sort();
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
@@ -421,6 +433,7 @@ export function buildPassthroughSchema(
     // Not consumed by Ajv/GTS - annotation only, same standing as $comment.
     generated_from: [...generatedFrom].sort(),
     properties,
+    required,
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-patterns
     patternProperties: {

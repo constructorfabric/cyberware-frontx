@@ -391,6 +391,7 @@
       "type": "string"
     }
   },
+  "required": [],
   "patternProperties": {
     "^aria-": {
       "description": "Any ARIA attribute passes. Enumerating the WAI-ARIA set here would go stale against the spec and buy nothing: a contract's job is to stop typos in KIT props, and the a11y rules that actually matter (icon-only needs aria-label) are invariants, not a property list."

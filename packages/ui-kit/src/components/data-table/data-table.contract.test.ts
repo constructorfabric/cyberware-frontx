@@ -4,7 +4,8 @@
 // excluded from coverage) are about the directory as a whole, not either
 // contract in isolation. See button.contract.test.ts for the per-component
 // conformance shape assertContractFreshness reuses.
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { GTS } from '@globaltypesystem/gts-ts';
 import Ajv2020 from 'ajv/dist/2020';
@@ -85,7 +86,17 @@ describe('data-table: coverage counts only component exports', () => {
   });
 
   it('the non-component exports are real exports, correctly excluded - not silently missing', () => {
-    const allExports = listExportedDeclarationNames(join(process.cwd(), 'src/components/data-table/data-table.tsx'));
+    // Resolved from this test file's own URL, not process.cwd() - a runner
+    // invoked from outside the package would otherwise point this at a path
+    // that does not exist. Not `new URL('./data-table.tsx', import.meta.url)`:
+    // under this package's jsdom test environment, Vite's import analysis
+    // treats that exact pattern as an asset reference and rewrites it to a
+    // served http://localhost URL instead of a file:// one - verified by
+    // running it here first. Plain `import.meta.url` (property access,
+    // statically replaced by Vite with this file's real path) plus Node's
+    // own path helpers sidesteps that rewrite.
+    const dataTableTsxPath = join(dirname(fileURLToPath(import.meta.url)), 'data-table.tsx');
+    const allExports = listExportedDeclarationNames(dataTableTsxPath);
     const nonComponents = ['dataTableColumnHelper', 'dataTableFeatures', 'DataTableFeatures', 'dataTableSelectionColumn', 'DataTableSelectionColumnLabels'];
     for (const name of nonComponents) {
       expect(allExports, name).toContain(name);

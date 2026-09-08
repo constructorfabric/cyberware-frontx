@@ -32,7 +32,7 @@
       },
       {
         "id": "item-values-unique-per-root",
-        "text": "Every `AccordionItem`'s `value` must be unique within THIS root. Nesting an `Accordion` inside another's panel needs its own value namespace: Base UI scopes keyboard navigation to the nearest root, but not value uniqueness across roots."
+        "text": "Every `AccordionItem`'s `value` must be unique within THIS root - not across roots. Base UI's Accordion.Root keeps its own value state and its own keyboard-navigation list, each scoped to that root's React context; a nested `Accordion` inside another's panel resolves its OWN root context, so its items may safely reuse a value already used by an ancestor root without any collision."
       }
     ],
     "anti_patterns": [
@@ -41,8 +41,8 @@
         "instead": "Keep required fields outside the accordion, or default that item's panel open - a screen reader user tabbing through the page will not discover a hidden required field until they expand that section"
       },
       {
-        "dont": "Nest an Accordion inside another Accordion's panel without checking value uniqueness across both",
-        "instead": "Give every item, across both roots, a unique `value`"
+        "dont": "Reuse the same `value` for two items inside the SAME accordion root",
+        "instead": "Give every item a unique `value` within its own root - a nested `Accordion` needs no coordination with its ancestor's values, only with its own siblings"
       }
     ],
     "examples": {

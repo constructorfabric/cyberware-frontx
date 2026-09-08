@@ -89,6 +89,47 @@ describe('diffPassthroughSchema', () => {
     );
     expect(widened.compatible).toBe(true);
   });
+
+  it('is incompatible when an unconstrained prop gains an enum', () => {
+    const diff = diffPassthroughSchema(
+      { properties: { variant: { type: 'string' } } },
+      { properties: { variant: { type: 'string', enum: ['primary'] } } },
+    );
+    expect(diff.narrowed).toEqual([{ prop: 'variant', reason: 'enum constraint added: primary where none existed before' }]);
+    expect(diff.compatible).toBe(false);
+  });
+
+  it('is incompatible when an untyped prop gains a type', () => {
+    const diff = diffPassthroughSchema({ properties: { render: {} } }, { properties: { render: { type: 'string' } } });
+    expect(diff.narrowed).toEqual([{ prop: 'render', reason: 'type constraint added: "string" where none existed before' }]);
+    expect(diff.compatible).toBe(false);
+  });
+
+  it('is compatible when a type or enum constraint is removed entirely, not merely widened', () => {
+    const typeLifted = diffPassthroughSchema({ properties: { render: { type: 'string' } } }, { properties: { render: {} } });
+    expect(typeLifted).toEqual({ added: [], removed: [], narrowed: [], compatible: true });
+
+    const enumLifted = diffPassthroughSchema(
+      { properties: { variant: { type: 'string', enum: ['a', 'b'] } } },
+      { properties: { variant: { type: 'string' } } },
+    );
+    expect(enumLifted).toEqual({ added: [], removed: [], narrowed: [], compatible: true });
+  });
+
+  it('is incompatible when an existing forwarded prop becomes required, but not when required is only added for a brand-new prop', () => {
+    const becameRequired = diffPassthroughSchema(
+      { properties: { autoFocus: { type: 'boolean' } } },
+      { properties: { autoFocus: { type: 'boolean' } }, required: ['autoFocus'] },
+    );
+    expect(becameRequired.narrowed).toEqual([{ prop: 'autoFocus', reason: 'became required where it was optional (or absent) before' }]);
+    expect(becameRequired.compatible).toBe(false);
+
+    const stayedRequired = diffPassthroughSchema(
+      { properties: { autoFocus: { type: 'boolean' } }, required: ['autoFocus'] },
+      { properties: { autoFocus: { type: 'boolean' } }, required: ['autoFocus'] },
+    );
+    expect(stayedRequired.compatible).toBe(true);
+  });
 });
 
 describe('diffOwnPropsSchema', () => {
