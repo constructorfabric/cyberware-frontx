@@ -79,6 +79,7 @@ import {
   componentTypeRefPattern,
   DEFAULT_CONTRACT_MAJOR,
   domPassthroughToken,
+  gtsToken,
   instanceId,
   instanceIdPattern,
   METAMODEL_TYPE_ID,
@@ -111,8 +112,10 @@ export type CoverageAssumptionKind =
   // function, a live object, a ReactNode. `prop` names it, and the pairing is
   // checked both ways by the conformance suite.
   | 'untyped_prop'
-  // A part of the primitive underneath that the kit does not expose as a
-  // component of its own, or a prop of it the kit does not advertise.
+  // Internal structure of the primitive underneath that the kit does not
+  // expose as a component of its own - a Header glued onto a Trigger inside
+  // one exported component. A prop the kit does not advertise is not this:
+  // `hidden` names that prop and carries its own reason.
   | 'hidden_part'
   // A mount point outside the kit, where the typed composition field has
   // nothing to point at.
@@ -201,6 +204,15 @@ export function isExternalAlternative(instead: Alternative): instead is External
   return typeof instead === 'object';
 }
 
+// One prop of the primitive underneath that the kit does not advertise, and
+// why it is not. Both halves are required: the name is what the compiler
+// checks against the extraction, and the reason is what tells a reader a
+// deliberate omission from a forgotten one.
+export interface HiddenProp {
+  prop: string;
+  reason: string;
+}
+
 export interface Overlay {
   component: string;
   // The contract major this component's identifiers carry. Authored, and
@@ -232,13 +244,15 @@ export interface Overlay {
     // into `parent` at compile time.
     mounts_in?: ExternalAlternative[];
   };
-  // Props of the primitive underneath that the kit does not advertise. They
-  // are extracted (so the compiler can check the name is real) and then left
-  // out of `properties`: a component whose own stylesheet contradicts a
-  // primitive prop, or whose usage document routes it to another part of the
-  // family, is not offering that prop, and listing it as API would be the
-  // contract's own statement that it is.
-  hidden?: string[];
+  // Props of the primitive underneath that the kit does not advertise, each
+  // carrying the reason it is not advertised. They are extracted (so the
+  // compiler can check the name is real) and then left out of `properties`: a
+  // component whose own stylesheet contradicts a primitive prop, or whose
+  // usage document routes it to another part of the family, is not offering
+  // that prop, and listing it as API would be the contract's own statement
+  // that it is. The reason travels with the name because the name alone
+  // leaves every later reader to rediscover why the prop is gone.
+  hidden?: HiddenProp[];
   invariants: { id: string; text: string }[];
   anti_patterns: { dont: string; instead: string }[];
   deprecations: { props?: Record<string, { since: string; replacement: string; hint: string }> };
@@ -515,8 +529,9 @@ export function registerContractTypes(register: (entity: Record<string, unknown>
 // rendering that element forwards to it. One file per element kind under
 // scripts/contracts/passthrough/, never generated: React's DOM attributes for
 // a `<button>` are the same for every component that renders one, so a
-// per-component derivation produced 233-entry files that differed only in
-// which component's compilation happened to print a union's members first.
+// per-component derivation produced files of 224 to 233 properties each that
+// differed only in which component's compilation happened to print a union's
+// members first.
 //
 // A kind with no committed file fails here by name rather than compiling a
 // contract that silently forwards an undeclared surface: adding an element
@@ -525,6 +540,7 @@ export function registerContractTypes(register: (entity: Record<string, unknown>
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-load
 export const loadPassthroughSchema = memoizeSchemaBy((elementKind: string): Record<string, unknown> => {
+  assertSharedAttributesAgree();
   const token = domPassthroughToken(elementKind);
   const path = join(PASSTHROUGH_DIR, `${token}.json`);
   if (!existsSync(path)) {
@@ -547,6 +563,60 @@ export const loadPassthroughSchemas = memoizeSchema((): Record<string, unknown>[
     .sort()
     .map((name) => JSON.parse(readFileSync(join(PASSTHROUGH_DIR, name), 'utf8')) as Record<string, unknown>),
 );
+
+// One attribute, one shape - across element kinds as well as inside one.
+// The surfaces are hand-written, so what two of them state in common they
+// state by hand: `children`, `className`, `id`, `role`, `style`, `tabIndex`,
+// `title` and the three families are in every file, and only this comparison
+// keeps the copies in step. The compatibility check depends on it - it reads
+// a change of host element as a real difference between two surfaces, which
+// is only a real difference while the attributes both kinds declare are
+// declared identically.
+//
+// Pure over the surfaces it is handed, so a disagreement can be exercised
+// without writing a file; the loader above applies it to what is committed.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-agree
+export function sharedAttributeConflicts(surfaces: readonly Record<string, unknown>[]): string[] {
+  const first = new Map<string, { id: string; schema: string }>();
+  const conflicts: string[] = [];
+  for (const surface of surfaces) {
+    const id = String(surface.$id ?? '(surface with no id)');
+    const declarations = {
+      ...((surface.properties ?? {}) as Record<string, unknown>),
+      ...((surface.patternProperties ?? {}) as Record<string, unknown>),
+    };
+    for (const [name, schema] of Object.entries(declarations)) {
+      const serialized = JSON.stringify(schema);
+      const earlier = first.get(name);
+      if (earlier === undefined) {
+        first.set(name, { id, schema: serialized });
+        continue;
+      }
+      if (earlier.schema !== serialized) {
+        conflicts.push(`"${name}": ${earlier.id} declares ${earlier.schema}, ${id} declares ${serialized}`);
+      }
+    }
+  }
+  return conflicts.sort();
+}
+
+// Applied once per process, on the path every compile takes: a contract
+// composes one element's surface, so nothing on the compile path would ever
+// look at two of them otherwise.
+let sharedAttributesAgree = false;
+function assertSharedAttributesAgree(): void {
+  if (sharedAttributesAgree) return;
+  const conflicts = sharedAttributeConflicts(loadPassthroughSchemas());
+  if (conflicts.length > 0) {
+    throw new Error(
+      `host-element surfaces disagree about an attribute more than one of them declares:\n  ${conflicts.join('\n  ')}\n` +
+        `an attribute two element kinds share must be declared identically in both, because the compatibility ` +
+        `check reads a difference between two surfaces as a narrowing a consumer feels`,
+    );
+  }
+  sharedAttributesAgree = true;
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-agree
 
 // name -> declared JSON Schema `type`, for every prop the passthrough type
 // owns. `undefined` for an annotation-only entry (onClick, children, style):
@@ -818,7 +888,7 @@ export const buildTraitTypes = memoizeSchema((): Record<string, unknown>[] => [
     traitType(
       'coverage_assumption',
       'UiKit coverage assumption',
-      'A fact the code cannot make true, rather than a verified/checked-no/not-described claim. `kind` is required and drawn from a closed list, because without it the field was a paragraph: "JSON Schema has no notion of a generic type parameter" appeared in three overlays in three wordings and nothing could tell that family of claim apart from "this part wraps two primitives" or "its mount point is outside the kit". With a kind, the conformance suite can ask whether every prop the schema cannot type has an entry - which is the question those repeated sentences were answering by accident. `untyped_prop` additionally names the prop, checked against the extracted prop list the way a deprecation\'s key is.',
+      'A fact the code cannot make true, rather than a verified/checked-no/not-described claim. `kind` is required and drawn from a closed list, so a family of assumptions can be checked against the contract it is about instead of read one at a time: the conformance suite asks whether every prop the schema cannot type has an entry. `untyped_prop` additionally names the prop, checked against the extracted prop list the way a deprecation\'s key is.',
       {
         type: 'object',
         properties: {
@@ -826,7 +896,7 @@ export const buildTraitTypes = memoizeSchema((): Record<string, unknown>[] => [
             type: 'string',
             enum: ['untyped_prop', 'hidden_part', 'external_mount', 'behaviour'],
             description:
-              'untyped_prop: a property that reaches the contract asserting nothing - a generic, a function, a live object, a React node. hidden_part: a part of the primitive underneath the kit does not expose, or a prop of it the kit does not advertise. external_mount: a mount point outside the kit, where the typed composition field has nothing to point at. behaviour: anything the props type never carries - internal state, a runtime relationship, a fact about the component rather than about its schema.',
+              'untyped_prop: a property that reaches the contract asserting nothing - a generic, a function, a live object, a React node. hidden_part: internal structure of the primitive underneath that the kit does not expose as a component of its own; a prop the kit does not advertise is named in `hidden`, with its own reason, instead. external_mount: a mount point outside the kit, where the typed composition field has nothing to point at. behaviour: anything the props type never carries - internal state, a runtime relationship, a fact about the component rather than about its schema.',
           },
           claim: { type: 'string', minLength: 1 },
           reason: { type: 'string', minLength: 1 },
@@ -1056,13 +1126,27 @@ export const buildMetamodel = memoizeSchema((): Record<string, unknown> => ({
         items: { $ref: traitTypeId('extension_point') },
         minItems: 1,
       },
+      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-hidden
       hidden: {
         type: 'array',
         description:
-          "Props of the primitive underneath that this kit does not advertise, so they are left out of the contract's own properties. Every entry is checked against the extracted prop list - a name the primitive no longer declares fails the compile rather than hiding nothing - and may not name a prop the component declares itself, which would be the overlay asking the compiler to drop what the source states. Absent for a component that advertises everything it forwards, which is most of them.",
-        items: propNameSchema(),
+          "Props of the primitive underneath that this kit does not advertise, so they are left out of the contract's own properties - each with the reason it is not advertised, because a bare name leaves every later reader to rediscover why the prop is gone. Every `prop` is checked against the extracted prop list - a name the primitive no longer declares fails the compile rather than hiding nothing - and may not name a prop the component declares itself, which would be the overlay asking the compiler to drop what the source states. Absent for a component that advertises everything it forwards, which is most of them.",
+        items: {
+          type: 'object',
+          properties: {
+            prop: propNameSchema(),
+            reason: {
+              type: 'string',
+              minLength: 1,
+              description: 'Why the kit does not advertise this prop: the component fact that makes offering it wrong, not a restatement of the name.',
+            },
+          },
+          required: ['prop', 'reason'],
+          additionalProperties: false,
+        },
         minItems: 1,
       },
+      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-hidden
       // The one reference gts-ts itself resolves against the registry: it
       // sits directly on an instance property, which is as deep as
       // XGtsRefValidator's own walk goes, so GTS.validateInstance fails an
@@ -1177,7 +1261,7 @@ export const buildGtsTraitsSchema = memoizeSchema((): Record<string, unknown> =>
   return {
     type: 'object',
     description:
-      "Validator-read half of the overlay: what GTS.validateEntity checks a component contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from base.component down to the component's own contract). Everything here is a fact a validator or lint actually reads - dont_use_when's typed alternative, composition, deprecations, coverage (including its assumptions), family and extension_points; a purely documentary field (intent, typical_uses, invariants, anti_patterns, examples) lives in x-uikit instead, which no validator reads. Each field is a REFERENCE to the vocabulary type that owns its shape (gts.frontx.uikit.trait.*), so this schema states which concepts a contract carries and each concept is defined once, in one place, for both this schema and the metamodel. additionalProperties: false so an unknown trait key fails GTS.validateEntity by name instead of vanishing silently.",
+      "Validator-read half of the overlay: what GTS.validateEntity checks a component contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from base.component down to the component's own contract). Everything here is a fact a validator or lint actually reads - dont_use_when's typed alternative, composition, deprecations, coverage (including its assumptions), family, extension_points and hidden; a purely documentary field (intent, typical_uses, invariants, anti_patterns, examples) lives in x-uikit instead, which no validator reads. Six of the fields are a REFERENCE to the vocabulary type that owns its shape (gts.frontx.uikit.trait.*), so that concept is defined once, in one place, for both this schema and the metamodel; hidden stays inline, because nothing else references it. additionalProperties: false so an unknown trait key fails GTS.validateEntity by name instead of vanishing silently.",
     properties,
     // Only the fields the overlay itself always requires (buildMetamodel's
     // own `required` list) are required here too - `family`/`extension_points`
@@ -1201,7 +1285,7 @@ export const buildBaseSchema = memoizeSchema((): Record<string, unknown> => ({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: 'UiKit base component',
     description:
-      "Abstract base type every kit component's props schema derives from. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which belongs to the per-origin passthrough type, because a base shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, the validator-read half of the overlay vocabulary that GTS.validateEntity checks a component's own x-gts-traits against. That vocabulary is six references to the types that own each concept (gts.frontx.uikit.trait.*), not six inline definitions - see the domain model in the package DESIGN for how they relate.",
+      "Abstract base type every kit component's props schema derives from. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which the hand-written surface for each host element declares, because a base shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, the validator-read half of the overlay vocabulary that GTS.validateEntity checks a component's own x-gts-traits against. Six of its fields are references to the types that own each concept (gts.frontx.uikit.trait.*) rather than inline definitions; the seventh, hidden, the validator reads but nothing else references, so it stays inline - see the domain model in the package DESIGN for how they relate.",
     type: 'object',
     $comment:
       "No additionalProperties/unevaluatedProperties here on purpose. gts-ts's validateSchemaAgainstParent rejects a derived schema that adds properties when the base sets additionalProperties: false, and closing the base would mean every component had to restate it. A derived component type does not close itself either: its unevaluatedProperties carries an annotated open schema ({ \"x-uikit-verdict\": \"unchecked\" }), so a prop nothing evaluates is admitted and reported as UNCHECKED by whoever reads the props rather than rejected by Ajv, which cannot tell a typo'd kit prop from an attribute this harness has not classified yet.",
@@ -1493,8 +1577,8 @@ export interface PropsAndRequired {
 // that is the whole point of the change it came with: `multiple`,
 // `defaultValue` and `onValueChange` are Accordion's API whether the kit
 // types them out again or inherits them from Base UI's own AccordionRootProps,
-// and an evaluation that read them out of a 233-entry generated file concluded
-// `defaultValue` took a plain string.
+// and an evaluation that read them out of a generated file of 233 properties
+// concluded `defaultValue` took a plain string.
 //
 // `hidden` names API props the kit does not advertise. They are still
 // extracted - which is what lets the compiler reject a `hidden` entry naming
@@ -1766,7 +1850,7 @@ export function assertOverlayReferencesRealProps(component: string, overlay: Ove
   if (iconsVia !== undefined && !declared.has(iconsVia)) {
     refuse(`overlay composition.children.icons_via references "${iconsVia}", which is not a real prop`);
   }
-  for (const prop of overlay.hidden ?? []) {
+  for (const { prop } of overlay.hidden ?? []) {
     if (declared.has(prop)) {
       refuse(
         `overlay hides "${prop}", which ${component}.tsx declares itself - hiding is for a prop of the primitive ` +
@@ -1812,6 +1896,8 @@ export function assertOverlayReferencesRealProps(component: string, overlay: Ove
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-composition:p1:inst-co-derive
 export function deriveParentKinds(directory: string, exportStem: string): string[] {
   const self = componentTypeRef(exportStem, contractMajor(directory, exportStem));
+  const selfToken = gtsToken(exportStem);
+  const refPattern = new RegExp(componentTypeRefPattern(true));
   const parents: string[] = [];
   const componentsDir = join(kitRoot, 'src', 'components');
   for (const entry of readdirSync(componentsDir, { withFileTypes: true })) {
@@ -1819,11 +1905,29 @@ export function deriveParentKinds(directory: string, exportStem: string): string
     for (const stem of overlayStems(entry.name)) {
       if (stem === exportStem) continue;
       const overlay = loadOverlay(entry.name, stem);
-      if ((overlay.composition.children?.kinds ?? []).includes(self)) {
-        // The PARENT's own major, from the parent's own overlay: a reference
-        // names the major the target ships, so a component that moves its
-        // major moves every reference to it - including the derived ones.
-        parents.push(componentTypeRef(stem, overlay.major ?? DEFAULT_CONTRACT_MAJOR));
+      for (const kind of overlay.composition.children?.kinds ?? []) {
+        if (kind === self) {
+          // The PARENT's own major, from the parent's own overlay: a reference
+          // names the major the target ships, so a component that moves its
+          // major moves every reference to it - including the derived ones.
+          parents.push(componentTypeRef(stem, overlay.major ?? DEFAULT_CONTRACT_MAJOR));
+          continue;
+        }
+        // A children list naming this component at a major it no longer ships
+        // is a stale reference, not a mount point that has gone away. Matched
+        // by name and refused: moving a major is an edit to every overlay
+        // naming the component, and dropping the derived parent for the ones
+        // left behind would hide exactly the edit the move demands.
+        // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-composition:p1:inst-co-stale-major
+        const named = refPattern.exec(kind);
+        if (named !== null && named[1] === selfToken) {
+          throw new Error(
+            `${exportStem}: ${entry.name}/${stem}.contract.yaml allows "${kind}" as a child, but ${exportStem} ` +
+              `ships "${self}" - a reference carries the target's major, so moving a major means updating every ` +
+              `overlay that names the component`,
+          );
+        }
+        // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-composition:p1:inst-co-stale-major
       }
     }
   }
@@ -1914,7 +2018,9 @@ export function compileContract(directory: string, exportStem: string = director
     exportStem,
     extraction,
     passthroughSchema ?? { properties: {} },
-    overlay.hidden ?? [],
+    // Names only: what the props half needs is which props to leave out, and
+    // each entry's reason travels to the reader in the validator-read block.
+    (overlay.hidden ?? []).map((entry) => entry.prop),
   );
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route

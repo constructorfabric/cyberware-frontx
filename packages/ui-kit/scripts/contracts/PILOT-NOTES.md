@@ -159,10 +159,13 @@ number of properties across seven contracts that Ajv will not check.
   assumption is a documentation gap; a compile that refused it would make a
   component uncompilable until its prose caught up, which is the wrong order.
   The suite fails on it in the run the author already executes.
-- **`hidden` is one honest use, not a convenience.** Accordion's root hides
-  Base UI's `orientation`: the kit's own stylesheet fixes `.root` to
-  `flex-direction: column`, so the only value it could add - `horizontal` -
-  would set Base UI's keyboard axis against the layout the kit renders. Nothing
+- **`hidden` is one honest use, not a convenience, and it carries its own
+  reason.** Accordion's root hides Base UI's `orientation`: the kit's own
+  stylesheet fixes `.root` to `flex-direction: column`, so the only value it
+  could add - `horizontal` - would set Base UI's keyboard axis against the
+  layout the kit renders. That sentence is the entry's `reason` field: an
+  entry is a prop and the reason it is not advertised, so the reason sits
+  where the omission is instead of in a second claim beside it. Nothing
   else is hidden. AccordionContent's `keepMounted` and `hiddenUntilFound` were
   considered and left visible: `accordion.md` documents them on the root, but
   the panel really does accept them, and hiding a working typed boolean because
@@ -323,31 +326,31 @@ consequence of the compiler producing different output for the SAME inputs.
 The second file no longer exists: the forwarded surface is hand-written per
 element kind and nothing regenerates it.
 
-### Harness files touched to fit a compound component
+### What a compound component forced in the harness
 
-- `scripts/contracts/compile.ts` - `Overlay`/`ContractInstance` gained
-  `family` and `coverage.assumptions`; `composition` gained `parent`;
-  `buildMetamodel()` carries the matching schema (every one of those fields
-  is optional, so no instance is required to state them); `loadOverlay`,
-  `compileInstance`, `compileContract`, `resolveTargetExtraction` all gained
-  an optional second `exportStem` parameter (defaulting to `directory`, so
-  every pre-Accordion call site - `compileContract('button')`, one argument - keeps
-  resolving exactly as before); `resolvePassthroughKindKey` is new (see
-  Deviation 2); the CLI entry point changed from "compile one component" to
-  "compile every `*.contract.yaml` overlay directly under this directory."
-- `scripts/contracts/freshness.ts` / `testing.ts` - `checkComponentFreshness`
-  / `assertContractFreshness` gained the same optional second parameter,
-  same default-preserves-old-callers shape.
-- `scripts/contracts/check.ts` - `guard`/`compat` moved from "one unit per
-  directory" to "one unit per `(directory, stem)` pair" (a new
-  `ContractUnit`/`listContractUnits`); `guard` now requires EVERY export of a
-  covered directory to have a fresh overlay, not just one; `coverage` gained
-  a per-directory "n of m exports" breakdown (`componentExportCoverage`)
-  alongside the unchanged covered.json-based top-line count.
-- `scripts/contracts/covered.json` - grew from `["button"]` to
-  `["button", "accordion"]`; both parts of the growth condition (every
-  export has an overlay, and `guard`/`coverage` say so) are true as of this
-  commit.
+A file-by-file inventory used to stand here. It is struck rather than
+corrected: two of its entries named machinery the harness has since replaced,
+and a list of function names in a log goes stale the moment the code moves.
+What the shape change was:
+
+- Every entry point that produces or compares an artifact takes an optional
+  export stem beside the directory it already took, defaulting to the
+  directory, so a compound directory's part resolves its own overlay,
+  extraction and committed artifacts while every earlier call site keeps
+  working unchanged.
+- The guard and the compatibility check moved from one unit per directory to
+  one per `(directory, stem)` pair, and a covered directory needs EVERY
+  export described rather than one; the coverage report gained its
+  per-directory "n of m exports" breakdown.
+- The overlay vocabulary gained `family` and `coverage.assumptions`, both
+  optional, so no instance is required to state them.
+- The CLI entry point changed from "compile one component" to "compile every
+  `*.contract.yaml` overlay directly under this directory".
+- The per-component forwarded surface these deviations started from is gone
+  entirely; the first section of this file records the hand-written
+  per-element surface that replaced it, and `composition.parent` went the
+  same way - derived from every other overlay's children rather than
+  authored, see "Composition: children optional, parent derived".
 
 ### Effort
 
@@ -539,9 +542,8 @@ button.contract.test.ts's "button contract in a GTS store" suite for both
 call paths exercised directly). A field that is prose FOR A READER with no
 validator on the other end - `intent`, `typical_uses`, `invariants`,
 `anti_patterns`, `examples` - stays in `x-uikit`, which nothing but a human
-or a doc generator ever reads. This answers the PR's own question by
-construction: `x-uikit` is no longer "everything", it is specifically "the
-half nothing validates."
+or a doc generator ever reads. The split is what makes `x-uikit` a definite
+thing rather than a bag: it is specifically the half nothing validates.
 
 **Two gts-ts mechanics this hybrid had to work around, neither documented
 anywhere gts-ts ships (no README section, no test in its own `tests/`

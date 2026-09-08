@@ -24,7 +24,9 @@ export const VENDOR_PACKAGE = 'frontx.uikit';
 // kit at once. A gate whose escape hatch costs that much is a gate people
 // route around. The major now comes from the component's own overlay
 // (`major:`), threaded through the three id builders below, so moving one
-// component's major moves that component's identifiers and nothing else.
+// component's major moves that component's own identifiers plus every
+// reference to it - a reference carries the target's major - rather than
+// every identifier in the kit.
 export const DEFAULT_CONTRACT_MAJOR = 1;
 
 // Semver of the overlay vocabulary itself (the fields an author may write),

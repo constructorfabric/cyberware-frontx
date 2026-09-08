@@ -588,7 +588,7 @@ describe('overlay and extraction safety', () => {
   });
 
   it('rejects a hidden name the primitive underneath does not declare', () => {
-    const stale: Overlay = { ...validOverlay, hidden: ['orientaton'] };
+    const stale: Overlay = { ...validOverlay, hidden: [{ prop: 'orientaton', reason: 'placeholder' }] };
     const extraction = syntheticExtraction([], [
       { name: 'orientation', optional: true, typeText: 'string', declarationFile: '@base-ui/react/internals/types.d.mts' },
     ]);
@@ -599,7 +599,7 @@ describe('overlay and extraction safety', () => {
     // A different mistake from the one above, and it gets a different
     // refusal: hiding is for a prop of the primitive the kit does not
     // advertise, never for what the component's own source states.
-    const stale: Overlay = { ...validOverlay, hidden: ['loading'] };
+    const stale: Overlay = { ...validOverlay, hidden: [{ prop: 'loading', reason: 'placeholder' }] };
     const extraction = syntheticExtraction([
       { name: 'loading', optional: true, typeText: 'boolean', declarationFile: 'button.tsx' },
     ]);

@@ -127,6 +127,7 @@ Inside this repository the package additionally carries the contract tooling: a 
 - Application domain content, data access and back-end integration.
 - Design-process capability - producing a theme, generating an interface, reviewing one against the kit - which belongs to template territory rather than to a published library.
 - Composition-level artifacts above a single component, such as reusable screen blocks and their catalogue.
+- The consumer of the unchecked-prop verdict: the plan validator or lint that reads a component's props before anything renders and acts on the report belongs to whatever runs that check, not to this package, which owns the rule and the report only.
 - Visual-regression testing and automated accessibility auditing of consuming applications.
 
 ## 5. Functional Requirements
@@ -231,6 +232,20 @@ The system **MUST** refuse a hand-authored overlay that restates a fact the comp
 
 **Actors**: `cpt-frontx-ui-kit-actor-kit-developer`
 
+#### A prop nothing evaluates is reported, not rejected
+
+- [x] `p1` - **ID**: `cpt-frontx-ui-kit-fr-contract-unchecked-prop-report`
+
+The system **MUST** leave a described component's contract open to a prop nothing in it evaluates, carrying the verdict on such a prop as an annotation rather than rejecting it, and **MUST** provide the report that classifies a set of props against a contract: which the contract accounts for, which nothing accounts for, and which of the latter is one edit from a prop the contract declares.
+
+**Threshold**: A prop no part of a contract evaluates validates rather than failing; the harness's report names that prop as unchecked, and names a name one edit from a prop the contract declares as a probable misspelling of it, in preference to any pattern that would otherwise admit it.
+
+**Rationale**: A closed schema answered "invalid" to a misspelled kit prop and to a name this harness has not classified - a new React attribute, a prop of a primitive part nobody has described - and only the first is a mistake. Telling them apart needs a comparison a schema cannot make, so the schema admits the value and the harness owns the verdict.
+
+**Actors**: `cpt-frontx-ui-kit-actor-ai-agent`, `cpt-frontx-ui-kit-actor-kit-developer`
+
+**Status**: The report is built and is the harness's own. Its intended consumer - a plan validator or a lint that reads a component's props before anything renders and acts on the verdict - is out of scope for this package.
+
 #### A described component's contract matches its code
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-fr-contract-freshness`
@@ -259,9 +274,9 @@ The system **MUST** compare a described component's contract against the same co
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-fr-contract-incremental-coverage`
 
-The system **MUST** apply contract enforcement only to components explicitly opted into coverage, **MUST** report kit-wide coverage without failing on it, and **MUST** re-check every covered component when any part of the machinery that produces or compares a compiled contract changes.
+The system **MUST** apply contract enforcement only to components explicitly opted into coverage, **MUST** report kit-wide coverage without failing on it, and **MUST** re-check every covered component when any input that can change what a covered component compiles to changes.
 
-**Threshold**: A change touching an undescribed component passes; a coverage report never sets a non-zero exit; a change to the compiler, the extractor, the shared schemas, the freshness comparison or the comparison logic those depend on re-checks every covered component rather than only the touched ones.
+**Threshold**: A change touching an undescribed component passes; a coverage report never sets a non-zero exit; a change to any input a compiled contract depends on - the compiler, the extractor, the shared schemas, the freshness comparison and the comparison logic those depend on, the file that decides which components are covered, any overlay whose allowed children decide another component's mount points, and the dependency versions the checker's printed type text comes from - re-checks every covered component rather than only the touched ones.
 
 **Rationale**: A gate switched on across a whole kit starts almost entirely red and is switched off within a week. Scoping it to the change under review lets coverage expand as a by-product of ordinary work.
 
@@ -444,6 +459,7 @@ None owned here. The package is distributed under the root PRD's package-registr
 - [x] Every exported component has a usage document in the published artifact and an entry in the shipped index - verifiable via `cpt-frontx-ui-kit-fr-agent-documentation`.
 - [x] A described component's contract states its variant axes with defaults, carries both the props the component declares and the props the primitive states for the part it wraps, references the forwarded surface of the element it renders rather than restating it, and marks a prop with no machine-checkable shape rather than dropping it - verifiable via `cpt-frontx-ui-kit-fr-component-contract`.
 - [x] An overlay that restates a machine-owned fact, or names a prop that does not exist, is refused naming the offence - verifiable via `cpt-frontx-ui-kit-fr-contract-single-fact-owner`.
+- [x] A prop a described component's contract does not evaluate validates and is reported as unchecked, and a name one edit from a prop that contract declares is reported as a probable misspelling of it - verifiable via `cpt-frontx-ui-kit-fr-contract-unchecked-prop-report`.
 - [x] A change leaving a described component's committed contract unequal to a fresh compile is refused, naming the regeneration command - verifiable via `cpt-frontx-ui-kit-fr-contract-freshness`.
 - [x] A backward-incompatible contract difference is refused at an unchanged contract major and accepted once the major moves, naming every reason in both cases - verifiable via `cpt-frontx-ui-kit-fr-contract-compatibility`.
 - [x] A change touching an undescribed component passes, kit-wide coverage never sets a non-zero exit, and a change to the shared contract tooling re-checks every covered component - verifiable via `cpt-frontx-ui-kit-fr-contract-incremental-coverage` and `cpt-frontx-ui-kit-nfr-gate-adoptability`.

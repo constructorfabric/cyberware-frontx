@@ -51,11 +51,6 @@
     "rtl": "not-described",
     "assumptions": [
       {
-        "kind": "hidden_part",
-        "claim": "orientation is a Base UI Accordion.Root prop this kit does not offer",
-        "reason": "The kit's root stylesheet fixes `flex-direction: column`, so the only value `orientation` could add - \"horizontal\" - would set Base UI's keyboard axis against the layout the kit renders. See `hidden` above."
-      },
-      {
         "kind": "untyped_prop",
         "prop": "value",
         "claim": "value is an array of the root's own generic Value parameter",
@@ -112,7 +107,10 @@
     ]
   },
   "hidden": [
-    "orientation"
+    {
+      "prop": "orientation",
+      "reason": "The root's own stylesheet fixes the layout to a single column (accordion.module.css's `.root { flex-direction: column }`), so the only value `orientation` could add - \"horizontal\" - would put Base UI's horizontal keyboard axis on a vertical layout. Hidden rather than listed: a contract listing it would be this kit's own statement that it works."
+    }
   ],
   "props_schema": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~"
 }

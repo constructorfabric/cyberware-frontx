@@ -198,15 +198,17 @@ describe('accordion family: assumptions carry a kind', () => {
     }
   });
 
-  it("the root hides orientation and says so as a hidden_part assumption", () => {
+  it('the root hides orientation and carries the reason on the entry itself', () => {
     // The kit's own root stylesheet fixes a column layout, so Base UI's
     // horizontal orientation is not something this kit offers. Left out of
-    // `properties` and stated once, rather than listed as API the kit does
-    // not support.
-    expect(units[DIRECTORY].instance.hidden).toEqual(['orientation']);
+    // `properties`, and the reason is on the `hidden` entry rather than in a
+    // second assumption saying the same thing beside it.
+    const hidden = units[DIRECTORY].instance.hidden ?? [];
+    expect(hidden.map((entry) => entry.prop)).toEqual(['orientation']);
+    expect(hidden[0].reason).toContain('flex-direction: column');
     expect(units[DIRECTORY].contract.properties).not.toHaveProperty('orientation');
     const assumptions = units[DIRECTORY].instance.coverage.assumptions ?? [];
-    expect(assumptions.some((a) => a.kind === 'hidden_part' && /orientation/.test(a.claim))).toBe(true);
+    expect(assumptions.filter((a) => a.kind === 'hidden_part')).toEqual([]);
   });
 
   it("the trigger's hidden_part assumption documents the Header+Trigger composition", () => {

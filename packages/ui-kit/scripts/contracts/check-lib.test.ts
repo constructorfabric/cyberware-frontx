@@ -21,6 +21,7 @@ import {
   touchesAnyOverlay,
   touchesDependencyManifest,
   touchesSharedContractTooling,
+  undeclaredForwardedProps,
 } from './check-lib';
 import { applyContractTestTimeout } from './testing';
 
@@ -542,6 +543,23 @@ describe('classifyProps', () => {
     expect(report.unchecked).toEqual(['varant', 'vrient']);
   });
 
+  it('decides a near miss of a contract prop before a surface pattern can claim the name', () => {
+    // `^on[A-Z]` matches `onValuechange` as readily as the real
+    // `onValueChange`, so a pattern consulted first answered "known" to a
+    // typo in the one half of the contract this report exists to protect.
+    const handlers = { properties: { onValueChange: {}, variant: {} } };
+    const report = classifyProps({ onValuechange: () => {} }, handlers, passthrough);
+    expect(report.known).toEqual([]);
+    expect(report.unchecked).toEqual(['onValuechange']);
+    expect(report.nearMiss).toEqual([{ prop: 'onValuechange', probably: 'onValueChange' }]);
+  });
+
+  it('still counts a pattern match no contract prop is one edit from as known', () => {
+    const report = classifyProps({ onFocus: () => {}, 'data-testid': 'x' }, contract, passthrough);
+    expect(report.known).toEqual(['data-testid', 'onFocus']);
+    expect(report.unchecked).toEqual([]);
+  });
+
   it('does not treat a near-miss of an element attribute as a near miss', () => {
     // A typo in a DOM attribute is React's business; reporting it here would
     // make the report noisier than the closure it replaced.
@@ -554,6 +572,28 @@ describe('classifyProps', () => {
     const report = classifyProps({ variant: 'ghost', className: 'x' }, contract);
     expect(report.known).toEqual(['variant']);
     expect(report.unchecked).toEqual(['className']);
+  });
+});
+
+describe('undeclaredForwardedProps', () => {
+  // The gap the coverage report prints: a surface is hand-written, so its
+  // completeness is nobody's check, and an attribute no file names reaches a
+  // consumer as unchecked rather than as rejected. Reported so the gap is
+  // visible; no exit code is derived from it.
+  const surface = {
+    properties: { className: { type: 'string' }, disabled: { type: 'boolean' } },
+    patternProperties: { '^aria-': {}, '^on[A-Z]': {} },
+  };
+
+  it('names a forwarded prop the surface declares by neither name nor pattern', () => {
+    expect(undeclaredForwardedProps(['formAction', 'className', 'onClick', 'aria-label', 'dir'], surface)).toEqual([
+      'dir',
+      'formAction',
+    ]);
+  });
+
+  it('names every forwarded prop when there is no surface at all', () => {
+    expect(undeclaredForwardedProps(['className'])).toEqual(['className']);
   });
 });
 

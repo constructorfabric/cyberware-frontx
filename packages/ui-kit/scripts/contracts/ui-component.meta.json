@@ -178,11 +178,26 @@
     },
     "hidden": {
       "type": "array",
-      "description": "Props of the primitive underneath that this kit does not advertise, so they are left out of the contract's own properties. Every entry is checked against the extracted prop list - a name the primitive no longer declares fails the compile rather than hiding nothing - and may not name a prop the component declares itself, which would be the overlay asking the compiler to drop what the source states. Absent for a component that advertises everything it forwards, which is most of them.",
+      "description": "Props of the primitive underneath that this kit does not advertise, so they are left out of the contract's own properties - each with the reason it is not advertised, because a bare name leaves every later reader to rediscover why the prop is gone. Every `prop` is checked against the extracted prop list - a name the primitive no longer declares fails the compile rather than hiding nothing - and may not name a prop the component declares itself, which would be the overlay asking the compiler to drop what the source states. Absent for a component that advertises everything it forwards, which is most of them.",
       "items": {
-        "type": "string",
-        "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-        "description": "Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test."
+        "type": "object",
+        "properties": {
+          "prop": {
+            "type": "string",
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+            "description": "Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Why the kit does not advertise this prop: the component fact that makes offering it wrong, not a restatement of the name."
+          }
+        },
+        "required": [
+          "prop",
+          "reason"
+        ],
+        "additionalProperties": false
       },
       "minItems": 1
     },

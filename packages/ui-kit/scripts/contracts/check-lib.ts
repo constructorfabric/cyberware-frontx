@@ -879,7 +879,9 @@ export interface PassthroughPropsLike {
 
 export interface PropsClassification {
   // Declared by the contract itself, or by the element surface it composes,
-  // or matching one of that surface's patterns (aria-*, data-*, on*).
+  // or matching one of that surface's patterns (aria-*, data-*, on*) without
+  // being one edit from a prop the contract declares - see classifyProps for
+  // why that order matters.
   known: string[];
   // Accounted for by nothing. Not an error on its own: the schema admits it
   // and says so.
@@ -931,17 +933,49 @@ export function classifyProps(
   const nearMiss: { prop: string; probably: string }[] = [];
 
   for (const name of Object.keys(props).sort()) {
-    if (declared.has(name) || elementProps.has(name) || patterns.some((pattern) => pattern.test(name))) {
+    // An exact declaration on either side accounts for the name outright.
+    if (declared.has(name) || elementProps.has(name)) {
+      known.push(name);
+      continue;
+    }
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-near-miss
+    // The near miss is decided BEFORE the patterns, because a pattern cannot
+    // tell one from a name it was written for: `^on[A-Z]` matches
+    // `onValuechange` exactly as readily as `onValueChange`, so a pattern
+    // consulted first answered "known" to a typo in the one half of the
+    // contract this report exists to protect.
+    const probably = contractProps.filter((candidate) => editDistance(name, candidate) === 1).sort()[0];
+    if (probably !== undefined) {
+      unchecked.push(name);
+      nearMiss.push({ prop: name, probably });
+      continue;
+    }
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-near-miss
+    if (patterns.some((pattern) => pattern.test(name))) {
       known.push(name);
       continue;
     }
     unchecked.push(name);
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-near-miss
-    const probably = contractProps.filter((candidate) => editDistance(name, candidate) === 1).sort()[0];
-    if (probably !== undefined) nearMiss.push({ prop: name, probably });
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-near-miss
   }
 
   return { known, unchecked, nearMiss };
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-classify
+
+// Which props a component forwards to its host element that the committed
+// surface for that element declares by neither name nor pattern. The
+// surfaces are hand-written, and their completeness is deliberately
+// unchecked: nobody enumerates React's attributes for an element, so an
+// attribute the file does not name is not an error - it is a prop that
+// reaches a consumer as unchecked instead of as known. What was missing was
+// any way to SEE that set, which is what this is: a report the coverage
+// command prints and no exit code is derived from.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-forwarded
+export function undeclaredForwardedProps(forwarded: readonly string[], passthrough?: PassthroughPropsLike): string[] {
+  const declared = new Set(Object.keys(passthrough?.properties ?? {}));
+  const patterns = Object.keys(passthrough?.patternProperties ?? {}).map((source) => new RegExp(source));
+  return [...forwarded]
+    .filter((name) => !declared.has(name) && !patterns.some((pattern) => pattern.test(name)))
+    .sort();
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-forwarded

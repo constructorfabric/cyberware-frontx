@@ -2,7 +2,7 @@
   "$id": "gts://gts.frontx.uikit.trait.coverage_assumption.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UiKit coverage assumption",
-  "description": "A fact the code cannot make true, rather than a verified/checked-no/not-described claim. `kind` is required and drawn from a closed list, because without it the field was a paragraph: \"JSON Schema has no notion of a generic type parameter\" appeared in three overlays in three wordings and nothing could tell that family of claim apart from \"this part wraps two primitives\" or \"its mount point is outside the kit\". With a kind, the conformance suite can ask whether every prop the schema cannot type has an entry - which is the question those repeated sentences were answering by accident. `untyped_prop` additionally names the prop, checked against the extracted prop list the way a deprecation's key is.",
+  "description": "A fact the code cannot make true, rather than a verified/checked-no/not-described claim. `kind` is required and drawn from a closed list, so a family of assumptions can be checked against the contract it is about instead of read one at a time: the conformance suite asks whether every prop the schema cannot type has an entry. `untyped_prop` additionally names the prop, checked against the extracted prop list the way a deprecation's key is.",
   "type": "object",
   "properties": {
     "kind": {
@@ -13,7 +13,7 @@
         "external_mount",
         "behaviour"
       ],
-      "description": "untyped_prop: a property that reaches the contract asserting nothing - a generic, a function, a live object, a React node. hidden_part: a part of the primitive underneath the kit does not expose, or a prop of it the kit does not advertise. external_mount: a mount point outside the kit, where the typed composition field has nothing to point at. behaviour: anything the props type never carries - internal state, a runtime relationship, a fact about the component rather than about its schema."
+      "description": "untyped_prop: a property that reaches the contract asserting nothing - a generic, a function, a live object, a React node. hidden_part: internal structure of the primitive underneath that the kit does not expose as a component of its own; a prop the kit does not advertise is named in `hidden`, with its own reason, instead. external_mount: a mount point outside the kit, where the typed composition field has nothing to point at. behaviour: anything the props type never carries - internal state, a runtime relationship, a fact about the component rather than about its schema."
     },
     "claim": {
       "type": "string",

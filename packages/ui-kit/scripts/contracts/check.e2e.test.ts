@@ -162,6 +162,10 @@ function createFixture(): Fixture {
       // wants unless it is testing the incomplete case.
       componentExportNames: (directory) => overlayStems(directory).map(pascalCase),
       exportedDeclarationNames: (directory) => overlayStems(directory).map(pascalCase),
+      // No TypeScript source in a fixture repo, so nothing to extract a
+      // forwarded prop list from - the real lookup reads a component's own
+      // source, which no fixture has.
+      undeclaredForwardedProps: () => [],
       // No TypeScript source in a fixture repo, so nothing to build a program
       // over - the two export listings above answer from the overlays.
       prepareExtraction: () => {},

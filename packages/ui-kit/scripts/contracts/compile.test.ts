@@ -27,6 +27,8 @@ import {
   buildTraitTypes,
   describeUntypeableProperty,
   loadPassthroughSchema,
+  loadPassthroughSchemas,
+  sharedAttributeConflicts,
 } from './compile';
 import { extractComponent } from './extract';
 import { applyContractTestTimeout } from './testing';
@@ -59,15 +61,54 @@ describe('the hand-written element surface', () => {
     expect(properties.tabIndex).toEqual({ type: 'number' });
   });
 
-  it('leaves no property schema empty', () => {
-    const empty = Object.entries(properties)
-      .filter(([, schema]) => Object.keys(schema).length === 0)
-      .map(([name]) => name);
+  it('leaves no property schema empty, in any committed surface', () => {
+    // Driven from the committed set rather than from `div` alone: the rule
+    // is about every surface a contract can compose, and a file written next
+    // week is exactly the one nobody would remember to name here.
+    const empty = loadPassthroughSchemas().flatMap((surface) => {
+      const declarations = {
+        ...(surface.properties as Record<string, Record<string, unknown>>),
+        ...(surface.patternProperties as Record<string, Record<string, unknown>>),
+      };
+      return Object.entries(declarations)
+        .filter(([, schema]) => Object.keys(schema).length === 0)
+        .map(([name]) => `${String(surface.$id)}: ${name}`);
+    });
     expect(empty).toEqual([]);
   });
 
   it('admits the aria-, data- and event-handler families by pattern rather than by name', () => {
     expect(Object.keys(passthrough.patternProperties as Record<string, unknown>).sort()).toEqual(['^aria-', '^data-', '^on[A-Z]']);
+  });
+});
+
+describe('what two element kinds both declare', () => {
+  it('is declared identically by every committed surface', () => {
+    // The files are hand-written, so nothing constructs this agreement: the
+    // global attributes (className, id, style, title, role, tabIndex,
+    // children) and the three patterns are typed out per file. The
+    // compatibility check reads a difference between two surfaces as a
+    // narrowing a consumer feels, which is only true while what they share
+    // they state the same way.
+    expect(sharedAttributeConflicts(loadPassthroughSchemas())).toEqual([]);
+  });
+
+  it('names the attribute when two kinds disagree about it', () => {
+    // The refusal the compile gives: by attribute name, with both sides, so
+    // the answer is which file to fix rather than that something is wrong.
+    const conflicts = sharedAttributeConflicts([
+      { $id: 'a', properties: { tabIndex: { type: 'number' } } },
+      { $id: 'b', properties: { tabIndex: { type: 'string' } }, patternProperties: { '^data-': {} } },
+    ]);
+    expect(conflicts).toEqual(['"tabIndex": a declares {"type":"number"}, b declares {"type":"string"}']);
+  });
+
+  it('is silent about an attribute only one kind declares', () => {
+    const conflicts = sharedAttributeConflicts([
+      { $id: 'a', properties: { disabled: { type: 'boolean' } } },
+      { $id: 'b', properties: { href: { type: 'string' } } },
+    ]);
+    expect(conflicts).toEqual([]);
   });
 });
 

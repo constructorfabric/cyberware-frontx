@@ -171,6 +171,23 @@ function loadCommittedContracts(): Record<string, unknown>[] {
   return contracts;
 }
 
+// The type ids one committed contract composes, read off a document loaded as
+// plain JSON: the base type first, then the surface of its host element if it
+// has one. Narrowed rather than cast - a committed file is data until
+// something checks it, and this reader is one of the things checking it.
+function composedTypeIds(contract: Record<string, unknown>): string[] {
+  const allOf: unknown = contract.allOf;
+  if (!Array.isArray(allOf)) return [];
+  const entries: unknown[] = allOf;
+  const ids: string[] = [];
+  for (const entry of entries) {
+    if (entry === null || typeof entry !== 'object' || !('$ref' in entry)) continue;
+    const ref: unknown = entry.$ref;
+    if (typeof ref === 'string') ids.push(ref);
+  }
+  return ids;
+}
+
 // The registry a contract instance is validated in: the base type, the
 // vocabulary its trait schema references, every element-kind passthrough type
 // a contract may compose, the metamodel the instance is typed by, and every
@@ -327,6 +344,22 @@ export function assertContractFreshness(directory: string, exportStem: string = 
         if (!ref.$ref.includes('.passthrough.')) continue;
         expect(committed.has(ref.$ref), `${exportStem}: composes "${ref.$ref}", which no committed file declares`).toBe(true);
       }
+    });
+
+    it('leaves no committed element surface that no contract composes', () => {
+      // The union rule the vocabulary comparison already applies, over the
+      // one directory it could not reach: a surface the builder does not
+      // produce (nothing produces these - they are written by hand) and no
+      // contract composes is registered in every store and read by nobody.
+      // Composition is read off the committed contracts, which this same
+      // suite holds to a fresh compile, so a stale file cannot hide an
+      // orphan here.
+      const composed = new Set(loadCommittedContracts().flatMap(composedTypeIds));
+      const orphans = loadPassthroughSchemas()
+        .map((schema) => String(schema.$id))
+        .filter((id) => !composed.has(id))
+        .sort();
+      expect(orphans, `committed element surfaces no contract composes:\n${orphans.join('\n')}`).toEqual([]);
     });
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-element
 

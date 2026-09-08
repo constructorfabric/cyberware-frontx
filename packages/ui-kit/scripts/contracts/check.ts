@@ -43,13 +43,21 @@ import {
   touchesCoverageAllowlist,
   touchesDependencyManifest,
   touchesSharedContractTooling,
+  undeclaredForwardedProps,
   type BaseRefContractEntry,
   type CompatVerdict,
   type DirectoryExportCoverage,
   type GuardResult,
   type PassthroughDiff,
 } from './check-lib';
-import { loadBaseSchema, overlayStems, registerContractTypes, type CompiledContract } from './compile';
+import {
+  loadBaseSchema,
+  loadPassthroughSchema,
+  overlayStems,
+  registerContractTypes,
+  resolveTargetExtraction,
+  type CompiledContract,
+} from './compile';
 import { bareGtsId } from './ids';
 import { listComponentExportNames, listExportedDeclarationNames } from './extract';
 import { checkComponentFreshness } from './freshness';
@@ -73,6 +81,12 @@ export interface CheckContext {
   // exported name in the file, for the coverage report's "n of m exports".
   componentExportNames: (directory: string) => string[];
   exportedDeclarationNames: (directory: string) => string[];
+  // The props a component forwards to its host element that the committed
+  // surface for that element declares by neither name nor pattern - the
+  // informational half of the coverage report. Injected for the reason every
+  // other entry here is: it reads the component's own source and the
+  // committed surface, both resolved against this package.
+  undeclaredForwardedProps: (directory: string, exportStem: string) => string[];
   // Declares up front which component directories this run is about to read
   // source for, so the extractor builds one TypeScript program over all of
   // them instead of one per file. A kit-wide run is the caller that needs it:
@@ -120,6 +134,28 @@ export function defaultCheckContext(): CheckContext {
       }
     },
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-uncovered
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-forwarded
+    // Its own program per component, like every other extraction an artifact
+    // is read from: the answer is about one component's own source. A
+    // component with no host element forwards nothing, so there is no gap to
+    // report for it.
+    undeclaredForwardedProps: (directory, exportStem) => {
+      // Swallowed the way the export listing above swallows its own failure,
+      // and for the same reason: a directory the extractor cannot read is a
+      // fact the guard fails on, and this report is never supposed to fail
+      // the build.
+      try {
+        const extraction = resolveTargetExtraction(directory, exportStem);
+        if (extraction.elementKind === undefined || extraction.passthroughProps.length === 0) return [];
+        return undeclaredForwardedProps(
+          extraction.passthroughProps.map((prop) => prop.name),
+          loadPassthroughSchema(extraction.elementKind),
+        );
+      } catch {
+        return [];
+      }
+    },
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-forwarded
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-shared-program
     prepareExtraction: (directories) => {
       const paths = directories.map(entryFile).filter((path) => existsSync(path));
@@ -630,9 +666,9 @@ export function runGuard(base: string, options: { json: boolean }, ctx: CheckCon
   // list alone takes it out of scope with no line in any output, and that
   // same edit is the acknowledgement the removal sweep accepts, so it must
   // not also be the edit nothing looks at.
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist-union
   const baseCovered = (readJsonAt(ctx, base, 'scripts/contracts/covered.json') as unknown as string[] | undefined) ?? covered;
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist-union
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-map
   const touchedDirectly = mapChangedFilesToComponents(changedFiles);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-map
@@ -662,14 +698,14 @@ export function runGuard(base: string, options: { json: boolean }, ctx: CheckCon
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-deps
   const dependenciesChanged = touchesDependencyManifest(changedFiles, repoChangedFilesSince(ctx, base));
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-deps
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-scope
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist-union
   // The union of both allowlists, not just the current one: a widened scope
   // has to include what coverage NAMED as well as what it names.
   const touched =
     toolingChanged || allowlistChanged || overlayChanged || dependenciesChanged
       ? new Set([...touchedDirectly, ...covered, ...baseCovered])
       : touchedDirectly;
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-scope
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist-union
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-empty
   if (touched.size === 0) {
@@ -829,10 +865,34 @@ export function runCoverage(options: { json: boolean }, ctx: CheckContext = defa
   ];
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-allowlist
 
+  // The completeness of a hand-written element surface is not checked
+  // anywhere, on purpose: nobody enumerates React's attributes for an
+  // element, and an attribute no file names reaches a consumer as unchecked
+  // rather than as rejected. What was missing was any way to see that set,
+  // so it is reported here - beside the coverage numbers, deriving no exit
+  // code, for the same reason none of them do.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-forwarded
+  const forwardedGaps = covered
+    .filter((component) => !unknownCovered.has(component))
+    .flatMap((component) =>
+      ctx
+        .overlayStems(component)
+        .map((stem) => ({ component: stem, props: ctx.undeclaredForwardedProps(component, stem) }))
+        .filter((entry) => entry.props.length > 0),
+    );
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-forwarded
+
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-return
   if (options.json) {
     ctx.log(
-      JSON.stringify({ command: 'coverage', total: report.total, coveredCount: report.coveredCount, uncovered, allowlistProblems }),
+      JSON.stringify({
+        command: 'coverage',
+        total: report.total,
+        coveredCount: report.coveredCount,
+        uncovered,
+        allowlistProblems,
+        forwardedGaps,
+      }),
     );
     return 0;
   }
@@ -842,6 +902,12 @@ export function runCoverage(options: { json: boolean }, ctx: CheckContext = defa
     ctx.log('covered.json entries that grant coverage over nothing:');
     for (const problem of allowlistProblems) ctx.log(`  - ${problem}`);
   }
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-forwarded
+  if (forwardedGaps.length > 0) {
+    ctx.log('Forwarded props no committed element surface declares (reported, never a failure):');
+    for (const gap of forwardedGaps) ctx.log(`  - ${gap.component}: ${gap.props.length} - ${gap.props.join(', ')}`);
+  }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-forwarded
   if (uncovered.length === 0) return 0;
   ctx.log('Not yet in covered.json (n of m exports already have a contract):');
   for (const coverage of uncovered) {
