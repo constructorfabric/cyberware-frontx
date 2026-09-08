@@ -44,29 +44,36 @@ const COMPONENTS_DIR = join(kitRoot, 'src', 'components');
 const GENERATED_DIR = join(kitRoot, 'scripts', 'contracts', 'generated');
 const COVERED_PATH = join(kitRoot, 'scripts', 'contracts', 'covered.json');
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
 function listComponentDirs(): string[] {
   return readdirSync(COMPONENTS_DIR, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
 function loadCovered(): string[] {
   return JSON.parse(readFileSync(COVERED_PATH, 'utf8')) as string[];
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
 
 // The GTS URI form (`gts://...`) is how a JSON Schema $id/$ref has to look;
 // gts-ts's own id parser (Gts.parseGtsID, which checkCompatibility calls)
 // requires the bare `gts.` prefix and rejects the URI form outright - see
 // button.contract.test.ts's identical bareId helper for the schema-level
 // version of the same fact.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
 function bareId(id: string): string {
   return id.replace(/^gts:\/\//, '');
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
 
 // Path git accepts for `git show <ref>:<path>` (repo-root-relative), from a
 // path relative to this package. Cached: it never changes mid-run and a
 // child process per lookup would be wasteful across a kit-wide compat run.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-read
 let cachedPackagePrefix: string | undefined;
 function packagePrefix(): string {
   if (cachedPackagePrefix === undefined) {
@@ -74,10 +81,12 @@ function packagePrefix(): string {
   }
   return cachedPackagePrefix;
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-read
 
 // The committed content of a package-relative path at `ref`, or undefined
 // when the path did not exist there - the "new contract" case `compat`
 // reports instead of failing.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-read
 function gitShow(ref: string, packageRelativePath: string): string | undefined {
   try {
     // stderr is piped, not inherited: a path absent at `ref` is an expected,
@@ -93,11 +102,14 @@ function gitShow(ref: string, packageRelativePath: string): string | undefined {
     return undefined;
   }
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-read
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
 function gitDiffNameOnly(args: string[]): string[] {
   const output = execFileSync('git', ['diff', '--name-only', '--relative', ...args], { cwd: kitRoot, encoding: 'utf8' });
   return output.split('\n').filter((line) => line.length > 0);
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
 
 // `-M`: rename detection, so a plain `git mv` (with content edits still
 // within git's similarity threshold) reports one R### line naming both
@@ -105,14 +117,17 @@ function gitDiffNameOnly(args: string[]): string[] {
 // new one. Committed history only (base...HEAD) - matches every other
 // base-ref lookup in this file; a working-tree-only rename falls through to
 // resolveRenameSource's $id/stem scan instead (M7).
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
 function gitDiffNameStatusRenames(args: string[]): string[] {
   const output = execFileSync('git', ['diff', '--name-status', '-M', '--relative', ...args], { cwd: kitRoot, encoding: 'utf8' });
   return output.split('\n').filter((line) => line.length > 0);
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
 
 // New contract.json path -> old path, for every rename `-M` recognized
 // between `base` and HEAD. `checkCompatForUnit` consults this first, before
 // falling back to resolveRenameSource's $id/stem scan (M7).
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
 function contractRenameMap(base: string): Map<string, string> {
   const renames = new Map<string, string>();
   for (const line of gitDiffNameStatusRenames([`${base}...HEAD`])) {
@@ -123,6 +138,7 @@ function contractRenameMap(base: string): Map<string, string> {
   }
   return renames;
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
 
 // Every `*.contract.json` committed at `base`, with its own `$id` and stem -
 // the pool `resolveRenameSource`'s id/stem scan searches when a unit's
@@ -136,6 +152,7 @@ function contractRenameMap(base: string): Map<string, string> {
 // generated passthrough types entirely", where there is nothing to compare
 // against for any component and silence is correct. Degrades to false on an
 // unresolvable ref, the same way listBaseRefContracts degrades to empty.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
 function baseRefHasAnyPassthrough(base: string): boolean {
   const prefix = packagePrefix();
   try {
@@ -149,7 +166,9 @@ function baseRefHasAnyPassthrough(base: string): boolean {
     return false;
   }
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
 function listBaseRefContracts(base: string): BaseRefContractEntry[] {
   const prefix = packagePrefix();
   let output: string;
@@ -175,30 +194,34 @@ function listBaseRefContracts(base: string): BaseRefContractEntry[] {
   }
   return entries;
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
 function gitUntrackedFiles(): string[] {
   const output = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: kitRoot, encoding: 'utf8' });
   return output.split('\n').filter((line) => line.length > 0);
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
 
 // Everything that differs from `base`: commits already on this branch since
 // it diverged, PLUS whatever is still only on disk (staged, unstaged, or
 // untracked) - a guard that only looked at commits would let an uncommitted
 // contract edit through un-checked.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
 function changedFilesSince(base: string): string[] {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
   const committed = gitDiffNameOnly([`${base}...HEAD`]);
   const workingTree = gitDiffNameOnly(['HEAD']);
   const untracked = gitUntrackedFiles();
   return [...new Set([...committed, ...workingTree, ...untracked])];
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
 
 // The passthrough origin a contract's own allOf carries, read off its
 // passthrough $ref rather than re-derived through extraction - `compat`
 // compares two POINTS IN TIME of the same contract, and the ref each one
 // actually shipped with is the ground truth for which passthrough file it
 // composes, not whatever extraction says the CURRENT source resolves to.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough
 function passthroughOriginFromContract(contract: CompiledContract): string | undefined {
   for (const ref of contract.allOf) {
     const match = /passthrough\.([a-z0-9_]+)\.v\d+~$/.exec(ref.$ref);
@@ -206,6 +229,7 @@ function passthroughOriginFromContract(contract: CompiledContract): string | und
   }
   return undefined;
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough
 
 // A compiled contract unit: one `*.contract.yaml` overlay directly under a
 // component directory. `directory` and `stem` are equal for the ordinary
@@ -247,7 +271,9 @@ function checkCompatForUnit(
   // detection, then an $id match, then a stem match before giving up.
   let oldRaw = gitShow(base, relPath);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-read
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
   let renamedFromNote = '';
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename
   if (oldRaw === undefined) {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
@@ -273,15 +299,19 @@ function checkCompatForUnit(
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-new
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-read
   const oldContract = JSON.parse(oldRaw) as CompiledContract;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-read
   const oldMajor = extractContractMajor(oldContract.$id);
   const newMajor = extractContractMajor(newContract.$id);
 
   // Fresh GTS instance per component: checkCompatibility resolves both ids
   // through the SAME store, so a leftover registration from a previous
   // component's run must never leak in.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
   const gts = new GTS();
   gts.register(loadBaseSchema());
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough
   const origin = passthroughOriginFromContract(newContract);
   let passthroughDiff: ReturnType<typeof diffPassthroughSchema> | undefined;
@@ -323,7 +353,9 @@ function checkCompatForUnit(
   // why `is_backward_compatible` alone understates a real breaking change
   // here, confirmed empirically against the real library rather than
   // assumed from reading it.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
   const ownPropsDiff = diffOwnPropsSchema(oldContract, newContract);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-decide
   const verdict = decideCompat({
@@ -351,11 +383,17 @@ function runCompat(base: string, options: { json: boolean }): void {
     return;
   }
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
   const renames = contractRenameMap(base);
   const baseContracts = listBaseRefContracts(base);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
   const baseHasAnyPassthrough = baseRefHasAnyPassthrough(base);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-compat-exit
   const results = units.map((unit) => checkCompatForUnit(unit, base, renames, baseContracts, baseHasAnyPassthrough));
   const failed = results.some((result) => result.status === 'fail');
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-compat-exit
 
   if (options.json) {
     console.log(JSON.stringify({ command: 'compat', base, failed, results }));
@@ -374,14 +412,17 @@ function runCompat(base: string, options: { json: boolean }): void {
 // compile - the same freshness check testing.ts asserts per-component, run
 // here for whichever component the guard is currently evaluating rather
 // than every component in the kit.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
 function isComponentFresh(directory: string, exportStem: string): boolean {
   return checkComponentFreshness(directory, exportStem).fresh;
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
 
 // How many of a directory's exported components have an overlay, and how
 // many the checker resolves in total - used both to decide `overlayExists`
 // below (a covered compound directory needs EVERY export described, not
 // just one) and by `coverage`'s "n of m exports" report.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-uncovered
 function componentExportCoverage(directory: string): DirectoryExportCoverage {
   // A directory whose main file the extractor cannot resolve (wrong name, no
   // component-shaped export) reports 0 total exports rather than crashing a
@@ -390,7 +431,9 @@ function componentExportCoverage(directory: string): DirectoryExportCoverage {
   const skippedNonComponents = tryListExportedDeclarationNames(directory).filter((name) => !componentNames.includes(name));
   return { directory, totalExports: componentNames.length, coveredExports: overlayStems(directory).length, skippedNonComponents };
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-uncovered
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-uncovered
 function tryExtractComponentNames(directory: string): string[] {
   try {
     return extractComponent(join(COMPONENTS_DIR, directory, `${directory}.tsx`)).map((e) => e.name);
@@ -398,7 +441,9 @@ function tryExtractComponentNames(directory: string): string[] {
     return [];
   }
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-uncovered
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-uncovered
 function tryListExportedDeclarationNames(directory: string): string[] {
   try {
     return listExportedDeclarationNames(join(COMPONENTS_DIR, directory, `${directory}.tsx`));
@@ -406,11 +451,16 @@ function tryListExportedDeclarationNames(directory: string): string[] {
     return [];
   }
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-uncovered
 
 function runGuard(base: string, options: { json: boolean }): void {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
   const changedFiles = changedFilesSince(base);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
   const covered = loadCovered();
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-map
   const touchedDirectly = mapChangedFilesToComponents(changedFiles);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-map
   // A change to shared compiling machinery can reshape any covered
   // component's compiled output without touching that component's own
   // directory at all (M6) - re-evaluate every covered entry, not just the
@@ -429,20 +479,25 @@ function runGuard(base: string, options: { json: boolean }): void {
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-empty-return
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-empty
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-scope
   if (toolingChanged && !options.json) {
     console.log('guard: shared contract tooling changed - re-checking every covered component for freshness.');
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-scope
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-each
   const coveredSet = new Set(covered);
   let violated = false;
   const results: GuardResult[] = [];
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-each
   for (const component of [...touched].sort()) {
     // A deleted directory must never crash an unguarded readdirSync (M10):
     // check existence once, up front, and route through evaluateGuard's
     // dedicated outcome instead of letting overlayStems/componentExportCoverage
     // throw ENOENT past the print loop below.
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-removed
     const componentExists = existsSync(join(COMPONENTS_DIR, component));
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-removed
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
     let overlayExists = false;
     let artifactsFresh = false;
     if (componentExists) {
@@ -460,6 +515,7 @@ function runGuard(base: string, options: { json: boolean }): void {
       // fails an incomplete covered component before this matters.
       artifactsFresh = isCovered && overlayExists ? stems.every((stem) => isComponentFresh(component, stem)) : false;
     }
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
     const result = evaluateGuard({ component, covered: coveredSet.has(component), overlayExists, artifactsFresh, componentExists });
     results.push(result);
     if (result.status === 'covered-violation' || result.status === 'component-removed') violated = true;
@@ -489,9 +545,11 @@ function runGuard(base: string, options: { json: boolean }): void {
 // @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-coverage-report:p1
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2
 function runCoverage(options: { json: boolean }): void {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
   const all = listComponentDirs();
   const covered = loadCovered();
   const report = buildCoverageReport(all, covered);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
   // covered.json is a human-curated allowlist (the guard's gate, grown one
   // directory at a time); the fraction here is the live, filesystem-derived
   // count of what already has a contract - a compound directory can read

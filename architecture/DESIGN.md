@@ -228,7 +228,7 @@ The template-manifest half of total classification remains review-held because t
 
 Every FrontX-owned layer member owns a local artifact chain: PRD, DESIGN and at least one FEATURE. A missing chain must be recorded as path-scoped architecture debt with a removal criterion.
 
-Every FrontX-owned member now owns its chain: the last path-scoped exemption, `ui-kit`'s, was lifted when that package registered as its own child system with a PRD, a DESIGN and a FEATURE. No member is currently carried as recorded debt.
+Every FrontX-owned member now owns its chain: the last package-wide exemption, `ui-kit`'s, was lifted when that package registered as its own child system with a PRD, a DESIGN and a FEATURE. What remains for that member is narrower than a missing chain and is recorded as such - a path-scoped exemption covering its component sources alone, whose removal criterion is a member FEATURE giving the component surface numbered instructions for a marker to point at. No member is carried as a missing chain.
 
 #### LAYER-3 - Root-to-member citation direction
 

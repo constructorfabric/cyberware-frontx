@@ -216,6 +216,7 @@ export interface SchemaRef {
 // 'x-uikit'/'x-gts-traits' field types are derived from this map's literal
 // values (FieldsFor below), so an edit here that moves a field also moves
 // which block TypeScript requires it to appear in.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
 const SEMANTIC_FIELDS = [
   'intent',
   'typical_uses',
@@ -229,10 +230,12 @@ const SEMANTIC_FIELDS = [
   'family',
   'extension_points',
 ] as const;
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
 
 type SemanticField = (typeof SEMANTIC_FIELDS)[number];
 type SemanticTarget = 'x-uikit' | 'x-gts-traits';
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
 const SEMANTIC_FIELD_TARGETS = {
   intent: 'x-uikit',
   typical_uses: 'x-uikit',
@@ -246,6 +249,7 @@ const SEMANTIC_FIELD_TARGETS = {
   family: 'x-gts-traits',
   extension_points: 'x-gts-traits',
 } as const satisfies Record<SemanticField, SemanticTarget>;
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
 
 // The field-name union routed at a given target, computed from
 // SEMANTIC_FIELD_TARGETS's own literal values (the `as const satisfies`
@@ -327,9 +331,11 @@ export function loadPassthroughSchema(originKey: string): Record<string, unknown
 // there is nothing to compare a component's own declaration against, so
 // those names are still treated as owned (skip the property) but never
 // trigger the type-conflict check below.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
 function passthroughPropertyTypes(passthroughSchema: Record<string, unknown>): Map<string, ContractProperty | undefined> {
   const properties = (passthroughSchema.properties ?? {}) as Record<string, ContractProperty>;
   return new Map(Object.entries(properties).map(([name, schema]) => [name, schema.type ? schema : undefined]));
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
 }
 
 // Machine-owned fields the overlay must not restate - one fact, one owner.
@@ -337,7 +343,9 @@ function passthroughPropertyTypes(passthroughSchema: Record<string, unknown>): M
 // either compiler output or a JSON-Schema keyword an author might type by
 // habit, and either way the overlay writing one is a mistake worth naming
 // specifically rather than folding into "unknown key".
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-machine-owned
 const MACHINE_OWNED = ['axes', 'props', 'defaults', 'variants', 'required', 'slots', 'type'];
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-machine-owned
 
 // A prop's normalized TypeScript text, classified into the provider-safe
 // JSON Schema subset a validator can actually assert: boolean/string/number
@@ -348,6 +356,7 @@ const MACHINE_OWNED = ['axes', 'props', 'defaults', 'variants', 'required', 'slo
 // both a component's own props and its generated passthrough type, so the
 // same TypeScript shape is always classified the same way regardless of
 // which side of the own/inherited split it happens to land on.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
 function classifyProviderSafeType(typeText: string): ContractProperty | undefined {
   const normalized = normalizeTypeText(typeText);
   if (normalized === 'boolean' || normalized === 'string' || normalized === 'number') {
@@ -356,6 +365,7 @@ function classifyProviderSafeType(typeText: string): ContractProperty | undefine
   const enumValues = parseStringLiteralUnion(normalized);
   if (enumValues) return { type: 'string', enum: enumValues };
   return undefined;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
 }
 
 // Generates a passthrough type from a component's inherited (non-own) props.
@@ -396,12 +406,14 @@ export function buildPassthroughSchema(
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
   return {
     $id: passthroughTypeId(originKey),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: `UiKit ${originKey} passthrough`,
     description: `The props a kit component forwards to an underlying <${domTag}> element (directly or through Base UI), generated from this component's inherited (non-own) props. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. Keyed by the ORIGIN of the inherited props (a Base UI primitive part, or a plain DOM element type) rather than the DOM tag alone, so two components forwarding to the same tag through unrelated type surfaces never collide; two components genuinely wrapping the same origin share this file by construction. Regenerate with \`npm run contracts:compile -- <directory>\`; a stale copy fails the freshness check.`,
     type: 'object',
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
     // Every component stem that has ever compiled into this shared file, so
     // a mismatched recompile can name who else is on the hook before
@@ -409,6 +421,7 @@ export function buildPassthroughSchema(
     // Not consumed by Ajv/GTS - annotation only, same standing as $comment.
     generated_from: [...generatedFrom].sort(),
     properties,
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-patterns
     patternProperties: {
       '^aria-': {
@@ -421,6 +434,7 @@ export function buildPassthroughSchema(
       },
     },
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-patterns
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
     $comment:
       'Intentionally NOT closed (no unevaluatedProperties/additionalProperties): this is one of several in-place applicators a component composes, so it cannot know what the others contribute. Closure happens once, in the derived component type.',
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
@@ -740,8 +754,8 @@ export function buildMetamodel(): Record<string, unknown> {
 // they go through Ajv, which resolves those the standard way - this
 // inlining exists only for the copy buildGtsTraitsSchema below feeds to
 // gts-ts.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-inline
 function inlineLocalRefs(node: unknown, defs: Record<string, unknown>): unknown {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-inline
   if (Array.isArray(node)) return node.map((item) => inlineLocalRefs(item, defs));
   if (node !== null && typeof node === 'object') {
     const obj = node as Record<string, unknown>;
@@ -772,8 +786,8 @@ function inlineLocalRefs(node: unknown, defs: Record<string, unknown>): unknown 
 // them only to data of the matching type) and are vacuously satisfied by a
 // `null` instance, so `family`'s `if`/`then` and `extension_points`'
 // `minItems: 1` still apply exactly as authored to real object/array data.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-nullable
 function nullableTraitProperty(schema: Record<string, unknown>): Record<string, unknown> {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-nullable
   const type = schema.type;
   const nullableType = Array.isArray(type) ? [...type, 'null'] : [type, 'null'];
   return { ...schema, type: nullableType, default: null };
@@ -805,16 +819,22 @@ export function buildGtsTraitsSchema(): Record<string, unknown> {
   const traitFields = fieldsTargeting('x-gts-traits');
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-fields
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-fields
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
   for (const field of traitFields) {
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-fields
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-inline
     const inlined = inlineLocalRefs(metamodelProperties[field], defs) as Record<string, unknown>;
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-inline
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-nullable
     if (metamodelRequired.has(field)) {
       properties[field] = inlined;
       required.push(field);
     } else {
       properties[field] = nullableTraitProperty(inlined);
     }
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-nullable
   }
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-return
@@ -881,11 +901,14 @@ export function buildOverlaySchema(): Record<string, unknown> {
   };
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-unknown-field
 function compileOverlayValidator(): ValidateFunction<Overlay> {
   const ajv = new Ajv2020({ allErrors: true });
   return ajv.compile<Overlay>(buildOverlaySchema());
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-unknown-field
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-unknown-field-refuse
 function formatOverlayErrors(component: string, errors: ErrorObject[] | null | undefined): string {
   const lines = (errors ?? []).map((err) => {
     if (err.keyword === 'additionalProperties') {
@@ -895,6 +918,7 @@ function formatOverlayErrors(component: string, errors: ErrorObject[] | null | u
     return `"${err.instancePath || '/'}" ${err.message ?? 'is invalid'}`;
   });
   return `${component}: overlay failed validation:\n  ${lines.join('\n  ')}`;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-unknown-field-refuse
 }
 
 // M3: the compiler's own assembled output validated against the same
@@ -1049,7 +1073,9 @@ export function buildPropsAndRequired(
   const properties: Record<string, ContractProperty> = {};
   const slots: PropsAndRequired['slots'] = {};
   const required: string[] = [];
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
   const passthroughTypes = passthroughPropertyTypes(passthroughSchema);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-axes
   for (const [axis, values] of Object.entries(extraction.axes)) {
@@ -1083,7 +1109,9 @@ export function buildPropsAndRequired(
       continue;
     }
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
     const normative = classifyProviderSafeType(prop.typeText);
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
     if (normative) {
       properties[prop.name] = normative;
     } else {
@@ -1104,8 +1132,10 @@ export function buildPropsAndRequired(
   return { properties, required, slots };
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
 function fieldsTargeting(target: SemanticTarget): SemanticField[] {
   return SEMANTIC_FIELDS.filter((field) => SEMANTIC_FIELD_TARGETS[field] === target);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
 }
 
 // Builds an object from exactly the given keys of `source` - the routing
@@ -1114,22 +1144,26 @@ function fieldsTargeting(target: SemanticTarget): SemanticField[] {
 // every assignment inside the loop is provably `T[K]` into `Pick<T, K>[K]`,
 // there is just no way to spell "empty object that will become Pick<T, K>"
 // without it.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
 function pickFields<T extends object, K extends keyof T>(source: T, keys: readonly K[]): Pick<T, K> {
   const out = {} as Pick<T, K>;
   for (const key of keys) out[key] = source[key];
   return out;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
 }
 
 // A component's directory is kebab-case; its exported name is PascalCase
 // (navigation-menu -> NavigationMenu). This is the one place that mapping
 // happens, so a file exporting several components picks the right one by
 // the same rule compileContract's error message describes.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-select
 export function pascalCase(component: string): string {
   return component
     .split('-')
     .filter(Boolean)
     .map((segment) => segment[0].toUpperCase() + segment.slice(1))
     .join('');
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-select
 }
 
 // Finds the extraction for the export named by `exportStem` (button ->
@@ -1140,9 +1174,9 @@ export function pascalCase(component: string): string {
 // (extractComponent already returns one ComponentExtraction per exported
 // component in it, see extract.ts), only the SELECTION changes.
 export function resolveTargetExtraction(directory: string, exportStem: string = directory): ComponentExtraction {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-select
   const dir = join(kitRoot, 'src', 'components', directory);
   const extractions = extractComponent(join(dir, `${directory}.tsx`));
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-select
   const wantedName = pascalCase(exportStem);
   const extraction = extractions.find((e) => e.name === wantedName);
   if (!extraction) {
@@ -1153,7 +1187,9 @@ export function resolveTargetExtraction(directory: string, exportStem: string = 
     );
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-select
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-select
   return extraction;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-select
 }
 
 // M11: the overlay must only ever point at a prop the extractor actually
@@ -1163,8 +1199,8 @@ export function resolveTargetExtraction(directory: string, exportStem: string = 
 // not just the one whose test author remembered to write it (Accordion and
 // DataTable had no equivalent protection before this). Extend this list if
 // the metamodel ever adds a third prop-name-bearing overlay field.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop
 export function assertOverlayReferencesRealProps(component: string, overlay: Overlay, extraction: ComponentExtraction): void {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop
   const known = new Set([...Object.keys(extraction.axes), ...extraction.ownProps.map((prop) => prop.name)]);
   for (const prop of Object.keys(overlay.deprecations.props ?? {})) {
     if (!known.has(prop)) {
@@ -1175,7 +1211,9 @@ export function assertOverlayReferencesRealProps(component: string, overlay: Ove
   }
   const iconsVia = overlay.composition.children.icons_via;
   if (iconsVia !== undefined && !known.has(iconsVia)) {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop-refuse
     throw new Error(`${component}: overlay composition.children.icons_via references "${iconsVia}", which is not a real prop`);
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop-refuse
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop
 }
@@ -1198,8 +1236,12 @@ export function compileContract(directory: string, exportStem: string = director
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-axis-failure
 
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-author-overlay
   const overlay = loadOverlay(directory, exportStem);
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-author-overlay
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop
   assertOverlayReferencesRealProps(exportStem, overlay, extraction);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop
 
   let passthroughSchema: Record<string, unknown> | undefined;
   let passthroughRef: SchemaRef | undefined;
@@ -1219,10 +1261,14 @@ export function compileContract(directory: string, exportStem: string = director
     // `.properties` off this schema (buildPropsAndRequired's own-vs-
     // passthrough type-conflict check), so a single-element placeholder is
     // enough here and never gets written to disk.
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
     passthroughSchema = buildPassthroughSchema(extraction.passthroughOrigin, extraction.passthroughKind, extraction.inheritedProps, [
       exportStem,
     ]);
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
     passthroughRef = { $ref: passthroughTypeId(extraction.passthroughOrigin) };
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
   } else if (extraction.inheritedProps.length > 0) {
     // Inherited props exist but no origin could be resolved for them -
     // exactly the case a silent extractor would have dropped them in.
@@ -1257,7 +1303,9 @@ export function compileContract(directory: string, exportStem: string = director
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: `UiKit ${exportStem} contract`,
     type: 'object',
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
     allOf: passthroughRef ? [{ $ref: BASE_TYPE_ID }, passthroughRef] : [{ $ref: BASE_TYPE_ID }],
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
     properties,
     required,
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
@@ -1265,13 +1313,19 @@ export function compileContract(directory: string, exportStem: string = director
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
     'x-uikit': {
       metamodel: METAMODEL_VERSION,
+      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
       ...pickFields(overlay, uikitFields),
+      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
+      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
       slots,
+      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
       passthrough: extraction.passthroughSources,
       variant_sources: extraction.variantSourceLabels,
       cannot_extract: extraction.cannotExtract,
     },
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
     'x-gts-traits': pickFields(overlay, gtsTraitsFields),
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
   };
   // M3: validated against buildGtsTraitsSchema() here, not only inside
   // whichever component's own test file happens to register it with a GTS
@@ -1288,10 +1342,12 @@ export function compileContract(directory: string, exportStem: string = director
 // file's resolved path, so the identity comparison matches. An import (the
 // conformance test, a build script) leaves argv[1] pointing at the test
 // runner instead, so it never matches.
+// @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-invoke-compile
 function invokedDirectly(): boolean {
   const entry = process.argv[1];
   if (entry === undefined) return false;
   return import.meta.url === pathToFileURL(entry).href;
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-invoke-compile
 }
 
 // Every `*.contract.yaml` overlay directly in a directory - one for the
@@ -1300,12 +1356,14 @@ function invokedDirectly(): boolean {
 // `.contract.ru.yaml` never matches this suffix (it ends in `.ru.yaml`, not
 // `.contract.yaml`) - it is excluded on disk locally and must never be
 // picked up as a normal overlay if it exists.
+// @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-no-overlay
 export function overlayStems(directory: string): string[] {
   const dir = join(kitRoot, 'src', 'components', directory);
   return readdirSync(dir)
     .filter((name) => name.endsWith('.contract.yaml'))
     .map((name) => name.slice(0, -'.contract.yaml'.length))
     .sort();
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-no-overlay
 }
 
 function compileOne(directory: string, exportStem: string): void {
@@ -1333,14 +1391,19 @@ function compileOne(directory: string, exportStem: string): void {
   if (extraction.passthroughOrigin && extraction.passthroughKind) {
     const passthroughOut = join(GENERATED_DIR, `passthrough.${extraction.passthroughOrigin}.json`);
     const existing = existsSync(passthroughOut) ? (JSON.parse(readFileSync(passthroughOut, 'utf8')) as Record<string, unknown>) : undefined;
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
     const existingGeneratedFrom = Array.isArray(existing?.generated_from) ? (existing.generated_from as string[]) : [];
     const generatedFrom = Array.from(new Set([...existingGeneratedFrom, exportStem]));
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
     const passthroughSchema = buildPassthroughSchema(
       extraction.passthroughOrigin,
       extraction.passthroughKind,
       extraction.inheritedProps,
       generatedFrom,
     );
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision
     assertNoPassthroughCollision(
       exportStem,
       extraction.passthroughOrigin,
@@ -1348,6 +1411,7 @@ function compileOne(directory: string, exportStem: string): void {
       existing && { generatedFrom: existingGeneratedFrom, properties: existing.properties },
       passthroughSchema.properties,
     );
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision
     mkdirSync(GENERATED_DIR, { recursive: true });
     writeFileSync(passthroughOut, `${JSON.stringify(passthroughSchema, null, 2)}\n`);
     console.log(`wrote ${passthroughOut}`);
@@ -1365,6 +1429,7 @@ function compileOne(directory: string, exportStem: string): void {
 // build naming every component on record for this file instead of
 // overwriting them. Pure (no I/O) so it is unit-testable without touching
 // the real generated/ directory - compileOne above is the only real caller.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision
 export function assertNoPassthroughCollision(
   exportStem: string,
   originKey: string,
@@ -1372,7 +1437,6 @@ export function assertNoPassthroughCollision(
   existing: { generatedFrom: string[]; properties: unknown } | undefined,
   freshProperties: unknown,
 ): void {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision
   if (!existing) return;
   const otherOwners = existing.generatedFrom.filter((stem) => stem !== exportStem);
   if (otherOwners.length === 0) return;
@@ -1419,5 +1483,7 @@ if (invokedDirectly()) {
     // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-no-overlay-exit
   }
   // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-no-overlay
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-compile-each
   for (const stem of stems) compileOne(directory, stem);
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-compile-each
 }

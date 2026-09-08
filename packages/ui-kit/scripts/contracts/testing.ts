@@ -20,6 +20,7 @@ import { checkComponentFreshness, type FreshnessReport } from './freshness';
 // timeout. Memoized per (directory, exportStem) so the three `it`s share the
 // one report - safe because nothing in this process edits the component
 // source between them.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-freshness
 const freshnessReportCache = new Map<string, FreshnessReport>();
 function memoizedFreshnessReport(directory: string, exportStem: string): FreshnessReport {
   const key = `${directory}::${exportStem}`;
@@ -29,6 +30,7 @@ function memoizedFreshnessReport(directory: string, exportStem: string): Freshne
   freshnessReportCache.set(key, report);
   return report;
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-freshness
 
 // `exportStem` defaults to `directory` for the ordinary one-overlay case
 // (assertContractFreshness('button')); a compound component's part passes
@@ -43,8 +45,8 @@ function memoizedFreshnessReport(directory: string, exportStem: string): Freshne
 // @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-conformance:p1
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1
 export function assertContractFreshness(directory: string, exportStem: string = directory): void {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-freshness
   describe(`${exportStem} contract freshness`, { timeout: 120_000 }, () => {
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-freshness
     it('committed contract.json, contract.instance.json and generated passthrough match a fresh compile', () => {
       const report = memoizedFreshnessReport(directory, exportStem);
       expect(report.contractDiff, `${exportStem}.contract.json is stale:\n${report.contractDiff.join('\n')}`).toEqual([]);
@@ -74,7 +76,9 @@ export function assertContractFreshness(directory: string, exportStem: string = 
   });
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-traits
 const bareId = (id: string): string => id.replace(/^gts:\/\//, '');
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-traits
 
 // Registers base.component.json plus a JSON-round-tripped copy of a compiled
 // contract into a fresh GTS store and returns GTS.validateEntity's result
@@ -110,11 +114,11 @@ const bareId = (id: string): string => id.replace(/^gts:\/\//, '');
 // (GtsStore.buildSchemaChain), not by dereferencing allOf $refs, so neither
 // the passthrough type nor any other component's contract is ever consulted
 // for trait validation.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-traits
 export function validateContractTraits(contract: CompiledContract): ValidationResult & { entity_type: string } {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-traits
   const gts = new GTS();
   gts.register(JSON.parse(JSON.stringify(loadBaseSchema())) as Record<string, unknown>);
   gts.register(JSON.parse(JSON.stringify(contract)) as Record<string, unknown>);
   return gts.validateEntity(bareId(contract.$id));
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-traits
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-traits

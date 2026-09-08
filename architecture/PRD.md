@@ -315,7 +315,7 @@ Member-level use cases are owned by each member's own PRD §8, located through t
 - [ ] The PRD is structurally valid and internally consistent: `cfs validate --artifact architecture/PRD.md --skip-code` returns PASS, and the standing content-quality checks — citation discipline, design-agnostic prose, controlled product vocabulary, and external-system-name scope — all clear.
 - [ ] Downstream SDLC artifacts authored against this PRD trace back to specific requirement, component, or contract IDs owned either here or by the owning member PRD.
 - [x] Governance has a real product requirement, `cpt-frontx-fr-layer-member-governance`, rather than borrowing unrelated requirement traces.
-- [x] `ui-kit` is a published-library member owning its own artifact chain, with no path-scoped exemption left standing for it - verifiable via its member pointer in the [DESIGN](./DESIGN.md#member-pointers) and the member-registration gate.
+- [x] `ui-kit` is a published-library member owning its own artifact chain, registered for enforcement rather than exempted from it - verifiable via its member pointer in the [DESIGN](./DESIGN.md#member-pointers) and the member-registration gate.
 
 ## 10. Dependencies
 

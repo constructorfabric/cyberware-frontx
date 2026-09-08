@@ -47,10 +47,12 @@ export interface FreshnessReport {
   fresh: boolean;
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-artifacts
 function readJsonIfExists(path: string): unknown {
   if (!existsSync(path)) return undefined;
   return JSON.parse(readFileSync(path, 'utf8')) as unknown;
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-artifacts
 
 // `exportStem` defaults to `directory` for the ordinary one-overlay-per-
 // directory case (Button, and every component through T4) - a compound
@@ -74,9 +76,9 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
   const baseSchemaDiff = jsonDiff(loadBaseSchema(), buildBaseSchema());
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-base
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-passthrough
   const extraction = resolveTargetExtraction(directory, exportStem);
   let passthroughDiff: string[] | 'not-applicable' = 'not-applicable';
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-passthrough
   if (extraction.passthroughOrigin && extraction.passthroughKind) {
     const committedPassthrough = readJsonIfExists(join(GENERATED_DIR, `passthrough.${extraction.passthroughOrigin}.json`)) as
       | Record<string, unknown>

@@ -66,14 +66,16 @@ export interface PassthroughDiff {
   compatible: boolean;
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
 export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchema: PassthroughSchemaLike): PassthroughDiff {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
   const oldProps = oldSchema.properties ?? {};
   const newProps = newSchema.properties ?? {};
   const added = Object.keys(newProps).filter((name) => !(name in oldProps));
   const removed = Object.keys(oldProps).filter((name) => !(name in newProps));
   const narrowed: { prop: string; reason: string }[] = [];
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
   for (const name of Object.keys(oldProps)) {
     if (!(name in newProps)) continue;
     const oldProp = oldProps[name];
@@ -90,10 +92,12 @@ export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchem
       }
     }
   }
-
-  return { added, removed, narrowed, compatible: removed.length === 0 && narrowed.length === 0 };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
+
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
+  return { added, removed, narrowed, compatible: removed.length === 0 && narrowed.length === 0 };
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
 
 // gts-ts's own `checkCompatibility(..., 'backward')` diffs a component's OWN
 // properties/required the same shallow way `diffPassthroughSchema` diffs the
@@ -121,19 +125,21 @@ export interface OwnPropsDiff {
   compatible: boolean;
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
 export function diffOwnPropsSchema(oldSchema: OwnPropsSchemaLike, newSchema: OwnPropsSchemaLike): OwnPropsDiff {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
   const oldProps = oldSchema.properties ?? {};
   const newProps = newSchema.properties ?? {};
   const oldRequired = new Set(oldSchema.required ?? []);
   const newRequired = new Set(newSchema.required ?? []);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
   const removedProps = Object.keys(oldProps).filter((name) => !(name in newProps));
   const newlyRequiredProps = [...newRequired].filter((name) => !oldRequired.has(name));
 
   return { removedProps, newlyRequiredProps, compatible: removedProps.length === 0 && newlyRequiredProps.length === 0 };
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
 
 // A component re-based onto a different primitive part changes its passthrough
 // ORIGIN key, so `gitShow` looks for `passthrough.<new origin>.json` at the base
@@ -144,6 +150,7 @@ export function diffOwnPropsSchema(oldSchema: OwnPropsSchemaLike, newSchema: Own
 // signal has to be visible in the report rather than inferred from its absence.
 // A base ref carrying no generated passthrough type at all is the genuine
 // first-contract case and stays silent.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
 export function skippedPassthroughNote(
   component: string,
   origin: string,
@@ -153,6 +160,7 @@ export function skippedPassthroughNote(
   if (baseHasOriginFile || !baseHasAnyPassthrough) return undefined;
   return `${component}: inherited-surface signal skipped - the base ref carries no passthrough type for origin "${origin}"`;
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
 
 export interface CompatDecisionInput {
   component: string;
@@ -194,6 +202,7 @@ export function decideCompat(input: CompatDecisionInput): CompatVerdict {
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-combine
   const reasons = [
     ...gtsBackwardErrors,
     ...(ownPropsDiff?.removedProps.map((prop) => `own prop "${prop}" removed`) ?? []),
@@ -201,6 +210,7 @@ export function decideCompat(input: CompatDecisionInput): CompatVerdict {
     ...(passthroughDiff?.removed.map((prop) => `passthrough: prop "${prop}" removed`) ?? []),
     ...(passthroughDiff?.narrowed.map((entry) => `passthrough: prop "${entry.prop}" ${entry.reason}`) ?? []),
   ];
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-combine
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-major
   if (newMajor > oldMajor) {
@@ -239,12 +249,14 @@ export function extractContractMajor(id: string): number {
 // normal case: same component, same major, base ref vs working tree) can be
 // registered in one GTS store under distinct ids. ids.ts never emits a
 // minor itself, so this never collides with a real id.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
 export function synthesizeVersionedId(id: string, minor: number): string {
   if (!id.endsWith('~')) {
     throw new Error(`synthesizeVersionedId: "${id}" is not a type id (does not end in "~")`);
   }
   return `${id.slice(0, -1)}.${minor}~`;
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
 
 // Maps a list of changed file paths (package-relative, as `git diff
 // --relative` reports them) to the component directories under
@@ -256,18 +268,20 @@ export function synthesizeVersionedId(id: string, minor: number): string {
 // the extractor, the metamodel, a generated passthrough file) is a
 // DIFFERENT question, answered by touchesSharedContractTooling below, not by
 // widening this regex.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-map
 export function mapChangedFilesToComponents(changedFiles: string[]): Set<string> {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-map
   const components = new Set<string>();
   for (const file of changedFiles) {
     const match = /^src\/components\/([a-z][a-z0-9-]*)\//.exec(file);
     if (match) components.add(match[1]);
   }
   return components;
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-map
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-map
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
 const CONTRACTS_TOOLING_PREFIX = 'scripts/contracts/';
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
 
 // Files under scripts/contracts/ that are neither shared build/extraction
 // logic nor a hand-authored input to it: the guard's own entry point (a bug
@@ -289,7 +303,9 @@ const CONTRACTS_TOOLING_PREFIX = 'scripts/contracts/';
 // while touching no component directory - exactly the blind spot the widening
 // exists to close. The circularity argument covers check.ts alone, which
 // nothing in the comparison path imports.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
 const NON_TOOLING_CONTRACTS_FILES = new Set(['check.ts', 'check-lib.test.ts', 'covered.json', 'PILOT-NOTES.md']);
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
 
 // Whether any changed file is shared contract-compiling machinery (see
 // NON_TOOLING_CONTRACTS_FILES above for what is deliberately excluded).
@@ -298,8 +314,8 @@ const NON_TOOLING_CONTRACTS_FILES = new Set(['check.ts', 'check-lib.test.ts', 'c
 // changed - a compiler/extractor/metamodel edit can silently reshape a
 // component's compiled contract without touching that component's own
 // files at all.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
 export function touchesSharedContractTooling(changedFiles: string[]): boolean {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
   return changedFiles.some((file) => {
     if (!file.startsWith(CONTRACTS_TOOLING_PREFIX)) return false;
     const rest = file.slice(CONTRACTS_TOOLING_PREFIX.length);
@@ -307,8 +323,8 @@ export function touchesSharedContractTooling(changedFiles: string[]): boolean {
     if (rest.endsWith('.test.ts')) return false;
     return !NON_TOOLING_CONTRACTS_FILES.has(rest);
   });
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
 
 // A base-ref contract file `resolveRenameSource` can compare a "not found at
 // this path" unit against - `path` is package-relative (matches
@@ -337,6 +353,7 @@ export interface BaseRefContractEntry {
 // Undefined means genuinely new: nothing at the base ref plausibly is this
 // contract's prior version, so treating it as new (no baseline to compare
 // against) is the honest answer, not a masked breaking change.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
 export function resolveRenameSource(input: {
   currentPath: string;
   currentId: string;
@@ -350,6 +367,7 @@ export function resolveRenameSource(input: {
   const byStem = input.baseContracts.find((entry) => entry.stem === input.currentStem && entry.path !== input.currentPath);
   return byStem?.path;
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
 
 export interface GuardEvaluationInput {
   component: string;
@@ -411,6 +429,8 @@ export function evaluateGuard(input: GuardEvaluationInput): GuardResult {
       message: `${component}: covered by covered.json but has no ${component}.contract.yaml overlay`,
     };
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
   if (!artifactsFresh) {
     return {
       component,
@@ -418,6 +438,8 @@ export function evaluateGuard(input: GuardEvaluationInput): GuardResult {
       message: `${component}: covered by covered.json but its committed contract artifacts are stale - run npm run contracts:compile -- ${component}`,
     };
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
   return { component, status: 'covered-ok', message: `${component}: covered and fresh` };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
 }
@@ -428,13 +450,13 @@ export interface CoverageReport {
   uncovered: string[];
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
 export function buildCoverageReport(allComponents: string[], covered: string[]): CoverageReport {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
   const coveredSet = new Set(covered);
   const uncovered = allComponents.filter((component) => !coveredSet.has(component)).sort();
   return { total: allComponents.length, coveredCount: covered.length, uncovered };
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
 
 export interface DirectoryExportCoverage {
   directory: string;

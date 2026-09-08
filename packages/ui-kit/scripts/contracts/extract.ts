@@ -128,6 +128,7 @@ interface LiteralEntry {
 // literal; anything else - a spread, a computed key, a method - is not
 // something a plain walk can attribute a value to, so it is named in
 // `cannotExtract` instead of silently skipped.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 function literalKeys(objLiteral: ts.ObjectLiteralExpression, where: string, cannotExtract: string[]): LiteralEntry[] {
   const keys: LiteralEntry[] = [];
   for (const prop of objLiteral.properties) {
@@ -138,6 +139,7 @@ function literalKeys(objLiteral: ts.ObjectLiteralExpression, where: string, cann
     }
   }
   return keys;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 }
 
 function lastEntityName(name: ts.EntityName): string {
@@ -155,6 +157,7 @@ function calleeName(expr: ts.LeftHandSideExpression): string | undefined {
 // not by the text at the call site, so an aliased import
 // (`import { cva as makeVariants }`) or a member call
 // (`cvaNs.cva(...)`) resolve the same as a plain `cva(...)`.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 function isCvaCall(call: ts.CallExpression, checker: ts.TypeChecker): boolean {
   const symbol = checker.getSymbolAtLocation(call.expression);
   if (!symbol) return false;
@@ -163,6 +166,7 @@ function isCvaCall(call: ts.CallExpression, checker: ts.TypeChecker): boolean {
   return (resolved.getDeclarations() ?? []).some((decl) =>
     /[\\/]class-variance-authority[\\/]/.test(decl.getSourceFile().fileName),
   );
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 }
 
 // Follows an expression to the cva(...) call it ultimately names - straight
@@ -170,6 +174,7 @@ function isCvaCall(call: ts.CallExpression, checker: ts.TypeChecker): boolean {
 // one variable pointing at another (`const buttonVariants = baseVariants;`).
 // Bounded depth and a visited set turn a self-referential or cyclic alias
 // into "not found" instead of a stack overflow.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 function traceToCvaCall(
   expr: ts.Expression | undefined,
   checker: ts.TypeChecker,
@@ -188,8 +193,10 @@ function traceToCvaCall(
     return symbol ? traceSymbolToCvaCall(symbol, checker, visited, depth + 1) : undefined;
   }
   return undefined;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 function traceSymbolToCvaCall(
   symbol: ts.Symbol,
   checker: ts.TypeChecker,
@@ -207,11 +214,13 @@ function traceSymbolToCvaCall(
     }
   }
   return undefined;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 }
 
 // Same identifier-following as traceToCvaCall, aimed at cva's own second
 // argument: `cva(base, config)` where `config` is a variable instead of an
 // inline object literal.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 function traceToObjectLiteral(
   expr: ts.Expression | undefined,
   checker: ts.TypeChecker,
@@ -237,6 +246,7 @@ function traceToObjectLiteral(
     }
   }
   return undefined;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 }
 
 // Resolves every `VariantProps<typeof X>` heritage entry found on a
@@ -251,6 +261,7 @@ function extractVariants(
   checker: ts.TypeChecker,
   cannotExtract: string[],
 ): { axes: Record<string, string[]>; defaults: Record<string, string> } {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
   const axes: Record<string, string[]> = {};
   const defaults: Record<string, string> = {};
   // Which VariantProps<typeof X> heritage entry (by label) an axis/default
@@ -262,7 +273,6 @@ function extractVariants(
   const defaultSourceLabel: Record<string, string> = {};
 
   for (const entityName of variantSources) {
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
     const label = lastEntityName(entityName);
     const symbol = checker.getSymbolAtLocation(entityName);
     const call = symbol ? traceSymbolToCvaCall(symbol, checker, new Set(), 0) : undefined;
@@ -326,10 +336,12 @@ function extractVariants(
         }
       }
     }
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
   return { axes, defaults };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 }
 
 interface PropsTypeWalkResult {
@@ -344,6 +356,7 @@ interface PropsTypeWalkResult {
   cannotExtract: string[];
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
 function typeRefParts(
   node: ts.TypeNode,
 ): { name: string; args: readonly ts.TypeNode[] | undefined; location: ts.Node } | undefined {
@@ -356,6 +369,7 @@ function typeRefParts(
     return { name, args: node.typeArguments, location: node.expression };
   }
   return undefined;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
 }
 
 // The six heritage shapes walkPropsType/resolveTopLevelMembers special-case,
@@ -375,12 +389,14 @@ type HeritageShape =
   | { readonly kind: 'component-props' }
   | { readonly kind: 'base-ui-component-props' };
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
 function declaredUnder(declarations: readonly ts.Declaration[], pattern: RegExp): boolean {
   return declarations.some((decl) => pattern.test(decl.getSourceFile().fileName));
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
 function classifyHeritageReference(location: ts.Node, checker: ts.TypeChecker): HeritageShape | undefined {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   const symbol = checker.getSymbolAtLocation(location);
   if (!symbol) return undefined;
   const resolved = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
@@ -420,6 +436,7 @@ function walkPropsType(
   visited: Set<ts.Symbol>,
   depth: number,
 ): void {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   if (depth > 12) return;
   if (ts.isIntersectionTypeNode(node)) {
     for (const member of node.types) walkPropsType(member, checker, result, visited, depth + 1);
@@ -435,8 +452,11 @@ function walkPropsType(
   // is nothing more for THIS walk (kind/variant discovery) to resolve here.
   // Not an error, unlike the node kinds below it has no typeRefParts either.
   if (ts.isTypeLiteralNode(node)) return;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   const parts = typeRefParts(node);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
   if (!parts) {
     // A node kind this walk does not understand at all - a bare union, a
@@ -452,6 +472,7 @@ function walkPropsType(
     return;
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   const { args, location } = parts;
   const shape = classifyHeritageReference(location, checker);
 
@@ -470,6 +491,7 @@ function walkPropsType(
     }
     return;
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
 
   // A named reference this loop does not special-case - resolve it and
   // recurse into its own declaration's heritage (interface `extends` list,
@@ -479,11 +501,16 @@ function walkPropsType(
   // this loop cannot unwrap (a class, an enum - anything but an interface or
   // type alias), is exactly as unclassifiable as the node-kind case above
   // and gets the same treatment: named, not silently dropped.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   const symbol = checker.getSymbolAtLocation(location);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
   if (!symbol) {
     result.cannotExtract.push(`heritage: "${node.getText()}" has no resolvable symbol - cannot extract`);
     return;
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   const resolved = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
   if (visited.has(resolved)) return;
   visited.add(resolved);
@@ -499,11 +526,14 @@ function walkPropsType(
       walkPropsType(decl.type, checker, result, visited, depth + 1);
     }
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
   if (!unwrapped) {
     result.cannotExtract.push(
       `heritage: "${node.getText()}" resolves to a declaration this walk cannot unwrap (not an interface or type alias) - cannot extract`,
     );
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
 }
 
 // Unwraps a props type node down to the constituents that actually carry
@@ -527,6 +557,7 @@ function resolveTopLevelMembers(
   depth: number,
   cannotExtract: string[],
 ): ts.TypeNode[] {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
   if (depth > 12) return [node];
   if (ts.isIntersectionTypeNode(node)) {
     return node.types.flatMap((member) => resolveTopLevelMembers(member, checker, visited, depth + 1, cannotExtract));
@@ -537,19 +568,27 @@ function resolveTopLevelMembers(
   if (ts.isTypeLiteralNode(node)) return [node];
 
   const parts = typeRefParts(node);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
   if (!parts) {
     cannotExtract.push(
       `heritage: "${node.getText()}" is a ${ts.SyntaxKind[node.kind]}, not a shape this walk can classify - cannot extract`,
     );
     return [node];
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
   if (classifyHeritageReference(parts.location, checker)) return [node];
 
   const symbol = checker.getSymbolAtLocation(parts.location);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
   if (!symbol) {
     cannotExtract.push(`heritage: "${node.getText()}" has no resolvable symbol - cannot extract`);
     return [node];
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
   const resolved = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
   if (visited.has(resolved)) return [node];
   visited.add(resolved);
@@ -567,16 +606,21 @@ function resolveTopLevelMembers(
       members.push(...resolveTopLevelMembers(decl.type, checker, visited, depth + 1, cannotExtract));
     }
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
   if (!unwrapped) {
     cannotExtract.push(
       `heritage: "${node.getText()}" resolves to a declaration this walk cannot unwrap (not an interface or type alias) - cannot extract`,
     );
   }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
   // A named reference with no heritage of its own (an inline object type
   // literal, an interface/type alias declaring no `extends`) is itself the
   // leaf - legitimate, not an error; `unwrapped` above already distinguishes
   // that case from a genuinely opaque one.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
   return members.length > 0 ? members : [node];
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
 }
 
 // x-uikit.passthrough / x-uikit.variant_sources: what the component's own
@@ -630,6 +674,7 @@ function topLevelHeritageLabels(
 // Button has no part directory (button/Button.d.mts), Accordion's parts each
 // get one (accordion/root/AccordionRoot.d.mts). Anything not under
 // `@base-ui/react/` is not a Base UI origin at all - undefined, not a guess.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
 function baseUiOriginFromDeclarationFile(relativeFile: string): string | undefined {
   const prefix = '@base-ui/react/';
   if (!relativeFile.startsWith(prefix)) return undefined;
@@ -642,6 +687,7 @@ function baseUiOriginFromDeclarationFile(relativeFile: string): string | undefin
   const [component, ...rest] = segments;
   const part = rest.slice(0, -1);
   return ['base_ui', component, ...part].map((token) => token.replace(/-/g, '_')).join('_');
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
 }
 
 // Classifies ONE heritage type reference - either a component's direct
@@ -653,6 +699,7 @@ function baseUiOriginFromDeclarationFile(relativeFile: string): string | undefin
 // actually declares it. A reference to neither (an inline object type, a
 // kit-local interface with no DOM/Base UI heritage of its own) yields
 // undefined, which is exactly right for DataTable's from-scratch props.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
 function originFromTypeRef(node: ts.TypeNode, checker: ts.TypeChecker, kitRoot: string): string | undefined {
   const parts = typeRefParts(node);
   if (!parts) return undefined;
@@ -673,6 +720,7 @@ function originFromTypeRef(node: ts.TypeNode, checker: ts.TypeChecker, kitRoot: 
   const decl = resolved?.getDeclarations()?.[0];
   if (!decl) return undefined;
   return baseUiOriginFromDeclarationFile(relativeDeclarationFile(decl.getSourceFile().fileName, kitRoot));
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
 }
 
 // The origin (see ComponentExtraction.passthroughOrigin) of a component's
@@ -685,13 +733,13 @@ function originFromTypeRef(node: ts.TypeNode, checker: ts.TypeChecker, kitRoot: 
 // Trigger resolves against `AccordionPrimitive.Trigger.Props` here, never
 // unwrapping into the Header+Trigger composition underneath it the way
 // walkPropsType's kind walk does to reach the literal 'button' tag.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
 export function resolvePassthroughOrigin(
   node: ts.TypeNode,
   checker: ts.TypeChecker,
   kitRoot: string,
   cannotExtract: string[],
 ): string | undefined {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
   for (const member of resolveTopLevelMembers(node, checker, new Set(), 0, cannotExtract)) {
     const parts = typeRefParts(member);
     if (!parts) continue;
@@ -740,12 +788,14 @@ function normalizeImportPathsInTypeText(typeText: string, kitRoot: string): stri
 // True for a call whose resolved callee really is React's own `forwardRef`
 // or `memo` export - checked by symbol identity the same way isCvaCall
 // checks cva, so an aliased import resolves the same as the plain form.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
 function isReactWrapperCall(call: ts.CallExpression, checker: ts.TypeChecker, wrapperName: 'forwardRef' | 'memo'): boolean {
   const symbol = checker.getSymbolAtLocation(call.expression);
   if (!symbol) return false;
   const resolved = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
   if (resolved.getName() !== wrapperName) return false;
   return declaredUnder(resolved.getDeclarations() ?? [], /[\\/]node_modules[\\/]@types[\\/]react[\\/]/);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
 }
 
 // Unwraps `forwardRef(...)`/`memo(...)` call wrappers around a component
@@ -757,14 +807,17 @@ function isReactWrapperCall(call: ts.CallExpression, checker: ts.TypeChecker, wr
 // exports it intentionally skips. `forwardRef`'s render function and
 // `memo`'s wrapped component are both their call's first argument - the
 // only argument shape either wrapper accepts there.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
 function unwrapComponentInitializer(expr: ts.Expression | undefined, checker: ts.TypeChecker, depth = 0): ts.Expression | undefined {
   if (expr === undefined || depth > 4 || !ts.isCallExpression(expr)) return expr;
   if (isReactWrapperCall(expr, checker, 'forwardRef') || isReactWrapperCall(expr, checker, 'memo')) {
     return unwrapComponentInitializer(expr.arguments[0], checker, depth + 1);
   }
   return expr;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
 function isReactComponentCandidate(
   node: ts.Node,
   checker: ts.TypeChecker,
@@ -775,8 +828,10 @@ function isReactComponentCandidate(
     if (inner && (ts.isArrowFunction(inner) || ts.isFunctionExpression(inner))) return true;
   }
   return false;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
 function containsJsx(node: ts.Node): boolean {
   if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) return true;
   let found = false;
@@ -785,15 +840,19 @@ function containsJsx(node: ts.Node): boolean {
     if (containsJsx(child)) found = true;
   });
   return found;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
 function functionBody(node: ts.FunctionDeclaration | ts.VariableDeclaration, checker: ts.TypeChecker): ts.Node | undefined {
   if (ts.isFunctionDeclaration(node)) return node.body;
   const inner = unwrapComponentInitializer(node.initializer, checker);
   if (inner && (ts.isArrowFunction(inner) || ts.isFunctionExpression(inner))) return inner.body;
   return undefined;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
 function firstParameter(
   node: ts.FunctionDeclaration | ts.VariableDeclaration,
   checker: ts.TypeChecker,
@@ -802,11 +861,14 @@ function firstParameter(
   const inner = unwrapComponentInitializer(node.initializer, checker);
   if (inner && (ts.isArrowFunction(inner) || ts.isFunctionExpression(inner))) return inner.parameters[0];
   return undefined;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
 }
 
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
 function isNodeExported(node: ts.Node): boolean {
   const modifiers = ts.canHaveModifiers(node) ? ts.getModifiers(node) : undefined;
   return (modifiers ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
 }
 
 const kitRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -816,6 +878,7 @@ const kitRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 // actually ships, and re-reading/re-parsing the config file per component
 // would be wasted work across a kit-wide run (see T4's coverage report).
 let cachedCompilerOptions: ts.CompilerOptions | undefined;
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-program
 function loadCompilerOptions(): ts.CompilerOptions {
   if (cachedCompilerOptions) return cachedCompilerOptions;
   const configPath = resolve(kitRoot, 'tsconfig.src.json');
@@ -826,6 +889,7 @@ function loadCompilerOptions(): ts.CompilerOptions {
   const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, dirname(configPath));
   cachedCompilerOptions = parsed.options;
   return cachedCompilerOptions;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-program
 }
 
 // One extraction per tsxPath for the life of the process - resolveTargetExtraction,
@@ -860,12 +924,14 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
   const extractions: ComponentExtraction[] = [];
 
   for (const statement of source.statements) {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
     const candidates: (ts.FunctionDeclaration | ts.VariableDeclaration)[] = [];
     if (ts.isFunctionDeclaration(statement) && isNodeExported(statement)) {
       candidates.push(statement);
     } else if (ts.isVariableStatement(statement) && isNodeExported(statement)) {
       for (const decl of statement.declarationList.declarations) candidates.push(decl);
     }
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
 
     for (const candidate of candidates) {
       // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-candidates
@@ -887,21 +953,32 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
       let defaults: Record<string, string> = {};
 
       if (param) {
+        // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
         const paramType = checker.getTypeAtLocation(param);
         const walk: PropsTypeWalkResult = { kind: undefined, variantSources: [], cannotExtract: [] };
         if (param.type) {
           walkPropsType(param.type, checker, walk, new Set(), 0);
+          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
           const labels = topLevelHeritageLabels(param.type, checker, kitRoot, cannotExtract);
           passthroughSources = labels.passthroughSources;
           variantSourceLabels = labels.variantSourceLabels;
+          // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
           passthroughOrigin = resolvePassthroughOrigin(param.type, checker, kitRoot, cannotExtract);
+          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
         }
+        // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
         passthroughKind = walk.kind;
+        // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
+        // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
         cannotExtract.push(...walk.cannotExtract);
+        // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
 
+        // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
         const variantsResult = extractVariants(walk.variantSources, checker, cannotExtract);
         axes = variantsResult.axes;
         defaults = variantsResult.defaults;
+        // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
+        // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-props
         const axisNames = new Set(Object.keys(axes));
 
         for (const prop of checker.getPropertiesOfType(paramType)) {
@@ -909,6 +986,7 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
           if (axisNames.has(propName)) continue;
 
           const declarations = prop.getDeclarations() ?? [];
+          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-props
           // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-undeclared-prop
           if (declarations.length === 0) {
             // A synthetic/computed property symbol (e.g. one instantiated
@@ -978,7 +1056,9 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
   }
 
   extractionCache.set(tsxPath, extractions);
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-return
   return extractions;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-return
 }
 
 // Every top-level exported declaration name in a file, component or not -
