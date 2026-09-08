@@ -19,7 +19,7 @@
   "required": [],
   "unevaluatedProperties": false,
   "x-uikit": {
-    "metamodel": "1.1.0",
+    "metamodel": "1.2.0",
     "intent": "The clickable header that expands or collapses its AccordionItem.",
     "typical_uses": [
       "The single header/summary child of an AccordionItem"

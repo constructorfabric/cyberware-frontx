@@ -692,3 +692,65 @@ new origin's generated passthrough type still composes correctly under
 that is designed against here - only DOM and Base UI were ever in scope for
 this pilot's three components - so treat "add a primitive library" as new
 design work on the origin resolver, not a config toggle.
+
+## "Not a component of this kit" is an answer the metamodel had no way to give
+
+**Observed.** An agent-facing evaluation pointed two agents at
+`button.contract.yaml`'s navigation rule. `dont_use_when[].instead` was typed
+as a component type reference and nothing else, so a rule whose honest answer
+is "this kit ships no Link component" could only be satisfied by naming the
+nearest kit component - `navigation_menu`, with an author comment in the YAML
+admitting it was a stand-in. Both agents opened NavigationMenu, judged it far
+too heavy for a single link, and fell back to a plain anchor on their own. A
+weaker agent would have shipped NavigationMenu for one link; a validator
+resolving `instead` finds a component the kit really ships and calls the
+contract correct. `button.md` had said the honest thing all along ("for plain
+navigation use the consumer app's link component"), so the contract and the
+prose disagreed on the one component the contract format was piloted on.
+
+The comment was the tell. An overlay field whose author has to write "this is
+a stand-in" next to a value is a field whose vocabulary cannot express the
+fact being recorded - and the comment is not in the compiled artifact, so the
+only reader who ever saw the caveat was the next person to open the YAML.
+
+**Changed.** `dont_use_when[].instead` is now a `oneOf`: the component type
+reference exactly as before, or `{ external, note? }` - `external` required
+and non-empty (what to use, outside this kit), `note` optional (why no kit
+component fits), `additionalProperties: false`. Button's navigation rule
+takes the external form and points at the consumer app's link component,
+with the note carrying what `button.md` documents: an action that must read
+as a button while navigating stays on Button over a real anchor
+(`render={<a href="..." />}` with `nativeButton={false}`). No other overlay
+needed the new form - accordion's and data-table's alternatives (Collapsible,
+Tabs, Card, Button, Table) are all components the kit ships, checked rather
+than assumed.
+
+**Decisions taken along the way.**
+
+- **An object, not a second string convention.** A prefix or sentinel string
+  (`external:...`) in the same slot would keep one type and cost every reader
+  a parse before it could tell a resolvable ref from prose - the ambiguity
+  that made the stand-in readable as a recommendation in the first place. A
+  distinct JSON shape is what makes "resolve this" and "do not try" a
+  structural question: `isExternalAlternative` (compile.ts) is a `typeof`
+  check, and every ref-resolving reader - the per-component conformance
+  suites today, a registry check later - skips the external form instead of
+  failing a grammar check on it.
+- **`note` optional, `external` required.** A reason with no next move is the
+  same gap a "don't" without an "instead" leaves, one level down; a pointer
+  with no reason is often complete on its own.
+- **1.2.0 in this PR rather than deferred.** `METAMODEL_VERSION` moves from
+  1.1.0 to 1.2.0 and all seven instances carry it. The bump is cheap
+  precisely now: nothing outside this repository reads the metamodel, the
+  described set is three directories, and the change only WIDENS a field, so
+  every 1.1.0-shaped instance is a valid 1.2.0 one - which is also why the
+  metamodel's own type id (`...meta.component.v1`) does not move. The
+  compatibility check confirmed the same thing from the other side: it reads
+  the props schema, not the instance, so all seven contracts stayed
+  `backward compatible` across the bump.
+
+**Cost.** Under two hours, most of it in the three places the widened type
+propagates rather than in the schema change itself: the trait schema (free -
+`buildGtsTraitsSchema` inlines whatever `buildMetamodel` authors, so the
+object form validates in `x-gts-traits` with no edit) and the two conformance
+suites that resolve refs, which now skip what was never a ref.

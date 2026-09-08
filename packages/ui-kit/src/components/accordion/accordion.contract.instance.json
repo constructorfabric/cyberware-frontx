@@ -1,6 +1,6 @@
 {
   "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.accordion.v1",
-  "metamodel": "1.1.0",
+  "metamodel": "1.2.0",
   "component": "accordion",
   "intent": "Show one or more sections at a time, collapsing the rest to their headers.",
   "typical_uses": [

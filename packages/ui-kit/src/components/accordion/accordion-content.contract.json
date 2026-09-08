@@ -19,7 +19,7 @@
   "required": [],
   "unevaluatedProperties": false,
   "x-uikit": {
-    "metamodel": "1.1.0",
+    "metamodel": "1.2.0",
     "intent": "The height-animated panel revealed when its AccordionItem is open.",
     "typical_uses": [
       "The single body/detail child of an AccordionItem, shown when it is open"

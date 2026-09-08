@@ -19,7 +19,7 @@
   "required": [],
   "unevaluatedProperties": false,
   "x-uikit": {
-    "metamodel": "1.1.0",
+    "metamodel": "1.2.0",
     "intent": "One collapsible section of an Accordion, identified by a unique value.",
     "typical_uses": [
       "One entry in an Accordion's list of sections, wrapping a trigger and its panel"

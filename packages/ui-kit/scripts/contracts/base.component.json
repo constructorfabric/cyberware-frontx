@@ -19,10 +19,34 @@
               "minLength": 1
             },
             "instead": {
-              "type": "string",
-              "pattern": "^gts\\.frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
-              "description": "GTS type id of another kit component. Demo stand-in for x-gts-ref: production writes \"x-gts-ref\": \"gts.frontx.uikit.component.*~\" here, which resolves the target in the type registry and fails when no such type is registered. The pattern alone only checks grammar, so a grammatical id for a component that does not exist still needs the registry (in the demo: the directory-existence test).",
-              "$comment": "GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu)."
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^gts\\.frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
+                  "description": "GTS type id of another kit component. Demo stand-in for x-gts-ref: production writes \"x-gts-ref\": \"gts.frontx.uikit.component.*~\" here, which resolves the target in the type registry and fails when no such type is registered. The pattern alone only checks grammar, so a grammatical id for a component that does not exist still needs the registry (in the demo: the directory-existence test).",
+                  "$comment": "GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu)."
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "external": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "What to use instead, named as plainly as the reader will have to act on it - the kit ships nothing for this case, so there is no id to resolve."
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "Why no kit component fits, and what the kit does offer for the neighbouring case. Optional: some rules need no more than the pointer itself."
+                    }
+                  },
+                  "required": [
+                    "external"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The alternative to a \"don't\" when it is outside this kit. Without this form the only way to satisfy a required component ref is to name the nearest kit component as a stand-in, which reads to a resolver as a real recommendation and to an agent as an instruction to reach for a component the rule was written to steer it away from."
+                }
+              ]
             }
           },
           "required": [
@@ -32,7 +56,7 @@
           "additionalProperties": false
         },
         "minItems": 1,
-        "description": "A \"don't\" without a typed alternative leaves the agent with no next move, so `instead` is required and is a type id, not a display name. At least one entry is required for the same reason: a component with nothing it should not be used for would be a modeling gap, not a fact worth leaving unstated."
+        "description": "A \"don't\" without an alternative leaves the agent with no next move, so `instead` is required, and it is either a kit component's type id (not a display name - a name resolves to nothing) or the external form for a case the kit ships no component for. At least one entry is required for the same reason: a component with nothing it should not be used for would be a modeling gap, not a fact worth leaving unstated."
       },
       "composition": {
         "type": "object",

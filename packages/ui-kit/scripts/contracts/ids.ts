@@ -26,13 +26,16 @@ export const CONTRACT_MAJOR = 1;
 // changing is a contract major bump. An instance's `metamodel` field is
 // validated as a const equal to this, so a contract compiled against a
 // stale metamodel fails loudly instead of silently degrading.
-export const METAMODEL_VERSION = '1.1.0';
+export const METAMODEL_VERSION = '1.2.0';
 
 // GTS type id of ui-component.meta.json. Its own major (v1) is the grammar
 // of the metamodel TYPE - a different axis from METAMODEL_VERSION above.
 // 1.1.0's field changes stay backward compatible for an existing instance
 // shape (typical_uses replaces use_when, dont_use_when tightens), so the
-// type id does not need to move for this bump.
+// type id does not need to move for this bump. Neither does 1.2.0's:
+// dont_use_when.instead only WIDENS (a component ref still validates
+// exactly as before), so every 1.1.0-shaped instance is also a valid
+// 1.2.0 one.
 export const METAMODEL_TYPE_ID = `gts.${VENDOR_PACKAGE}.meta.component.v1`;
 
 // GTS type id of base.component.json, the abstract parent every component

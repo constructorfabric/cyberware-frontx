@@ -1,6 +1,6 @@
 {
   "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.accordion_trigger.v1",
-  "metamodel": "1.1.0",
+  "metamodel": "1.2.0",
   "component": "accordion-trigger",
   "intent": "The clickable header that expands or collapses its AccordionItem.",
   "typical_uses": [

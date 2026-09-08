@@ -17,12 +17,18 @@ typical_uses:
 # `instead` is a GTS component type id, not a display name: a name is a string
 # nothing can resolve, an id is checked against what the kit actually ships.
 # GTS tokens are snake_case, kit directories kebab-case (navigation_menu ->
-# src/components/navigation-menu).
+# src/components/navigation-menu). Where the kit ships nothing for the case,
+# `instead` takes the external form rather than the nearest kit component.
 dont_use_when:
-  # This kit has no standalone Link component; NavigationMenuLink is where its
-  # anchor semantics live, so the navigation menu is the honest target.
   - rule: Navigation between routes or pages
-    instead: gts.frontx.uikit.component.navigation_menu.v1~ # NavigationMenu
+    instead:
+      external: the consumer app's link component (a plain anchor when the app has none)
+      note: >-
+        This kit ships no Link component, and no kit component is a substitute
+        for one: navigation belongs to the app's own router. An action that
+        must read as a button while it navigates stays on Button, rendered
+        over a real anchor - `render={<a href="..." />}` with
+        `nativeButton={false}`.
   - rule: Toggling a persistent on/off state
     instead: gts.frontx.uikit.component.switch.v1~ # Switch
 

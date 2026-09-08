@@ -143,6 +143,29 @@ export interface ExtensionPoint {
   typed_by: string;
 }
 
+// The alternative a "don't" points a reader at when the kit itself ships
+// nothing that fits. Modeled as its own object rather than as free text in
+// the same slot a component ref occupies: a reader (and a validator
+// resolving the ref) must be able to tell "use this other kit component"
+// apart from "this kit has no component for that" without parsing prose,
+// which is exactly what a stand-in ref hides. `note` carries why no kit
+// component fits, when that is not obvious from `external` alone.
+export interface ExternalAlternative {
+  external: string;
+  note?: string;
+}
+
+// Either a kit component this contract can point at by type id, or an
+// explicit statement that the alternative lives outside the kit.
+export type Alternative = string | ExternalAlternative;
+
+// Narrows an `instead` to the external form. A reader that resolves refs
+// (the per-component conformance suites, a future registry check) uses this
+// to skip what was never a ref, instead of failing a grammar check on it.
+export function isExternalAlternative(instead: Alternative): instead is ExternalAlternative {
+  return typeof instead === 'object';
+}
+
 export interface Overlay {
   component: string;
   intent: string;
@@ -151,8 +174,10 @@ export interface Overlay {
   // growing into a second, competing definition of the component.
   typical_uses: string[];
   // `instead` is a GTS component type id (see the metamodel's
-  // component_type_ref), not a display name - a name resolves to nothing.
-  dont_use_when: { rule: string; instead: string }[];
+  // component_type_ref), not a display name - a name resolves to nothing -
+  // or, where the kit ships no component for the case at all, the external
+  // form above rather than the nearest kit component standing in for one.
+  dont_use_when: { rule: string; instead: Alternative }[];
   composition: {
     children: { kinds: string[]; icons_via?: string };
     // Optional, and only meaningful for a compound component's part - the
@@ -526,6 +551,25 @@ export function buildMetamodel(): Record<string, unknown> {
         enum: ['verified', 'checked-no', 'not-described'],
         description: '"checked-no" (looked at, does not hold) and "not-described" (nobody looked) are different answers and may not collapse into one.',
       },
+      external_alternative: {
+        type: 'object',
+        properties: {
+          external: {
+            type: 'string',
+            minLength: 1,
+            description: 'What to use instead, named as plainly as the reader will have to act on it - the kit ships nothing for this case, so there is no id to resolve.',
+          },
+          note: {
+            type: 'string',
+            minLength: 1,
+            description: 'Why no kit component fits, and what the kit does offer for the neighbouring case. Optional: some rules need no more than the pointer itself.',
+          },
+        },
+        required: ['external'],
+        additionalProperties: false,
+        description:
+          'The alternative to a "don\'t" when it is outside this kit. Without this form the only way to satisfy a required component ref is to name the nearest kit component as a stand-in, which reads to a resolver as a real recommendation and to an agent as an instruction to reach for a component the rule was written to steer it away from.',
+      },
     },
     properties: {
       id: {
@@ -563,14 +607,21 @@ export function buildMetamodel(): Record<string, unknown> {
           type: 'object',
           properties: {
             rule: { type: 'string', minLength: 1 },
-            instead: { $ref: '#/$defs/component_type_ref' },
+            // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-alternative
+            // Two shapes, one of which must match: a kit component by type
+            // id, or the external form for a case the kit ships nothing
+            // for. Not a plain string union with the ref: an unmatched
+            // string would then read as an alternative nothing can resolve,
+            // which is the failure the typed ref exists to prevent.
+            instead: { oneOf: [{ $ref: '#/$defs/component_type_ref' }, { $ref: '#/$defs/external_alternative' }] },
+            // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-alternative
           },
           required: ['rule', 'instead'],
           additionalProperties: false,
         },
         minItems: 1,
         description:
-          'A "don\'t" without a typed alternative leaves the agent with no next move, so `instead` is required and is a type id, not a display name. At least one entry is required for the same reason: a component with nothing it should not be used for would be a modeling gap, not a fact worth leaving unstated.',
+          'A "don\'t" without an alternative leaves the agent with no next move, so `instead` is required, and it is either a kit component\'s type id (not a display name - a name resolves to nothing) or the external form for a case the kit ships no component for. At least one entry is required for the same reason: a component with nothing it should not be used for would be a modeling gap, not a fact worth leaving unstated.',
       },
       composition: {
         type: 'object',

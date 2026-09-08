@@ -1,6 +1,6 @@
 {
   "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.data_table_sort_button.v1",
-  "metamodel": "1.1.0",
+  "metamodel": "1.2.0",
   "component": "data-table-sort-button",
   "intent": "A sortable column's header button, toggling that column's sort state and showing its current direction.",
   "typical_uses": [

@@ -25,7 +25,7 @@
   ],
   "unevaluatedProperties": false,
   "x-uikit": {
-    "metamodel": "1.1.0",
+    "metamodel": "1.2.0",
     "intent": "A sortable column's header button, toggling that column's sort state and showing its current direction.",
     "typical_uses": [
       "The header render function of a sortable column in a DataTable"

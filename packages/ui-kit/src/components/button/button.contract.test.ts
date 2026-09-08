@@ -28,6 +28,7 @@ import {
   buildPropsAndRequired,
   compileContract,
   compileInstance,
+  isExternalAlternative,
   loadBaseSchema,
   loadPassthroughSchema,
   parseOverlay,
@@ -317,6 +318,28 @@ describe('overlay and extraction safety', () => {
     expect(() => parseOverlay('button', withUnknownKey)).toThrow('button');
   });
 
+  it('accepts an alternative that lives outside the kit', () => {
+    // The widened `instead`: a rule whose honest answer is "not a component
+    // of this kit" no longer has to name the nearest kit component to
+    // satisfy a required ref. `note` is optional, so the minimal form is
+    // what this checks.
+    const external = {
+      ...validOverlay,
+      dont_use_when: [{ rule: 'Navigation between routes or pages', instead: { external: "the consumer app's link component" } }],
+    };
+    expect(parseOverlay('button', external)).toEqual(external);
+  });
+
+  it('rejects an external alternative that does not say what to use', () => {
+    // A `note` alone is a reason with no next move - the same gap a "don't"
+    // without an "instead" leaves, one level down.
+    const reasonOnly = {
+      ...validOverlay,
+      dont_use_when: [{ rule: 'Navigation between routes or pages', instead: { note: 'the kit ships no Link component' } }],
+    };
+    expect(() => parseOverlay('button', reasonOnly)).toThrow(/external/);
+  });
+
   it('rejects an overlay that restates a machine-owned field, by name', () => {
     // `variants` (plural, matching the cva config the compiler extracts) is
     // the exact typo F9 caught: an overlay author reaching for the wrong
@@ -496,14 +519,32 @@ describe('button contract instance', () => {
     expect(instance.props_schema).toBe(contract.$id);
   });
 
+  it("carries the navigation rule's alternative as an external one, in the instance and in the validator-read block", () => {
+    // The kit ships no Link component. While `instead` could only be a
+    // component ref, this rule pointed at NavigationMenu as a stand-in, and
+    // agents reading the contract opened NavigationMenu for a single link -
+    // a resolver had no way to tell a real recommendation from a placeholder.
+    const navigation = instance.dont_use_when.find((entry) => entry.rule === 'Navigation between routes or pages');
+    if (navigation === undefined || !isExternalAlternative(navigation.instead)) {
+      throw new Error("Button's navigation rule no longer names an alternative outside the kit");
+    }
+    expect(navigation.instead.external).toMatch(/link component/);
+    // The same entry reaches the half a validator reads, not only the
+    // instance a catalog reads.
+    expect(contract['x-gts-traits'].dont_use_when).toContainEqual(navigation);
+  });
+
   it('every dont_use_when alternative resolves to a component the kit ships', () => {
     // Demo stand-in for the registry existence check x-gts-ref performs:
     // grammar alone would happily accept an id nothing implements.
     // Non-emptiness itself is the metamodel's job (dont_use_when has
     // minItems: 1, checked by "validates against the component metamodel"
     // above) - asserting it again here would be the same fact with two
-    // owners.
+    // owners. An external alternative is skipped rather than resolved: it
+    // names something outside the kit, so there is no directory to look
+    // for, and the metamodel has already checked its shape.
     for (const { rule, instead } of instance.dont_use_when) {
+      if (isExternalAlternative(instead)) continue;
       const match = COMPONENT_TYPE_REF.exec(instead);
       if (match === null) {
         throw new Error(`dont_use_when "${rule}": "${instead}" is not a GTS component type id`);

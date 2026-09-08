@@ -43,7 +43,7 @@
   ],
   "unevaluatedProperties": false,
   "x-uikit": {
-    "metamodel": "1.1.0",
+    "metamodel": "1.2.0",
     "intent": "Render tabular data with sorting, optional row selection, and pagination from one columns/data pair.",
     "typical_uses": [
       "Tabular data with more rows than fit on one screen, where the user sorts a column",

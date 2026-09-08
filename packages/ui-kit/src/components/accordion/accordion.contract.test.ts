@@ -16,6 +16,7 @@ import {
   buildMetamodel,
   compileContract,
   compileInstance,
+  isExternalAlternative,
   loadBaseSchema,
   loadPassthroughSchema,
   resolveTargetExtraction,
@@ -180,6 +181,11 @@ describe('accordion family: dont_use_when resolves', () => {
   it('every alternative names a directory the kit ships', () => {
     for (const { stem, instance } of Object.values(units)) {
       for (const { rule, instead } of instance.dont_use_when) {
+        // An external alternative names something outside the kit, so there
+        // is no directory to resolve; the metamodel has already checked its
+        // shape. Every accordion rule points at a kit component today - this
+        // guard is what keeps that from being an assumption of the loop.
+        if (isExternalAlternative(instead)) continue;
         const target = resolveComponentRef(instead);
         expect(existsSync(join(componentsDir, target.directory)), `${stem} dont_use_when "${rule}" -> "${instead}"`).toBe(true);
       }

@@ -1,6 +1,6 @@
 {
   "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.accordion_content.v1",
-  "metamodel": "1.1.0",
+  "metamodel": "1.2.0",
   "component": "accordion-content",
   "intent": "The height-animated panel revealed when its AccordionItem is open.",
   "typical_uses": [

@@ -29,6 +29,26 @@
         "not-described"
       ],
       "description": "\"checked-no\" (looked at, does not hold) and \"not-described\" (nobody looked) are different answers and may not collapse into one."
+    },
+    "external_alternative": {
+      "type": "object",
+      "properties": {
+        "external": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What to use instead, named as plainly as the reader will have to act on it - the kit ships nothing for this case, so there is no id to resolve."
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Why no kit component fits, and what the kit does offer for the neighbouring case. Optional: some rules need no more than the pointer itself."
+        }
+      },
+      "required": [
+        "external"
+      ],
+      "additionalProperties": false,
+      "description": "The alternative to a \"don't\" when it is outside this kit. Without this form the only way to satisfy a required component ref is to name the nearest kit component as a stand-in, which reads to a resolver as a real recommendation and to an agent as an instruction to reach for a component the rule was written to steer it away from."
     }
   },
   "properties": {
@@ -38,7 +58,7 @@
       "description": "GTS instance id: this metamodel's type id, then the instance segment. The instance segment carries exactly 5 dot-tokens (frontx.uikit.component.<name>.v<n>)."
     },
     "metamodel": {
-      "const": "1.1.0",
+      "const": "1.2.0",
       "description": "Version of the overlay vocabulary the compiler emitted. Checked as a const, not a free string with minLength: a contract compiled against a different metamodel version must fail loudly, not pass silently with a stale value."
     },
     "component": {
@@ -70,7 +90,14 @@
             "minLength": 1
           },
           "instead": {
-            "$ref": "#/$defs/component_type_ref"
+            "oneOf": [
+              {
+                "$ref": "#/$defs/component_type_ref"
+              },
+              {
+                "$ref": "#/$defs/external_alternative"
+              }
+            ]
           }
         },
         "required": [
@@ -80,7 +107,7 @@
         "additionalProperties": false
       },
       "minItems": 1,
-      "description": "A \"don't\" without a typed alternative leaves the agent with no next move, so `instead` is required and is a type id, not a display name. At least one entry is required for the same reason: a component with nothing it should not be used for would be a modeling gap, not a fact worth leaving unstated."
+      "description": "A \"don't\" without an alternative leaves the agent with no next move, so `instead` is required, and it is either a kit component's type id (not a display name - a name resolves to nothing) or the external form for a case the kit ships no component for. At least one entry is required for the same reason: a component with nothing it should not be used for would be a modeling gap, not a fact worth leaving unstated."
     },
     "composition": {
       "type": "object",

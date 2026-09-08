@@ -1,6 +1,6 @@
 {
   "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.accordion_item.v1",
-  "metamodel": "1.1.0",
+  "metamodel": "1.2.0",
   "component": "accordion-item",
   "intent": "One collapsible section of an Accordion, identified by a unique value.",
   "typical_uses": [

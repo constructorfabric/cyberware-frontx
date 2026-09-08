@@ -1,6 +1,6 @@
 {
   "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.button.v1",
-  "metamodel": "1.1.0",
+  "metamodel": "1.2.0",
   "component": "button",
   "intent": "Trigger a single action in the current context.",
   "typical_uses": [
@@ -10,7 +10,10 @@
   "dont_use_when": [
     {
       "rule": "Navigation between routes or pages",
-      "instead": "gts.frontx.uikit.component.navigation_menu.v1~"
+      "instead": {
+        "external": "the consumer app's link component (a plain anchor when the app has none)",
+        "note": "This kit ships no Link component, and no kit component is a substitute for one: navigation belongs to the app's own router. An action that must read as a button while it navigates stays on Button, rendered over a real anchor - `render={<a href=\"...\" />}` with `nativeButton={false}`."
+      }
     },
     {
       "rule": "Toggling a persistent on/off state",

@@ -19,7 +19,7 @@
   "required": [],
   "unevaluatedProperties": false,
   "x-uikit": {
-    "metamodel": "1.1.0",
+    "metamodel": "1.2.0",
     "intent": "Show one or more sections at a time, collapsing the rest to their headers.",
     "typical_uses": [
       "A list of independent sections (FAQ, settings groups) too long to show all at once, where the user opens what is relevant",

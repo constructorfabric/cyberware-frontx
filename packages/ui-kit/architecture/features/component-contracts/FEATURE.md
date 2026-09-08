@@ -171,17 +171,18 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 
 **Input**: The artifact being compiled and the parsed overlay document.
 
-**Output**: The admitted overlay, or a refusal naming the offence. The first four checks read the document alone and run as it is parsed; the last needs the extraction and so runs once the overlay has been returned, against the component's real props.
+**Output**: The admitted overlay, or a refusal naming the offence. Every check before the return reads the document alone and runs as it is parsed; the last needs the extraction and so runs once the overlay has been returned, against the component's real props.
 
 **Steps**:
 1. [x] - `p1` - **IF** the overlay carries a field the code owns - `inst-oa-machine-owned`
    1. [x] - `p1` - Refuse, naming each such field - `inst-oa-machine-owned-refuse`
 2. [x] - `p1` - **IF** the overlay carries a field the vocabulary does not define, or a field of the wrong shape - `inst-oa-unknown-field`
    1. [x] - `p1` - Refuse, naming the field and its position in the document - `inst-oa-unknown-field-refuse`
-3. [x] - `p1` - **IF** the component the overlay declares is not the one being compiled - `inst-oa-name-mismatch`
+3. [x] - `p1` - Admit the alternative a "don't" names in either of the two forms that resolve - a reference to a component this kit ships, or an explicit statement of what to use outside the kit with the reason no kit component fits - and refuse any other shape - `inst-oa-alternative`
+4. [x] - `p1` - **IF** the component the overlay declares is not the one being compiled - `inst-oa-name-mismatch`
    1. [x] - `p1` - Refuse, naming both - `inst-oa-name-mismatch-refuse`
-4. [x] - `p1` - **RETURN** the admitted overlay - `inst-oa-return`
-5. [x] - `p1` - **IF** the admitted overlay references a prop the component does not declare - `inst-oa-absent-prop`
+5. [x] - `p1` - **RETURN** the admitted overlay - `inst-oa-return`
+6. [x] - `p1` - **IF** the admitted overlay references a prop the component does not declare - `inst-oa-absent-prop`
    1. [x] - `p1` - Refuse, naming the prop - `inst-oa-absent-prop-refuse`
 
 ### Contract Compilation
@@ -373,7 +374,7 @@ Not applicable. Nothing here has a lifecycle: extraction, compilation and every 
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-overlay-admission`
 
-The system **MUST** refuse a hand-authored overlay that restates a field the code owns, carries a field the overlay vocabulary does not define, declares a component other than the one being compiled, or references a prop the component does not declare - naming the offence in each case and writing nothing.
+The system **MUST** refuse a hand-authored overlay that restates a field the code owns, carries a field the overlay vocabulary does not define, declares a component other than the one being compiled, or references a prop the component does not declare - naming the offence in each case and writing nothing. Where an overlay states an alternative to a use it rules out, the system **MUST** admit both a reference to a component this kit ships and an explicit statement that the alternative lies outside the kit, and no other shape: a reader that cannot tell a recommendation from a stand-in named only because the field demanded one is worse served than by no alternative at all.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-overlay-admission`
@@ -507,6 +508,7 @@ The system **MUST** report the described set against the component set, with a p
 ## 6. Acceptance Criteria
 
 - [x] An overlay restating a field the code owns, carrying an undefined field, declaring the wrong component, or naming an absent prop is refused by name, and no artifact is written.
+- [x] An overlay whose alternative to a ruled-out use is a component the kit ships names it by reference; one whose honest alternative is outside the kit says so and why, rather than naming the nearest kit component as a stand-in; anything else in that position is refused.
 - [x] A component's variant axes, their values and their defaults appear in its contract as read from the code, and an axis declared twice by two heritage entries is reported naming both rather than silently resolved.
 - [x] A wrapper import renamed at its import site, and a locally shadowed utility type of the same name as a real one, are both classified by what they resolve to rather than by what they are called.
 - [x] A prop the component declares appears in its contract; a prop it inherits appears in the shared type for its origin and not in the contract's own properties; a prop with no schema equivalent appears as an annotated property with a matching slot record.
