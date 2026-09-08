@@ -21,6 +21,7 @@ const fileEntry = (content: string): DiskEntry => ({ kind: 'file', content });
 const absentEntry: DiskEntry = { kind: 'absent' };
 const directoryEntry: DiskEntry = { kind: 'directory' };
 const symlinkEntry: DiskEntry = { kind: 'symlink' };
+const specialEntry: DiskEntry = { kind: 'special' };
 
 // Keyed by absolute path; unlisted paths default to absent, which is the
 // ordinary case for every path a test does not care to stage disk content
@@ -250,6 +251,76 @@ describe('classifyTarget (cpt-frontx-algo-upgrade-changeset-classify)', () => {
     );
 
     expect(result.conflictPaths).toEqual(['packages/app/src/link.ts']);
+    expect(result.operations).toEqual([]);
+  });
+
+  // A FIFO, socket, or device standing exactly at a payload-declared LEAF —
+  // reported by the real adapter's own `'special'` kind (never collapsed
+  // into `'directory'`, which is a PERMITTED ancestor shape and would have
+  // let this pass as ordinary structure instead of refusing it).
+  it('reports a special file (FIFO/socket/device) on disk where a payload declares a path as a conflict, fail-closed', async () => {
+    const result = await classifyTarget(
+      baseInput({
+        baseline: payload({}),
+        candidate: payload({ 'src/pipe.ts': 'content' }),
+        readDiskEntry: fakeReadDiskEntry({ '/repo/packages/app/src/pipe.ts': specialEntry }),
+      }),
+    );
+
+    expect(result.conflictPaths).toEqual(['packages/app/src/pipe.ts']);
+    expect(result.uncomparableCauses).toEqual([
+      { path: 'packages/app/src/pipe.ts', component: 'packages/app/src/pipe.ts', kind: 'special' },
+    ]);
+    expect(result.operations).toEqual([]);
+  });
+
+  // --- 7c. special-file ANCESTOR: the false-success this fixes ------------
+  //
+  // The defect this class of test pins: a FIFO standing where an ancestor
+  // directory is required used to be reported `'directory'` (a PERMITTED
+  // ancestor shape), so the ancestor probe never flagged it — every path
+  // beneath it then reached `readDiskEntry`, which threw `ENOTDIR` (a real
+  // adapter fact — see the fake's own limits noted in
+  // `upgrade-classify-symlink-ancestor-fs.test.ts`) and was reported
+  // `'absent'`. Because this algorithm's own precedence rule treats two
+  // absences as equal, a path whose baseline and candidate carry it
+  // IDENTICALLY then classified `UNCHANGED` — a false success for content
+  // this algorithm never actually managed to read at all, exactly the
+  // `--restore` failure mode this fixture reproduces the mechanism of.
+  it('reports a conflict — never UNCHANGED — when an ancestor directory component is a special file, even though the baseline and candidate agree', async () => {
+    const result = await classifyTarget(
+      baseInput({
+        baseline: payload({ 'pipe/sub/leaf.txt': 'same-in-both' }),
+        candidate: payload({ 'pipe/sub/leaf.txt': 'same-in-both' }),
+        readDiskEntry: fakeReadDiskEntry({
+          '/repo/packages/app/pipe': specialEntry,
+          // The leaf itself is never even asked: a bad ancestor takes
+          // precedence over whatever the leaf's own probe would report.
+        }),
+      }),
+    );
+
+    expect(result.conflictPaths).toEqual(['packages/app/pipe/sub/leaf.txt']);
+    expect(result.uncomparablePaths).toEqual(['packages/app/pipe/sub/leaf.txt']);
+    expect(result.escapingPaths).toEqual([]);
+    expect(result.uncomparableCauses).toEqual([
+      { path: 'packages/app/pipe/sub/leaf.txt', component: 'packages/app/pipe', kind: 'special' },
+    ]);
+    // Never `UNCHANGED`, and never any operation at all — the false success
+    // this fixture exists to rule out.
+    expect(result.operations).toEqual([]);
+  });
+
+  it('reports a conflict for ADD and REMOVE through a special-file ancestor, not only a path both payloads agree on', async () => {
+    const result = await classifyTarget(
+      baseInput({
+        baseline: payload({ 'pipe/remove.ts': 'gone-baseline' }),
+        candidate: payload({ 'pipe/add.ts': 'brand-new' }),
+        readDiskEntry: fakeReadDiskEntry({ '/repo/packages/app/pipe': specialEntry }),
+      }),
+    );
+
+    expect(result.conflictPaths.sort()).toEqual(['packages/app/pipe/add.ts', 'packages/app/pipe/remove.ts']);
     expect(result.operations).toEqual([]);
   });
 

@@ -144,16 +144,32 @@ export type ResolvePayloadResult =
 // last applied.
 export type ResolvePayloadFn = (origin: string) => Promise<ResolvePayloadResult>;
 
-// What is actually at a path on disk. The four cases are distinguished
-// because `inst-cls-if-not-regular` must refuse fail-closed on a directory
-// or a symlink where a payload declares a path, while an ABSENCE is an
-// ordinary comparison input ("an absent path is unequal to any content, and
-// two absences are equal").
+// What is actually at a path on disk. The five cases are distinguished
+// because `inst-cls-if-not-regular` must refuse fail-closed on a directory,
+// a symlink, or a SPECIAL file (a FIFO, socket, or device — anything that is
+// neither a regular file, a directory, nor a symlink) where a payload
+// declares a path, while an ABSENCE is an ordinary comparison input ("an
+// absent path is unequal to any content, and two absences are equal").
+//
+// `'special'` is its own kind, never folded into `'directory'` the way an
+// earlier version of the real adapter (`../adapters/fs-upgrade-io.ts`) did:
+// `'directory'` is a PERMITTED ancestor shape (`classify.ts`'s own ancestor
+// probe treats it as ordinary structure to descend through), while a special
+// file standing at that same position must block everything beneath it
+// exactly like a symlink does. Collapsing the two let a FIFO standing where
+// an ancestor directory is required pass as a perfectly good directory —
+// this seam's own `lstatSync` then threw `ENOTDIR` for every path beneath
+// it, caught and reported `'absent'`, which satisfied the "two absences are
+// equal" comparison rule and reported nothing to do for content the engine
+// had never actually been able to read. `'special'` is spelled identically
+// to `scaffold/existing-content.ts`'s own `kind: 'special'` for the same
+// fact on the apply side — one name for one shape, never a second.
 export type DiskEntry =
   | { kind: 'file'; content: string }
   | { kind: 'absent' }
   | { kind: 'directory' }
-  | { kind: 'symlink' };
+  | { kind: 'symlink' }
+  | { kind: 'special' };
 
 // Reads one absolute path's disk state. Never throws for absence — that is
 // the `'absent'` case, a first-class comparison input.

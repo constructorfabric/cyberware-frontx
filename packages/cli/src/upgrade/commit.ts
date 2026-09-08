@@ -204,6 +204,14 @@ export async function commitUpgrade(plan: UpgradePlan, deps: CommitDeps): Promis
   // the destinations that got there, never the ones the loop never reached.
   const landedOps: UpgradeOperation[] = [];
 
+  // Declared here, OUTSIDE the `TRY`, so the `CATCH` below can see which temp
+  // files this attempt actually materialized — not only which ops landed.
+  // `inst-com-restore-on-error` needs both: `landedOps` names what to return
+  // to baseline, and this map names this attempt's own litter that never
+  // became a destination at all, which recovery must sweep up rather than
+  // leave behind for a "fully recovered" report to be true.
+  const tempPathByOp = new Map<UpgradeOperation, string>();
+
   // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-try
   try {
     // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-reclaim-stale-temp
@@ -215,7 +223,6 @@ export async function commitUpgrade(plan: UpgradePlan, deps: CommitDeps): Promis
     // only their beside-it temp files - so a crash anywhere in this loop
     // leaves every destination exactly as it was (nothing here mutates a
     // destination path).
-    const tempPathByOp = new Map<UpgradeOperation, string>();
     for (const op of addOrReplaceOps) {
       const dest = destinationPath(deps.repoRoot, op);
       const temp = tempPath(dest);
@@ -236,20 +243,23 @@ export async function commitUpgrade(plan: UpgradePlan, deps: CommitDeps): Promis
     for (const op of [...addOrReplaceOps, ...removeOps]) {
       const dest = destinationPath(deps.repoRoot, op);
       const entry = await deps.readDiskEntry(dest);
-      // A directory or a symlink is drift OUTRIGHT, never folded into a
-      // content comparison. Collapsing both to `null` (as "not a file") made
-      // them compare EQUAL to an `ADD`'s `expectedDisk`, which is `null`
-      // because classification saw an absence — so a symlink or directory the
-      // developer created at that path between review and this moment was
-      // reported as "unchanged" and the rename proceeded. For a directory the
-      // rename then fails and is recovered (mislabelled, but nothing lost);
-      // for a SYMLINK, `rename(2)` replaces the link silently and the
-      // developer's own symlink is destroyed — in precisely the window this
-      // check exists to close. Classification itself refuses fail-closed on
-      // the identical disk state (`inst-cls-if-not-regular`), so treating it
-      // as anything but drift here would also make this check disagree with
-      // the classification whose result it is verifying.
-      if (entry.kind === 'directory' || entry.kind === 'symlink') {
+      // A directory, a symlink, or a special file (a FIFO, socket, or
+      // device) is drift OUTRIGHT, never folded into a content comparison.
+      // Collapsing any of them to `null` (as "not a file") made it compare
+      // EQUAL to an `ADD`'s `expectedDisk`, which is `null` because
+      // classification saw an absence — so a symlink, directory, or special
+      // file the developer created at that path between review and this
+      // moment was reported as "unchanged" and the rename proceeded. For a
+      // directory the rename then fails and is recovered (mislabelled, but
+      // nothing lost); for a SYMLINK, `rename(2)` replaces the link silently
+      // and the developer's own symlink is destroyed; for a SPECIAL file,
+      // `rename(2)` replaces it just as silently, destroying it identically
+      // — in precisely the window this check exists to close. Classification
+      // itself refuses fail-closed on the identical disk state
+      // (`inst-cls-if-not-regular`), so treating any of these as anything but
+      // drift here would also make this check disagree with the
+      // classification whose result it is verifying.
+      if (entry.kind === 'directory' || entry.kind === 'symlink' || entry.kind === 'special') {
         drifted.push({ target: op.target, path: op.path });
         continue;
       }
@@ -332,6 +342,35 @@ export async function commitUpgrade(plan: UpgradePlan, deps: CommitDeps): Promis
         } else {
           await deps.unlinkDiskFile(dest);
         }
+      } catch {
+        unrecovered.push({ target: op.target, path: op.path });
+      }
+    }
+
+    // Also sweep this attempt's OWN litter: every temp file materialized in
+    // `inst-com-materialize-temp` above whose op never reached the rename
+    // phase — `landedOps` never contains it, since a rename never landed —
+    // is still sitting on disk beside its destination. It was never a
+    // destination, so there is no baseline content to write back for it; its
+    // state before this attempt began was simply not existing, and recovery
+    // means removing it, exactly the way a landed `ADD` is reversed by
+    // unlinking rather than by writing content the baseline does not have.
+    // Left behind, it would sit there indefinitely: the NEXT upgrade of this
+    // name would eventually reclaim it as a stale temp file
+    // (`inst-com-reclaim-stale-temp`), but that step exists for a prior
+    // CRASH this `CATCH` never observed, not for tidying up after a failure
+    // this very run already caught and is about to report as recovered. A
+    // failure to remove it is exactly as much a recovery failure as failing
+    // to return a landed destination to baseline is — either way, something
+    // this attempt is responsible for is left in a state the developer never
+    // approved and was never told about — so it is folded into the SAME
+    // `unrecovered` list rather than tracked and reported separately: one
+    // list of "what this attempt could not undo," not two.
+    const landedSet = new Set(landedOps);
+    for (const [op, temp] of tempPathByOp) {
+      if (landedSet.has(op)) continue; // renamed away already - nothing left here to remove
+      try {
+        await deps.unlinkDiskFile(temp);
       } catch {
         unrecovered.push({ target: op.target, path: op.path });
       }

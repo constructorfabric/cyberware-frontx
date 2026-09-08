@@ -212,6 +212,7 @@ function makeDeps(overrides: Partial<CliDeps> = {}): DepsFixture {
     // defaults to "declined". The `delete`-specific dispatch tests override
     // these.
     listTargetFilesFn: vi.fn(async () => []),
+    listUnenumerableTargetEntriesFn: vi.fn(async () => []),
     confirmDeletion: vi.fn(async (): Promise<'confirmed' | 'declined'> => 'declined'),
     // `upgrade`'s own interactive plan-approval prompt — same "declined by
     // default" discipline as `confirmDeletion` above; the upgrade dispatch

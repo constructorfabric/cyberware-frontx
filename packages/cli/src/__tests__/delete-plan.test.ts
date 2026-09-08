@@ -1,7 +1,7 @@
 // @cpt-algo:cpt-frontx-algo-cli-scaffolding-delete-plan:p1
 import { describe, expect, it } from 'vitest';
 import { computeDeletionPlan } from '../scaffold/delete-plan';
-import type { DeletePlanInventoryPort, ListTargetFilesFn } from '../scaffold/delete-plan';
+import type { DeletePlanInventoryPort, ListTargetFilesFn, ListUnenumerableTargetEntriesFn } from '../scaffold/delete-plan';
 import { InventoryState } from '../inventory/types';
 import type { InventoryEntry } from '../inventory/types';
 import type { CanonicalizeTargetFn } from '../scaffold/conflict-check';
@@ -48,6 +48,11 @@ const neverCalledReadFileFn: ReadFileFn = async () => {
   throw new Error('readFileFn should not be called for a remote-origin fixture');
 };
 
+// The ordinary case for a fixture built from a path->content map: every entry
+// the walk reports is a regular file, so there is nothing standing inside the
+// target that a deletion cannot enumerate.
+const noUnenumerableEntries: ListUnenumerableTargetEntriesFn = async () => [];
+
 // A real project-relative `readFileFn` fake keyed by absolute path — used by
 // the local-origin regression test below, mirroring how `register.ts`
 // itself reads a `path:` origin's manifest directly off disk.
@@ -77,6 +82,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
       identityCanonicalize,
       fakeListTargetFiles({}),
       neverCalledReadFileFn,
+      noUnenumerableEntries,
     );
 
     expect(result).toMatchObject({ ok: false, code: 'TARGET_NOT_APPLIED', details: { target: 'packages/app' } });
@@ -94,6 +100,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
         '/repo/packages/app': ['src/index.ts', 'docs/readme.md'],
       }),
       neverCalledReadFileFn,
+      noUnenumerableEntries,
     );
 
     expect(result.ok).toBe(true);
@@ -122,6 +129,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
         '/repo/packages/app': ['src/index.ts', 'admin/index.ts'],
       }),
       neverCalledReadFileFn,
+      noUnenumerableEntries,
     );
 
     expect(result.ok).toBe(true);
@@ -143,6 +151,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
         '/repo/packages/app': ['src/index.ts', 'vendor/lib.js'],
       }),
       neverCalledReadFileFn,
+      noUnenumerableEntries,
     );
 
     expect(result.ok).toBe(true);
@@ -176,6 +185,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
       // `fakeInventory`'s own `excludedSubtrees: []` above already asserted
       // before this checkpoint's fix made that fixture irrelevant here.
       fakeReadFileFn({}),
+      noUnenumerableEntries,
     );
 
     expect(result.ok).toBe(true);
@@ -202,6 +212,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
         '/repo/packages/app': ['src/index.ts'],
       }),
       fakeReadFileFn({}),
+      noUnenumerableEntries,
     );
 
     expect(result.ok).toBe(true);
@@ -226,6 +237,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
         '/repo/packages/app': ['src/index.ts'],
       }),
       neverCalledReadFileFn,
+      noUnenumerableEntries,
     );
 
     expect(result.ok).toBe(true);
@@ -246,6 +258,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
         '/repo': ['src/index.ts', '.frontx/ai/appTemplate/marker.txt'],
       }),
       fakeReadFileFn({}),
+      noUnenumerableEntries,
     );
 
     expect(result.ok).toBe(true);
@@ -282,6 +295,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
         ],
       }),
       fakeReadFileFn({}),
+      noUnenumerableEntries,
     );
 
     expect(result.ok).toBe(true);
@@ -320,6 +334,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
           description: 'A local template.',
         }),
       }),
+      noUnenumerableEntries,
     );
 
     expect(result.ok).toBe(true);
@@ -347,6 +362,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
         '/repo': ['src/index.ts', '.git/config', '.DS_Store', 'Thumbs.db', 'admin/index.ts', 'docs/readme.md'],
       }),
       neverCalledReadFileFn,
+      noUnenumerableEntries,
     );
 
     expect(result.ok).toBe(true);
@@ -368,6 +384,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
       identityCanonicalize,
       fakeListTargetFiles({}),
       neverCalledReadFileFn,
+      noUnenumerableEntries,
     );
 
     expect(result.ok).toBe(true);

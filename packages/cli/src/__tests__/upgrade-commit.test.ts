@@ -239,6 +239,36 @@ describe('commitUpgrade (cpt-frontx-algo-upgrade-changeset-commit)', () => {
     expect(harness.disk.get('/repo/app/file.ts')).toBe('DRIFTED content, not what classification saw');
   });
 
+  // A FIFO, socket, or device installed exactly at an ADD's destination in
+  // the window between developer review and this commit is drift OUTRIGHT,
+  // never folded into a content comparison — collapsing it to `null` (as
+  // "not a file") would compare EQUAL to an ADD's `expectedDisk` (`null`,
+  // an absence classification saw), so the rename would proceed and
+  // `rename(2)` would silently replace the developer's own special file.
+  it('treats a special file (FIFO/socket/device) installed at a destination since review as drift, never as unchanged', async () => {
+    const harness = makeHarness({});
+    const originalReadDiskEntry = harness.deps.readDiskEntry;
+    harness.deps.readDiskEntry = async (absolutePath: string) => {
+      if (absolutePath === '/repo/app/new-pipe.ts') return { kind: 'special' };
+      return originalReadDiskEntry(absolutePath);
+    };
+
+    const plan = makePlan({
+      operations: [op({ target: 'app', path: 'app/new-pipe.ts', op: 'ADD', expectedDisk: null, baselineContent: null, newContent: 'new content' })],
+    });
+
+    const result = await commitUpgrade(plan, harness.deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.code).toBe('CONTENT_CONFLICT');
+    expect(result.details?.drifted).toEqual([{ target: 'app', path: 'app/new-pipe.ts' }]);
+    // Nothing was renamed over the developer's special file, and the plan's
+    // own temp file never reached it either — verification runs before any
+    // rename.
+    expect(harness.disk.has('/repo/app/new-pipe.ts')).toBe(false);
+  });
+
   it('refuses CONTENT_CONFLICT naming every drifted destination, without writing project state', async () => {
     const harness = makeHarness({
       '/repo/app/a.ts': 'drifted-a',
@@ -382,9 +412,13 @@ describe('commitUpgrade (cpt-frontx-algo-upgrade-changeset-commit)', () => {
 
     // The landed REPLACE was reversed by writing baseline content back...
     expect(harness.disk.get('/repo/app/replace-me.ts')).toBe('baseline content');
-    // ...and the ADD never landed in the first place (its rename threw).
+    // ...and the ADD never landed in the first place (its rename threw). Its
+    // own temp file, materialized before the rename that failed, is also
+    // gone: recovery sweeps this attempt's own litter, not only landed
+    // destinations, so a "fully recovered" report never leaves a
+    // `*.frontx-upgrade-tmp` file behind for the developer to find.
     expect(harness.disk.has('/repo/app/added.ts')).toBe(false);
-    expect(harness.disk.has(`/repo/app/added.ts${RESERVED_TEMP_SUFFIX}`)).toBe(true);
+    expect(harness.disk.has(`/repo/app/added.ts${RESERVED_TEMP_SUFFIX}`)).toBe(false);
 
     expect(harness.wasProjectStateWritten()).toBe(false);
     expect(harness.promoteInventory).not.toHaveBeenCalled();
@@ -579,6 +613,56 @@ describe('commitUpgrade (cpt-frontx-algo-upgrade-changeset-commit)', () => {
     expect(result.details).toMatchObject({
       unrecovered: [{ target: 'app', path: 'app/replace-me.ts' }],
     });
+    expect(harness.wasProjectStateWritten()).toBe(false);
+  });
+
+  // Defect: a failed upgrade used to report "fully recovered to its
+  // baseline" while leaving a materialized-but-never-renamed temp file on
+  // disk — a claim the commit path did not keep. Recovery now sweeps that
+  // litter too (see `inst-com-restore-on-error`), and when the sweep ITSELF
+  // fails, this proves the report honestly reflects that: never "fully
+  // recovered", and the temp file named among what recovery could not undo,
+  // in the SAME `unrecovered` list a destination that cannot be restored
+  // uses — one report, not two.
+  it('reports INTERNAL naming an unrecovered path, never "fully recovered", when a residual temp file cannot itself be removed', async () => {
+    const harness = makeHarness({ '/repo/app/replace-me.ts': 'baseline content' });
+    const tempPath = `/repo/app/added.ts${RESERVED_TEMP_SUFFIX}`;
+    const originalUnlink = harness.deps.unlinkDiskFile;
+    harness.deps.unlinkDiskFile = async (absolutePath: string) => {
+      if (absolutePath === tempPath) throw new Error('simulated unlink failure for residual temp file');
+      return originalUnlink(absolutePath);
+    };
+
+    const plan = makePlan({
+      operations: [
+        // Lands first (REPLACE) - then the ADD's rename fails, leaving its
+        // own temp file on disk for recovery to sweep.
+        op({
+          target: 'app',
+          path: 'app/replace-me.ts',
+          op: 'REPLACE',
+          expectedDisk: 'baseline content',
+          baselineContent: 'baseline content',
+          newContent: 'replaced content',
+        }),
+        op({ target: 'app', path: 'app/added.ts', op: 'ADD', expectedDisk: null, baselineContent: null, newContent: 'added content' }),
+      ],
+    });
+
+    harness.failNextCall('rename', '/repo/app/added.ts');
+
+    const result = await commitUpgrade(plan, harness.deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.code).toBe('INTERNAL');
+    // The landed REPLACE is still reversed to baseline - the temp-cleanup
+    // failure is a SEPARATE thing recovery could not undo, not a reason to
+    // skip undoing what it could.
+    expect(harness.disk.get('/repo/app/replace-me.ts')).toBe('baseline content');
+    expect(harness.disk.has(tempPath)).toBe(true);
+    expect(result.message).not.toContain('fully recovered');
+    expect(result.details).toMatchObject({ unrecovered: [{ target: 'app', path: 'app/added.ts' }] });
     expect(harness.wasProjectStateWritten()).toBe(false);
   });
 

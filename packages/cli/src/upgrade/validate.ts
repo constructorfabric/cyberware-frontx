@@ -82,19 +82,34 @@ function describeConflictPaths(conflicts: readonly { target: string; path: strin
   return conflicts.map((conflict) => `${conflict.target}:${conflict.path}`).join(', ');
 }
 
+// Renders one `uncomparableCauses` `kind` as the phrase a developer reads —
+// identical to the bare word for `'directory'`/`'symlink'`/`'file'`, which
+// already read as a complete noun phrase on their own ("a directory stands
+// at the path"), but expanded for `'special'`: the bare word alone ("a
+// special stands at the path") names nothing a developer can act on, since
+// "special" is this codebase's own internal classification term
+// (`DiskEntry`'s own kind, `../upgrade/types.ts`), never a word a developer
+// used on their own filesystem. Naming the concrete shapes it covers — a
+// FIFO, socket, or device — gives them a specific answer instead: SPELLED
+// IDENTICALLY to `scaffold/existing-content.ts`'s own doc comment for the
+// same fact on the apply side, never a second phrasing for it.
+function describeKind(kind: string): string {
+  return kind === 'special' ? 'special file (a FIFO, socket, or device)' : kind;
+}
+
 // Names the specific component `cause` blames for making `target:path`
 // uncomparable, so a developer reads what is actually wrong on disk instead
 // of having to walk the path themselves. `component === path` means the leaf
-// itself is the offender (a directory or a symlink standing exactly where
-// the payload declares a regular file); any other `component` names the
-// offending ancestor between the project root and that leaf.
+// itself is the offender (a directory, a symlink, or a special file standing
+// exactly where the payload declares a regular file); any other `component`
+// names the offending ancestor between the project root and that leaf.
 function describeCause(target: string, path: string, cause: { component: string; kind: string } | undefined): string {
   const location = `${target}:${path}`;
   if (cause === undefined) return location; // defensive: every uncomparable path carries a cause
   if (cause.component === path) {
-    return `${location} (a ${cause.kind} stands at the path)`;
+    return `${location} (a ${describeKind(cause.kind)} stands at the path)`;
   }
-  return `${location} (ancestor "${cause.component}" is a ${cause.kind}, not a directory)`;
+  return `${location} (ancestor "${cause.component}" is a ${describeKind(cause.kind)}, not a directory)`;
 }
 
 // The `INVALID_PATH`-specific sibling of `describeCause` above: every
@@ -121,8 +136,9 @@ function describeEscapeCause(target: string, path: string, cause: { component: s
 // partitions `{target, path}` pairs across every target this algorithm just
 // classified, so the two are not the same formulation restated, only the
 // same idea applied to a differently-shaped result). A path recorded because
-// the disk shape is uncomparable — a directory or a symlink at the leaf, or
-// a symlink or a regular file at an ancestor directory component — has moved
+// the disk shape is uncomparable — a directory, a symlink, or a special file
+// (a FIFO, socket, or device) at the leaf, or a symlink, a regular file, or a
+// special file at an ancestor directory component — has moved
 // nothing "away from" the baseline; telling a developer it did sends them
 // looking for a content difference that does not exist, so that cause is
 // named separately from genuine drift, and each such path is named together

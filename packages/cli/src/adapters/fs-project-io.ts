@@ -30,7 +30,7 @@ import type { ListPayloadFilesFn, ResolveDeclaredExclusionFn, ReadFileFn } from 
 import type { ReadProjectFileFn, WriteProjectFileFn, RemoveProjectFileFn } from '../upgrade/types';
 import type { ReadProjectStateFn, WriteProjectStateFn } from '../project-state/types';
 import type { CanonicalizeTargetFn } from '../scaffold/conflict-check';
-import type { ListTargetFilesFn } from '../scaffold/delete-plan';
+import type { ListTargetFilesFn, ListUnenumerableTargetEntriesFn } from '../scaffold/delete-plan';
 import type { PathExistsFn } from '../resolver/types';
 
 // `writeFile` below refuses to hand `destPath` straight to
@@ -165,9 +165,133 @@ export function createFsWriteFileFn(): WriteFileFn {
   };
 }
 
-/** Real `ReadFileFn` — reads a manifest file; throws (per the seam contract) when absent. */
+// Shared by every read seam below (`createFsReadFileFn`/
+// `createFsReadProjectFileFn`/`createFsReadProjectStateFn`) — a manifest
+// read, an upgrade-engine scratch-file read, and the project state document
+// read each belong to a DIFFERENT FEATURE (template-manifest, upgrade, and
+// composed-provenance respectively, none of them this package's own
+// cli-scaffolding FEATURE this file's other markers trace to), so this fix
+// carries no `@cpt-` marker of its own: it hardens a shared low-level
+// primitive those FEATUREs' own seams are built on, rather than realizing a
+// cli-scaffolding plan item.
+//
+// The kind `resolvePathKind` reports for a path that exists but is not a
+// regular file, once every symlink along its FINAL component is resolved —
+// `'dangling-symlink'` is not a `fs.Stats` kind at all (there is no `Stats`
+// object for a target that does not exist), so it is named separately from
+// the four kinds `fs.Stats` itself can report.
+type NonRegularKind = 'directory' | 'fifo' | 'socket' | 'device' | 'dangling-symlink';
+
+function describeNonRegularKind(kind: NonRegularKind): string {
+  switch (kind) {
+    case 'directory':
+      return 'a directory';
+    case 'fifo':
+      return 'a FIFO';
+    case 'socket':
+      return 'a socket';
+    case 'device':
+      return 'a device file';
+    case 'dangling-symlink':
+      return 'a symlink whose target does not exist';
+  }
+}
+
+/**
+ * A read was refused because `filePath` — once every symlink is resolved —
+ * denotes something other than a regular file. Typed, rather than a bare
+ * `Error`, so a caller that reads a manifest, a project-owned scratch file,
+ * or the project state document can tell this fact apart from a genuine
+ * internal failure and report it as its own structured refusal, the same
+ * discipline `PathContainmentError`/`ExistingSymlinkDestinationError` above
+ * already establish for their own classes of honest, expected refusal.
+ */
+export class NotRegularFileError extends Error {
+  readonly filePath: string;
+  readonly kind: NonRegularKind;
+
+  constructor(filePath: string, kind: NonRegularKind) {
+    super(`"${filePath}" is ${describeNonRegularKind(kind)}, not a regular file — refusing to read it.`);
+    this.name = 'NotRegularFileError';
+    this.filePath = filePath;
+    this.kind = kind;
+  }
+}
+
+function kindFromStat(stat: fs.Stats): Exclude<NonRegularKind, 'dangling-symlink'> | 'file' {
+  if (stat.isFile()) return 'file';
+  if (stat.isDirectory()) return 'directory';
+  if (stat.isFIFO()) return 'fifo';
+  if (stat.isSocket()) return 'socket';
+  return 'device'; // a block or character device, or any other special entry `fs.Stats` can name
+}
+
+/**
+ * Resolves what actually stands at `filePath` — following every symlink the
+ * FINAL component may be, exactly as `fs.readFileSync` itself would — into
+ * one of `'absent'`, `'file'`, or a `NonRegularKind`, WITHOUT ever opening
+ * the path for reading. This is the one check every read seam below runs
+ * before its own `fs.readFileSync` call: `fs.readFileSync` on a FIFO with no
+ * writer attached blocks forever — no stdout, no stderr, no exit — and
+ * neither `fs.existsSync` (follows a symlink to decide existence, so it
+ * answers `true` for a FIFO exactly as readily as for a text file) nor a
+ * bare, unchecked `fs.readFileSync` call guards against that; only checking
+ * the KIND first, via `lstatSync`, and — for a symlink — what it resolves to,
+ * via `statSync` (which itself never blocks; only `open()` for read/write on
+ * a FIFO does), closes it.
+ *
+ * A DANGLING symlink is reported as its own kind, never folded into
+ * `'absent'`: something real does stand at `filePath` (`lstatSync` succeeds,
+ * a real directory entry exists), it is simply unreadable — collapsing it
+ * into "absent" would let a caller silently proceed as if nothing were
+ * registered there at all, exactly the false-success class this fix exists
+ * to close.
+ */
+function resolvePathKind(filePath: string): 'absent' | 'file' | NonRegularKind {
+  let lst: fs.Stats;
+  try {
+    lst = fs.lstatSync(filePath);
+  } catch (error) {
+    if (isEnoent(error)) return 'absent';
+    throw error;
+  }
+  if (!lst.isSymbolicLink()) return kindFromStat(lst);
+  let target: fs.Stats;
+  try {
+    target = fs.statSync(filePath); // follows the whole chain, however long
+  } catch (error) {
+    if (isEnoent(error)) return 'dangling-symlink';
+    throw error;
+  }
+  return kindFromStat(target);
+}
+
+/** An `ENOENT`-shaped error matching what `fs.readFileSync` itself throws for
+ * an absent path — used to preserve a read seam's existing "throws on
+ * absence" contract once its own `fs.readFileSync` call is guarded by
+ * `resolvePathKind` above rather than reached unconditionally. */
+function enoentError(filePath: string): NodeJS.ErrnoException {
+  const error = new Error(`ENOENT: no such file or directory, open '${filePath}'`) as NodeJS.ErrnoException;
+  error.code = 'ENOENT';
+  error.path = filePath;
+  return error;
+}
+
+/** Real `ReadFileFn` — reads a manifest file; throws (per the seam contract)
+ * when absent, and now also throws the typed `NotRegularFileError` rather
+ * than blocking forever when a FIFO, socket, device, directory, or dangling
+ * symlink stands where the manifest is expected — every caller of this seam
+ * already wraps it in its own `try`/`catch` (`scaffold/registered-
+ * manifest.ts`, `commands/validate.ts`, `resolver/resolve.ts`'s own local-
+ * origin read) and folds ANY thrown failure into the identical "manifest
+ * unreadable" refusal it already gives a genuinely absent one, so widening
+ * what this seam can throw for needs no matching change at those call
+ * sites. */
 export function createFsReadFileFn(): ReadFileFn {
   return async function readFile(filePath: string): Promise<string> {
+    const kind = resolvePathKind(filePath);
+    if (kind === 'absent') throw enoentError(filePath);
+    if (kind !== 'file') throw new NotRegularFileError(filePath, kind);
     return fs.readFileSync(filePath, 'utf-8');
   };
 }
@@ -191,10 +315,24 @@ export function createFsPathExistsFn(): PathExistsFn {
   };
 }
 
-/** Real `ReadProjectFileFn` — returns `null` (never throws) when the file is absent. */
+/** Real `ReadProjectFileFn` — returns `null` (never throws) when the file is
+ * absent, and ALSO when a directory now stands where the file is expected:
+ * this seam's own contract (`upgrade/types.ts`'s doc comment on
+ * `ReadProjectFileFn`) deliberately "collapses absence and a directory into
+ * one `null`" for its caller's own reasons, and this fix preserves that
+ * collapse rather than narrowing it. What it does NOT preserve is the
+ * silent hang a FIFO with no writer attached used to cause: a FIFO, a
+ * socket, a device, or a dangling symlink now throws the typed
+ * `NotRegularFileError` instead of either blocking forever (the former bare
+ * `fs.readFileSync`) or being silently folded into "absent" (which
+ * `existsSync`'s own symlink-following would have done for a live one) —
+ * none of those four kinds is a directory, so none is covered by the
+ * documented collapse above. */
 export function createFsReadProjectFileFn(): ReadProjectFileFn {
   return async function readProjectFile(absolutePath: string): Promise<string | null> {
-    if (!fs.existsSync(absolutePath)) return null;
+    const kind = resolvePathKind(absolutePath);
+    if (kind === 'absent' || kind === 'directory') return null;
+    if (kind !== 'file') throw new NotRegularFileError(absolutePath, kind);
     return fs.readFileSync(absolutePath, 'utf-8');
   };
 }
@@ -229,9 +367,22 @@ export function createFsRemoveProjectFileFn(): RemoveProjectFileFn {
  * project state document is absent, matching `createFsReadProjectFileFn`'s
  * own absence convention above so `project-state/io.ts`'s pure logic can
  * treat "no document yet" identically to "no scratch file yet". */
+// Unlike `createFsReadProjectFileFn` just above, a DIRECTORY standing at
+// `.frontx/project.json` is deliberately NOT collapsed into "absent" here:
+// that seam's own contract only ever names a scratch file the upgrade
+// engine itself writes and re-reads, but this one guards the single
+// document every command's registration/ownership/apply/delete state is
+// read from — silently treating a directory there as "no project
+// registered yet" would let `register`/`apply`/`seed` write straight past
+// real (if oddly-shaped) ground instead of refusing it, and every OTHER
+// non-regular kind (a FIFO, a socket, a device, a dangling symlink) is
+// refused for the identical reason a directory now is. A genuinely absent
+// document is the only case this seam still answers with `null`.
 export function createFsReadProjectStateFn(): ReadProjectStateFn {
   return async function readProjectState(absolutePath: string): Promise<string | null> {
-    if (!fs.existsSync(absolutePath)) return null;
+    const kind = resolvePathKind(absolutePath);
+    if (kind === 'absent') return null;
+    if (kind !== 'file') throw new NotRegularFileError(absolutePath, kind);
     return fs.readFileSync(absolutePath, 'utf-8');
   };
 }
@@ -758,12 +909,25 @@ function joinRelative(relativeDir: string, name: string): string {
 // term that formula does not declare.
 const DEFAULT_SKIP_NAMES: ReadonlySet<string> = new Set(['node_modules']);
 
+// `unenumerableSink`, when supplied, collects every path this walk would
+// otherwise silently drop from its own return value: a FIFO, socket, or
+// device found directly; a symlink that is dangling or escapes `root`; and a
+// live symlink resolving to any of those same three special kinds (a live
+// symlink to a FILE or a DIRECTORY is never dropped at all — both are
+// already reported through the ordinary branches below). `createFsListTarget
+// FilesFn`'s own candidate enumeration and `createFsListPayloadFilesFn`'s
+// template-payload enumeration both still return exactly the files they did
+// before this parameter existed; only a caller that supplies a real array
+// (`createFsListUnenumerableTargetEntriesFn` below) ever observes it. One
+// walk, one cycle guard, for both questions — never a second, independently
+// maintained traversal asking the FIFO/socket/device question by itself.
 function walkFiles(
   templateDir: string,
   relativeDir: string,
   root: string,
   visitedRealDirs: Set<string>,
   skipNames: ReadonlySet<string> = DEFAULT_SKIP_NAMES,
+  unenumerableSink?: string[],
 ): string[] {
   const absoluteDir = path.join(templateDir, relativeDir);
   const entries = fs.readdirSync(absoluteDir, { withFileTypes: true });
@@ -789,24 +953,39 @@ function walkFiles(
       // the tree) from having the second one wrongly skipped as "already
       // visited" - only a cycle back to a directory still open on the
       // current path is a cycle at all.
-      files.push(...descendDirectory(templateDir, relativePath, root, visitedRealDirs, undefined, skipNames));
+      files.push(
+        ...descendDirectory(templateDir, relativePath, root, visitedRealDirs, undefined, skipNames, unenumerableSink),
+      );
       continue;
     }
     if (entry.isFile()) {
       files.push(toPosixPath(relativePath));
       continue;
     }
-    if (!entry.isSymbolicLink()) continue; // fifo, socket, device: not content
+    if (!entry.isSymbolicLink()) {
+      unenumerableSink?.push(toPosixPath(relativePath)); // fifo, socket, device: not content
+      continue;
+    }
 
     const resolved = realPathOrNull(path.join(absoluteDir, entry.name));
-    if (resolved === null) continue; // broken link
-    if (!isInside(root, resolved)) continue; // points outside the template
+    if (resolved === null) {
+      unenumerableSink?.push(toPosixPath(relativePath)); // broken link
+      continue;
+    }
+    if (!isInside(root, resolved)) {
+      unenumerableSink?.push(toPosixPath(relativePath)); // points outside the template
+      continue;
+    }
 
     const targetStat = fs.statSync(resolved);
     if (targetStat.isDirectory()) {
-      files.push(...descendDirectory(templateDir, relativePath, root, visitedRealDirs, resolved, skipNames));
+      files.push(
+        ...descendDirectory(templateDir, relativePath, root, visitedRealDirs, resolved, skipNames, unenumerableSink),
+      );
     } else if (targetStat.isFile()) {
       files.push(toPosixPath(relativePath));
+    } else {
+      unenumerableSink?.push(toPosixPath(relativePath)); // a live symlink to a fifo, socket, or device
     }
   }
   return files;
@@ -825,13 +1004,14 @@ function descendDirectory(
   visitedRealDirs: Set<string>,
   knownRealPath?: string,
   skipNames: ReadonlySet<string> = DEFAULT_SKIP_NAMES,
+  unenumerableSink?: string[],
 ): string[] {
   const absoluteDir = path.join(templateDir, relativeDir);
   const resolvedDir = knownRealPath ?? realPathOrNull(absoluteDir);
   if (resolvedDir !== null && visitedRealDirs.has(resolvedDir)) return []; // cycle back to an open ancestor
   if (resolvedDir !== null) visitedRealDirs.add(resolvedDir);
   try {
-    return walkFiles(templateDir, relativeDir, root, visitedRealDirs, skipNames);
+    return walkFiles(templateDir, relativeDir, root, visitedRealDirs, skipNames, unenumerableSink);
   } finally {
     if (resolvedDir !== null) visitedRealDirs.delete(resolvedDir);
   }
@@ -958,3 +1138,61 @@ export class TargetNotDirectoryError extends Error {
     this.targetPath = targetPath;
   }
 }
+
+// @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-find-unenumerable
+/**
+ * Real `ListUnenumerableTargetEntriesFn` (`../scaffold/delete-plan.ts`) —
+ * every path under a target's absolute directory that `createFsListTarget
+ * FilesFn` above silently leaves out of its own returned list, because none
+ * of the questions THAT seam's `string[]` contract can answer ("is this a
+ * comparable file `toDelete`'s candidate pool can include") make sense for
+ * it: a FIFO, a socket, a device, a dangling symlink, or a symlink escaping
+ * the target's own real root — live or dangling, direct or aliased through
+ * another symlink. Before this function existed, every one of those sat in
+ * neither `toDelete` nor `toPreserve`: an entry belonging to NEITHER list
+ * breaks the one promise `delete`'s whole confirmation gate rests on — that
+ * the lists state the blast radius before anything is executed
+ * (`cpt-frontx-dod-cli-scaffolding-delete`). `computeDeletionPlan` folds
+ * every path this returns into `toPreserve`, after the identical
+ * effective-ownership filter its file-based candidates already pass through
+ * — ground outside this template's own ownership was never this template's
+ * to report either way.
+ *
+ * Shares `walkFiles`'s own cycle-guarded traversal with `createFsListTarget
+ * FilesFn` — the SAME walk, read through its OTHER output channel
+ * (`unenumerableSink`) — rather than a second, independently maintained walk
+ * asking the identical "what does this directory contain" question a second
+ * time.
+ */
+export function createFsListUnenumerableTargetEntriesFn(): ListUnenumerableTargetEntriesFn {
+  return async function listUnenumerableTargetEntries(absoluteDir: string): Promise<string[]> {
+    const root = realPathOrNull(absoluteDir);
+    if (root === null) return []; // absent, or blocked by a non-directory ancestor: `createFsListTargetFilesFn` already reports either fact on its own
+    let rootStat: fs.Stats;
+    try {
+      rootStat = fs.statSync(root);
+    } catch {
+      return []; // vanished between realpath and stat: nothing real left to inspect
+    }
+    if (!rootStat.isDirectory()) return []; // the sibling enumerator already throws `TargetNotDirectoryError` for this exact shape
+    const unenumerable: string[] = [];
+    try {
+      walkFiles(absoluteDir, '', root, new Set([root]), new Set(), unenumerable);
+    } catch (error) {
+      // The sibling `listTargetFilesFn` call `computeDeletionPlan` always
+      // makes first walks this identical tree and would already have thrown
+      // for a genuine permission/enumeration failure — reaching here at all
+      // means that walk just succeeded a moment ago, so this is a narrow
+      // TOCTOU race rather than the ordinary case. Wrapped the same way that
+      // sibling wraps its own failure, rather than propagating a bare,
+      // unstructured error into a caller that only expects `Promise<
+      // string[]>` to resolve.
+      throw Object.assign(
+        new Error(`could not enumerate target directory ${absoluteDir} for unenumerable entries: ${describeError(error)}`),
+        { cause: error },
+      );
+    }
+    return unenumerable;
+  };
+}
+// @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-find-unenumerable

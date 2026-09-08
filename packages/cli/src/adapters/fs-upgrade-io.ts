@@ -54,11 +54,30 @@ function toPosixPath(value: string): string {
  * unequal to any content, and two absences are equal").
  *
  * Anything that is neither a regular file, a directory, nor a symlink (a
- * fifo, socket, or device node) is reported `'directory'`: not because it is
- * one, but because the only thing the classification does with a non-regular,
- * non-absent entry is refuse fail-closed on it, and `'directory'` is the
- * arm that carries that meaning. Inventing a fourth non-regular kind would
- * add a case every caller must handle to reach the identical outcome.
+ * FIFO, socket, or device node) is reported as its own `'special'` kind —
+ * the identical word `scaffold/existing-content.ts` already uses for the
+ * apply-side sibling of this same fact, never a second name for it.
+ *
+ * NOT folded into `'directory'`, unlike an earlier version of this function:
+ * `'directory'` is a PERMITTED ancestor shape (`classify.ts`'s own ancestor
+ * probe treats it as ordinary structure to descend through and never flags
+ * it), while a special file standing at that same position must block
+ * everything beneath it exactly like a symlink does. Collapsing the two let
+ * a FIFO standing where an ancestor directory is required pass as a
+ * perfectly good directory: an `ADD` whose new ancestor would be created
+ * there reached `fs.mkdirSync` at commit time and crashed on
+ * `EEXIST`/`ENOTDIR`, and every path already beneath it hit `ENOTDIR` on
+ * THIS function's own `lstatSync` call — caught by the `catch` below and
+ * reported `'absent'`, which then satisfied the classification's own "two
+ * absences are equal" rule and silently reported nothing to do for content
+ * this function had never actually been able to read at all.
+ *
+ * Reported without ever reading the entry's content, and never resolved to
+ * `readFileSync` — the check below returns before that call is ever reached
+ * for anything but a confirmed regular file. Opening a FIFO for reading
+ * blocks forever waiting for a writer that will never arrive; a special file
+ * this fail-closed instead of attempted is the only way this seam can name
+ * the fact without risking exactly that hang.
  */
 export function createFsReadDiskEntryFn(): ReadDiskEntryFn {
   return async function readDiskEntry(absolutePath: string): Promise<DiskEntry> {
@@ -76,7 +95,7 @@ export function createFsReadDiskEntryFn(): ReadDiskEntryFn {
     }
     if (stat.isSymbolicLink()) return { kind: 'symlink' };
     if (stat.isDirectory()) return { kind: 'directory' };
-    if (!stat.isFile()) return { kind: 'directory' };
+    if (!stat.isFile()) return { kind: 'special' };
     return { kind: 'file', content: fs.readFileSync(absolutePath, 'utf-8') };
   };
 }
@@ -148,7 +167,22 @@ function walkRegularFiles(root: string, relativeDir: string): string[] {
       continue;
     }
     if (entry.isFile()) files.push(toPosixPath(relativePath));
-    // fifo, socket, device: not content, and not a regular file.
+    // A FIFO, socket, or device: not content, and not a regular file — never
+    // added to `files`, and, being neither `isDirectory()` nor
+    // `isSymbolicLink()`, never recursed into or skipped-with-a-reason
+    // either. This walk is also the one `payload.ts`'s `resolveLocalPayload`
+    // reuses to enumerate a `path:` origin TEMPLATE'S OWN source folder
+    // (`listFolderFilesFn: deps.listDiskFiles`) — so a special file sitting
+    // inside a template's own local folder is never added to that template's
+    // `ResolvedPayload.files` map at all. That is not a gap: `ResolvedPayload.
+    // files`'s own contract (`../upgrade/types.ts`) is "Regular files only",
+    // identically to how this same walk already omits `node_modules` — a
+    // special file was never payload CONTENT to begin with, the same way a
+    // developer's own undeclared file elsewhere in a target is never payload
+    // content either. Nothing in this engine ever learns such a path exists,
+    // classifies it, or refuses over it; the template's own author is who
+    // would need to know their source folder holds one, which is outside
+    // this engine's own concern.
   }
   return files;
 }

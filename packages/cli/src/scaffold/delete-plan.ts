@@ -64,6 +64,20 @@ export interface DeletePlanInventoryPort {
 // apply`'s own `inst-ua-compute-ownership`).
 export type ListTargetFilesFn = (absoluteDir: string) => Promise<string[]>;
 
+// Enumerates every path under `absoluteDir` that `ListTargetFilesFn` above
+// silently leaves out of ITS OWN enumeration — a FIFO, a socket, a device, a
+// dangling symlink, or a symlink escaping the target's own real root, live
+// or dangling — none of which is a "real file" that seam's contract can
+// answer for, and none of which this algorithm may simply drop: an entry in
+// neither `toDelete` nor `toPreserve` breaks the one promise `delete`'s
+// confirmation gate rests on, that the lists state the blast radius before
+// anything is executed. A DIFFERENT, dedicated seam rather than widening
+// `ListTargetFilesFn`'s own `string[]` contract to somehow carry both
+// answers at once: `ListTargetFilesFn` is shared with callers outside this
+// algorithm (`commands/delete.ts`'s own containment pass reuses its
+// candidate list verbatim), and none of them ask this second question.
+export type ListUnenumerableTargetEntriesFn = (absoluteDir: string) => Promise<string[]>;
+
 export type DeletionPlanResult =
   | {
       ok: true;
@@ -116,6 +130,7 @@ export async function computeDeletionPlan(
   canonicalizeFn: CanonicalizeTargetFn,
   listTargetFilesFn: ListTargetFilesFn,
   readFileFn: ReadFileFn,
+  listUnenumerableTargetEntriesFn: ListUnenumerableTargetEntriesFn,
 ): Promise<DeletionPlanResult> {
   // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-foreach-template
   // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-found
@@ -210,6 +225,23 @@ export async function computeDeletionPlan(
     .filter((folder): folder is string => folder !== undefined && pathWithinTarget(folder, target));
   // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-find-other-origins
 
+  // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-find-unenumerable
+  // Every FIFO, socket, device, dangling symlink, or escaping symlink found
+  // under `target` — content `listTargetFilesFn` below cannot enumerate as a
+  // comparable file at all, and so would otherwise sit in NEITHER `toDelete`
+  // NOR `toPreserve` (`adapters/fs-project-io.ts`'s own `walkFiles` doc
+  // comment names exactly this class of silently-dropped entry). Filtered
+  // through the identical effective-ownership predicate `toDelete`'s own
+  // candidates pass through below, so an entry OUTSIDE this template's
+  // ownership (inside a nested target or a declared exclusion, say) is never
+  // reported here either — it was never this template's ground to report.
+  const absoluteTargetDir = path.join(repoRoot, target);
+  const rawUnenumerable = await listUnenumerableTargetEntriesFn(absoluteTargetDir);
+  const unenumerableWithinOwnership = rawUnenumerable
+    .map((relativeFile) => joinUnderTarget(target, relativeFile))
+    .filter((candidate) => isWithinEffectiveOwnership(candidate, target, exclusionRoots));
+  // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-find-unenumerable
+
   // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-set-preserve
   // `excludedSubtrees`/`nestedTargets`/`projectOwnedRoots`/reserved
   // environment entries/other templates' local origin folders/the OWNING
@@ -246,12 +278,12 @@ export async function computeDeletionPlan(
       ...reservedEntriesBeneath,
       ...otherLocalOriginFolders,
       ...ownerLocalOriginFolderBeneath,
+      ...unenumerableWithinOwnership,
     ]),
   ).sort();
   // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-set-preserve
 
   // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-set-delete
-  const absoluteTargetDir = path.join(repoRoot, target);
   const rawFiles = await listTargetFilesFn(absoluteTargetDir);
   const candidatePaths = rawFiles.map((relativeFile) => joinUnderTarget(target, relativeFile));
   const toDelete = candidatePaths

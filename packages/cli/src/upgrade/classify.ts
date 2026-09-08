@@ -64,23 +64,35 @@ function contentEquals(a: string | null, b: string | null): boolean {
 // What `readDiskEntry` reports, collapsed to the one shape every comparison
 // branch below actually needs: a regular file's content, or `null` for an
 // absence. Only reachable for a path already cleared by
-// `inst-cls-if-not-regular` (a directory or a symlink where a payload
-// declares the path is refused before this ever runs).
+// `inst-cls-if-not-regular` (a directory, a symlink, or a special file —
+// a FIFO, socket, or device — where a payload declares the path is refused
+// before this ever runs).
 function diskContentOf(entry: DiskEntry): string | null {
   return entry.kind === 'file' ? entry.content : null;
 }
 
-// A payload path where the disk holds a directory or a symlink instead of a
-// regular file cannot be compared at all — the rule this module's own header
-// cites (`architecture/ADR/0021-project-upgrade-mechanism.md`, "Decision
-// Outcome"). The identical hazard applies one level up: `readDiskEntry` is
-// `lstat`-based on the full leaf path only (`../adapters/fs-upgrade-io.ts`'s
-// own header), so it correctly reports a symlinked LEAF as `'symlink'`, but
-// an intermediate directory component between the project root and the leaf
-// that is itself a symlink is simply followed by the OS on every read of a
-// path beneath it — a plan naming `app/dir/sub/b.txt` would compare, and let
-// the commit algorithm land, content at wherever `app/dir` actually points,
-// while still reporting the plan as touching `app/dir/sub/b.txt`.
+// A payload path where the disk holds a directory, a symlink, or a special
+// file (a FIFO, socket, or device) instead of a regular file cannot be
+// compared at all — the rule this module's own header cites (`architecture/
+// ADR/0021-project-upgrade-mechanism.md`, "Decision Outcome"). The identical
+// hazard applies one level up: `readDiskEntry` is `lstat`-based on the full
+// leaf path only (`../adapters/fs-upgrade-io.ts`'s own header), so it
+// correctly reports a symlinked LEAF as `'symlink'`, but an intermediate
+// directory component between the project root and the leaf that is itself
+// a symlink is simply followed by the OS on every read of a path beneath it
+// — a plan naming `app/dir/sub/b.txt` would compare, and let the commit
+// algorithm land, content at wherever `app/dir` actually points, while still
+// reporting the plan as touching `app/dir/sub/b.txt`. A special file at that
+// same ancestor position is a DIFFERENT failure, not a variant of the same
+// one: the OS does not resolve it anywhere else the way it does a symlink —
+// it simply refuses to descend, so `lstat` on anything beneath it throws
+// `ENOTDIR`, which this seam's own `readDiskEntry` — unable to distinguish
+// "nothing here" from "something here I cannot get past" — reports as a
+// first-class `'absent'`. Left unflagged, that absence would satisfy this
+// algorithm's own "two absences are equal" rule for `UNCHANGED`/`KEEP_LOCAL`
+// and report nothing to do for content the engine never actually managed to
+// read — the false-success shape this ancestor probe exists to close for a
+// special file exactly as it already does for a symlink.
 //
 // The probe below covers the WHOLE chain from the project root down to the
 // leaf's parent — `target`'s own path component included, not only the
@@ -91,12 +103,13 @@ function diskContentOf(entry: DiskEntry): string | null {
 // reaches this classification unresolved, and carries the identical hazard
 // any other ancestor does.
 //
-// An ancestor that is an ordinary regular FILE — neither a directory nor a
-// symlink — is exactly as uncomparable as a symlinked one: a directory is
-// required at that position for the leaf to exist beneath it at all, and a
-// plain file standing there instead means the leaf cannot be reached on disk
-// the way the payload declares it — a failure this module classifies rather
-// than one the commit algorithm's own write should ever have to discover.
+// An ancestor that is an ordinary regular FILE — neither a directory, a
+// symlink, nor a special file — is exactly as uncomparable as a symlinked
+// one: a directory is required at that position for the leaf to exist
+// beneath it at all, and a plain file standing there instead means the leaf
+// cannot be reached on disk the way the payload declares it — a failure
+// this module classifies rather than one the commit algorithm's own write
+// should ever have to discover.
 //
 // `../scaffold/existing-content.ts`'s own `collectSymlinkPaths` /
 // `ancestorDirsBelowTarget` closes the identical ancestor-symlink hole on
@@ -123,15 +136,18 @@ function ancestorSegmentsOf(projectPath: string): string[] {
 // symlink outcomes differently at the validate layer — a symlink whose
 // resolved target escapes the project root is `INVALID_PATH` (this module
 // never returns a refusal code itself; it only classifies and lets the
-// caller decide), while a symlink that resolves inside the project, and a
-// regular file standing where a directory belongs, are both
-// `CONTENT_CONFLICT`. Either way this module treats them identically for
-// classification purposes: no comparison is attempted and the path is
-// recorded doubly-changed. `path` carries the ancestor's own project-relative
-// location — never the enumerated payload path itself — so a refusal can name
-// which component blocked the path rather than leaving a developer to walk
-// the chain by hand.
-type BadAncestor = { path: string; kind: 'symlink'; escapesRoot: boolean } | { path: string; kind: 'file' };
+// caller decide), while a symlink that resolves inside the project, a
+// regular file, and a special file (a FIFO, socket, or device) standing
+// where a directory belongs, are all `CONTENT_CONFLICT`. Either way this
+// module treats them identically for classification purposes: no comparison
+// is attempted and the path is recorded doubly-changed. `path` carries the
+// ancestor's own project-relative location — never the enumerated payload
+// path itself — so a refusal can name which component blocked the path
+// rather than leaving a developer to walk the chain by hand.
+type BadAncestor =
+  | { path: string; kind: 'symlink'; escapesRoot: boolean }
+  | { path: string; kind: 'file' }
+  | { path: string; kind: 'special' };
 
 // Probes every ancestor directory component of `projectPath`, from the
 // project root down to the leaf's parent, through the injected
@@ -168,6 +184,17 @@ async function findBadAncestor(
     }
     if (entry.kind === 'file') {
       return { path: ancestor, kind: 'file' };
+    }
+    if (entry.kind === 'special') {
+      // A FIFO, socket, or device standing where a directory is required
+      // blocks descent through it exactly as a symlink or a regular file
+      // does — never treated as `'directory'`'s permitted ancestor shape.
+      // This is the exact defect this branch closes: without it, a special
+      // file here read as an ordinary directory, every path beneath it went
+      // on to `readDiskEntry` and hit `ENOTDIR` (reported `'absent'`), and an
+      // `ADD` whose new ancestor would be created here instead reached
+      // `fs.mkdirSync` at commit time and crashed on `EEXIST`/`ENOTDIR`.
+      return { path: ancestor, kind: 'special' };
     }
   }
   return null;
@@ -226,10 +253,11 @@ export interface ClassifyResult {
   // (`inst-cls-if-any-conflict` / `inst-cls-return-conflict`).
   conflictPaths: string[];
   // The SUBSET of `conflictPaths` recorded because the disk shape at (or
-  // above) the path cannot be compared at all — a directory or a symlink at
-  // the leaf, or a symlink or a regular file standing at an ancestor
-  // component — rather than because the candidate and the disk each
-  // genuinely moved away from the baseline. Mirrors `scaffold/existing-
+  // above) the path cannot be compared at all — a directory, a symlink, or a
+  // special file (a FIFO, socket, or device) at the leaf, or a symlink, a
+  // regular file, or a special file standing at an ancestor component —
+  // rather than because the candidate and the disk each genuinely moved
+  // away from the baseline. Mirrors `scaffold/existing-
   // content.ts`'s own `ExistingContentPartitions.uncomparablePaths` (a
   // different module, the SAME distinction) so the two engines' refusals
   // read alike: one cause names "resolve the link or the directory", the
@@ -251,9 +279,9 @@ export interface ClassifyResult {
   // kind. A refusal built from `conflictPaths`/`uncomparablePaths` alone can
   // only say a path is uncomparable; it cannot say WHY without a developer
   // walking the chain by hand. `component` equals `path` itself for a leaf
-  // directory or symlink, and names the offending ancestor's own
-  // project-relative location otherwise.
-  uncomparableCauses: { path: string; component: string; kind: 'symlink' | 'file' | 'directory' }[];
+  // directory, symlink, or special file, and names the offending ancestor's
+  // own project-relative location otherwise.
+  uncomparableCauses: { path: string; component: string; kind: 'symlink' | 'file' | 'directory' | 'special' }[];
   // Nested-target conflicts for this target — the caller refuses with
   // `TARGET_CONFLICT` when this is non-empty.
   nestedConflicts: { target: string; templateName: string }[];
@@ -500,7 +528,7 @@ export async function classifyTarget(input: ClassifyInput): Promise<ClassifyResu
   const conflictPaths: string[] = [];
   const uncomparablePaths: string[] = [];
   const escapingPaths: string[] = [];
-  const uncomparableCauses: { path: string; component: string; kind: 'symlink' | 'file' | 'directory' }[] = [];
+  const uncomparableCauses: { path: string; component: string; kind: 'symlink' | 'file' | 'directory' | 'special' }[] = [];
   // Shared across every enumerated path below — see `findBadAncestor`'s own
   // doc comment for why this cache is what keeps a directory shared by many
   // paths a single `readDiskEntry` probe rather than one per path.
@@ -528,16 +556,24 @@ export async function classifyTarget(input: ClassifyInput): Promise<ClassifyResu
     // `../scaffold/existing-content.ts` already applies on the apply side.
     const badAncestor = await findBadAncestor(projectPath, repoRoot, ancestorEntryCache, readDiskEntry, canonicalizeFn);
     const carriedByPayload = baselineContent !== null || candidateContent !== null;
-    if (carriedByPayload && (diskEntry.kind === 'directory' || diskEntry.kind === 'symlink' || badAncestor !== null)) {
+    if (
+      carriedByPayload &&
+      (diskEntry.kind === 'directory' || diskEntry.kind === 'symlink' || diskEntry.kind === 'special' || badAncestor !== null)
+    ) {
       // @cpt-begin:cpt-frontx-algo-upgrade-changeset-classify:p1:inst-cls-record-not-regular
-      // Fail-closed: a directory or a symlink at the leaf, a symlink at any
-      // ancestor directory component, or a regular file standing where an
+      // Fail-closed: a directory, a symlink, or a special file (a FIFO,
+      // socket, or device) at the leaf, a symlink at any ancestor directory
+      // component, or a regular file or a special file standing where an
       // ancestor directory component belongs — none of these can be
       // compared at all, so no comparison is attempted; this is not weighed
-      // against `UNCHANGED` or any other branch below. Recorded in
-      // `uncomparablePaths` too, and in `escapingPaths` on top of that when
-      // the cause is a symlink — at the leaf itself, or at an ancestor —
-      // whose resolved target escapes the project root — see
+      // against `UNCHANGED` or any other branch below. A special file's own
+      // content is never read to reach this conclusion either — opening a
+      // FIFO for reading blocks forever waiting for a writer that will never
+      // arrive, so `readDiskEntry` itself reports `'special'` without ever
+      // touching the file (`../adapters/fs-upgrade-io.ts`'s own header).
+      // Recorded in `uncomparablePaths` too, and in `escapingPaths` on top of
+      // that when the cause is a symlink — at the leaf itself, or at an
+      // ancestor — whose resolved target escapes the project root — see
       // `ClassifyResult`'s own doc comments for why the caller reports each
       // subset differently. A bad ancestor takes precedence over whatever
       // `diskEntry` itself reports for the leaf: when the ancestor is a
@@ -553,9 +589,10 @@ export async function classifyTarget(input: ClassifyInput): Promise<ClassifyResu
         }
       } else {
         // The leaf itself is the bad component (every ancestor cleared).
-        // `diskEntry.kind` is `'directory'` or `'symlink'` here — the only
-        // two ways to reach this branch with `badAncestor === null`.
-        uncomparableCauses.push({ path: projectPath, component: projectPath, kind: diskEntry.kind as 'directory' | 'symlink' });
+        // `diskEntry.kind` is `'directory'`, `'symlink'`, or `'special'` here
+        // — the only three ways to reach this branch with
+        // `badAncestor === null`.
+        uncomparableCauses.push({ path: projectPath, component: projectPath, kind: diskEntry.kind as 'directory' | 'symlink' | 'special' });
         if (diskEntry.kind === 'symlink' && canonicalizeFn(projectPath) === null) {
           escapingPaths.push(projectPath);
         }

@@ -23,8 +23,9 @@
 // `fs-containment.test.ts`'s own real-temp-directory convention for the
 // identical reason on the apply side.
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, symlink, rename, writeFile, readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, lstatSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { classifyTarget } from '../upgrade/classify';
@@ -148,13 +149,16 @@ describe('classifyTarget against a real filesystem — symlinked ancestor direct
 
   // --- the full matrix: every ancestor shape × every operation class -----
   //
-  // Seven of eleven claimed ancestor/leaf shapes are pinned here — {leaf is a
+  // Nine of the claimed ancestor/leaf shapes are pinned here — {leaf is a
   // symlink, an ancestor BELOW the target is a symlink, the TARGET ITSELF is
   // a symlink, an ancestor ABOVE the target is a symlink, an ancestor is a
   // DANGLING symlink, an ancestor is an ordinary REGULAR FILE, the LEAF
-  // itself is an ordinary DIRECTORY} — crossed
+  // itself is an ordinary DIRECTORY, the LEAF itself is a SPECIAL file (a
+  // FIFO), and an ancestor is a SPECIAL file} — crossed
   // with every operation class {ADD, REPLACE, REMOVE}, against a real
-  // filesystem. Each
+  // filesystem. `mkfifo` (a POSIX utility) creates the special-file scenarios'
+  // node without ever opening it, and this suite never opens it either — the
+  // seam's own contract is that a special file's content is never read. Each
   // case asserts both that classification refuses fail-closed and that the
   // content standing behind the bad ancestor is byte-for-byte unchanged —
   // classification never writes anything, but pinning that behavior here
@@ -283,6 +287,48 @@ describe('classifyTarget against a real filesystem — symlinked ancestor direct
       },
       async verifyUnchanged(root) {
         expect(await readFile(path.join(root, 'workspace', 'dir'), 'utf-8')).toBe('PROTECTED-ANCESTOR-FILE');
+      },
+    },
+    {
+      // The special-file counterpart of the ordinary-DIRECTORY-leaf scenario
+      // above: a real FIFO (`mkfifo`, never opened — opening it for reading
+      // would block forever waiting for a writer that never arrives) standing
+      // exactly where the payload declares a regular file. Reported by the
+      // real adapter's own `'special'` kind, never collapsed into
+      // `'directory'` — the collapse an earlier version of this codebase
+      // made, and the one this whole suite exists to catch a regression of.
+      name: 'leaf itself is a special file (a FIFO), standing where the payload declares a regular file',
+      leafRel: 'leaf.txt',
+      async setup(root) {
+        await mkdir(path.join(root, 'workspace'), { recursive: true });
+        execFileSync('mkfifo', [path.join(root, 'workspace', 'leaf.txt')]);
+        return { target: 'workspace' };
+      },
+      async verifyUnchanged(root) {
+        // Never `readFile` here — a FIFO with no writer blocks forever.
+        // Confirming it is still exactly the special node it was is the only
+        // check that does not risk hanging this suite.
+        expect(lstatSync(path.join(root, 'workspace', 'leaf.txt')).isFIFO()).toBe(true);
+      },
+    },
+    {
+      // The special-file counterpart of the REGULAR-FILE-ancestor scenario
+      // above: a FIFO standing where an ancestor DIRECTORY is required blocks
+      // descent through it exactly as a symlink or a regular file does — this
+      // is the defect this fix closes: an earlier version reported this
+      // ancestor as `'directory'` (a PERMITTED shape `classify.ts`'s own
+      // ancestor probe treats as ordinary structure to descend through), so
+      // every path beneath it silently classified against a real `lstat`
+      // `ENOTDIR` failure reported as `'absent'` rather than refusing.
+      name: 'an ancestor is a special file (a FIFO), standing where a directory is required',
+      leafRel: 'dir/sub/leaf.txt',
+      async setup(root) {
+        await mkdir(path.join(root, 'workspace'), { recursive: true });
+        execFileSync('mkfifo', [path.join(root, 'workspace', 'dir')]);
+        return { target: 'workspace' };
+      },
+      async verifyUnchanged(root) {
+        expect(lstatSync(path.join(root, 'workspace', 'dir')).isFIFO()).toBe(true);
       },
     },
   ];

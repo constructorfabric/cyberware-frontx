@@ -25,7 +25,12 @@
 // test fixture, say) is never forced to supply a no-op.
 import path from 'node:path';
 import { computeDeletionPlan } from '../scaffold/delete-plan';
-import type { DeletePlanInventoryPort, DeletionPlanResult, ListTargetFilesFn } from '../scaffold/delete-plan';
+import type {
+  DeletePlanInventoryPort,
+  DeletionPlanResult,
+  ListTargetFilesFn,
+  ListUnenumerableTargetEntriesFn,
+} from '../scaffold/delete-plan';
 import { readProjectState, mutateProjectState } from '../project-state/io';
 import type { ProjectStateDocument, ReadProjectStateFn, WriteProjectStateFn, TemplateEntry } from '../project-state/types';
 import type { CanonicalizeTargetFn } from '../scaffold/conflict-check';
@@ -38,8 +43,12 @@ import type { AssertPathWithinRootFn } from '../scaffold/types';
 // own on-disk location is no longer a directory. Caught inside `computePlan`
 // below and converted to the same structured refusal shape every other exit
 // from this function already returns — see that catch's own comment for why
-// `CONTENT_CONFLICT` is the code chosen.
-import { TargetNotDirectoryError } from '../adapters/fs-project-io';
+// `CONTENT_CONFLICT` is the code chosen. `NotRegularFileError` is the
+// identical discipline applied to the project state document itself: the
+// real `readProjectStateFn` (`createFsReadProjectStateFn`, same module) now
+// throws it, rather than blocking forever, when a FIFO, socket, device, or
+// dangling symlink stands at `.frontx/project.json`.
+import { TargetNotDirectoryError, NotRegularFileError } from '../adapters/fs-project-io';
 
 // Symmetric to `upgrade/types.ts`'s `RemoveProjectFileFn` — removes one
 // absolute file path, no-op when already absent. Reused directly rather
@@ -111,8 +120,92 @@ export type DeleteOutcome =
   | { ok: false; code: ErrorCode; message: string; details?: Record<string, unknown> };
 
 type PlanOutcome =
-  | { ok: true; document: ProjectStateDocument; plan: DeletionPlanResult & { ok: true } }
+  // `target` is the RECORDED spelling this plan was computed for, which is
+  // not always the caller's own and not always the canonical path either —
+  // see `resolveRecordedTarget`. Everything downstream keys off it, the
+  // project-state mutation included, so it travels with the plan rather than
+  // being recomputed from `rawTarget` at each use.
+  | { ok: true; document: ProjectStateDocument; target: string; plan: DeletionPlanResult & { ok: true } }
   | { ok: false; code: ErrorCode; message: string; details?: Record<string, unknown> };
+
+// `path.relative` turned POSIX with `path.sep` collapsed — the shape every
+// `--json` envelope in this package already carries for a project-relative
+// path (`adapters/fs-project-io.ts`'s own `toPosixPath`), never the absolute
+// filesystem path an internal error object happens to carry.
+function toProjectRelativePath(repoRoot: string, absolutePath: string): string {
+  return path.relative(repoRoot, absolutePath).split(path.sep).join('/');
+}
+
+// @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-resolve-recorded-name
+// A leading "./" and a trailing "/" stripped, never resolving ".." and never
+// touching the filesystem — the ONE lexical normalization every recorded
+// `targets[]` entry already satisfies as a matter of how `canonicalizeFn`
+// spells its own output (`adapters/fs-project-io.ts`'s `createFsCanonicalize
+// TargetFn`), so a caller's ordinary spelling of the exact name they applied
+// a template under compares equal to the recorded string without needing any
+// symlink resolution at all.
+function normalizeRawTargetLexically(rawTarget: string): string {
+  let normalized = rawTarget;
+  while (normalized.startsWith('./')) normalized = normalized.slice(2);
+  while (normalized.length > 1 && normalized.endsWith('/')) normalized = normalized.slice(0, -1);
+  return normalized === '' ? '.' : normalized;
+}
+
+/**
+ * Resolves which recorded `targets[]` entry, if any, `rawTarget` identifies
+ * — BEFORE `canonicalizeFn` ever resolves a symlink, and using its output
+ * only as a FALLBACK, never as the primary key. Canonicalization decides
+ * WHERE on disk a delete acts; using its output as the key for WHICH
+ * recorded target the caller means breaks the moment a target directory is
+ * replaced with a symlink after `apply` (`mv dst real && ln -s real dst`):
+ * the recorded string ("dst") no longer equals what `canonicalizeFn` now
+ * resolves it to ("real"), and typing the resolved name ("real") does not
+ * equal the recorded string either — the target becomes unreachable by any
+ * name at all, the defect this function exists to close.
+ *
+ * Two comparisons are tried, in order:
+ *   1. `rawTarget`, lexically normalized only (`normalizeRawTargetLexically`
+ *      above), against every template's recorded `targets[]` verbatim — the
+ *      ordinary case, needing no filesystem access, where the developer
+ *      types the exact name they applied the template under, symlink or
+ *      not.
+ *   2. Only when (1) finds nothing: `canonicalizeFn(rawTarget)` compared
+ *      against `canonicalizeFn(recordedTarget)` for every recorded target,
+ *      both resolved through whatever symlinks exist RIGHT NOW. This is the
+ *      REVERSE case — a developer who types the CURRENT real name ("real")
+ *      for a target recorded under its PRE-symlink name ("dst") — accepted
+ *      deliberately: both spellings denote the identical on-disk location
+ *      today, and a target's deletability should not depend on which of two
+ *      names for the same place happened to be typed.
+ *
+ * Either match returns the RECORDED string, never the caller's own spelling
+ * and never a resolved one: `computeDeletionPlan`'s own `targets.includes
+ * (target)` check, and every `toPreserve`/`toDelete` computation downstream,
+ * key off that recorded spelling, and returning anything else would silently
+ * reintroduce the identical bug one level down. `undefined` when neither
+ * comparison finds a match — an ordinary "not applied" case, or a target
+ * that has never been registered at all.
+ */
+function resolveRecordedTarget(
+  rawTarget: string,
+  document: ProjectStateDocument,
+  canonicalizeFn: CanonicalizeTargetFn,
+): string | undefined {
+  const normalizedRaw = normalizeRawTargetLexically(rawTarget);
+  for (const entry of Object.values(document.templates)) {
+    if (entry.targets.includes(normalizedRaw)) return normalizedRaw;
+  }
+  const resolvedRaw = canonicalizeFn(rawTarget);
+  if (resolvedRaw === null) return undefined;
+  for (const entry of Object.values(document.templates)) {
+    for (const recordedTarget of entry.targets) {
+      if (recordedTarget === normalizedRaw) continue; // already tried above and did not match
+      if (canonicalizeFn(recordedTarget) === resolvedRaw) return recordedTarget;
+    }
+  }
+  return undefined;
+}
+// @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-resolve-recorded-name
 
 /**
  * cpt-frontx-flow-cli-scaffolding-delete-target — deletes one already-applied
@@ -128,6 +221,13 @@ export async function deleteTarget(
   inventory: DeletePlanInventoryPort,
   canonicalizeFn: CanonicalizeTargetFn,
   listTargetFilesFn: ListTargetFilesFn,
+  // The entries `listTargetFilesFn` above cannot enumerate as regular files —
+  // a FIFO, a socket, a device, a dangling symlink. They occupy ground inside
+  // the target and survive the deletion, so the plan has to name them: the
+  // confirmation gate's whole safety argument is that its two lists state the
+  // blast radius before it is executed, and an entry in neither list is
+  // outside that promise.
+  listUnenumerableTargetEntriesFn: ListUnenumerableTargetEntriesFn,
   readFileFn: ReadFileFn,
   removeFileFn: RemoveTargetFileFn,
   // CONTAINMENT ESCAPE FIX: proves an individual `toDelete` path stays
@@ -193,28 +293,57 @@ export async function deleteTarget(
     // use for "the disk holds something this operation cannot work with
     // where it expected a directory" — never a bespoke third code for what
     // is, from a caller's point of view, the same fact.
+    // The recorded spelling comes first, and the canonical path only after
+    // it: canonicalization answers WHERE on disk to act, never WHICH recorded
+    // target the caller means. A target applied under `dst` that has since
+    // become a symlink canonicalizes to its real path, which is not what
+    // `targets[]` holds — keying the lookup off that would make the recorded
+    // target unreachable through the only command that can remove it.
+    const recordedTarget = resolveRecordedTarget(rawTarget, stateResult.document, canonicalizeFn) ?? canonical;
     try {
       const plan = await computeDeletionPlan(
-        canonical,
+        recordedTarget,
         repoRoot,
         stateResult.document,
         inventory,
         canonicalizeFn,
         listTargetFilesFn,
         readFileFn,
+        listUnenumerableTargetEntriesFn,
       );
       if (!plan.ok) return plan;
-      return { ok: true, document: stateResult.document, plan };
+      return { ok: true, document: stateResult.document, target: recordedTarget, plan };
     } catch (error) {
+      if (error instanceof NotRegularFileError) {
+        // A manifest the plan has to read — the owning template's, or another
+        // registered template's whose origin folder must be preserved — is
+        // not a regular file. Reading it is refused rather than attempted
+        // (a FIFO would block forever), and the refusal says which path and
+        // what stands there, instead of surfacing as an internal failure with
+        // no envelope at all under `--json`.
+        return {
+          ok: false,
+          code: 'CONTENT_CONFLICT',
+          message:
+            `Aborted — ${error.message} A deletion plan cannot be computed without it; nothing deleted.`,
+          details: { target: recordedTarget, path: toProjectRelativePath(repoRoot, error.filePath) },
+        };
+      }
       if (error instanceof TargetNotDirectoryError) {
         // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-target-shape-drifted
         return {
           ok: false,
           code: 'CONTENT_CONFLICT',
+          // The message quotes the PROJECT-RELATIVE path, not the absolute
+          // one the error object carries: every other envelope in this
+          // package spells a project path that way, and an absolute host path
+          // in one of them is both noise for a person and a second shape for
+          // a caller to parse.
           message:
-            `Aborted — ${error.message} Its recorded content cannot be reconciled or deleted while something ` +
-            'other than a directory occupies it; nothing deleted.',
-          details: { target: canonical, path: error.targetPath },
+            `Aborted — "${toProjectRelativePath(repoRoot, error.targetPath)}" is no longer a directory. Its ` +
+            'recorded content cannot be reconciled or deleted while something other than a directory occupies ' +
+            'it; nothing deleted.',
+          details: { target: recordedTarget, path: toProjectRelativePath(repoRoot, error.targetPath) },
         };
         // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-target-shape-drifted
       }
@@ -240,7 +369,7 @@ export async function deleteTarget(
   if (flags.dryRun) {
     // @cpt-end:cpt-frontx-state-cli-scaffolding-delete-op:p1:inst-do-plan-pending
     // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-dry-run
-    return { ok: true, outcome: 'dry-run', target: canonical, toDelete: initial.plan.toDelete, toPreserve: initial.plan.toPreserve };
+    return { ok: true, outcome: 'dry-run', target: initial.target, toDelete: initial.plan.toDelete, toPreserve: initial.plan.toPreserve };
     // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-dry-run
   }
   // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-if-dry-run
@@ -259,9 +388,9 @@ export async function deleteTarget(
         ok: false,
         code: 'CONFIRMATION_REQUIRED',
         message:
-          `Deleting "${canonical}" requires confirmation. Re-issue this exact command with --yes after ` +
+          `Deleting "${initial.target}" requires confirmation. Re-issue this exact command with --yes after ` +
           'obtaining authorization out of band; nothing has been deleted.',
-        details: { target: canonical, toDelete: initial.plan.toDelete, toPreserve: initial.plan.toPreserve },
+        details: { target: initial.target, toDelete: initial.plan.toDelete, toPreserve: initial.plan.toPreserve },
       };
       // @cpt-end:cpt-frontx-state-cli-scaffolding-delete-op:p1:inst-do-pending-declined
       // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-confirmation-required
@@ -280,7 +409,7 @@ export async function deleteTarget(
   } else {
     // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-else-interactive
     // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-prompt
-    const decision = await confirmDeletionFn({ target: canonical, toDelete: initial.plan.toDelete, toPreserve: initial.plan.toPreserve });
+    const decision = await confirmDeletionFn({ target: initial.target, toDelete: initial.plan.toDelete, toPreserve: initial.plan.toPreserve });
     // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-prompt
 
     // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-if-declined
@@ -288,7 +417,7 @@ export async function deleteTarget(
     if (decision === 'declined') {
       // @cpt-end:cpt-frontx-state-cli-scaffolding-delete-op:p1:inst-do-pending-declined
       // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-declined
-      return { ok: true, outcome: 'declined', target: canonical, toDelete: initial.plan.toDelete, toPreserve: initial.plan.toPreserve };
+      return { ok: true, outcome: 'declined', target: initial.target, toDelete: initial.plan.toDelete, toPreserve: initial.plan.toPreserve };
       // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-declined
     }
     // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-if-declined
@@ -333,7 +462,7 @@ export async function deleteTarget(
       message:
         `Aborted — path(s) could not be proven to stay inside the project root: ${invalidPaths.join(', ')}; ` +
         'nothing deleted.',
-      details: { target: canonical, paths: invalidPaths },
+      details: { target: final.target, paths: invalidPaths },
     };
   }
 
@@ -348,7 +477,12 @@ export async function deleteTarget(
   const ownerName = final.plan.templateName;
   const ownerEntry: TemplateEntry | undefined = final.document.templates[ownerName];
   const targetsBefore = ownerEntry ? ownerEntry.targets.length : 0;
-  const remainingTargets = ownerEntry ? ownerEntry.targets.filter((t) => t !== canonical) : [];
+  // Filtered against the RECORDED spelling the plan was computed for, not
+  // the canonical path: a recorded target whose on-disk location has since
+  // become a symlink canonicalizes to something `targets[]` never held, and
+  // filtering by that would leave the entry standing after its ground was
+  // removed.
+  const remainingTargets = ownerEntry ? ownerEntry.targets.filter((t) => t !== final.target) : [];
   if (ownerEntry) {
     const written = await mutateProjectState(
       repoRoot,
@@ -398,7 +532,7 @@ export async function deleteTarget(
   return {
     ok: true,
     outcome: 'deleted',
-    target: canonical,
+    target: final.target,
     toDelete: final.plan.toDelete,
     toPreserve: final.plan.toPreserve,
     templateName: ownerName,

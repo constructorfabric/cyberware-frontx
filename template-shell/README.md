@@ -10,14 +10,12 @@ template with the FrontX CLI. `seed` bootstraps a project from the CLI's
 built-in official defaults, which only resolve inside this monorepo checkout —
 useful for developing the templates themselves. Each default is a `path:`
 origin resolved against the directory being seeded, so seeding a bare empty
-folder has nothing to resolve against; vendor this template into it first,
-then seed on top of that:
-
-```bash
-mkdir -p ./my-app/template-shell
-cp -R template-shell/. ./my-app/template-shell/
-frontx seed ./my-app --input '{"templates":{"@gears-frontx/frontx-template-shell":["."]}}'
-```
+folder has nothing to resolve against; the template must be vendored into it
+first. See [QUICK_START.md § 4, "Or seed a new project from the built-in
+defaults"](../QUICK_START.md#4-or-seed-a-new-project-from-the-built-in-defaults)
+in the root of this repository for the exact command — a plain recursive copy
+also drags in `node_modules`, `dist`, `dist-lib`, and `.frontx`, so vendoring
+uses `git archive` to transfer tracked content only.
 
 Anywhere else — a fresh external folder — `register` a remote origin and
 `apply` it instead, which is the path that actually works outside this

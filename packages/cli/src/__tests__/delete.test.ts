@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { deleteTarget } from '../commands/delete';
 import type { ConfirmDeletionFn } from '../commands/delete';
-import type { DeletePlanInventoryPort, ListTargetFilesFn } from '../scaffold/delete-plan';
+import type { DeletePlanInventoryPort, ListTargetFilesFn, ListUnenumerableTargetEntriesFn } from '../scaffold/delete-plan';
 import { InventoryState } from '../inventory/types';
 import type { InventoryEntry } from '../inventory/types';
 import type { CanonicalizeTargetFn } from '../scaffold/conflict-check';
@@ -68,6 +68,10 @@ function fakeListTargetFiles(filesByAbsoluteDir: Record<string, string[]>): List
 // real `readFileFn` fails loudly instead of silently re-introducing the
 // exact `inventory.lookup`-only bug this checkpoint fixed
 // (`scaffold/delete-plan.ts`'s own `inst-dp-compute-ownership` step).
+// Every entry a path->content fixture reports is a regular file, so nothing
+// inside the target is unenumerable.
+const noUnenumerableEntries: ListUnenumerableTargetEntriesFn = async () => [];
+
 const neverCalledReadFileFn: ReadFileFn = async () => {
   throw new Error('readFileFn should not be called for a remote-origin fixture');
 };
@@ -108,6 +112,7 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
       fakeInventory(),
       identityCanonicalize,
       fakeListTargetFiles({}),
+      noUnenumerableEntries,
       neverCalledReadFileFn,
       remove,
       noopAssertPathWithinRoot,
@@ -149,6 +154,7 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
       fakeInventory({ appTemplate: { excludedSubtrees: [] } }),
       identityCanonicalize,
       throwingListTargetFiles,
+      noUnenumerableEntries,
       neverCalledReadFileFn,
       remove,
       noopAssertPathWithinRoot,
@@ -160,7 +166,10 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
     expect(result).toMatchObject({
       ok: false,
       code: 'CONTENT_CONFLICT',
-      details: { target: 'packages/app', path: '/repo/packages/app' },
+      // Project-relative, like every other path this package reports. The
+      // adapter's own error carries the absolute path it actually stat'd; the
+      // command translates it before it reaches an envelope.
+      details: { target: 'packages/app', path: 'packages/app' },
     });
     // Nothing was deleted, and the project state document is untouched — the
     // refusal fired before this call ever reached its own removal or
@@ -191,6 +200,7 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
       fakeInventory({ appTemplate: { excludedSubtrees: [] } }),
       identityCanonicalize,
       throwingListTargetFiles,
+      noUnenumerableEntries,
       neverCalledReadFileFn,
       remove,
       noopAssertPathWithinRoot,
@@ -218,6 +228,7 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
       fakeInventory({ appTemplate: { excludedSubtrees: [] } }),
       identityCanonicalize,
       fakeListTargetFiles({ '/repo/packages/app': ['src/index.ts'] }),
+      noUnenumerableEntries,
       neverCalledReadFileFn,
       remove,
       noopAssertPathWithinRoot,
@@ -247,6 +258,7 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
       fakeInventory({ appTemplate: { excludedSubtrees: [] } }),
       identityCanonicalize,
       fakeListTargetFiles({ '/repo/packages/app': ['src/index.ts'] }),
+      noUnenumerableEntries,
       neverCalledReadFileFn,
       remove,
       noopAssertPathWithinRoot,
@@ -280,6 +292,7 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
       fakeInventory({ appTemplate: { excludedSubtrees: [] } }),
       identityCanonicalize,
       fakeListTargetFiles({ '/repo/packages/app': ['src/index.ts'] }),
+      noUnenumerableEntries,
       neverCalledReadFileFn,
       remove,
       noopAssertPathWithinRoot,
@@ -316,6 +329,7 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
       fakeInventory({ appTemplate: { excludedSubtrees: [] } }),
       identityCanonicalize,
       fakeListTargetFiles({ '/repo/packages/app': [] }),
+      noUnenumerableEntries,
       neverCalledReadFileFn,
       remove,
       noopAssertPathWithinRoot,
@@ -349,6 +363,7 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
       fakeInventory({ appTemplate: { excludedSubtrees: [] } }),
       identityCanonicalize,
       fakeListTargetFiles({ '/repo/packages/app': ['src/index.ts'] }),
+      noUnenumerableEntries,
       neverCalledReadFileFn,
       remove,
       noopAssertPathWithinRoot,
@@ -395,6 +410,7 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
       fakeInventory({ appTemplate: { excludedSubtrees: [] } }),
       identityCanonicalize,
       fakeListTargetFiles({ '/repo/packages/app': [] }),
+      noUnenumerableEntries,
       neverCalledReadFileFn,
       remove,
       noopAssertPathWithinRoot,
@@ -423,6 +439,7 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
       fakeInventory({ appTemplate: { excludedSubtrees: [] } }),
       identityCanonicalize,
       fakeListTargetFiles({ '/repo/packages/app': ['src/index.ts'] }),
+      noUnenumerableEntries,
       neverCalledReadFileFn,
       remove,
       noopAssertPathWithinRoot,
@@ -452,6 +469,7 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
       fakeInventory({ appTemplate: { excludedSubtrees: [] } }),
       identityCanonicalize,
       fakeListTargetFiles({ '/repo/packages/app': ['src/index.ts'] }),
+      noUnenumerableEntries,
       neverCalledReadFileFn,
       remove,
       noopAssertPathWithinRoot,
@@ -487,6 +505,7 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
       fakeListTargetFiles({
         '/repo': ['src/index.ts', '.git/config', '.DS_Store', 'Thumbs.db', 'admin/index.ts', 'docs/readme.md'],
       }),
+      noUnenumerableEntries,
       neverCalledReadFileFn,
       remove,
       noopAssertPathWithinRoot,
@@ -532,6 +551,7 @@ describe('deleteTarget (cpt-frontx-flow-cli-scaffolding-delete-target)', () => {
       fakeInventory({ appTemplate: { excludedSubtrees: [] } }),
       identityCanonicalize,
       fakeListTargetFiles({ '/repo/packages/app': ['src/index.ts', 'escaped-symlink/data.ts'] }),
+      noUnenumerableEntries,
       neverCalledReadFileFn,
       remove,
       throwOnEscapedPath,

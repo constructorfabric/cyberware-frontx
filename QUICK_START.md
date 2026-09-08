@@ -118,7 +118,15 @@ vendored into the target first:
 # `dist-lib` and `.frontx` (hundreds of MB in this checkout) and records that
 # folder as the new project's origin.
 mkdir -p ./my-app/template-shell
-git archive HEAD template-shell | tar --strip-components=1 -x -C ./my-app/template-shell
+# `git -C "$(git rev-parse --show-toplevel)"` rather than a bare `git archive`:
+# a pathspec is resolved against the CALLER's directory, and `git archive`
+# refuses one naming anything outside it, so a bare `git archive HEAD
+# template-shell` only works when standing at the repository root and fails
+# with "pathspec did not match any files" anywhere below it. Anchoring the
+# invocation at the root makes this line work from wherever you are in the
+# checkout; `./my-app` stays relative to that same place.
+git -C "$(git rev-parse --show-toplevel)" archive HEAD template-shell \
+  | tar --strip-components=1 -x -C ./my-app/template-shell
 frontx seed ./my-app --input '{"templates":{"@gears-frontx/frontx-template-shell":["."]}}'
 ```
 

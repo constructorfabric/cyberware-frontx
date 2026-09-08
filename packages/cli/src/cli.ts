@@ -74,7 +74,7 @@ import type { ListPayloadFilesFn, ResolveDeclaredExclusionFn, ReadFileFn } from 
 import type { ListFolderFilesFn, PathExistsFn } from './resolver/types';
 import type { ReadTargetPathStateFn } from './commands/add-template';
 import type { ReadProjectStateFn, WriteProjectStateFn } from './project-state/types';
-import type { ListTargetFilesFn } from './scaffold/delete-plan';
+import type { ListTargetFilesFn, ListUnenumerableTargetEntriesFn } from './scaffold/delete-plan';
 import type { RemoveProjectFileFn, PresentUpgradePlanFn } from './upgrade/types';
 import { ok, err } from './envelope';
 import type { ErrorCode } from './envelope';
@@ -96,9 +96,11 @@ import {
   createFsWriteProjectStateFn,
   createFsCanonicalizeTargetFn,
   createFsListTargetFilesFn,
+  createFsListUnenumerableTargetEntriesFn,
   createFsPathExistsFn,
   createFsAssertPathWithinRootFn,
   PathContainmentError,
+  NotRegularFileError,
 } from './adapters/fs-project-io';
 
 // --- exit-code state machine (cpt-frontx-state-cli-invocation-run) ---
@@ -295,6 +297,11 @@ export interface CliDeps {
   // wrong). `removeProjectFile` above is reused directly for removing one
   // `toDelete` entry — no second "remove a file" seam is added for it.
   listTargetFilesFn: ListTargetFilesFn;
+  // The companion to `listTargetFilesFn` above: the entries inside a target
+  // that are not regular files and so cannot be enumerated as deletable
+  // content. `delete`'s plan names them in `toPreserve`, so a developer
+  // confirming a deletion is told what survives it.
+  listUnenumerableTargetEntriesFn: ListUnenumerableTargetEntriesFn;
   confirmDeletion: ConfirmDeletionFn;
   // `upgrade` — the interactive (non-`--json`) plan-approval prompt,
   // symmetric to `confirmDeletion` above: printed to stdout, read from
@@ -341,6 +348,7 @@ export function createRealDeps(): CliDeps {
     createCanonicalizeTargetFn: createFsCanonicalizeTargetFn,
     createAssertPathWithinRootFn: createFsAssertPathWithinRootFn,
     listTargetFilesFn: createFsListTargetFilesFn(),
+    listUnenumerableTargetEntriesFn: createFsListUnenumerableTargetEntriesFn(),
     confirmDeletion: createInteractiveDeletionConfirm(),
     presentUpgradePlan: createInteractiveUpgradeApproval(),
   };
@@ -1592,6 +1600,11 @@ export async function runCommand(command: KnownCommand, args: string[], deps: Cl
         deps.inventory,
         canonicalizeFn,
         deps.listTargetFilesFn,
+        // The ground inside a target that cannot be enumerated as a regular
+        // file — a FIFO, a socket, a device, a dangling symlink. It survives
+        // the deletion, so the plan names it in `toPreserve` rather than
+        // leaving it in neither list.
+        deps.listUnenumerableTargetEntriesFn,
         deps.readFileFn,
         deps.removeProjectFile,
         deps.createAssertPathWithinRootFn(repoRoot),
@@ -1991,6 +2004,28 @@ export async function run(argv: string[], deps: CliDeps): Promise<CommandOutcome
         ? { exitCode: EXIT_USER_ERROR, stdout: JSON.stringify(envelope) }
         : { exitCode: EXIT_USER_ERROR, stderr: error.message };
     }
+    // A path the command had to READ is not a regular file — a FIFO, a socket,
+    // a device, a directory or a dangling symlink standing where the project
+    // state document or a template manifest belongs. The adapters refuse to
+    // open it rather than blocking on it, and that refusal reaches here typed
+    // so it can be reported as the same `CONTENT_CONFLICT` the apply, upgrade
+    // and delete engines already answer for "the disk holds something this
+    // operation cannot work with": an ordinary, actionable problem with the
+    // tree, never an internal failure, and never — under `--json` — an empty
+    // stdout where the caller is owed exactly one envelope.
+    if (error instanceof NotRegularFileError) {
+      // Spelled project-relative when the path lies under the directory the
+      // command was invoked in, matching every other envelope in this
+      // package, and left absolute only when it genuinely does not — a path
+      // outside the project cannot be spelled relative to it without lying
+      // about where it is.
+      const reported = describePathForReport(error.filePath);
+      const message = `"${reported}" is ${describeNonRegularKindForReport(error.kind)}, not a regular file — refusing to read it.`;
+      const envelope = err('CONTENT_CONFLICT', message, { path: reported, kind: error.kind });
+      return parseJsonMode(parsed.args)
+        ? { exitCode: EXIT_USER_ERROR, stdout: JSON.stringify(envelope) }
+        : { exitCode: EXIT_USER_ERROR, stderr: message };
+    }
     // @cpt-end:cpt-frontx-state-cli-invocation-run:p1:inst-st-dispatched-user-error
 
     // The dispatched behavior failed unexpectedly -> internal-error exit code.
@@ -2001,6 +2036,34 @@ export async function run(argv: string[], deps: CliDeps): Promise<CommandOutcome
   }
   // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-map-exit
   // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-dispatch
+}
+
+// A filesystem path as an envelope should carry it: project-relative when it
+// sits under the directory the command was invoked in, absolute otherwise.
+// Every other path this package reports is project-relative, and an absolute
+// host path in one envelope is both noise for a person and a second shape for
+// a caller to parse — but relativizing a path that is genuinely outside the
+// project would misreport where it is, so that case keeps its absolute form.
+function describePathForReport(absolutePath: string): string {
+  const relative = path.relative(process.cwd(), absolutePath);
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return absolutePath;
+  return relative.split(path.sep).join('/');
+}
+
+// The one wording for each non-regular shape a read can refuse, kept beside
+// the reporting helper above so the entrypoint's message and the adapter's
+// own stay recognisably the same sentence.
+function describeNonRegularKindForReport(kind: string): string {
+  switch (kind) {
+    case 'directory':
+      return 'a directory';
+    case 'dangling-symlink':
+      return 'a symlink whose target does not exist';
+    case 'symlink':
+      return 'a symlink';
+    default:
+      return 'a special file (a FIFO, socket, or device)';
+  }
 }
 
 // --- process entrypoint ---
