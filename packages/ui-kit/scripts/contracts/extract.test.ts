@@ -12,6 +12,15 @@ import { describe, expect, it } from 'vitest';
 
 import { extractComponent, normalizeTypeText, parseStringLiteralUnion } from './extract';
 import { passthroughTypeId, passthroughTypeIdPattern } from './ids';
+import { applyContractTestTimeout } from './testing';
+
+// Each fixture below is its own tsx path, so extractComponent's per-path
+// cache (see extract.ts) cannot help here - a real TypeScript program build
+// is several seconds on a CI-class runner, comfortably under 5s locally, so
+// only CI hits vitest's default test timeout. Must run before any
+// describe()/it() in the file; see applyContractTestTimeout's own comment
+// in testing.ts.
+applyContractTestTimeout();
 
 const fixturesDir = join(process.cwd(), 'scripts/contracts/__fixtures__');
 const fixture = (name: string) => join(fixturesDir, name);

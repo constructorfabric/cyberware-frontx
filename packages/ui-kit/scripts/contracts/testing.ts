@@ -8,10 +8,26 @@
 // committed copy and diffs it against a fresh compile, and it is meant to be
 // called once per component's contract test file - see button.contract.test.ts.
 import { GTS, type ValidationResult } from '@globaltypesystem/gts-ts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { loadBaseSchema, type CompiledContract } from './compile';
 import { checkComponentFreshness, type FreshnessReport } from './freshness';
+
+// Every contracts test file that builds a real TypeScript program - directly
+// (extractComponent, listExportedDeclarationNames) or through this module's
+// own checkComponentFreshness - is several seconds per build on a CI-class
+// runner, comfortably under 5s locally, so only CI ever hits vitest's default
+// 5000ms test timeout. `vi.setConfig` resolves at the moment `it`/`describe`
+// is called (vitest bakes `options.timeout ?? runner.config.testTimeout` into
+// each task when it is collected), so this must run before any it()/describe()
+// in the calling file, and vitest resets the override after that file's run
+// (see its own worker runner: "reset after tests, because user might call
+// vi.setConfig in setupFile") - it never leaks into another test file. One
+// mechanism, called once at the top of each file that needs it, rather than
+// a `{ timeout }` option repeated on every slow describe/it.
+export function applyContractTestTimeout(): void {
+  vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
+}
 
 // checkComponentFreshness builds a TypeScript program (via extractComponent -
 // see extract.ts) several seconds per call on a CI-class runner; the three
@@ -19,7 +35,8 @@ import { checkComponentFreshness, type FreshnessReport } from './freshness';
 // that build three times over and blew past vitest's default 5s test
 // timeout. Memoized per (directory, exportStem) so the three `it`s share the
 // one report - safe because nothing in this process edits the component
-// source between them.
+// source between them. The timeout itself comes from the calling test
+// file's own applyContractTestTimeout() call, not from this describe.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-freshness
 const freshnessReportCache = new Map<string, FreshnessReport>();
 function memoizedFreshnessReport(directory: string, exportStem: string): FreshnessReport {
@@ -37,16 +54,16 @@ function memoizedFreshnessReport(directory: string, exportStem: string): Freshne
 // both (assertContractFreshness('accordion', 'accordion-item')) - see
 // accordion.contract.test.ts.
 //
-// The describe gets an explicit 120s timeout (inherited by every `it` below
-// it) rather than raising vitest's global testTimeout - the TS program build
-// this suite exercises is genuinely slow on CI, but that is not true of the
-// rest of the test run, and a global bump would hide a real hang anywhere
-// else in the package.
+// Callers are component contract test files, each of which calls
+// applyContractTestTimeout() at file scope for exactly this reason - the TS
+// program build this suite exercises is genuinely slow on CI, but that is
+// not true of the rest of the test run, and a global testTimeout bump would
+// hide a real hang anywhere else in the package.
 // @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-conformance:p1
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1
 export function assertContractFreshness(directory: string, exportStem: string = directory): void {
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-freshness
-  describe(`${exportStem} contract freshness`, { timeout: 120_000 }, () => {
+  describe(`${exportStem} contract freshness`, () => {
     it('committed contract.json, contract.instance.json and generated passthrough match a fresh compile', () => {
       const report = memoizedFreshnessReport(directory, exportStem);
       expect(report.contractDiff, `${exportStem}.contract.json is stale:\n${report.contractDiff.join('\n')}`).toEqual([]);

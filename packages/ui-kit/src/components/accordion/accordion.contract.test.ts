@@ -23,7 +23,13 @@ import {
   type ContractInstance,
 } from '../../../scripts/contracts/compile';
 import { componentTypeRefPattern } from '../../../scripts/contracts/ids';
-import { assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
+import { applyContractTestTimeout, assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
+
+// assertContractFreshness below builds a real TypeScript program - several
+// seconds on a CI-class runner, comfortably under 5s locally - so only CI
+// hits vitest's default test timeout. Must run before any describe()/it()
+// in the file; see applyContractTestTimeout's own comment in testing.ts.
+applyContractTestTimeout();
 
 const DIRECTORY = 'accordion';
 // stem === directory for the root (see compile.ts's resolveTargetExtraction

@@ -19,6 +19,15 @@ import {
   skippedPassthroughNote,
   touchesSharedContractTooling,
 } from './check-lib';
+import { applyContractTestTimeout } from './testing';
+
+// This suite itself builds no TypeScript program (see the file comment
+// above), but gets the same 120s margin as the rest of the contracts test
+// surface so a future addition here that does start using compile.ts/
+// extract.ts inherits the safety margin instead of silently reintroducing
+// the CI-only timeout. Must run before any describe()/it() in the file;
+// see applyContractTestTimeout's own comment in testing.ts.
+applyContractTestTimeout();
 
 describe('jsonDiff', () => {
   it('reports no diff for two structurally equal objects, regardless of key order', () => {

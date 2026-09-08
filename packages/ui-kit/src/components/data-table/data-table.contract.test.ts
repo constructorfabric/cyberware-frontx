@@ -21,7 +21,14 @@ import {
   type ContractInstance,
 } from '../../../scripts/contracts/compile';
 import { listExportedDeclarationNames } from '../../../scripts/contracts/extract';
-import { assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
+import { applyContractTestTimeout, assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
+
+// resolveTargetExtraction and listExportedDeclarationNames below each build a
+// real TypeScript program - several seconds on a CI-class runner, comfortably
+// under 5s locally - so only CI hits vitest's default test timeout. See
+// applyContractTestTimeout's own comment in testing.ts for why this must run
+// before any describe()/it() in the file.
+applyContractTestTimeout();
 
 const DIRECTORY = 'data-table';
 // Two INDEPENDENT top-level exports, not a compound family - unlike
@@ -69,20 +76,13 @@ describe('data-table: metamodel validity', () => {
 describe('data-table: coverage counts only component exports', () => {
   // The directory exports six names in total; four are helpers/features/
   // types, not components, and must never be counted against coverage or
-  // demanded an overlay - see check.ts's componentExportCoverage. An
-  // explicit timeout (rather than a global testTimeout bump) because
-  // resolveTargetExtraction builds a TypeScript program (extract.ts) that is
-  // several seconds on a CI-class runner - real work, not a hang.
-  it(
-    'data-table.tsx exports exactly two React components: DataTable and DataTableSortButton',
-    { timeout: 120_000 },
-    () => {
-      const extraction = resolveTargetExtraction(DIRECTORY, DIRECTORY);
-      const sortButtonExtraction = resolveTargetExtraction(DIRECTORY, 'data-table-sort-button');
-      expect(extraction.name).toBe('DataTable');
-      expect(sortButtonExtraction.name).toBe('DataTableSortButton');
-    },
-  );
+  // demanded an overlay - see check.ts's componentExportCoverage.
+  it('data-table.tsx exports exactly two React components: DataTable and DataTableSortButton', () => {
+    const extraction = resolveTargetExtraction(DIRECTORY, DIRECTORY);
+    const sortButtonExtraction = resolveTargetExtraction(DIRECTORY, 'data-table-sort-button');
+    expect(extraction.name).toBe('DataTable');
+    expect(sortButtonExtraction.name).toBe('DataTableSortButton');
+  });
 
   it('the non-component exports are real exports, correctly excluded - not silently missing', () => {
     const allExports = listExportedDeclarationNames(join(process.cwd(), 'src/components/data-table/data-table.tsx'));

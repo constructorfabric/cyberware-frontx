@@ -22,6 +22,16 @@ import { describe, expect, it } from 'vitest';
 import { decideCompat, diffOwnPropsSchema, extractContractMajor, synthesizeVersionedId } from './check-lib';
 import { loadBaseSchema } from './compile';
 import { propsSchemaId } from './ids';
+import { applyContractTestTimeout } from './testing';
+
+// This suite builds no TypeScript program either, but registers real
+// compiled schemas in a real GTS store and runs the real backward-
+// compatibility check per scenario - real work, and it gets the same 120s
+// margin as the rest of the contracts test surface rather than depending on
+// this specific suite staying fast forever. Must run before any
+// describe()/it() in the file; see applyContractTestTimeout's own comment
+// in testing.ts.
+applyContractTestTimeout();
 
 // gts-ts's own id parser (Gts.parseGtsID) requires the bare `gts.` prefix
 // and rejects the `gts://` URI form outright - same fact, same helper, as

@@ -37,7 +37,13 @@ import {
 } from '../../../scripts/contracts/compile';
 import type { ComponentExtraction } from '../../../scripts/contracts/extract';
 import { componentTypeRefPattern, instanceIdPattern, METAMODEL_VERSION, passthroughTypeId } from '../../../scripts/contracts/ids';
-import { assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
+import { applyContractTestTimeout, assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
+
+// assertContractFreshness below builds a real TypeScript program - several
+// seconds on a CI-class runner, comfortably under 5s locally - so only CI
+// hits vitest's default test timeout. Must run before any describe()/it()
+// in the file; see applyContractTestTimeout's own comment in testing.ts.
+applyContractTestTimeout();
 
 // Freshness: the committed button.contract.json, button.contract.instance.json
 // and generated/passthrough.base_ui_button.json must equal a fresh compile. Every
