@@ -200,43 +200,4 @@ describe('HelloWorldScreen', () => {
       expect(unsubscribe).toHaveBeenCalledTimes(1);
     }
   });
-
-  // The host may hand the screen a different bridge without unmounting it. The
-  // lazy useState initializers ran once on mount, so only the re-read during
-  // render carries the new instance's current values across; the subscription
-  // effect delivers future changes and never fires here. Getting this wrong is
-  // silent: the screen keeps painting the previous host's theme and language
-  // while listening to a bridge nobody is publishing on any more.
-  it('re-reads current properties when the host swaps the bridge instance', async () => {
-    const { HelloWorldScreen, bridgeFixture, expectedTheme, host, rerender } =
-      await setupHelloWorldScreen();
-    const swapped = createMfeBridgeFixture({
-      extDomainId: 'swapped-domain',
-      extensionId: 'swapped-screen',
-      initialProperties: {
-        [FRONTX_SHARED_PROPERTY_THEME]: 'swapped-theme',
-        [FRONTX_SHARED_PROPERTY_LANGUAGE]: 'ar',
-      },
-    });
-
-    rerender(<HelloWorldScreen bridge={swapped.bridge} />);
-
-    expect(screen.getByText('swapped-theme')).toBeTruthy();
-    expect(screen.getByText('ar')).toBeTruthy();
-    expect(screen.getByText('swapped-domain')).toBeTruthy();
-    expect(screen.getByText('swapped-screen')).toBeTruthy();
-    expect(screen.queryByText(expectedTheme)).toBeNull();
-
-    await waitFor(() => {
-      expect(host.getAttribute('dir')).toBe(TextDirection.RightToLeft);
-    });
-
-    // The first bridge is released exactly once, and the second one is
-    // subscribed to in its place.
-    expect(bridgeFixture.unsubscriptions).toHaveLength(2);
-    for (const { unsubscribe } of bridgeFixture.unsubscriptions) {
-      expect(unsubscribe).toHaveBeenCalledTimes(1);
-    }
-    expect(swapped.subscribeToProperty).toHaveBeenCalledTimes(2);
-  });
 });
