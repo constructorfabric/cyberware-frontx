@@ -43,18 +43,13 @@ import type { AssertPathWithinRootFn } from '../scaffold/types';
 // own on-disk location is no longer a directory. Caught inside `computePlan`
 // below and converted to the same structured refusal shape every other exit
 // from this function already returns — see that catch's own comment for why
-// `CONTENT_CONFLICT` is the code chosen. `NotRegularFileError` is the
-// identical discipline applied to the project state document itself: the
-// real `readProjectStateFn` (`createFsReadProjectStateFn`, same module) now
-// throws it, rather than blocking forever, when a FIFO, socket, device, or
-// dangling symlink stands at `.frontx/project.json`.
-import {
-  TargetNotDirectoryError,
-  NotRegularFileError,
-  UnreachablePathError,
-  PathUnreadableError,
-  describeUnreadableCause,
-} from '../adapters/fs-project-io';
+// `CONTENT_CONFLICT` is the code chosen. A read failure on the owning
+// template's own CURRENT manifest (a FIFO, a directory, a dangling symlink,
+// ...) is a DIFFERENT concern this module no longer catches directly:
+// `computeDeletionPlan` (`../scaffold/delete-plan.ts`) now catches that
+// failure itself and folds it into its own recorded-value fallback, so it
+// never reaches this call as a thrown error at all.
+import { TargetNotDirectoryError } from '../adapters/fs-project-io';
 
 // Symmetric to `upgrade/types.ts`'s `RemoveProjectFileFn` — removes one
 // absolute file path, no-op when already absent. Reused directly rather
@@ -327,50 +322,14 @@ export async function deleteTarget(
       if (!plan.ok) return plan;
       return { ok: true, document: stateResult.document, target: recordedTarget, plan };
     } catch (error) {
-      // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-if-manifest-unreadable
-      // All three typed refusals answer the same question — the manifest is
-      // there but this step could not read it — and differ only in why: the
-      // wrong shape stands at the path, a component of the path is not a
-      // directory, or the operating system refused the read outright. A
-      // deletion plan computed without that manifest would state a blast
-      // radius nobody verified, whichever of the three it was.
-      if (
-        error instanceof NotRegularFileError ||
-        error instanceof UnreachablePathError ||
-        error instanceof PathUnreadableError
-      ) {
-        // The owning template's manifest — read to compute `<target>`'s
-        // effective ownership (`inst-dp-compute-ownership`) — is not a
-        // regular file: a FIFO, a socket, a device, a directory, or a
-        // dangling symlink stands where it is expected.
-        // `resolveRegisteredExcludedSubtrees` (`../scaffold/registered-
-        // manifest.ts`) deliberately does NOT swallow this into `[]` the way
-        // it does a genuinely ABSENT manifest — an unreadable manifest is a
-        // real declaration this step simply could not read, and computing
-        // `toDelete`/`toPreserve` from an exclusion set silently emptied by
-        // that read failure would state a blast radius nobody verified.
-        // Reading it is refused rather than attempted a second time (a FIFO
-        // would block forever), and the refusal says which path and what
-        // stands there, instead of either a widened deletion plan or an
-        // internal failure with no envelope at all under `--json`.
-        // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-manifest-unreadable
-        return {
-          ok: false,
-          code: 'CONTENT_CONFLICT',
-          // The path is spelled project-relative, like every other path this
-          // package reports; the typed error carries the absolute one it
-          // actually inspected. The CAUSE — which of the three refusals this
-          // was — is named too: a `chmod 000` manifest and a FIFO in its
-          // place both land here, and the remedy differs between them.
-          message:
-            `Aborted — the owning template's manifest at "${toProjectRelativePath(repoRoot, error.filePath)}" ` +
-            `could not be read: ${describeUnreadableCause(error, (absolutePath) => toProjectRelativePath(repoRoot, absolutePath))} A deletion plan cannot be ` +
-            'computed without it; nothing deleted.',
-          details: { target: recordedTarget, path: toProjectRelativePath(repoRoot, error.filePath) },
-        };
-        // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-manifest-unreadable
-      }
-      // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-if-manifest-unreadable
+      // A read failure resolving the owning template's CURRENT manifest —
+      // unreadable as a regular file, or genuinely absent — is no longer a
+      // reason for `computeDeletionPlan` to throw: it is caught internally
+      // there and folded into the recorded-value fallback
+      // (`inst-dp-resolve-current-manifest`), so this catch no longer has
+      // that class of error to answer for. Only `TargetNotDirectoryError` —
+      // the TARGET's own on-disk shape, not its owning template's manifest —
+      // still reaches here.
       if (error instanceof TargetNotDirectoryError) {
         // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-target-shape-drifted
         return {

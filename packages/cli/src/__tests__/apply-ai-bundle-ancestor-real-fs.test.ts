@@ -26,7 +26,7 @@
 // so it cannot regress.
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile, readFile, symlink, lstat } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile, readdir, symlink, lstat } from 'node:fs/promises';
 import { readdirSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -200,6 +200,65 @@ describe('apply — AI-extension bundle materialization over a blocked scope com
     expect(result.ok).toBe(true);
     const bundled = await readFile(path.join(root, '.frontx', 'ai', '@x', 'a', 'SKILL.md'), 'utf-8');
     expect(bundled).toBe('bundle content for @x/a');
+  });
+
+  // DEFECT 2: a symlinked ANCESTOR (the scope component, strictly between
+  // `.frontx/ai/` and the bundle's own destination) resolving to a directory
+  // INSIDE the project is no longer a blocker at all, following the same fix
+  // to `firstNonDirectoryComponentOf` that stops treating a directory
+  // reached through a symlink as something other than a directory (DEFECT
+  // 1). It is traversed exactly like an ordinary directory: the link
+  // survives, and the bundle is written straight into the directory it
+  // aliases — never reclaimed and replaced with a plain directory the way a
+  // regular file or FIFO at the same position still is, above.
+  it('traverses a symlinked scope component resolving to a directory INSIDE the project — the link survives and the bundle lands in the aliased directory', async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'frontx-aib-ancestor-symlink-inside-'));
+    await setupTemplate(root);
+    await mkdir(path.join(root, 'app'), { recursive: true });
+    await mkdir(path.join(root, '.frontx', 'ai'), { recursive: true });
+    const devDir = path.join(root, 'dev-owned-scope-dir');
+    await mkdir(devDir, { recursive: true });
+    await writeFile(path.join(devDir, 'KEEP.md'), 'developer file already here', 'utf-8');
+    await symlink(devDir, path.join(root, '.frontx', 'ai', '@x'));
+
+    const deps = await realDeps(root);
+    const result = await runApplyPipeline({ templates: { '@x/a': ['app'] } }, root, false, deps);
+
+    expect(result.ok).toBe(true);
+    const scopeStat = await lstat(path.join(root, '.frontx', 'ai', '@x'));
+    expect(scopeStat.isSymbolicLink()).toBe(true); // the link itself survives, never reclaimed
+    const bundled = await readFile(path.join(root, '.frontx', 'ai', '@x', 'a', 'SKILL.md'), 'utf-8');
+    expect(bundled).toBe('bundle content for @x/a');
+    // Written straight into the aliased directory, not beside the link.
+    const bundledThroughAlias = await readFile(path.join(devDir, 'a', 'SKILL.md'), 'utf-8');
+    expect(bundledThroughAlias).toBe('bundle content for @x/a');
+    const keptFile = await readFile(path.join(devDir, 'KEEP.md'), 'utf-8');
+    expect(keptFile).toBe('developer file already here');
+  });
+
+  // DEFECT 2 (containment, unchanged): a symlinked ancestor resolving
+  // OUTSIDE the project root is still refused — traversing an ancestor that
+  // resolves to a directory only ever applies to ground `assertPathWithinProjectRoot`
+  // has already proven stays inside the project.
+  it('still refuses a symlinked scope component resolving OUTSIDE the project root', async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'frontx-aib-ancestor-symlink-outside-'));
+    const outsideDir = await mkdtemp(path.join(tmpdir(), 'frontx-aib-outside-'));
+    try {
+      await setupTemplate(root);
+      await mkdir(path.join(root, 'app'), { recursive: true });
+      await mkdir(path.join(root, '.frontx', 'ai'), { recursive: true });
+      await symlink(outsideDir, path.join(root, '.frontx', 'ai', '@x'));
+
+      const deps = await realDeps(root);
+      const result = await runApplyPipeline({ templates: { '@x/a': ['app'] } }, root, false, deps);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('INVALID_PATH');
+      const outsideEntries = await readdir(outsideDir);
+      expect(outsideEntries).toEqual([]); // nothing written through the escaping link
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
   });
 
   // PIN: the bundle DESTINATION itself (`.frontx/ai/@x/a`, not an ancestor of

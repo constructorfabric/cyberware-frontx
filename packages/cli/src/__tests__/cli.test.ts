@@ -385,6 +385,12 @@ describe('usage/help (cpt-frontx-flow-cli-invocation-help)', () => {
     expect(outcome.stderr).toContain('--yes only together with --json');
   });
 
+  it('run() lets --dry-run --yes through: a dry run reaches no confirmation gate to suppress', async () => {
+    const { deps } = makeDeps();
+    const outcome = await run(['delete', 'app', '--dry-run', '--yes'], deps);
+    expect(outcome.stderr).not.toContain('--yes only together with --json');
+  });
+
   it('run() still accepts --json --yes, the form the confirmation gate defines', async () => {
     const { deps } = makeDeps();
     const outcome = await run(['delete', 'app', '--json', '--yes'], deps);
@@ -550,7 +556,7 @@ describe('dispatch: list (cpt-frontx-flow-template-resolution-list)', () => {
     const outcome = await run(['list'], deps);
 
     expect(outcome.exitCode).toBe(EXIT_USER_ERROR);
-    expect(outcome.stderr).toContain('could not be parsed');
+    expect(outcome.stderr).toContain('is not valid: its content is not valid JSON');
     expect(outcome.stdout).toBeUndefined();
   });
 
@@ -778,6 +784,7 @@ describe('dispatch: list (cpt-frontx-flow-template-resolution-list)', () => {
         version: '2.3.1',
         targets: [],
         description: 'Registered fixture for the version-vs-ref regression guard.',
+        excludedSubtrees: [],
       },
     ]);
   });
@@ -1001,6 +1008,7 @@ describe('dispatch: list (cpt-frontx-flow-template-resolution-list)', () => {
             version: '1.0.0',
             targets: [],
             description: 'Establishes a thing.',
+            excludedSubtrees: [],
           },
         ],
         installed: [],
@@ -1690,6 +1698,34 @@ describe('dispatch: upgrade (cpt-frontx-flow-upgrade-changeset-review-approval, 
   it('a candidate resolving to the already-recorded {origin, version} is an idempotent no-op', async () => {
     const { readProjectStateFn, writeProjectStateFn, written } = seededProjectState({
       formatVersion: 1,
+      templates: {
+        foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: ['packages/app'], excludedSubtrees: [] },
+      },
+      projectOwnedRoots: [],
+    });
+    const { deps, registerManifest } = makeDeps({ readProjectStateFn, writeProjectStateFn });
+    registerManifest('github:acme/foo@v1.0.0', cleanManifest('foo', '1.0.0'));
+
+    const outcome = await run(['upgrade', 'foo', 'github:acme/foo@v1.0.0', '--json', '--yes'], deps);
+
+    expect(outcome.exitCode).toBe(EXIT_SUCCESS);
+    expect(JSON.parse(outcome.stdout ?? '')).toMatchObject({ ok: true, data: { outcome: 'noop' } });
+    // The baseline entry already carries a recorded `excludedSubtrees`, so
+    // this no-op has nothing missing to backfill and writes nothing — see
+    // the SEPARATE "records excludedSubtrees on a legacy entry" test for the
+    // case where the field is absent and this same no-op DOES write.
+    expect(writeProjectStateFn).not.toHaveBeenCalled();
+    expect(written().templates.foo).toMatchObject({ origin: 'github:acme/foo@v1.0.0', version: '1.0.0' });
+  });
+
+  // Defect-3 fix: a no-op for the pair {origin, version} is not a no-op for
+  // a document missing a field the current code writes — a legacy entry
+  // registered before `excludedSubtrees` existed must acquire it the first
+  // time an upgrade lands on the same origin, without treating the origin/
+  // version identity as license to skip the write entirely.
+  it('records excludedSubtrees onto a legacy entry (no recorded value) even though the {origin, version} transition itself is a no-op', async () => {
+    const { readProjectStateFn, writeProjectStateFn, written } = seededProjectState({
+      formatVersion: 1,
       templates: { foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: ['packages/app'] } },
       projectOwnedRoots: [],
     });
@@ -1700,8 +1736,12 @@ describe('dispatch: upgrade (cpt-frontx-flow-upgrade-changeset-review-approval, 
 
     expect(outcome.exitCode).toBe(EXIT_SUCCESS);
     expect(JSON.parse(outcome.stdout ?? '')).toMatchObject({ ok: true, data: { outcome: 'noop' } });
-    expect(writeProjectStateFn).not.toHaveBeenCalled();
-    expect(written().templates.foo).toMatchObject({ origin: 'github:acme/foo@v1.0.0', version: '1.0.0' });
+    expect(writeProjectStateFn).toHaveBeenCalled();
+    expect(written().templates.foo).toMatchObject({
+      origin: 'github:acme/foo@v1.0.0',
+      version: '1.0.0',
+      excludedSubtrees: [],
+    });
   });
 
   it('interactive mode declines by default, writing nothing', async () => {

@@ -91,10 +91,10 @@ describe('registerTemplate (cpt-frontx-algo-composed-provenance-register)', () =
     expect(written()?.templates.foo).toEqual({ origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [], excludedSubtrees: [] });
   });
 
-  it('is a no-op when the resolved origin is the same as the already-recorded one', async () => {
+  it('is a no-op when the resolved origin is the same as the already-recorded one, and the entry already carries a recorded excludedSubtrees', async () => {
     const { read, write } = fakeProjectState({
       formatVersion: 1,
-      templates: { foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [] } },
+      templates: { foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [], excludedSubtrees: [] } },
       projectOwnedRoots: [],
     });
     const inventory = fakeInventory();
@@ -105,7 +105,40 @@ describe('registerTemplate (cpt-frontx-algo-composed-provenance-register)', () =
       ok: true,
       outcome: 'noop',
       name: 'foo',
-      entry: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [] },
+      entry: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [], excludedSubtrees: [] },
+    });
+    // Nothing missing to backfill — no write at all.
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  // Defect-3 fix: a no-op for the pair {origin, version} is not a no-op for
+  // a document missing a field the current code writes — a legacy entry
+  // registered before `excludedSubtrees` existed must acquire it the first
+  // time `register`/`register --replace` resolves the same origin, even
+  // though the origin/version transition itself is a no-op.
+  it('records excludedSubtrees onto a legacy entry (no recorded value) even though the resolved origin is unchanged', async () => {
+    const { read, write, written } = fakeProjectState({
+      formatVersion: 1,
+      templates: { foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [] } },
+      projectOwnedRoots: [],
+    });
+    const inventory = fakeInventory();
+
+    const result = await registerTemplate('github:acme/foo@v1.0.0', false, '/repo', inventory, noopFetch, throwingReadFileFn, identityCanonicalize, read, write, existsFn, listFolderFilesFn);
+
+    // Its OWN outcome, not `noop`: the document was written.
+    expect(result).toEqual({
+      ok: true,
+      outcome: 'recorded',
+      name: 'foo',
+      entry: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [], excludedSubtrees: [] },
+    });
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(written()?.templates.foo).toEqual({
+      origin: 'github:acme/foo@v1.0.0',
+      version: '1.0.0',
+      targets: [],
+      excludedSubtrees: [],
     });
   });
 

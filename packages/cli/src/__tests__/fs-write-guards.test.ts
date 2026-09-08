@@ -1,5 +1,5 @@
 // An EXECUTABLE enumeration of every raw filesystem call under
-// `packages/cli/src/adapters/`, replacing a prose claim from an earlier
+// `packages/cli/src/`, replacing a prose claim from an earlier
 // round ("an enumeration of every filesystem call with a verdict") that
 // named no such enumeration and was never actually built — a comment
 // listing calls drifts silently the moment a new one is added; this test
@@ -24,7 +24,7 @@
 // spuriously breaks this test — only a CHANGE IN COUNT (a call added or
 // removed) does.
 //
-// A new, unguarded call of any listed primitive anywhere under `adapters/`
+// A new, unguarded call of any listed primitive anywhere under `src/`
 // raises the found count past what either allow-list declares for that
 // file, and this test fails, naming the file and the call: add it here with
 // the guard that protects it, or guard it first.
@@ -33,7 +33,7 @@ import fs from 'node:fs';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-const ADAPTERS_DIR = path.join(__dirname, '..', 'adapters');
+const SRC_DIR = path.join(__dirname, '..');
 
 // Every primitive that CREATES, REPLACES or REMOVES something on disk: the
 // sync forms this package uses throughout, plus the callback-style async
@@ -80,33 +80,63 @@ interface CallSite {
   line: number; // 1-indexed, for a human reading a failure message only
 }
 
-// Walks one file's real AST (never its raw text) collecting every
-// `fs.<name>(...)` CALL EXPRESSION whose callee is a property access on an
-// identifier literally named `fs` — the one import style every adapter file
-// with any fs call in this directory uses (`import fs from 'node:fs'`,
-// confirmed for every file this scan finds a hit in). A destructured import
-// (`import { readFileSync } from 'node:fs'`) would call as a bare
-// `readFileSync(...)`, not `fs.readFileSync(...)`, and no file under
-// `adapters/` uses that form for any of the primitives this test tracks
-// (`fs-target-path.ts` alone imports two functions by name, from
-// `node:fs/promises`, an entirely different async API this sweep does not
-// cover — the brief's own primitive list names only the synchronous `fs.*`
-// forms).
+// Walks one file's real AST (never its raw text) collecting every call of a
+// tracked primitive, under EITHER import style: a namespaced call through
+// whatever local name `import fs from 'node:fs'` bound, and a bare call of a
+// name a destructured `import { rmdirSync } from 'node:fs'` brought in. The
+// second form is not hypothetical — `cli.ts` imports three primitives that
+// way, and a scan that only understood `fs.<name>(...)` reported that file
+// as having no filesystem calls at all. The import declarations are read
+// from the same AST, so a local alias (`import * as nodeFs`) is followed and
+// an identically named local helper that came from somewhere else is not
+// mistaken for one.
 function collectFsCallSites(filePath: string, text: string): CallSite[] {
   const sourceFile = ts.createSourceFile(filePath, text, ts.ScriptTarget.Latest, true);
   const sites: CallSite[] = [];
   const targetNames = new Set([...WRITE_CALLS, ...READ_CALLS]);
 
+  // Local names bound to the `node:fs` module object, and local names bound
+  // to one of its exported functions directly.
+  const namespaceNames = new Set<string>();
+  const boundNames = new Map<string, string>(); // local name -> primitive name
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement)) continue;
+    if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    if (!statement.moduleSpecifier.text.startsWith('node:fs')) continue;
+    const clause = statement.importClause;
+    if (clause === undefined) continue;
+    if (clause.name !== undefined) namespaceNames.add(clause.name.text);
+    const bindings = clause.namedBindings;
+    if (bindings === undefined) continue;
+    if (ts.isNamespaceImport(bindings)) {
+      namespaceNames.add(bindings.name.text);
+      continue;
+    }
+    for (const element of bindings.elements) {
+      const imported = (element.propertyName ?? element.name).text;
+      if (targetNames.has(imported)) boundNames.set(element.name.text, imported);
+    }
+  }
+
+  function record(node: ts.Node, primitive: string): void {
+    const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
+    sites.push({ file: path.relative(SRC_DIR, filePath), call: `fs.${primitive}`, line: line + 1 });
+  }
+
   function visit(node: ts.Node): void {
-    if (
-      ts.isCallExpression(node) &&
-      ts.isPropertyAccessExpression(node.expression) &&
-      ts.isIdentifier(node.expression.expression) &&
-      node.expression.expression.text === 'fs' &&
-      targetNames.has(node.expression.name.text)
-    ) {
-      const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
-      sites.push({ file: path.basename(filePath), call: `fs.${node.expression.name.text}`, line: line + 1 });
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      if (
+        ts.isPropertyAccessExpression(callee) &&
+        ts.isIdentifier(callee.expression) &&
+        namespaceNames.has(callee.expression.text) &&
+        targetNames.has(callee.name.text)
+      ) {
+        record(node, callee.name.text);
+      } else if (ts.isIdentifier(callee)) {
+        const primitive = boundNames.get(callee.text);
+        if (primitive !== undefined) record(node, primitive);
+      }
     }
     ts.forEachChild(node, visit);
   }
@@ -130,7 +160,7 @@ type FileAllowList = Partial<Record<string, AllowEntry[]>>; // call name ("fs.mk
 // describe protections that already existed before this round and are
 // recorded here for the first time.
 const WRITE_ALLOW_LIST: Record<string, FileAllowList> = {
-  'fs-ai-bundle.ts': {
+  'adapters/fs-ai-bundle.ts': {
     'fs.rmSync': [
       {
         guard: 'reclaimNonDirectoryAiAncestor',
@@ -160,7 +190,7 @@ const WRITE_ALLOW_LIST: Record<string, FileAllowList> = {
       },
     ],
   },
-  'fs-content-store.ts': {
+  'adapters/fs-content-store.ts': {
     'fs.mkdirSync': [
       {
         guard: 'assertWithinRoot + assertPathReachableAsDirectory',
@@ -187,12 +217,12 @@ const WRITE_ALLOW_LIST: Record<string, FileAllowList> = {
       { guard: 'assertWithinRoot', note: '`writeBundle` bundle-loop branch: containment checked immediately above.' },
     ],
   },
-  'fs-inventory-index.ts': {
+  'adapters/fs-inventory-index.ts': {
     'fs.mkdirSync': [{ guard: 'assertIndexPathIsSafeToWrite', note: 'Called first in `writeAll`.' }],
     'fs.writeFileSync': [{ guard: 'assertIndexPathIsSafeToWrite', note: 'Writes only the temp file, never `indexPath` itself.' }],
     'fs.renameSync': [{ guard: 'assertIndexPathIsSafeToWrite', note: 'The atomic publish step, onto an already-confirmed-safe destination.' }],
   },
-  'fs-project-io.ts': {
+  'adapters/fs-project-io.ts': {
     'fs.mkdirSync': [
       {
         guard: 'resolveWriteParentDir',
@@ -235,7 +265,7 @@ const WRITE_ALLOW_LIST: Record<string, FileAllowList> = {
       },
     ],
   },
-  'fs-upgrade-io.ts': {
+  'adapters/fs-upgrade-io.ts': {
     'fs.mkdirSync': [
       { guard: 'assertPathWithinProjectRoot', note: '`createFsWriteDiskFileFn`: called immediately above.' },
       { guard: 'assertPathWithinProjectRoot', note: '`createFsRenameDiskFileFn`: called immediately above, against `to`.' },
@@ -253,6 +283,14 @@ const WRITE_ALLOW_LIST: Record<string, FileAllowList> = {
       { guard: 'isReservedTempName', note: '`createFsWriteDiskFileFn`: writes into the descriptor the exclusive create above just produced, never into a path resolved a second time.' },
     ],
   },
+  'cli.ts': {
+    'fs.rmdirSync': [
+      {
+        guard: 'createFsRemoveEmptyDirFn',
+        note: "Removes ONLY a directory it has just read as empty, never forcing and never recursing, and swallows a failure rather than escalating; `commands/apply.ts` calls it solely for directories that call itself created (`dirsThisCallCreated`), so a developer's pre-existing directory is never a candidate.",
+      },
+    ],
+  },
 };
 
 // ============================== READ SWEEP ================================
@@ -266,7 +304,7 @@ const WRITE_ALLOW_LIST: Record<string, FileAllowList> = {
 // itself is UNCHANGED by this round — this sweep only records the verdicts
 // that were never written down anywhere executable before now.
 const READ_ALLOW_LIST: Record<string, FileAllowList> = {
-  'fs-ai-bundle.ts': {
+  'adapters/fs-ai-bundle.ts': {
     'fs.lstatSync': [
       {
         guard: 'createFsBundleExistsFn',
@@ -274,7 +312,7 @@ const READ_ALLOW_LIST: Record<string, FileAllowList> = {
       },
     ],
   },
-  'fs-content-store.ts': {
+  'adapters/fs-content-store.ts': {
     'fs.readFileSync': [
       { guard: 'readBundle', note: 'Reads only a path `listFilesRecursive` already found via `entry.isFile()`.' },
       { guard: 'readBundle', note: 'Same guard, the multi-file bundle loop.' },
@@ -289,7 +327,7 @@ const READ_ALLOW_LIST: Record<string, FileAllowList> = {
       { guard: 'listFilesRecursive', note: 'Dirent-typed walk; never follows a symlink for recursion or reading.' },
     ],
   },
-  'fs-existing-content.ts': {
+  'adapters/fs-existing-content.ts': {
     'fs.readdirSync': [{ guard: 'listFilesRecursive', note: 'Dirent-typed; a symlink is reported, never descended into or opened.' }],
     'fs.readFileSync': [
       { guard: 'listFilesRecursive', note: 'Only reached for a dirent that is `entry.isFile()` — never a symlink, FIFO, socket, or device.' },
@@ -301,7 +339,7 @@ const READ_ALLOW_LIST: Record<string, FileAllowList> = {
     ],
     'fs.lstatSync': [{ guard: 'blockingComponentOf', note: 'Never dereferences a symlink found on the way — reports it via `SYMLINK_CONTENT_MARKER` instead.' }],
   },
-  'fs-project-io.ts': {
+  'adapters/fs-project-io.ts': {
     'fs.lstatSync': [
       { guard: 'refuseIfDestinationIsSymlink', note: 'Read-only probe; only `ENOENT` is the ordinary case.' },
       { guard: 'resolvePathKind', note: 'The one FIFO-safe shape probe run before any content read.' },
@@ -323,30 +361,55 @@ const READ_ALLOW_LIST: Record<string, FileAllowList> = {
     'fs.realpathSync': [{ guard: 'realPathOrNull', note: 'Wrapped: a broken symlink or vanished path returns `null`.' }],
     'fs.readdirSync': [{ guard: 'walkFiles', note: 'Dirent-typed; a symlink is resolved only afterward, explicitly.' }],
   },
-  'fs-read-content-items.ts': {
+  'adapters/fs-read-content-items.ts': {
     'fs.existsSync': [{ guard: 'createFsReadContentItemsFn', note: 'Metadata-only probe on a template\'s own installed content path.' }],
     'fs.readdirSync': [{ guard: 'listContentItems', note: 'Dirent-typed walk; never follows a symlink.' }],
     'fs.readFileSync': [{ guard: 'listContentItems', note: 'Only reached for a dirent that is `dirEntry.isFile()`.' }],
   },
-  'fs-upgrade-io.ts': {
+  'adapters/fs-upgrade-io.ts': {
     'fs.lstatSync': [{ guard: 'createFsReadDiskEntryFn', note: 'Classifies the entry before ever reading content; a special entry never reaches `readFileSync`.' }],
     'fs.readFileSync': [{ guard: 'createFsReadDiskEntryFn', note: 'Only reached once `stat.isFile()` is confirmed.' }],
     'fs.existsSync': [{ guard: 'createFsListDiskFilesFn', note: 'Metadata-only probe before the walk.' }],
     'fs.readdirSync': [{ guard: 'walkRegularFiles', note: 'Dirent-typed; `entry.isSymbolicLink()` is checked first and never descended into.' }],
   },
-  'local-fetch.ts': {
+  'adapters/local-fetch.ts': {
     'fs.existsSync': [{ guard: 'createLocalFetchFn', note: 'Metadata-only probe on the configured local fetch source directory.' }],
     'fs.statSync': [{ guard: 'createLocalFetchFn', note: 'Only used to confirm `isDirectory()`; never opens content.' }],
     'fs.readFileSync': [{ guard: 'walkDirectory', note: 'Only reached for a dirent that is `entry.isFile()`.' }],
     'fs.readdirSync': [{ guard: 'walkDirectory', note: 'Dirent-typed walk; never follows a symlink.' }],
   },
+  'cli.ts': {
+    'fs.readdirSync': [
+      { guard: 'createFsRemoveEmptyDirFn', note: 'Names-only listing used purely to decide emptiness; never opens an entry, so no shape can block it.' },
+    ],
+    'fs.realpathSync': [
+      { guard: 'isMainModule', note: "Resolves `process.argv[1]` to decide whether this module was started as the executable; touches no project path, and a failure is caught into `isMainModule = false`." },
+      { guard: 'isMainModule', note: "The other half of the same comparison, resolving this module's own URL; identical reasoning." },
+    ],
+  },
 };
 
-function loadAdapterFiles(): { name: string; text: string }[] {
-  return fs
-    .readdirSync(ADAPTERS_DIR, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
-    .map((entry) => ({ name: entry.name, text: fs.readFileSync(path.join(ADAPTERS_DIR, entry.name), 'utf-8') }));
+// Every `.ts` file under `src/`, recursively, minus the test trees
+// themselves: the sweep covers the whole package, not one directory. Keys in
+// both allow-lists are therefore `src`-relative paths (`adapters/fs-project-
+// io.ts`, `cli.ts`), not bare basenames.
+function loadSourceFiles(): { name: string; absPath: string; text: string }[] {
+  const collected: { name: string; absPath: string; text: string }[] = [];
+  function walk(dir: string): void {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const absPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === '__tests__' || entry.name === 'node_modules') continue;
+        walk(absPath);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;
+      if (entry.name.endsWith('.test.ts')) continue;
+      collected.push({ name: path.relative(SRC_DIR, absPath), absPath, text: fs.readFileSync(absPath, 'utf-8') });
+    }
+  }
+  walk(SRC_DIR);
+  return collected.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function groupByCall(sites: CallSite[]): Map<string, CallSite[]> {
@@ -360,9 +423,9 @@ function groupByCall(sites: CallSite[]): Map<string, CallSite[]> {
 }
 
 function checkSweep(sweepName: string, allowList: Record<string, FileAllowList>, calls: Set<string>): void {
-  const files = loadAdapterFiles();
-  for (const { name, text } of files) {
-    const sites = collectFsCallSites(name, text).filter((site) => calls.has(site.call.slice('fs.'.length)));
+  const files = loadSourceFiles();
+  for (const { name, absPath, text } of files) {
+    const sites = collectFsCallSites(absPath, text).filter((site) => calls.has(site.call.slice('fs.'.length)));
     const found = groupByCall(sites);
     const declared = allowList[name] ?? {};
 
@@ -410,7 +473,7 @@ function checkSweep(sweepName: string, allowList: Record<string, FileAllowList>,
   }
 }
 
-describe('fs-write-guards — executable enumeration of every raw filesystem call under adapters/', () => {
+describe('fs-write-guards — executable enumeration of every raw filesystem call under src/', () => {
   it('every write-shaped call is named in the allow-list with a real guard', () => {
     expect(() => checkSweep('WRITE', WRITE_ALLOW_LIST, WRITE_CALLS)).not.toThrow();
   });
@@ -420,15 +483,20 @@ describe('fs-write-guards — executable enumeration of every raw filesystem cal
   });
 
   it('sanity: the AST walk actually finds calls (a silently-empty scan would make both checks above vacuous)', () => {
-    const files = loadAdapterFiles();
+    const files = loadSourceFiles();
     const totalWrite = files.reduce(
-      (sum, { name, text }) => sum + collectFsCallSites(name, text).filter((s) => WRITE_CALLS.has(s.call.slice(3))).length,
+      (sum, { absPath, text }) => sum + collectFsCallSites(absPath, text).filter((s) => WRITE_CALLS.has(s.call.slice(3))).length,
       0,
     );
     const totalRead = files.reduce(
-      (sum, { name, text }) => sum + collectFsCallSites(name, text).filter((s) => READ_CALLS.has(s.call.slice(3))).length,
+      (sum, { absPath, text }) => sum + collectFsCallSites(absPath, text).filter((s) => READ_CALLS.has(s.call.slice(3))).length,
       0,
     );
+    // The destructured-import form must be seen too: `cli.ts` imports its
+    // primitives that way, and a scan blind to it reported that file clean.
+    const cliFile = files.find(({ name }) => name === 'cli.ts');
+    if (cliFile === undefined) throw new Error('cli.ts was not scanned at all');
+    expect(collectFsCallSites(cliFile.absPath, cliFile.text).length).toBeGreaterThan(0);
     expect(totalWrite).toBeGreaterThan(0);
     expect(totalRead).toBeGreaterThan(0);
   });

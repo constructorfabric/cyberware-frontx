@@ -66,13 +66,13 @@ export interface ResolveRegisteredManifestDeps {
 //
 // `scaffold/delete-plan.ts` — the one caller that needs the OWNING
 // template's OWN declared exclusions to decide what is safe to delete —
-// does NOT call this function for that join at all: it prefers a RECORDED
-// declaration (`project-state/types.ts`'s `TemplateEntry.excludedSubtrees`)
-// over resolving the manifest, and its fallback (only reached for an entry
-// with no recorded value) must refuse rather than fold an inconclusive
-// answer to `[]` — see its own `inst-dp-else-resolve-manifest`, which calls
-// `resolveRegisteredManifestContent` below directly for exactly this
-// reason.
+// does NOT call this function for that join at all: it resolves the CURRENT
+// manifest directly (via `resolveRegisteredManifestContent` below), falling
+// back to a RECORDED declaration (`project-state/types.ts`'s `TemplateEntry.
+// excludedSubtrees`) only when the current manifest cannot supply one, and
+// refuses rather than folding an inconclusive answer to `[]` when NEITHER
+// source can — see its own `inst-dp-else-if-recorded-exclusions`/
+// `inst-dp-else-refuse-unestablished`.
 export type RegisteredExclusionsResolution = { known: true; excludedSubtrees: string[] } | { known: false; cause: unknown };
 
 // Resolves a registered name's declared `excludedSubtrees`. Two distinct
@@ -149,19 +149,24 @@ function isAbsentError(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === 'ENOENT';
 }
 
-// Exported for `scaffold/delete-plan.ts`'s own fallback join alone (used
-// only for an entry with no RECORDED `excludedSubtrees` —
-// `project-state/types.ts`'s `TemplateEntry.excludedSubtrees`, populated at
-// registration/upgrade going forward): that fallback must tell a
-// genuinely-declared-empty manifest (`content` present, `excludedSubtrees:
-// []` by choice) apart from a genuinely ABSENT one (`content === undefined`)
-// — a distinction `resolveRegisteredExcludedSubtrees` above deliberately
-// does NOT expose, since every OTHER caller treats the two identically
-// (`[]` either way is the safe, widen-never direction for them). Delete's
-// fallback cannot: an absent manifest there must REFUSE, never silently
-// compute `toDelete` as if nothing were ever excluded
+// Exported for `scaffold/delete-plan.ts`'s own use alone: that algorithm
+// calls this directly, as its PRIMARY source for the owning template's
+// current declaration (falling back to the RECORDED value —
+// `project-state/types.ts`'s `TemplateEntry.excludedSubtrees` — only when
+// this call cannot supply one), rather than through
+// `resolveRegisteredExcludedSubtrees` above's own `known`/`[]` join. The
+// distinction that matters to delete-plan: a genuinely-declared-empty
+// manifest (`content` present, `excludedSubtrees: []` by choice) must be
+// told apart from a genuinely ABSENT one (`content === undefined`) or an
+// unreadable one (a thrown error) — `resolveRegisteredExcludedSubtrees`
+// above deliberately does NOT expose that distinction, since every OTHER
+// caller treats all three identically (`[]` either way is the safe,
+// widen-never direction for them). Delete's own resolution cannot fold an
+// inconclusive answer to `[]`: when this call cannot supply a declaration
+// AND no RECORDED value is present either, delete-plan refuses rather than
+// silently computing `toDelete` as if nothing were ever excluded
 // (`cpt-frontx-algo-cli-scaffolding-delete-plan`'s own
-// `inst-dp-if-declaration-unestablished`). This is the SAME primitive
+// `inst-dp-else-refuse-unestablished`). This is the SAME primitive
 // `resolveRegisteredExcludedSubtrees` itself calls, not a second
 // formulation of it — one read, two callers each making their own decision
 // about what an inconclusive answer means for them.

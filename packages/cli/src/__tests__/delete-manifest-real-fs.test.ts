@@ -13,11 +13,17 @@
 // `lstat`/`stat` first), so this suite never hangs.
 //
 // Two distinct fixes are pinned here:
-//   - The manifest-unreadable refusal must survive regardless of anything
-//     else this suite changes (a real regression introduced and closed in
-//     the same round: `resolveRegisteredExcludedSubtrees` briefly widened
-//     this case to `[]` for its OTHER three callers, and `delete-plan.ts`
-//     must still refuse for its own owning-template join).
+//   - An unreadable CURRENT manifest (a FIFO, `chmod 000`, ...) must refuse
+//     rather than silently widen `toDelete` — but, per the resolution order
+//     `cpt-frontx-algo-cli-scaffolding-delete-plan` now fixes (CURRENT
+//     manifest, then RECORDED value, then refuse), it is caught internally
+//     and falls back to a RECORDED declaration first: it refuses ONLY when
+//     the owning template's project-state entry ALSO carries no recorded
+//     `excludedSubtrees`. The refusal message no longer distinguishes WHICH
+//     disk shape blocked the read (a FIFO vs. a permission refusal) — both
+//     fold into the same "current manifest could not be read" fact, since
+//     what matters to the caller is that neither source could supply a
+//     declaration, not why the first one failed.
 //   - A genuinely ABSENT manifest, or an origin that can no longer be
 //     proven to stay inside the project root, must now ALSO refuse when the
 //     owning template's project-state entry carries no RECORDED
@@ -85,7 +91,7 @@ function realDeps(repoRoot: string) {
 }
 
 describe('deleteTarget — owning template manifest unreadable (real filesystem)', () => {
-  it('refuses CONTENT_CONFLICT on --dry-run AND --yes when the manifest is a FIFO, leaving the developer\'s excluded file untouched on disk', async () => {
+  it('refuses CONTENT_CONFLICT on --dry-run AND --yes when the manifest is a FIFO and no excludedSubtrees is recorded, leaving the developer\'s excluded file untouched on disk', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'frontx-delete-manifest-fifo-'));
 
     // A locally-registered template declaring `userland/` excluded, applied
@@ -146,9 +152,12 @@ describe('deleteTarget — owning template manifest unreadable (real filesystem)
     );
     expect(yesResult).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
     if (!yesResult.ok) {
-      // The refusal names WHICH failure it hit — a FIFO — not just that the
-      // manifest "could not be read".
-      expect(yesResult.message).toContain('is a FIFO, not a regular file');
+      // The FIFO leaves the CURRENT manifest unusable, and there is no
+      // RECORDED declaration to fall back to either, so this refuses naming
+      // the remedy (re-register) rather than the specific disk shape that
+      // blocked the read.
+      expect(yesResult.message).toContain('could not be established');
+      expect(yesResult.message).toContain('--replace');
     }
 
     // The developer's own file, protected by the template's declared
@@ -165,12 +174,69 @@ describe('deleteTarget — owning template manifest unreadable (real filesystem)
     expect(stateAfter.templates.appTemplate.targets).toEqual(['t']);
   });
 
+  // The FALLBACK side of the same fix: an unreadable CURRENT manifest (a
+  // FIFO, here) no longer blocks `delete` outright once the owning
+  // template's project-state entry carries a RECORDED `excludedSubtrees` —
+  // the plan is computed from the recorded value instead of refusing.
+  it('falls back to a RECORDED excludedSubtrees and succeeds when the CURRENT manifest is a FIFO', async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'frontx-delete-manifest-fifo-recorded-'));
+
+    await mkdir(path.join(root, 'vendor', 'app-template'), { recursive: true });
+    await mkdir(path.join(root, 't', 'userland'), { recursive: true });
+    await writeFile(path.join(root, 't', 'src.txt'), 'template-owned', 'utf-8');
+    await writeFile(path.join(root, 't', 'userland', 'mine.txt'), 'DEVELOPER-OWNED — must survive', 'utf-8');
+
+    const document: ProjectStateDocument = {
+      formatVersion: 1,
+      templates: {
+        appTemplate: {
+          origin: 'path:vendor/app-template',
+          version: '1.0.0',
+          targets: ['t'],
+          excludedSubtrees: ['userland/'],
+        },
+      },
+      projectOwnedRoots: [],
+    };
+    await writeProjectState(root, document);
+
+    // The manifest is a FIFO — present, but not a regular file.
+    makeFifo(path.join(root, 'vendor', 'app-template', 'frontx-template.json'));
+
+    const deps = realDeps(root);
+    const dryRunResult = await deleteTarget(
+      't',
+      root,
+      { jsonMode: true, dryRun: true, yes: false },
+      noInventory,
+      deps.canonicalizeFn,
+      deps.listTargetFilesFn,
+      deps.listUnenumerableTargetEntriesFn,
+      deps.readFileFn,
+      deps.removeFileFn,
+      deps.assertPathWithinRootFn,
+      deps.readProjectStateFn,
+      deps.writeProjectStateFn,
+      async () => {
+        throw new Error('confirmDeletionFn must not be called in --json mode');
+      },
+    );
+
+    expect(dryRunResult).toMatchObject({ ok: true, outcome: 'dry-run' });
+    if (!dryRunResult.ok) return;
+    expect(dryRunResult.toDelete).toEqual(['t/src.txt']);
+    expect(dryRunResult.toPreserve).toContain('t/userland/');
+
+    const survived = await readFile(path.join(root, 't', 'userland', 'mine.txt'), 'utf-8');
+    expect(survived).toBe('DEVELOPER-OWNED — must survive');
+  });
+
   // The companion cause: the manifest exists in the right shape but the OS
-  // refuses to open it (`chmod 000`). Same `CONTENT_CONFLICT` code as the
-  // FIFO case above, but the CAUSE — and the remedy — differs: a permission
-  // fix, not "replace the FIFO with a file". Both causes must be present and
-  // DISTINCT, which a message asserting only the code could never catch.
-  it('refuses CONTENT_CONFLICT naming a permission refusal, distinct from the FIFO case, when the manifest is unreadable (chmod 000)', async () => {
+  // refuses to open it (`chmod 000`). Same `CONTENT_CONFLICT` code and the
+  // same unified refusal as the FIFO case above — this project-state entry
+  // also carries no RECORDED `excludedSubtrees`, so neither source can
+  // supply a declaration.
+  it('refuses CONTENT_CONFLICT when the manifest is unreadable (chmod 000) and no excludedSubtrees is recorded', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'frontx-delete-manifest-eacces-'));
 
     await mkdir(path.join(root, 'vendor', 'app-template'), { recursive: true });
@@ -211,8 +277,8 @@ describe('deleteTarget — owning template manifest unreadable (real filesystem)
 
       expect(dryRunResult).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
       if (!dryRunResult.ok) {
-        expect(dryRunResult.message).toContain('permission was refused');
-        expect(dryRunResult.message).not.toContain('is a FIFO, not a regular file');
+        expect(dryRunResult.message).toContain('could not be established');
+        expect(dryRunResult.message).toContain('--replace');
       }
 
       const survived = await readFile(path.join(root, 't', 'userland', 'mine.txt'), 'utf-8');

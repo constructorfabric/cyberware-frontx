@@ -18,6 +18,7 @@
   - [Executable Entrypoint Dispatches Every Command](#executable-entrypoint-dispatches-every-command)
   - [Usage and Help Output](#usage-and-help-output)
   - [Exit-Code Convention](#exit-code-convention)
+  - [`--yes` Belongs to the `--json` Protocol](#yes-belongs-to-the---json-protocol)
   - [Uniform Envelope Dispatch in `--json` Mode](#uniform-envelope-dispatch-in---json-mode)
 - [6. Acceptance Criteria](#6-acceptance-criteria)
 
@@ -143,7 +144,7 @@ Internal system functions and procedures called by actor flows above.
    1. [x] - `p1` - Produce the usage summary of the available commands and **RETURN** the success exit code. - `inst-pd-return-help`
 4. [x] - `p1` - **IF** the command token matches no known command, or the arguments cannot be parsed under that command's accepted usage - `inst-pd-if-unknown`
    1. [x] - `p1` - Produce the usage summary (or, in `--json` mode, the envelope naming `INVALID_INPUT`) and **RETURN** the user-error exit code. - `inst-pd-return-unknown`
-5. [x] - `p1` - **IF** `--yes` is present without `--json` on a command whose confirmation gate defines `--yes` as the `--json` protocol's second call (`delete`, `upgrade`) - `inst-pd-if-yes-without-json`
+5. [x] - `p1` - **IF** `--yes` is present without `--json` on a command whose confirmation gate defines `--yes` as the `--json` protocol's second call (`delete`, `upgrade`), AND this invocation actually reaches that gate — a `--dry-run` reports its lists and ends, reaching no gate, so there is nothing for `--yes` to have failed to suppress - `inst-pd-if-yes-without-json`
    1. [x] - `p1` - **RETURN** the user-error exit code naming the form that works. Interactive mode asks the developer instead, so `--yes` alone changed nothing; with no terminal attached — the shape every script has — the prompt read end-of-input, took its declared `No` default, and exited successfully having done nothing, reporting a silent no-op as success - `inst-pd-return-yes-without-json`
 6. [x] - `p1` - Select the internal component that owns the named command's behavior and dispatch the remaining arguments to it — the command-to-behavior mapping references each behavior by ID: `install` → `cpt-frontx-flow-template-resolution-install`; `list` → `cpt-frontx-flow-template-resolution-list`; `update-local` → `cpt-frontx-flow-template-resolution-update-local`; `validate` → `cpt-frontx-flow-template-manifest-validate-for-publication` (or, with `--project`, `cpt-frontx-flow-composed-provenance-validate-project`); `register`, `unregister`, `ownership add|remove|list` → `cpt-frontx-feature-composed-provenance` at feature level (project-state store consumer, DESIGN §3.1 `ProjectProvenance`); `seed` → `cpt-frontx-flow-cli-scaffolding-seed-repository` (registers the batch's official default templates then applies it, only against a new or empty project; not a second materialization path alongside `apply`); `assemble`, `apply`, `delete` → `cpt-frontx-feature-cli-scaffolding` at feature level; `upgrade` → `cpt-frontx-flow-upgrade-changeset-review-approval`; `upgrade <templateName> --restore` → `cpt-frontx-flow-upgrade-changeset-restore` (no `new-origin` argument) — and adds no second dispatch path. - `inst-pd-dispatch`
 7. [x] - `p1` - **IF** `--json` was requested, instruct the dispatched behavior to suppress every interactive prompt and to report any decision it would otherwise ask about as structured data instead (`cpt-frontx-adr-cli-machine-readable-output`, CLI-9). - `inst-pd-json-mode`
@@ -223,6 +224,12 @@ The system **MUST** return a distinct process exit code for each outcome class �
 - Interface: `cli`
 - Component: `cpt-frontx-component-cli`
 
+### `--yes` Belongs to the `--json` Protocol
+
+- [x] `p1` - **ID**: `cpt-frontx-dod-cli-invocation-yes-requires-json`
+
+The system **MUST** refuse `--yes` on a command whose confirmation gate defines it as that protocol's second call (`delete`, `upgrade`) when `--json` is absent AND the invocation actually reaches that gate, exiting with the user-error code and naming the form that works. Interactive mode asks the developer instead, so `--yes` alone suppressed nothing; and with no terminal attached — the shape every script has — the prompt read end-of-input, took its declared `No` default and exited with the SUCCESS code having done nothing, reporting a silent no-op as success, which is strictly worse than either answering the flag or refusing it. A `--dry-run` invocation reaches no gate and **MUST** be accepted with `--yes` present, since there is nothing there for it to have failed to suppress. This is an incompatible change to `cpt-frontx-interface-cli`'s accepted argument shape — an invocation that previously exited 0 now exits with the user-error code — and is versioned as such (`target`).
+
 ### Uniform Envelope Dispatch in `--json` Mode
 
 - [x] `p1` - **ID**: `cpt-frontx-dod-cli-invocation-json-envelope-dispatch`
@@ -259,5 +266,8 @@ The system **MUST**, when a dispatched command is invoked with `--json`, render 
 - [x] Invoking any dispatched command with `--json` renders that command's outcome as the single uniform envelope value on stdout, with no other content on that stream. (`target`)
 - [x] No dispatched command reads from stdin or blocks on an interactive prompt while `--json` is active; a destructive operation's confirmation is rendered as `{"ok": false, "error": {"code": "CONFIRMATION_REQUIRED", ...}}` instead. (`target`)
 - [x] An `ok: false` envelope in `--json` mode, including `CONFIRMATION_REQUIRED`, maps to the same user-error exit code as any other user/input failure. (`target`)
+- [x] `frontx delete <target> --yes` and `frontx upgrade <name> <origin> --yes` without `--json` are refused with the user-error code, naming `--json --yes`; neither prompts, and neither exits 0 having done nothing. (`target`)
+- [x] `frontx delete <target> --dry-run --yes` is accepted and reports the delete/preserve lists: a dry run reaches no confirmation gate for `--yes` to suppress. (`target`)
+- [x] `frontx delete <target> --json --yes` and `frontx upgrade <name> <origin> --json --yes` still reach their commands' own confirmation gates unchanged. (`target`)
 - [x] `cfs --json validate --artifact packages/cli/architecture/features/cli-invocation/FEATURE.md --skip-code` returns PASS.
 - [x] `cfs --json validate-toc packages/cli/architecture/features/cli-invocation/FEATURE.md` returns PASS.

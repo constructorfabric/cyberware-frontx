@@ -229,4 +229,66 @@ describe('FsInventoryIndex', () => {
       }),
     ).toThrow(NotRegularFileError);
   });
+
+  // DEFECT 3: the WRITE side already proves `index.json`, symlinks resolved,
+  // stays inside the store root (`record() refuses ... escaping the store
+  // root` above) — but the READ side used to trust `readFileIfRegular` alone,
+  // which follows the identical symlink to decide WHAT KIND of thing is
+  // there without ever asking WHERE it leads. A symlink at `index.json`
+  // pointing OUTSIDE the store therefore used to read straight through to a
+  // developer's own file and report its content as tracked local inventory
+  // under `ok: true`. The real symlink (not a fake seam) is what proves the
+  // fix actually resolves it via the filesystem.
+  it('lookup()/all() refuse with PathContainmentError instead of reading through a symlink escaping the store root, and nothing it names is reported as installed', () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'frontx-fs-inventory-index-read-outside-'));
+    try {
+      const outsideIndex = joinWithinRoot(outside, 'devindex.json');
+      fs.writeFileSync(
+        outsideIndex,
+        JSON.stringify({
+          '@leaked/name': { name: '@leaked/name', source: 'x', ref: 'x', status: InventoryState.INSTALLED, content: 'x' },
+        }),
+        'utf-8',
+      );
+      fs.symlinkSync(outsideIndex, joinWithinRoot(root, 'index.json'));
+
+      const index = new FsInventoryIndex(root);
+      expect(() => index.lookup('@leaked/name')).toThrow(PathContainmentError);
+      expect(() => index.all()).toThrow(PathContainmentError);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  // DEFECT 4: the writer used to `fs.renameSync(tempPath, this.indexPath)`
+  // unconditionally, and `fs.rename` does not follow a symlink standing at
+  // its destination — it REPLACES the directory entry outright. A symlink at
+  // `index.json` pointing to a document elsewhere INSIDE the store root
+  // therefore used to be destroyed and replaced by an ordinary file, orphaning
+  // the document it aliased with its now-stale content and nothing in the
+  // report saying so. The fix publishes onto the RESOLVED destination instead
+  // (the same treatment `.frontx/project.json`'s own writer already gets),
+  // so the link survives and the real document is what a second instance
+  // reads back.
+  it('record() writes through an internal symlink onto its resolved destination — the link survives, the real file holds the new index, and a second instance reads it back', () => {
+    const realIndexPath = joinWithinRoot(root, 'real-index.json');
+    fs.writeFileSync(realIndexPath, '{}', 'utf-8');
+    const indexPath = joinWithinRoot(root, 'index.json');
+    fs.symlinkSync(realIndexPath, indexPath);
+
+    const index = new FsInventoryIndex(root);
+    index.record({
+      name: 'my-template',
+      source: 'v1',
+      ref: 'v1.0.0',
+      status: InventoryState.INSTALLED,
+      content: 'v1',
+    });
+
+    expect(fs.lstatSync(indexPath).isSymbolicLink()).toBe(true); // the link itself survives
+    expect(JSON.parse(fs.readFileSync(realIndexPath, 'utf-8'))).toHaveProperty('my-template'); // the real file holds the new index
+
+    const reopened = new FsInventoryIndex(root);
+    expect(reopened.lookup('my-template')?.ref).toBe('v1.0.0');
+  });
 });

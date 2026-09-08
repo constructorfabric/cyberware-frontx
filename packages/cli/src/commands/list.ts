@@ -142,6 +142,13 @@ export interface RegisteredTemplateEntry {
   // registered entry's origin can go stale independently of anything `list`
   // controls.
   description?: string;
+  // The RECORDED declaration on the entry (`project-state/types.ts`'s
+  // `TemplateEntry.excludedSubtrees`) — read straight off the project state
+  // document, never re-resolved from a manifest, so a developer can see what
+  // a `delete` would preserve without reading `.frontx/project.json` by
+  // hand. Omitted, never `[]`, for a document written before this field
+  // existed.
+  excludedSubtrees?: string[];
 }
 
 export interface ListCatalog {
@@ -250,6 +257,7 @@ async function buildRegistered(
       version: entry.version,
       targets: entry.targets,
       ...(description !== undefined ? { description } : {}),
+      ...(entry.excludedSubtrees !== undefined ? { excludedSubtrees: entry.excludedSubtrees } : {}),
     });
   }
   return entries;

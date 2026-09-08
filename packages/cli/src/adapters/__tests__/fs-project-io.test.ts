@@ -14,6 +14,7 @@ import {
   createFsReadProjectStateFn,
   createFsWriteProjectStateFn,
   createFsListTargetFilesFn,
+  firstNonDirectoryComponentOf,
   TargetNotDirectoryError,
   NotRegularFileError,
   UnreachablePathError,
@@ -744,5 +745,97 @@ describe('createFsListTargetFilesFn', () => {
         expect(error.targetPath).toBe(targetPath);
       }
     }
+  });
+});
+
+// DEFECT 1 (regression): `firstNonDirectoryComponentOf` decided with
+// `lstatSync(...).isDirectory()`, so a symlink resolving to a perfectly good
+// directory counted as "exists and is not a directory" — on macOS `/tmp`
+// itself is exactly this shape (a symlink to `/private/tmp`), so every path
+// reached through it (an inventory root, an ancestor of a project) was
+// refused for a directory chain `mkdir -p` would have built through it
+// without complaint. The fix follows a symlink ancestor through to what it
+// actually resolves to, rather than judging the link's own `lstat` kind
+// (never `isDirectory()`), while still reporting a genuine blocker by its
+// OWN position — never by whatever it happens to alias.
+describe('firstNonDirectoryComponentOf', () => {
+  let base: string;
+
+  afterEach(async () => {
+    if (base) await rm(base, { recursive: true, force: true });
+    base = '';
+  });
+
+  async function makeBase(): Promise<string> {
+    base = await mkdtemp(path.join(tmpdir(), 'frontx-first-non-dir-'));
+    return base;
+  }
+
+  // The exact `/tmp` shape from the live repro, built with a REAL symlink in
+  // a temp tree rather than depending on `/tmp` itself being one on the host
+  // running this suite.
+  it('is not a blocker for a symlinked ancestor that resolves to a real directory (the `/tmp` shape)', async () => {
+    const dir = await makeBase();
+    const realDir = path.join(dir, 'real');
+    await mkdir(realDir, { recursive: true });
+    const linkedAncestor = path.join(dir, 'linked');
+    await symlink(realDir, linkedAncestor);
+    // Nothing below the linked ancestor exists yet — the ordinary shape of
+    // a fresh inventory root reached through a symlinked ancestor.
+    const target = path.join(linkedAncestor, 'frontx-store', '@x', 'inv');
+
+    expect(firstNonDirectoryComponentOf(target)).toBeNull();
+  });
+
+  it('reports the symlink itself as the blocker when it resolves to a regular file, never the file it aliases', async () => {
+    const dir = await makeBase();
+    const realFile = path.join(dir, 'real-file.txt');
+    await writeFile(realFile, 'not a directory', 'utf-8');
+    const linkedAncestor = path.join(dir, 'linked');
+    await symlink(realFile, linkedAncestor);
+    const target = path.join(linkedAncestor, 'nested', 'deeper');
+
+    expect(firstNonDirectoryComponentOf(target)).toBe(linkedAncestor);
+  });
+
+  it('reports the symlink itself as the blocker when it is dangling', async () => {
+    const dir = await makeBase();
+    const linkedAncestor = path.join(dir, 'linked');
+    await symlink(path.join(dir, 'does-not-exist'), linkedAncestor);
+    const target = path.join(linkedAncestor, 'nested', 'deeper');
+
+    expect(firstNonDirectoryComponentOf(target)).toBe(linkedAncestor);
+  });
+
+  it('reports an ordinary regular file as the blocker', async () => {
+    const dir = await makeBase();
+    const blockingFile = path.join(dir, 'blocking-file');
+    await writeFile(blockingFile, 'not a directory', 'utf-8');
+    const target = path.join(blockingFile, 'nested', 'deeper');
+
+    expect(firstNonDirectoryComponentOf(target)).toBe(blockingFile);
+  });
+
+  it('reports a FIFO as the blocker', async () => {
+    const dir = await makeBase();
+    const fifoPath = path.join(dir, 'blocking-fifo');
+    makeFifo(fifoPath);
+    const target = path.join(fifoPath, 'nested', 'deeper');
+
+    expect(firstNonDirectoryComponentOf(target)).toBe(fifoPath);
+  });
+
+  it('returns null when nothing exists at all along the path', async () => {
+    const dir = await makeBase();
+
+    expect(firstNonDirectoryComponentOf(path.join(dir, 'never', 'created'))).toBeNull();
+  });
+
+  it('returns null when the path itself already exists as an ordinary directory', async () => {
+    const dir = await makeBase();
+    const realDir = path.join(dir, 'already-a-directory');
+    await mkdir(realDir);
+
+    expect(firstNonDirectoryComponentOf(realDir)).toBeNull();
   });
 });

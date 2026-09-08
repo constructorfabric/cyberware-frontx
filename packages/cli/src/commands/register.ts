@@ -57,7 +57,7 @@ export interface RegisterInventoryPort {
 }
 
 export type RegisterOutcome =
-  | { ok: true; outcome: 'created' | 'noop' | 'replaced'; name: string; entry: TemplateEntry }
+  | { ok: true; outcome: 'created' | 'noop' | 'recorded' | 'replaced'; name: string; entry: TemplateEntry }
   | { ok: false; code: ErrorCode; message: string; details?: Record<string, unknown> };
 
 interface ResolvedOrigin {
@@ -282,6 +282,37 @@ export async function registerTemplate(
   // @cpt-begin:cpt-frontx-algo-composed-provenance-register:p1:inst-cpreg-else-exists
   // @cpt-begin:cpt-frontx-algo-composed-provenance-register:p1:inst-cpreg-if-same-origin
   if (existing.origin === resolved.value.storedOrigin) {
+    // @cpt-begin:cpt-frontx-algo-composed-provenance-register:p1:inst-cpreg-if-noop-missing-exclusions
+    // A no-op for the pair {origin, version} is not a no-op for a document
+    // missing a field this code now writes: a legacy entry registered
+    // before `excludedSubtrees` existed has no recorded declaration at all,
+    // and there is no other write path that will ever give it one short of
+    // `upgrade` actually changing the origin. Confirmed live as the
+    // recovery path a developer is told to run
+    // (`scaffold/delete-plan.ts`'s own refusal message names exactly this
+    // command) that silently did nothing: `register --replace` against the
+    // same origin reported `{"outcome":"noop"}` and the field stayed
+    // absent. Recording it here — from the SAME already-resolved manifest
+    // read above, never a second parse — closes that loop.
+    if (existing.excludedSubtrees === undefined) {
+      const repaired: TemplateEntry = { ...existing, excludedSubtrees };
+      // @cpt-begin:cpt-frontx-algo-composed-provenance-register:p1:inst-cpreg-write-noop-exclusions
+      const writtenNoop = await mutateProjectState(
+        repoRoot,
+        { kind: 'set-template', name, entry: repaired },
+        readProjectStateFn,
+        writeProjectStateFn,
+      );
+      // @cpt-end:cpt-frontx-algo-composed-provenance-register:p1:inst-cpreg-write-noop-exclusions
+      if (!writtenNoop.ok) return { ok: false, code: 'PROJECT_INVALID', message: writtenNoop.message };
+      // @cpt-begin:cpt-frontx-state-composed-provenance-registration-lifecycle:p1:inst-rl-empty-to-empty
+      // Reported as its own outcome, never as `noop`: the document was
+      // written, and an envelope that says nothing happened after a write
+      // is not a description a caller can act on.
+      return { ok: true, outcome: 'recorded', name, entry: repaired };
+      // @cpt-end:cpt-frontx-state-composed-provenance-registration-lifecycle:p1:inst-rl-empty-to-empty
+    }
+    // @cpt-end:cpt-frontx-algo-composed-provenance-register:p1:inst-cpreg-if-noop-missing-exclusions
     // @cpt-begin:cpt-frontx-algo-composed-provenance-register:p1:inst-cpreg-return-noop
     // @cpt-begin:cpt-frontx-state-composed-provenance-registration-lifecycle:p1:inst-rl-empty-to-empty
     return { ok: true, outcome: 'noop', name, entry: existing };

@@ -7,6 +7,7 @@
 // @cpt-dod:cpt-frontx-dod-cli-invocation-usage-help:p1
 // @cpt-dod:cpt-frontx-dod-cli-invocation-exit-codes:p1
 // @cpt-dod:cpt-frontx-dod-cli-invocation-json-envelope-dispatch:p1
+// @cpt-dod:cpt-frontx-dod-cli-invocation-yes-requires-json:p1
 //
 // The `frontx` executable entrypoint (F18, `cpt-frontx-feature-cli-invocation`).
 // Parses the process invocation, dispatches `frontx <command> [args]` to the
@@ -122,8 +123,17 @@ import { InvalidInventoryIndexError } from './adapters/fs-inventory-index';
  * non-interactive run got a silent no-op reported as success. Refused here
  * instead, naming the form that works.
  */
-function rejectYesWithoutJson(command: string, jsonMode: boolean, yes: boolean): CommandOutcome | undefined {
-  if (!yes || jsonMode) return undefined;
+function rejectYesWithoutJson(
+  command: string,
+  jsonMode: boolean,
+  yes: boolean,
+  hasConfirmationGate = true,
+): CommandOutcome | undefined {
+  // `--dry-run` reaches no confirmation gate at all: it reports the two
+  // lists and ends, with nothing at stake to confirm. There is nothing for
+  // `--yes` to have failed to suppress there, so refusing it would answer a
+  // question the invocation never asked.
+  if (!yes || jsonMode || !hasConfirmationGate) return undefined;
   const message = `${command} accepts --yes only together with --json; without --json it asks for confirmation interactively.`;
   return { exitCode: EXIT_USER_ERROR, stderr: message };
 }
@@ -775,9 +785,11 @@ function renderRegisterOutcome(result: RegisterOutcome, jsonMode: boolean): Comm
   const text =
     result.outcome === 'noop'
       ? `Template "${result.name}" is already registered from "${result.entry.origin}"; nothing to do.`
-      : result.outcome === 'created'
-        ? `Registered template "${result.name}" from "${result.entry.origin}" (version ${result.entry.version}).`
-        : `Replaced template "${result.name}"'s origin with "${result.entry.origin}" (version ${result.entry.version}).`;
+      : result.outcome === 'recorded'
+        ? `Template "${result.name}" was already registered from "${result.entry.origin}"; recorded its declared excludedSubtrees, which the entry was missing.`
+        : result.outcome === 'created'
+          ? `Registered template "${result.name}" from "${result.entry.origin}" (version ${result.entry.version}).`
+          : `Replaced template "${result.name}"'s origin with "${result.entry.origin}" (version ${result.entry.version}).`;
   return jsonMode
     ? { exitCode: EXIT_SUCCESS, stdout: JSON.stringify(ok(data)) }
     : { exitCode: EXIT_SUCCESS, stdout: text };
@@ -1646,7 +1658,7 @@ export async function runCommand(command: KnownCommand, args: string[], deps: Cl
         'frontx delete <target> [--dry-run] [--json [--yes]]',
       );
       if (extraArgsOutcome) return extraArgsOutcome;
-      const deleteYesOutcome = rejectYesWithoutJson('delete', jsonMode, yes);
+      const deleteYesOutcome = rejectYesWithoutJson('delete', jsonMode, yes, !dryRun);
       if (deleteYesOutcome) return deleteYesOutcome;
       // No explicit project-root argument on this command's own FEATURE
       // flow signature (`delete <target>`) — operates on the project the

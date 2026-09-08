@@ -935,7 +935,10 @@ export function createFsCanonicalizeTargetFn(projectRoot: string): CanonicalizeT
  * store root for the two inventory adapters that reuse this same refusal
  * (`fs-inventory-index.ts`, `fs-installed-content-path.ts`) — `rootLabel`
  * names which, so the message never tells a developer their inventory store
- * is "the project root".
+ * is "the project root". `action` names what was refused, since the
+ * inventory index proves the identical containment before a READ as before a
+ * write, and reporting that one as "refusing to write" describes an
+ * operation the caller never asked for.
  *
  * Typed rather than a bare `Error` so the command boundary can tell it apart
  * from a genuine internal failure and report it accordingly: a bare `Error`
@@ -948,8 +951,8 @@ export function createFsCanonicalizeTargetFn(projectRoot: string): CanonicalizeT
 export class PathContainmentError extends Error {
   readonly offendingPath: string;
 
-  constructor(offendingPath: string, root: string, rootLabel = 'the project root') {
-    super(`Refusing to write outside ${rootLabel}: "${offendingPath}" is not within "${root}".`);
+  constructor(offendingPath: string, root: string, rootLabel = 'the project root', action: 'write' | 'read' = 'write') {
+    super(`Refusing to ${action} outside ${rootLabel}: "${offendingPath}" is not within "${root}".`);
     this.name = 'PathContainmentError';
     this.offendingPath = offendingPath;
   }
@@ -1266,19 +1269,35 @@ function descendDirectory(
 
 // @cpt-algo:cpt-frontx-algo-cli-scaffolding-delete-plan:p1
 /**
- * The shallowest component of `absolutePath` that exists on disk as something
- * other than a directory, or `null` when the path is simply absent.
+ * The shallowest component of `absolutePath` that exists on disk and stands
+ * in the way of a directory chain being CREATED through it, or `null` when
+ * the path is simply absent (nothing exists yet, or the deepest existing
+ * component is itself a directory — including one reached through a
+ * symlink).
  *
  * Only ever consulted once `realpathSync` has already refused the whole path,
  * which happens for both of those cases and reports neither. The walk climbs
  * to the first component that exists at all: everything below it is absent by
- * construction, so if that component is a directory the path is genuinely
- * not there, and if it is anything else — a regular file, a dangling or live
- * symlink the chain cannot be followed through, a FIFO, a device — that is
- * the entry blocking the path, and its name is what a refusal has to carry.
+ * construction, so what matters is whether THAT component — following it all
+ * the way through, if it is a symlink — is a directory. `fs.mkdirSync(...,
+ * { recursive: true })` traverses a symlink to a directory exactly as
+ * happily as an ordinary one, so such a link is not a blocker; a regular
+ * file, a FIFO, a socket, a device, a dangling symlink, or a symlink
+ * resolving to any of those genuinely is, because `mkdir` cannot create
+ * anything through it.
  *
- * `lstat`, not `stat`: a symlink standing on the way is itself the blocking
- * entry, and dereferencing it would report on whatever it aliases instead.
+ * This is deliberately NOT the same question `assertPathWithinProjectRoot`
+ * answers: that check is about CONTAINMENT — whether a path, symlinks
+ * resolved, stays inside a root — and is run separately by every caller that
+ * needs it. This function only ever answers "can a directory chain be built
+ * through here", which is why a symlink standing on the way is followed
+ * rather than treated as the blocker itself: unlike containment, buildability
+ * does not care where the link leads, only what kind of thing is finally
+ * there. A blocking entry is reported by its OWN path — never by whatever a
+ * symlink found there resolves to — since that is the entry a caller such as
+ * `reclaimNonDirectoryAiAncestor` (`./fs-ai-bundle.ts`) would actually need to
+ * remove to unblock the chain.
+ *
  * The walk terminates at the filesystem root, whose own components are
  * ordinary directories, so no project root has to be threaded in for it.
  */
@@ -1289,6 +1308,7 @@ function descendDirectory(
 // bare, unstructured `ENOTDIR`.
 export function firstNonDirectoryComponentOf(absolutePath: string): string | null {
   let candidate = path.resolve(absolutePath);
+  let reportPath = candidate; // the entry actually standing at the blocked position; never overwritten by symlink resolution below
   for (;;) {
     let stat: fs.Stats;
     try {
@@ -1297,9 +1317,20 @@ export function firstNonDirectoryComponentOf(absolutePath: string): string | nul
       const parent = path.dirname(candidate);
       if (parent === candidate) return null; // walked to the filesystem root
       candidate = parent;
+      reportPath = parent;
       continue;
     }
-    return stat.isDirectory() ? null : candidate;
+    if (stat.isDirectory()) return null;
+    if (!stat.isSymbolicLink()) return reportPath; // a regular file, FIFO, socket, or device: genuinely blocking
+    // Resolve the whole chain and re-inspect what it actually lands on —
+    // reusing `realPathOrNull`'s existing walk rather than a second,
+    // independently formulated one — but keep reporting `reportPath` (this
+    // symlink's OWN position) as the blocker if it turns out to be one:
+    // that is the entry standing in the way, not whatever it happens to
+    // alias.
+    const resolvedTarget = realPathOrNull(candidate);
+    if (resolvedTarget === null) return reportPath; // dangling, or a symlink cycle
+    candidate = resolvedTarget;
   }
 }
 

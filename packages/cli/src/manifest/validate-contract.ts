@@ -134,7 +134,13 @@ export const RESERVED_ENVIRONMENT_ENTRIES: readonly string[] = ['.git', '.DS_Sto
 // does not exist in the candidate directory and has no on-disk type to
 // check - the trailing slash is a syntactic contract, not a filesystem
 // fact.
-function isWellFormedExcludedSubtree(value: unknown): value is string {
+// Exported so `project-state/types.ts`'s own `TemplateEntry.excludedSubtrees`
+// — the RECORDED counterpart of this same declaration
+// (`cpt-frontx-dod-composed-provenance-contract-ownership`) — is guarded by
+// this identical well-formedness check rather than a second formulation of
+// it: `project-state/io.ts`'s own entry-shape guard imports this function
+// directly.
+export function isWellFormedExcludedSubtree(value: unknown): value is string {
   if (typeof value !== 'string') return false;
   if (!value.endsWith('/')) return false;
   if (/[*?]/.test(value)) return false;
@@ -151,7 +157,11 @@ function isWellFormedExcludedSubtree(value: unknown): value is string {
 // authoring time. A "." segment denotes the target itself and contributes
 // no ground beyond it; any other segment names real ground under the
 // target.
-function isStrictDescendantOfTarget(value: string): boolean {
+// Exported for the identical reason `isWellFormedExcludedSubtree` above is:
+// `project-state/io.ts`'s entry-shape guard reuses this exact check for a
+// RECORDED `excludedSubtrees` entry rather than reformulating "what a
+// declared excluded subtree looks like" a second time.
+export function isStrictDescendantOfTarget(value: string): boolean {
   const resolved: string[] = [];
   for (const segment of value.replace(/\\/g, '/').split('/')) {
     if (segment === '' || segment === '.') continue;

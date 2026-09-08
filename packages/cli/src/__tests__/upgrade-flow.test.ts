@@ -275,7 +275,7 @@ describe('upgradeToOrigin (cpt-frontx-flow-upgrade-changeset-review-approval)', 
     const h = makeHarness();
     h.seedProjectState({
       formatVersion: 1,
-      templates: { 'my-template': { origin: 'origin-a', version: '1.0.0', targets: ['app'] } },
+      templates: { 'my-template': { origin: 'origin-a', version: '1.0.0', targets: ['app'], excludedSubtrees: [] } },
       projectOwnedRoots: [],
     });
     h.registerOrigin('origin-a', payload({ origin: 'origin-a', version: '1.0.0' }));
@@ -286,7 +286,39 @@ describe('upgradeToOrigin (cpt-frontx-flow-upgrade-changeset-review-approval)', 
     if (!result.ok) return;
     expect(result.outcome).toBe('noop');
     expect(h.presentPlan).not.toHaveBeenCalled();
+    // The baseline entry already carries a recorded `excludedSubtrees`, so
+    // there is nothing missing to backfill — see the SEPARATE test below for
+    // a legacy entry with no recorded value, where this same no-op DOES
+    // write.
     expect(h.wasProjectStateWritten()).toBe(false);
+  });
+
+  // Defect-3 fix: a no-op for the pair {origin, version} is not a no-op for
+  // a document missing a field the current code writes — a legacy entry
+  // registered before `excludedSubtrees` existed must acquire it the first
+  // time an upgrade lands on the same origin.
+  it('records excludedSubtrees onto a legacy entry (no recorded value) even though the {origin, version} transition itself is a no-op', async () => {
+    const h = makeHarness();
+    h.seedProjectState({
+      formatVersion: 1,
+      templates: { 'my-template': { origin: 'origin-a', version: '1.0.0', targets: ['app'] } },
+      projectOwnedRoots: [],
+    });
+    h.registerOrigin('origin-a', payload({ origin: 'origin-a', version: '1.0.0', excludedSubtrees: ['vendor/'] }));
+
+    const result = await upgradeToOrigin('my-template', 'origin-a', h.deps);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.outcome).toBe('noop');
+    expect(h.presentPlan).not.toHaveBeenCalled();
+    expect(h.wasProjectStateWritten()).toBe(true);
+    expect(h.readProjectStateDocument().templates['my-template']).toMatchObject({
+      origin: 'origin-a',
+      version: '1.0.0',
+      targets: ['app'],
+      excludedSubtrees: ['vendor/'],
+    });
   });
 
   // --- each of the five commit outcomes mapped to its own return ----------

@@ -162,99 +162,83 @@ export async function computeDeletionPlan(
   const ownerEntry = document.templates[ownerName];
 
   // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-compute-ownership
-  // The owning template's declared `excludedSubtrees` — preferring the
-  // RECORDED value (`project-state/types.ts`'s `TemplateEntry.
-  // excludedSubtrees`, populated at register/upgrade time) over resolving
-  // the origin's CURRENT manifest, so this step never depends on that
-  // origin still being resolvable. Confirmed live as a real bug before this
-  // preference existed: a vendored `path:` origin folder is transient by
-  // design (`QUICK_START` §4 vendors it into the project; a developer may
-  // remove it once applied), and re-resolving the manifest on every delete
-  // silently WIDENED `toDelete` the moment that folder was gone — the
-  // developer's own `excludedSubtrees`-protected file (`userland/mine.txt`
-  // in the repro) landed in `toDelete` under `ok:true` the instant
-  // `vendor-a/` was removed by hand, an entirely ordinary point in this
-  // origin's lifecycle, not an exotic failure.
-  let declaredExclusions: string[];
-  // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-recorded-exclusions
-  if (ownerEntry.excludedSubtrees !== undefined) {
-    declaredExclusions = ownerEntry.excludedSubtrees;
-    // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-recorded-exclusions
-  } else {
-    // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-else-resolve-manifest
-    // No recorded declaration — a legacy entry from before this field
-    // existed. Falls back to resolving the CURRENT manifest through
-    // `resolveRegisteredManifestContent` (`./registered-manifest.ts`) — the
-    // same primitive `resolveRegisteredExcludedSubtrees` itself calls, used
-    // directly here (rather than through that function's own `known`/`[]`
-    // join, which every OTHER caller safely widens to) because THIS join
-    // cannot: a manifest that is genuinely ABSENT, or whose local origin
-    // folder can no longer be proven to stay inside the project root, must
-    // be told apart from one that is present and genuinely declares no
-    // exclusions — collapsing the two into the same `[]` is exactly the
-    // widening this fallback exists to close.
-    // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-manifest-unreadable
-    // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-return-manifest-unreadable
-    // If the manifest exists but is not a regular file — a FIFO, a socket, a
-    // device, a directory, or a dangling symlink stands where it is
-    // expected — a real declaration exists there and this call simply
-    // cannot read it. Propagated uncaught, exactly as it always has, so
-    // `commands/delete.ts`'s own catch converts it into its
-    // `CONTENT_CONFLICT` refusal naming the unreadable path
-    // (`inst-del-if-manifest-unreadable`).
-    const manifestContent = await resolveRegisteredManifestContent(ownerName, ownerEntry.origin, {
+  // The owning template's declared `excludedSubtrees` — ONE resolution
+  // order, used by every consumer of this fact: (1) the template's CURRENT
+  // manifest, when it can be read and is contract-valid, wins; (2)
+  // otherwise the RECORDED value on the entry (`project-state/types.ts`'s
+  // `TemplateEntry.excludedSubtrees`, populated at register/upgrade time),
+  // when present; (3) otherwise refuse. This keeps `delete` agreeing with
+  // `assemble`/`apply` (which always resolve the CURRENT manifest fresh)
+  // whenever the manifest is readable, while still tolerating a vendored
+  // `path:` origin folder's ORDINARY removal (`QUICK_START` §4 vendors it
+  // into the project, and a developer may remove it once applied) once a
+  // recorded value exists to fall back to — the fix a prior round already
+  // made for that case. Preferring the recorded value UNCONDITIONALLY (the
+  // prior order) let `delete` and `assemble` disagree the moment a
+  // developer edited the vendored manifest after registration: `delete`
+  // kept honoring the stale recorded list while `assemble` read the
+  // edited one, and the developer's own file went on the strength of that
+  // disagreement.
+  let declaredExclusions: string[] | undefined;
+
+  // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-resolve-current-manifest
+  // Any reason the CURRENT manifest cannot supply a declaration — genuinely
+  // ABSENT, unreadable as a regular file (a FIFO, a socket, a device, a
+  // directory, or a dangling symlink), or an origin folder that can no
+  // longer be proven to stay inside the project root — is caught here
+  // rather than left to propagate: none of those honestly says "there is no
+  // usable declaration at all", only that THIS source could not supply one,
+  // so the decision belongs to the recorded-value fallback below, never to
+  // a thrown exception this step used to let escape uncaught.
+  let currentManifestContent: string | undefined;
+  try {
+    currentManifestContent = await resolveRegisteredManifestContent(ownerName, ownerEntry.origin, {
       repoRoot,
       inventory,
       readFileFn,
       canonicalizeFn,
     });
-    // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-return-manifest-unreadable
-    // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-manifest-unreadable
-    // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-declaration-unestablished
-    if (manifestContent === undefined) {
-      // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-return-declaration-unestablished
-      // Genuinely ABSENT — no manifest exists at the origin's recorded
-      // path, or the origin folder can no longer be proven to stay inside
-      // the project root (an escaping or dangling symlink;
-      // `resolveRegisteredManifestContent` returns the identical
-      // `undefined` for both). Refuses rather than treating this as `[]`:
-      // there is no recorded declaration to fall back to AND no manifest
-      // left to establish one from, so this step has no honest way to know
-      // whether real ground was ever excluded here.
-      return {
-        ok: false,
-        code: 'CONTENT_CONFLICT',
-        message:
-          `Aborted — "${ownerName}"'s declared excludedSubtrees could not be established: its origin manifest ` +
-          'is absent (or its origin folder no longer resolves inside the project root), and no declaration was ' +
-          `recorded at registration. Re-register it ("frontx register ${ownerEntry.origin} --replace") so the ` +
-          'declaration is recorded; nothing deleted.',
-        details: { target, templateName: ownerName, origin: ownerEntry.origin },
-      };
-      // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-return-declaration-unestablished
-    }
-    const manifestResult = readManifestFromContent(manifestContent);
-    if (!manifestResult.ok) {
-      // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-return-declaration-unestablished
-      // Read, but no longer valid against the four-field contract — just as
-      // unable to establish a real declaration as absence is, and refused
-      // the identical way rather than folded into `[]`.
-      return {
-        ok: false,
-        code: 'CONTENT_CONFLICT',
-        message:
-          `Aborted — "${ownerName}"'s declared excludedSubtrees could not be established: its origin manifest ` +
-          'no longer validates against the four-field contract, and no declaration was recorded at registration. ' +
-          `Re-register it ("frontx register ${ownerEntry.origin} --replace") so the declaration is recorded; ` +
-          'nothing deleted.',
-        details: { target, templateName: ownerName, origin: ownerEntry.origin },
-      };
-      // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-return-declaration-unestablished
-    }
-    // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-declaration-unestablished
-    declaredExclusions = manifestResult.manifest.excludedSubtrees;
-    // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-else-resolve-manifest
+  } catch {
+    currentManifestContent = undefined;
   }
+  // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-resolve-current-manifest
+
+  // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-current-manifest-valid
+  if (currentManifestContent !== undefined) {
+    const manifestResult = readManifestFromContent(currentManifestContent);
+    if (manifestResult.ok) {
+      declaredExclusions = manifestResult.manifest.excludedSubtrees;
+    }
+  }
+  // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-current-manifest-valid
+
+  // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-else-if-recorded-exclusions
+  if (declaredExclusions === undefined && ownerEntry.excludedSubtrees !== undefined) {
+    declaredExclusions = ownerEntry.excludedSubtrees;
+  }
+  // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-else-if-recorded-exclusions
+
+  // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-else-refuse-unestablished
+  if (declaredExclusions === undefined) {
+    // Neither source could establish a declaration: the current manifest
+    // could not be read (or no longer validates against the four-field
+    // contract) AND no declaration was recorded at registration/upgrade.
+    // Refused rather than folded to `[]` — a plan computed from an
+    // exclusion set silently emptied by an inconclusive answer would state
+    // a blast radius nobody verified.
+    return {
+      ok: false,
+      code: 'CONTENT_CONFLICT',
+      message:
+        `Aborted — "${ownerName}"'s declared excludedSubtrees could not be established: its current origin ` +
+        'manifest could not be read (or no longer validates against the four-field contract), and no declaration ' +
+        `was recorded at registration. Re-register it ("frontx register ${ownerEntry.origin} --replace") so the ` +
+        'declaration is recorded; nothing deleted.',
+      details: { target, templateName: ownerName, origin: ownerEntry.origin },
+    };
+  }
+  // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-else-refuse-unestablished
+
   const localOriginFolder = deriveLocalOriginFolder(ownerEntry.origin, canonicalizeFn);
   const exclusionRoots = computeExclusionRoots({
     target,

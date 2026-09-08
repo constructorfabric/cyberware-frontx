@@ -170,4 +170,42 @@ describe('FsContentStore', () => {
       expect(() => store.replace('@x/inv', 'content')).toThrow(UnreachablePathError);
     });
   });
+
+  // DEFECT 1 (regression): the store root itself reached through a
+  // symlinked ancestor — the exact `/tmp` shape (`/tmp` is a symlink to
+  // `/private/tmp` on macOS) a live repro hit as `FRONTX_INVENTORY_ROOT=/tmp/
+  // frontx-store` — used to refuse with `UnreachablePathError` naming the
+  // symlinked ancestor itself, because `firstNonDirectoryComponentOf`
+  // decided with `lstatSync(...).isDirectory()`, which is never true for a
+  // symlink no matter what it resolves to. Built with a REAL symlink in a
+  // temp tree so this does not depend on `/tmp` itself being one on the host
+  // running this suite.
+  describe('an inventory root reached through a symlinked ancestor', () => {
+    let outerBase: string;
+
+    afterEach(() => {
+      if (outerBase) fs.rmSync(outerBase, { recursive: true, force: true });
+    });
+
+    it('write() succeeds, materializing content on the REAL side of the link', () => {
+      outerBase = fs.mkdtempSync(path.join(os.tmpdir(), 'frontx-fs-content-store-symlinked-root-'));
+      const realStoreParent = path.join(outerBase, 'real');
+      fs.mkdirSync(realStoreParent, { recursive: true });
+      const linkedAncestor = path.join(outerBase, 'linked');
+      fs.symlinkSync(realStoreParent, linkedAncestor, 'dir');
+      // Neither the store root nor anything beneath it exists yet — the
+      // ordinary shape of a fresh local inventory store's first write.
+      const storeRoot = path.join(linkedAncestor, 'frontx-store');
+
+      const store = new FsContentStore(storeRoot);
+      store.write('@x/inv', 'content');
+
+      const installedPath = resolveInstalledContentPath(storeRoot, '@x/inv');
+      expect(fs.readFileSync(joinWithinRoot(installedPath, MANIFEST_FILENAME), 'utf-8')).toBe('content');
+      // Materialized on the REAL side of the link, not merely reachable
+      // through it.
+      const realInstalledPath = resolveInstalledContentPath(path.join(realStoreParent, 'frontx-store'), '@x/inv');
+      expect(fs.readFileSync(joinWithinRoot(realInstalledPath, MANIFEST_FILENAME), 'utf-8')).toBe('content');
+    });
+  });
 });

@@ -53,19 +53,31 @@ function aiNamespaceRoot(root: string): string {
  * `.frontx/ai/` is ground this CLI owns outright — sole writer and sole
  * remover (`architecture/ADR/0031-template-ownership-boundary-declaration.md`).
  * A regular file, FIFO, socket, or device standing at a component STRICTLY
- * BETWEEN `.frontx/ai/` and `dest` therefore cannot be anything the CLI
- * itself put there (the CLI only ever creates directories and the bundle's
- * own final leaf there) and cannot be holding another template's bundle
- * content (a bundle's own content lives AT a scoped name's leaf, never on
- * the path down to one) — so it is RECLAIMED, the identical treatment
- * `clearBundleDestination` already gives `dest` itself, rather than refused.
+ * BETWEEN `.frontx/ai/` and `dest` — including a symlink resolving to any of
+ * those, or a dangling one — therefore cannot be anything the CLI itself put
+ * there (the CLI only ever creates directories and the bundle's own final
+ * leaf there) and cannot be holding another template's bundle content (a
+ * bundle's own content lives AT a scoped name's leaf, never on the path down
+ * to one) — so it is RECLAIMED, the identical treatment `clearBundleDestination`
+ * already gives `dest` itself, rather than refused. `firstNonDirectoryComponentOf`
+ * (`./fs-project-io.ts`) never reports one of these shapes by the resolved
+ * alias it points at — always by its own position in `.frontx/ai/` — which is
+ * exactly the path this function needs to remove.
  *
- * A DIRECTORY found at that same component is never touched: it legitimately
- * holds other scoped names under the same `@scope` (e.g. `.frontx/ai/@x/
- * other/`), and removing it would take a sibling name's already-materialized
- * bundle down with it — exactly the STALE-MERGE class `clearBundleDestination`'s
- * own doc comment above already reasons about for `dest`'s own ground, one
- * level up the same tree.
+ * A DIRECTORY found at that same component, OR A SYMLINK RESOLVING TO ONE, is
+ * never touched: `mkdir -p` traverses either exactly the same way, and both
+ * may legitimately hold other scoped names under the same `@scope` (e.g.
+ * `.frontx/ai/@x/other/`) or alias a developer's own directory the bundle is
+ * meant to land inside — removing either would take content down with it
+ * that this reclaim has no business touching, exactly the STALE-MERGE class
+ * `clearBundleDestination`'s own doc comment above already reasons about for
+ * `dest`'s own ground, one level up the same tree. `firstNonDirectoryComponentOf`
+ * itself is what decides this: it follows a symlink ancestor through to
+ * what it actually resolves to, rather than judging the link's own `lstat`
+ * kind (which is never `isDirectory()`), so a scope component symlinked to a
+ * directory reaches neither this reclaim nor an outright refusal — the copy
+ * below simply writes through it, same as it would through an ordinary
+ * directory.
  *
  * `dest` itself is deliberately excluded from what this function reclaims —
  * a symlink or any other entry standing exactly AT `dest` is
@@ -81,7 +93,7 @@ function reclaimNonDirectoryAiAncestor(destRoot: string, dest: string): void {
   const blocker = firstNonDirectoryComponentOf(dest);
   if (blocker === null || blocker === dest) return; // no blocker, or the destination's own ground — `clearBundleDestination` reclaims that
   if (!isInside(aiNamespaceRoot(destRoot), blocker)) return; // outside `.frontx/ai/`: not this namespace's ground to reclaim
-  fs.rmSync(blocker, { force: true }); // a regular file, FIFO, socket, or device — `firstNonDirectoryComponentOf` never returns a directory
+  fs.rmSync(blocker, { force: true }); // a regular file, FIFO, socket, device, or a symlink resolving to one of those (or dangling) — `firstNonDirectoryComponentOf` never returns a directory, nor a symlink resolving to one
 }
 // @cpt-end:cpt-frontx-algo-cli-scaffolding-ai-bundle:p1:inst-aib-reclaim-ancestor-blocker
 

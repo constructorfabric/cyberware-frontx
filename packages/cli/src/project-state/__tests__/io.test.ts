@@ -86,7 +86,10 @@ describe('readProjectState', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBe('PROJECT_INVALID');
-      expect(result.message).toContain(projectStatePath('/repo'));
+      // Project-relative, the one way every refusal in this package spells
+      // a path inside the project.
+      expect(result.message).toContain('".frontx/project.json"');
+      expect(result.message).not.toContain(projectStatePath('/repo'));
     }
   });
 

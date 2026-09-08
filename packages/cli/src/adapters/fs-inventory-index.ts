@@ -88,6 +88,19 @@ export class FsInventoryIndex implements InventoryIndexPort {
   // whole point: it is the one place this exact class of bug has already
   // been fixed, and fixing it again here independently is how it drifts.
   //
+  // `readFileIfRegular` only ever answers WHAT KIND of thing stands at
+  // `indexPath`, following whatever symlink is there to decide — never
+  // WHERE that symlink leads. A symlink to a regular file living outside the
+  // local inventory store root therefore resolves to `'file'` exactly as
+  // readily as an ordinary in-store document, and every caller here
+  // (`record`, `lookup`, `update`, `all`, `getState`, `toJSON`) would report
+  // content this CLI does not own as if it were tracked local inventory.
+  // `resolveContainedIndexPath` below is called FIRST, for that reason —
+  // the SAME containment proof `assertIndexPathIsSafeToWrite` already
+  // requires before every WRITE to this file, required here before every
+  // READ of it too, through the identical primitive rather than a second,
+  // independently formulated check.
+  //
   // @cpt-begin:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-lookup-guard
   // @cpt-begin:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-lookup-guard-fail
   // Content this store itself wrote could still be unusable in two further
@@ -105,7 +118,8 @@ export class FsInventoryIndex implements InventoryIndexPort {
   // `getState`, `toJSON`) rather than left for whichever caller's own
   // downstream logic happens to dereference the bad shape first.
   private readAll(): Record<string, InventoryEntry> {
-    const raw = readFileIfRegular(this.indexPath);
+    const resolvedIndex = this.resolveContainedIndexPath('read');
+    const raw = readFileIfRegular(resolvedIndex);
     if (raw === null || raw.trim() === '') return {};
     let parsed: unknown;
     try {
@@ -117,6 +131,25 @@ export class FsInventoryIndex implements InventoryIndexPort {
   }
   // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-lookup-guard-fail
   // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-lookup-guard
+
+  // The ONE containment proof both `readAll` above and
+  // `assertIndexPathIsSafeToWrite` below run before touching `indexPath` at
+  // all — `resolveNearestExistingAncestor`/`isInside` (`./fs-project-io.ts`),
+  // the SAME primitives every other adapter's own containment check in this
+  // package reuses, rather than a second, independently formulated one for
+  // the read side and a third for the write side. Returns the RESOLVED
+  // index path (itself, for the ordinary non-symlinked case; the real
+  // document a symlink at `indexPath` aliases otherwise) so a write-side
+  // caller can publish onto it directly, exactly as `createFsWriteProjectStateFn`
+  // (`./fs-project-io.ts`) already does for `.frontx/project.json`.
+  private resolveContainedIndexPath(action: 'read' | 'write'): string {
+    const resolvedRoot = resolveNearestExistingAncestor(path.resolve(this.root));
+    const resolvedIndex = resolveNearestExistingAncestor(path.resolve(this.indexPath));
+    if (resolvedRoot === null || resolvedIndex === null || !isInside(resolvedRoot, resolvedIndex)) {
+      throw new PathContainmentError(this.indexPath, this.root, INVENTORY_STORE_ROOT_LABEL, action);
+    }
+    return resolvedIndex;
+  }
 
   // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-index-guard
   // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-index-guard-fail
@@ -149,38 +182,47 @@ export class FsInventoryIndex implements InventoryIndexPort {
   //    read would refuse to open is not a shape a write should destroy either.
   //    `NotRegularFileError` is reused rather than a bespoke write-side type,
   //    since it is already mapped to `CONTENT_CONFLICT`.
-  private assertIndexPathIsSafeToWrite(): void {
-    const resolvedRoot = resolveNearestExistingAncestor(path.resolve(this.root));
-    const resolvedIndex = resolveNearestExistingAncestor(path.resolve(this.indexPath));
-    if (resolvedRoot === null || resolvedIndex === null || !isInside(resolvedRoot, resolvedIndex)) {
-      throw new PathContainmentError(this.indexPath, this.root, INVENTORY_STORE_ROOT_LABEL);
-    }
+  // Returns the RESOLVED index path (`resolveContainedIndexPath` above) so
+  // `writeAll` below can publish onto the real destination directly, rather
+  // than re-resolving the identical walk a second time.
+  private assertIndexPathIsSafeToWrite(): string {
+    const resolvedIndex = this.resolveContainedIndexPath('write');
     const kind = resolvePathKind(this.indexPath);
     if (kind !== 'absent' && kind !== 'file') {
       throw new NotRegularFileError(this.indexPath, kind);
     }
+    return resolvedIndex;
   }
   // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-index-guard-fail
   // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-index-guard
   // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-index-guard-fail
   // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-index-guard
 
-  // Writes through a temp file beside `index.json`, then `fs.renameSync`s it
-  // into place — the SAME write-through-temp-file-then-rename discipline
-  // `createFsWriteProjectStateFn` (`./fs-project-io.ts`) already uses for its
-  // own single-document store. `fs.rename` replaces whatever directory entry
-  // currently names `indexPath` outright — a regular file, or (once
-  // `assertIndexPathIsSafeToWrite` above has confirmed containment) a
-  // symlink resolving harmlessly inside the store — without ever opening
-  // that entry for writing, so a concurrent reader never observes a
-  // partially-written index, and there is no window in which `index.json`
-  // is truncated.
+  // Writes through a temp file beside the index's RESOLVED destination, then
+  // `fs.renameSync`s it into place — the SAME write-through-temp-file-then-
+  // rename discipline `createFsWriteProjectStateFn` (`./fs-project-io.ts`)
+  // already uses for its own single-document store.
   private writeAll(entries: Record<string, InventoryEntry>): void {
-    this.assertIndexPathIsSafeToWrite();
-    fs.mkdirSync(this.root, { recursive: true });
-    const tempPath = path.join(this.root, `.${INDEX_FILENAME}.${crypto.randomUUID()}.tmp`);
+    const resolvedIndex = this.assertIndexPathIsSafeToWrite();
+    // @cpt-begin:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-index-resolve-write-destination
+    // `resolvedIndex` is `indexPath` itself for the ordinary, non-symlinked
+    // case, and the REAL document a symlink at `indexPath` aliases otherwise
+    // — the guard step just above already proved it resolves inside
+    // `this.root`, using this SAME `resolveNearestExistingAncestor` walk
+    // (`resolveContainedIndexPath`), so trusting it again here costs nothing
+    // new. `fs.renameSync` does not follow a symlink standing at its
+    // destination: renaming onto `this.indexPath` directly would replace the
+    // link itself and orphan the real document it named, still holding the
+    // OLD index with nothing in the report saying so — the same defect
+    // `.frontx/project.json`'s own writer (`createFsWriteProjectStateFn`,
+    // `./fs-project-io.ts`) was already fixed to avoid. Publishing onto the
+    // RESOLVED destination instead keeps the link intact and updates the
+    // real document it names.
+    fs.mkdirSync(path.dirname(resolvedIndex), { recursive: true });
+    const tempPath = path.join(path.dirname(resolvedIndex), `.${INDEX_FILENAME}.${crypto.randomUUID()}.tmp`);
     fs.writeFileSync(tempPath, JSON.stringify(entries, null, 2), 'utf-8');
-    fs.renameSync(tempPath, this.indexPath);
+    fs.renameSync(tempPath, resolvedIndex);
+    // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-index-resolve-write-destination
   }
 }
 

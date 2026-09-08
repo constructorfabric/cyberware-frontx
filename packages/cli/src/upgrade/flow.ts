@@ -47,7 +47,7 @@ import { commitUpgrade } from './commit';
 import type { CommitDeps, CommitOutcome } from './commit';
 import { validateUpgrade } from './validate';
 import type { ValidateInput } from './validate';
-import { readProjectState } from '../project-state/io';
+import { readProjectState, mutateProjectState } from '../project-state/io';
 import type { ReadProjectStateFn, TemplateEntry, WriteProjectStateFn } from '../project-state/types';
 import type {
   ListDiskFilesFn,
@@ -335,6 +335,32 @@ async function driveUpgrade(name: string, deriveCandidate: DeriveCandidateFn, de
   // entirely, and consumes no reversal.
   // @cpt-begin:cpt-frontx-state-upgrade-changeset-lifecycle:p1:inst-st-read-to-noop
   if (validated.kind === 'noop') {
+    // @cpt-begin:cpt-frontx-flow-upgrade-changeset-review-approval:p1:inst-if-noop-missing-exclusions
+    // @cpt-begin:cpt-frontx-flow-upgrade-changeset-restore:p1:inst-rst-if-noop-missing-exclusions
+    // A no-op for the pair {origin, version} is not a no-op for a document
+    // missing a field this engine now writes — the identical rule
+    // `commands/register.ts`'s own `inst-cpreg-if-noop-missing-exclusions`
+    // applies to `register --replace` landing on the same origin. `entry`
+    // is the SAME already-read baseline this call read once above at
+    // `inst-read-provenance`/`inst-rst-invoke`; never re-read.
+    if (entry.excludedSubtrees === undefined) {
+      const repaired: TemplateEntry = { ...entry, excludedSubtrees: validated.excludedSubtrees };
+      // @cpt-begin:cpt-frontx-flow-upgrade-changeset-review-approval:p1:inst-record-noop-exclusions
+      // @cpt-begin:cpt-frontx-flow-upgrade-changeset-restore:p1:inst-rst-record-noop-exclusions
+      const written = await mutateProjectState(
+        deps.repoRoot,
+        { kind: 'set-template', name, entry: repaired },
+        deps.readProjectStateFn,
+        deps.writeProjectStateFn,
+      );
+      // @cpt-end:cpt-frontx-flow-upgrade-changeset-restore:p1:inst-rst-record-noop-exclusions
+      // @cpt-end:cpt-frontx-flow-upgrade-changeset-review-approval:p1:inst-record-noop-exclusions
+      if (!written.ok) {
+        return { ok: false, code: 'PROJECT_INVALID', message: written.message };
+      }
+    }
+    // @cpt-end:cpt-frontx-flow-upgrade-changeset-restore:p1:inst-rst-if-noop-missing-exclusions
+    // @cpt-end:cpt-frontx-flow-upgrade-changeset-review-approval:p1:inst-if-noop-missing-exclusions
     return { ok: true, outcome: 'noop', at: validated.at };
   }
   // @cpt-end:cpt-frontx-state-upgrade-changeset-lifecycle:p1:inst-st-read-to-noop

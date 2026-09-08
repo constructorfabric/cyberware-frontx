@@ -16,6 +16,7 @@
 // `ProvenanceWriteFn` without knowing how its real implementation persists.
 import path from 'node:path';
 import { FRONTX_NAMESPACE_ROOT } from '../manifest/types';
+import { isStrictDescendantOfTarget, isWellFormedExcludedSubtree } from '../manifest/validate-contract';
 import type {
   MutateProjectStateResult,
   ProjectStateDocument,
@@ -59,6 +60,33 @@ function isPreviousOriginShaped(value: unknown): boolean {
   );
 }
 
+// Guards a RECORDED `TemplateEntry.excludedSubtrees` value the IDENTICAL way
+// a manifest's own `excludedSubtrees` declaration is guarded
+// (`manifest/validate-contract.ts`'s `isWellFormedExcludedSubtree`/
+// `isStrictDescendantOfTarget`, reused here rather than reformulated) —
+// `cpt-frontx-dod-composed-provenance-contract-ownership`'s own text fixes
+// this field as "the name's declared exclusions", the same fact the
+// manifest contract's own category 3 already validates, so this store must
+// never accept a shape that check would reject. `undefined` is valid — a
+// document written before this field existed — but once present, every
+// element must be a well-formed, strict-descendant-of-target path string:
+// a bare non-array value, a non-string element, an empty string, or an
+// element escaping the target makes the WHOLE entry malformed, exactly like
+// an unrecognized `origin`/`version`/`targets` shape does below. Left
+// unvalidated, a malformed value would reach `scaffold/delete-plan.ts`'s own
+// recorded-value join (`inst-dp-else-if-recorded-exclusions`) as if it were
+// a real declaration — confirmed live: a number there threw `is not
+// iterable`, and an empty-string entry silently failed to protect anything,
+// letting `delete` remove a developer's own file it was declared to
+// preserve.
+function isExcludedSubtreesShaped(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.every((entry) => isWellFormedExcludedSubtree(entry) && isStrictDescendantOfTarget(entry)))
+  );
+}
+
 function isTemplateEntryShaped(value: unknown): value is TemplateEntry {
   return (
     isRecordShaped(value) &&
@@ -66,7 +94,8 @@ function isTemplateEntryShaped(value: unknown): value is TemplateEntry {
     typeof value.version === 'string' &&
     Array.isArray(value.targets) &&
     value.targets.every((target) => typeof target === 'string') &&
-    isPreviousOriginShaped(value.previous)
+    isPreviousOriginShaped(value.previous) &&
+    isExcludedSubtreesShaped(value.excludedSubtrees)
   );
 }
 
@@ -79,14 +108,16 @@ function isTemplateEntryShaped(value: unknown): value is TemplateEntry {
  * type, the same discipline `provenance/validate.ts` applies to the older
  * per-template store.
  */
-function parseProjectStateDocument(raw: string): ProjectStateDocument | null {
+type ParsedProjectState = { ok: true; document: ProjectStateDocument } | { ok: false; reason: string };
+
+function parseProjectStateDocument(raw: string): ParsedProjectState {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return null;
+    return { ok: false, reason: 'its content is not valid JSON' };
   }
-  if (!isRecordShaped(parsed)) return null;
+  if (!isRecordShaped(parsed)) return { ok: false, reason: 'its top level is not a JSON object' };
   // Exactly `1`, not merely a number: this store owns exactly one schema
   // generation today, and a document stamped with a future `formatVersion`
   // this build does not understand must be refused rather than silently
@@ -95,18 +126,29 @@ function parseProjectStateDocument(raw: string): ProjectStateDocument | null {
   // ever detect that mismatch, since every OTHER structural check below
   // would accept a same-shaped document regardless of which generation
   // wrote it.
-  if (parsed.formatVersion !== 1) return null;
-  if (!isRecordShaped(parsed.templates)) return null;
-  for (const entry of Object.values(parsed.templates)) {
-    if (!isTemplateEntryShaped(entry)) return null;
+  if (parsed.formatVersion !== 1) return { ok: false, reason: `its formatVersion is not 1` };
+  if (!isRecordShaped(parsed.templates)) return { ok: false, reason: 'its templates field is not an object' };
+  // The offending entry — and, for the one field with structure of its own,
+  // which field — is named rather than folded into a single generic
+  // sentence: this document is hand-editable, and a developer told only
+  // that it "could not be parsed" has nowhere to start.
+  for (const [name, entry] of Object.entries(parsed.templates)) {
+    if (isTemplateEntryShaped(entry)) continue;
+    const reason = isRecordShaped(entry) && !isExcludedSubtreesShaped(entry.excludedSubtrees)
+      ? `templates["${name}"].excludedSubtrees is not a list of target-relative directory paths`
+      : `templates["${name}"] is not a { origin, version, targets } entry`;
+    return { ok: false, reason };
   }
   if (!Array.isArray(parsed.projectOwnedRoots) || !parsed.projectOwnedRoots.every((p) => typeof p === 'string')) {
-    return null;
+    return { ok: false, reason: 'its projectOwnedRoots field is not a list of strings' };
   }
   return {
-    formatVersion: parsed.formatVersion as 1,
-    templates: parsed.templates as Record<string, TemplateEntry>,
-    projectOwnedRoots: parsed.projectOwnedRoots as string[],
+    ok: true,
+    document: {
+      formatVersion: parsed.formatVersion as 1,
+      templates: parsed.templates as Record<string, TemplateEntry>,
+      projectOwnedRoots: parsed.projectOwnedRoots as string[],
+    },
   };
 }
 
@@ -155,18 +197,21 @@ async function loadProjectStateDocument(
   // @cpt-end:cpt-frontx-algo-composed-provenance-project-state-io:p1:inst-psio-if-absent
 
   // @cpt-begin:cpt-frontx-algo-composed-provenance-project-state-io:p1:inst-psio-read
-  const document = parseProjectStateDocument(raw);
+  const parsed = parseProjectStateDocument(raw);
   // @cpt-end:cpt-frontx-algo-composed-provenance-project-state-io:p1:inst-psio-read
 
   // @cpt-begin:cpt-frontx-algo-composed-provenance-project-state-io:p1:inst-psio-if-malformed
-  if (document === null) {
+  if (!parsed.ok) {
     // @cpt-begin:cpt-frontx-algo-composed-provenance-project-state-io:p1:inst-psio-return-invalid
-    return { ok: false, message: `Project state document at "${location}" could not be parsed as { formatVersion, templates, projectOwnedRoots }` };
+    // The path is spelled project-relative, the one way every other refusal
+    // in this package spells a path inside the project.
+    const reported = path.relative(repoRoot, location) || location;
+    return { ok: false, message: `Project state document at "${reported}" is not valid: ${parsed.reason}.` };
     // @cpt-end:cpt-frontx-algo-composed-provenance-project-state-io:p1:inst-psio-return-invalid
   }
   // @cpt-end:cpt-frontx-algo-composed-provenance-project-state-io:p1:inst-psio-if-malformed
 
-  return { ok: true, document };
+  return { ok: true, document: parsed.document };
 }
 
 /**

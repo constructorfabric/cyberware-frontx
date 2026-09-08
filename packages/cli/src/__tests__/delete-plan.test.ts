@@ -440,24 +440,63 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
   // inside a declared `excludedSubtrees` entry, must never appear in
   // `toDelete` — and, once the manifest cannot be read, this algorithm must
   // reject rather than compute a plan against a term it could not verify.
-  it('rejects rather than silently widening toDelete when the owning template\'s manifest exists but cannot be read', async () => {
+  // Defect-2 fix: an unreadable CURRENT manifest is no longer a reason to
+  // throw — it is caught internally and falls back to a RECORDED
+  // declaration, refusing only when NEITHER source can supply one. This
+  // entry carries no recorded value (a legacy entry), so the unreadable
+  // manifest and the absent recorded value together produce the SAME
+  // ok:false CONTENT_CONFLICT refusal the "genuinely absent" test below
+  // asserts, never a thrown error and never a silently widened plan.
+  it('refuses rather than silently widening toDelete when the owning template\'s manifest exists but cannot be read, and no excludedSubtrees is recorded', async () => {
     const document = doc({ appTemplate: entry(['t'], { origin: 'path:vendor/app-template' }) });
     const owningManifestPath = '/repo/vendor/app-template/frontx-template.json';
 
-    await expect(
-      computeDeletionPlan(
-        't',
-        '/repo',
-        document,
-        fakeInventory(), // deliberately does not know "appTemplate" — the local-origin read is what must be consulted
-        identityCanonicalize,
-        fakeListTargetFiles({
-          '/repo/t': ['src/index.ts', 'userland/mine.txt'],
-        }),
-        unreadableManifestReadFileFn(owningManifestPath),
-        noUnenumerableEntries,
-      ),
-    ).rejects.toThrow(/not a regular file/);
+    const result = await computeDeletionPlan(
+      't',
+      '/repo',
+      document,
+      fakeInventory(), // deliberately does not know "appTemplate" — the local-origin read is what must be consulted
+      identityCanonicalize,
+      fakeListTargetFiles({
+        '/repo/t': ['src/index.ts', 'userland/mine.txt'],
+      }),
+      unreadableManifestReadFileFn(owningManifestPath),
+      noUnenumerableEntries,
+    );
+
+    expect(result).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
+  });
+
+  // The identical unreadable-manifest failure, but with a RECORDED
+  // `excludedSubtrees` present on the entry: the fallback supplies a real
+  // declaration, so the plan is computed from it rather than refusing —
+  // this is exactly what keeps a vendored `path:` origin's manifest going
+  // briefly unreadable (or removed) from blocking `delete` once a
+  // declaration has been recorded.
+  it('falls back to the recorded excludedSubtrees when the owning template\'s CURRENT manifest cannot be read', async () => {
+    const document = doc({
+      appTemplate: entry(['t'], { origin: 'path:vendor/app-template', excludedSubtrees: ['userland/'] }),
+    });
+    const owningManifestPath = '/repo/vendor/app-template/frontx-template.json';
+
+    const result = await computeDeletionPlan(
+      't',
+      '/repo',
+      document,
+      fakeInventory(),
+      identityCanonicalize,
+      fakeListTargetFiles({
+        '/repo/t': ['src/index.ts', 'userland/mine.txt'],
+      }),
+      unreadableManifestReadFileFn(owningManifestPath),
+      noUnenumerableEntries,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.toDelete).toContain('t/src/index.ts');
+    expect(result.toDelete).not.toContain('t/userland/mine.txt');
+    expect(result.toPreserve).toContain('t/userland/');
   });
 
   // The same scenario, but with the manifest genuinely ABSENT rather than
@@ -488,11 +527,12 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
     expect(result).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
   });
 
-  // The recorded declaration (`TemplateEntry.excludedSubtrees`) takes
-  // precedence over resolving the manifest at all — the fix's primary case:
-  // the manifest is absent (as above), but the entry itself carries the
-  // declaration, so this proceeds using it rather than refusing.
-  it('uses a RECORDED excludedSubtrees instead of resolving the (absent) manifest', async () => {
+  // The recorded declaration (`TemplateEntry.excludedSubtrees`) is the
+  // FALLBACK once the CURRENT manifest cannot supply a declaration — here,
+  // the manifest is genuinely absent (the CURRENT-manifest attempt resolves
+  // to "nothing to use", never a throw), so this falls through to the
+  // recorded value rather than refusing.
+  it('falls back to a RECORDED excludedSubtrees when the CURRENT manifest is absent', async () => {
     const document = doc({
       appTemplate: entry(['t'], { origin: 'path:vendor/app-template', excludedSubtrees: ['userland/'] }),
     });
@@ -505,7 +545,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
       fakeListTargetFiles({
         '/repo/t': ['src/index.ts', 'userland/mine.txt'],
       }),
-      fakeReadFileFn({}), // the manifest path is never populated — ENOENT, and must never be consulted
+      fakeReadFileFn({}), // the manifest path is not populated — resolves ABSENT, not a throw
       noUnenumerableEntries,
     );
 

@@ -175,7 +175,11 @@ function describeConflictCause(
 
 export type ValidateOutcome =
   | { ok: true; kind: 'plan'; plan: UpgradePlan }
-  | { ok: true; kind: 'noop'; at: OriginVersion }
+  // `excludedSubtrees` carries the CANDIDATE's own declared exclusions,
+  // already resolved above — never a second read — so `flow.ts`'s own
+  // no-op handling can record it onto a baseline entry missing the field
+  // without re-resolving the candidate's manifest a second time.
+  | { ok: true; kind: 'noop'; at: OriginVersion; excludedSubtrees: string[] }
   | UpgradeRefusal;
 
 export interface ValidateInput {
@@ -362,7 +366,12 @@ export async function validateUpgrade(input: ValidateInput): Promise<ValidateOut
     // not this function's — the name's preceding pair is left exactly as it
     // is: an upgrade to where the name already is does not consume the one
     // generation of reversal.
-    return { ok: true, kind: 'noop', at: { origin: entry.origin, version: entry.version } };
+    return {
+      ok: true,
+      kind: 'noop',
+      at: { origin: entry.origin, version: entry.version },
+      excludedSubtrees: candidate.excludedSubtrees,
+    };
     // @cpt-end:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-return-noop
   }
   // @cpt-end:cpt-frontx-algo-upgrade-changeset-validate:p1:inst-val-if-candidate-is-baseline
