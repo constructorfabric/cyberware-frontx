@@ -17,13 +17,17 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildMetamodel,
   buildTraitTypes,
+  compileContract,
   compileInstance,
+  findUntypedPropMismatches,
+  isExternalAlternative,
   loadBaseSchema,
+  loadPassthroughSchemas,
   registerContractTypes,
   type CompiledContract,
   type ContractInstance,
 } from './compile';
-import { bareGtsId, componentTypeRefPattern, traitTypeIdPattern } from './ids';
+import { bareGtsId, componentTypeRefPattern, passthroughTypeIdPattern, traitTypeIdPattern } from './ids';
 import { checkComponentFreshness, type FreshnessReport } from './freshness';
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -108,17 +112,22 @@ export function resolveComponentRef(ref: string): ResolvedComponentRef {
 // Every component identifier one contract holds, with the field that holds
 // it, so a failure names which statement is wrong rather than only which id.
 // The content kinds `text` and `none` are values of the same field, not
-// references, and are skipped; so is an external alternative, which is an
-// object precisely because there is nothing to resolve.
+// references, and are skipped; so is an external alternative, whichever field
+// carries it - a `don't` rule's, or a mount point outside the kit.
 export function componentRefsIn(instance: ContractInstance): { field: string; ref: string }[] {
   const refs: { field: string; ref: string }[] = [];
   for (const [index, entry] of instance.dont_use_when.entries()) {
     if (typeof entry.instead === 'string') refs.push({ field: `dont_use_when[${index}].instead`, ref: entry.instead });
   }
-  for (const kind of instance.composition.children.kinds) {
+  for (const kind of instance.composition.children?.kinds ?? []) {
     if (kind !== 'text' && kind !== 'none') refs.push({ field: 'composition.children.kinds', ref: kind });
   }
-  for (const kind of instance.composition.parent?.kinds ?? []) refs.push({ field: 'composition.parent.kinds', ref: kind });
+  // A derived parent is a kit reference; a mount point outside the kit is the
+  // external object form, which is an object precisely because there is
+  // nothing to resolve - skipped here the same way an external alternative is.
+  for (const kind of instance.composition.parent?.kinds ?? []) {
+    if (!isExternalAlternative(kind)) refs.push({ field: 'composition.parent.kinds', ref: kind });
+  }
   if (instance.family) {
     refs.push({ field: 'family.root', ref: instance.family.root });
     for (const part of instance.family.parts ?? []) refs.push({ field: 'family.parts', ref: part });
@@ -146,13 +155,15 @@ function loadCommittedContracts(): Record<string, unknown>[] {
 }
 
 // The registry a contract instance is validated in: the base type, the
-// vocabulary its trait schema references, the metamodel the instance is
-// typed by, and every contract the kit ships - which is what the instance's
-// own props_schema reference has to resolve against.
+// vocabulary its trait schema references, every element-kind passthrough type
+// a contract may compose, the metamodel the instance is typed by, and every
+// contract the kit ships - which is what the instance's own props_schema
+// reference has to resolve against.
 export function registeredKitStore(): GTS {
   const gts = new GTS();
   gts.register(JSON.parse(JSON.stringify(loadBaseSchema())) as Record<string, unknown>);
   registerContractTypes((entity) => gts.register(entity));
+  for (const passthrough of loadPassthroughSchemas()) gts.register(passthrough);
   gts.register(buildMetamodel());
   for (const contract of loadCommittedContracts()) gts.register(contract);
   return gts;
@@ -174,16 +185,13 @@ export function registeredKitStore(): GTS {
 export function assertContractFreshness(directory: string, exportStem: string = directory): void {
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-freshness
   describe(`${exportStem} contract freshness`, () => {
-    it('committed contract.json, contract.instance.json and generated passthrough match a fresh compile', () => {
+    it('committed contract.json and contract.instance.json match a fresh compile', () => {
       const report = memoizedFreshnessReport(directory, exportStem);
       expect(report.contractDiff, `${exportStem}.contract.json is stale:\n${report.contractDiff.join('\n')}`).toEqual([]);
       expect(
         report.instanceDiff,
         `${exportStem}.contract.instance.json is stale:\n${report.instanceDiff.join('\n')}`,
       ).toEqual([]);
-      if (report.passthroughDiff !== 'not-applicable') {
-        expect(report.passthroughDiff, `generated passthrough is stale:\n${report.passthroughDiff.join('\n')}`).toEqual([]);
-      }
     });
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-freshness
 
@@ -235,6 +243,75 @@ export function assertContractFreshness(directory: string, exportStem: string = 
       }
     });
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-refs
+
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-untyped
+    it('pairs every property that asserts nothing with an untyped_prop assumption, both ways', () => {
+      // The gap this closes was measured, not imagined: an evaluation pointed
+      // an agent at three properties that asserted nothing and it reported
+      // they took plain strings. A property Ajv will not check has to say
+      // what its TypeScript type is AND be acknowledged as unverifiable, and
+      // an assumption naming a property the contract does constrain tells a
+      // reader something false about the contract in front of them.
+      const problems = findUntypedPropMismatches(compileContract(directory, exportStem));
+      expect(problems, `${exportStem}: untyped_prop assumptions and unasserted properties disagree:\n${problems.join('\n')}`).toEqual(
+        [],
+      );
+    });
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-untyped
+
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-parent
+    it('derives every parent from a contract whose own children name this component back', () => {
+      // With `parent` derived there is no pair to disagree, which is the
+      // point - so what is asserted is the derivation itself: each kit parent
+      // must be a component that really does list this one as a child, and a
+      // part of a family may only be mounted inside its own family, or the
+      // parts are independently mountable and the family is not one.
+      const instance = compileInstance(directory, exportStem);
+      const self = bareGtsId(String(compileContract(directory, exportStem).$id));
+      // The family's WHOLE membership, read off the root: a part's own
+      // `family` names the root and nothing else (a part does not restate its
+      // siblings), so the set a part may be mounted inside has to come from
+      // the root's `parts` list, not from the part's own record.
+      let familyMembers: Set<string> | undefined;
+      if (instance.family !== undefined) {
+        const root = resolveComponentRef(instance.family.root);
+        const rootInstance = compileInstance(root.directory, root.stem);
+        familyMembers = new Set([instance.family.root, ...(rootInstance.family?.parts ?? [])]);
+      }
+      for (const kind of instance.composition.parent?.kinds ?? []) {
+        if (isExternalAlternative(kind)) continue;
+        const parent = resolveComponentRef(kind);
+        const parentInstance = compileInstance(parent.directory, parent.stem);
+        expect(
+          parentInstance.composition.children?.kinds ?? [],
+          `${exportStem}: derived parent "${kind}" does not name it as a child`,
+        ).toContain(self);
+        if (familyMembers !== undefined) {
+          expect(familyMembers.has(kind), `${exportStem}: derived parent "${kind}" is not a member of its family`).toBe(true);
+        }
+      }
+    });
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-parent
+
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-element
+    it('composes an element-kind passthrough type that exists and is named in the grammar', () => {
+      // The passthrough types are hand-written, so nothing recompiles them
+      // into place: what has to hold is that the reference a contract carries
+      // names a committed file, and that the file's own identifier obeys the
+      // passthrough grammar rather than merely matching the string the
+      // contract happens to hold.
+      const pattern = new RegExp(passthroughTypeIdPattern());
+      const committed = new Map(loadPassthroughSchemas().map((schema) => [String(schema.$id), schema]));
+      for (const id of committed.keys()) {
+        expect(id, `${id} is not a grammatical passthrough type id`).toMatch(pattern);
+      }
+      const contract = compileContract(directory, exportStem);
+      for (const ref of contract.allOf) {
+        if (!ref.$ref.includes('.passthrough.')) continue;
+        expect(committed.has(ref.$ref), `${exportStem}: composes "${ref.$ref}", which no committed file declares`).toBe(true);
+      }
+    });
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-element
 
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-instance-ref
     it("resolves the instance's own props-schema reference through the type registry", () => {

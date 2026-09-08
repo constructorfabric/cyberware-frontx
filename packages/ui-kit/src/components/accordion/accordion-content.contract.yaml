@@ -11,11 +11,10 @@ dont_use_when:
   - rule: Content that must stay visible regardless of any item's open state
     instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~ # Card
 
+# `parent` is derived from AccordionItem's own `children`, not authored here.
 composition:
   children:
     kinds: [text]
-  parent:
-    kinds: [gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~] # AccordionItem
 
 invariants:
   - id: height-animates-via-base-ui-runtime-var
@@ -34,6 +33,30 @@ deprecations: {}
 
 coverage:
   a11y: verified # panel visibility and hiddenUntilFound wiring come from Base UI
+  assumptions:
+    - kind: behaviour
+      claim: keepMounted and hiddenUntilFound are usually set on the Accordion root, not per panel
+      reason: >-
+        Base UI accepts both on the panel as well, and this contract lists
+        them because the panel really does take them; accordion.md documents
+        them on the root, which is where one setting covers every panel of
+        one accordion. Setting them here overrides that root setting for this
+        panel alone.
+    - kind: untyped_prop
+      prop: render
+      claim: render replaces the panel element with one the caller supplies
+      reason: >-
+        Base UI's render prop takes an element or a function of the panel's
+        state; neither is expressible in JSON Schema. The panel is the
+        element Base UI writes `--accordion-panel-height` on, so a replaced
+        element still has to be the one the height animation measures.
+    - kind: untyped_prop
+      prop: style
+      claim: style accepts a function of the panel's state as well as a plain style object
+      reason: >-
+        Base UI widens React's `CSSProperties` to
+        `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object`
+        would reject the function form.
 
 examples:
   good:

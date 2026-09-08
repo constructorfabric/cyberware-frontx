@@ -133,10 +133,11 @@ describe('data-table: coverage counts only component exports', () => {
   });
 });
 
-describe('data-table: no passthrough for either contract', () => {
+describe('data-table: no forwarded surface for either contract', () => {
   it('DataTable has no DOM/Base UI heritage - allOf carries only the base type', () => {
     const extraction = resolveTargetExtraction(DIRECTORY, DIRECTORY);
-    expect(extraction.passthroughOrigin).toBeUndefined();
+    expect(extraction.passthroughProps).toEqual([]);
+    expect(extraction.elementKind).toBeUndefined();
     expect(units[DIRECTORY].contract.allOf).toEqual([{ $ref: BASE_TYPE_ID }]);
   });
 
@@ -144,12 +145,13 @@ describe('data-table: no passthrough for either contract', () => {
     // DataTableSortButtonProps declares column/children/className itself and
     // extends nothing; the <Button> underneath is JSX in its own render
     // body, which the extractor's own/inherited split never sees (own vs
-    // inherited is about DECLARATION FILE of a props TYPE, not what a
-    // component renders) - classify what the extractor actually reports,
-    // don't assume it from what the component renders.
+    // API vs forwarded is about the DECLARATION FILE of a props TYPE, not
+    // what a component renders) - classify what the extractor actually
+    // reports, don't assume it from what the component renders.
     const extraction = resolveTargetExtraction(DIRECTORY, 'data-table-sort-button');
-    expect(extraction.inheritedProps).toEqual([]);
-    expect(extraction.passthroughOrigin).toBeUndefined();
+    expect(extraction.passthroughProps).toEqual([]);
+    expect(extraction.apiProps).toEqual([]);
+    expect(extraction.elementKind).toBeUndefined();
     expect(units['data-table-sort-button'].contract.allOf).toEqual([{ $ref: BASE_TYPE_ID }]);
   });
 });
@@ -170,20 +172,37 @@ describe('data-table: extension points', () => {
   });
 });
 
-describe('data-table: coverage.assumptions present', () => {
-  it("DataTable's assumptions cover the generic TData and the opaque columns/selectionSummary props", () => {
+describe('data-table: coverage.assumptions carry a kind', () => {
+  it("DataTable names every prop the schema cannot type, and its internal state as behaviour", () => {
     const assumptions = units[DIRECTORY].instance.coverage.assumptions ?? [];
-    expect(assumptions.length).toBeGreaterThan(0);
-    expect(assumptions.some((a) => /TData/.test(a.claim))).toBe(true);
-    expect(assumptions.some((a) => /columns/.test(a.claim))).toBe(true);
-    expect(assumptions.some((a) => /selectionSummary/.test(a.claim))).toBe(true);
+    const untyped = assumptions.filter((a) => a.kind === 'untyped_prop').map((a) => a.prop);
+    for (const prop of ['columns', 'data', 'emptyMessage', 'nextLabel', 'previousLabel', 'selectionSummary']) {
+      expect(untyped, prop).toContain(prop);
+    }
+    // The one claim that is NOT about a prop: sorting, selection and
+    // pagination state never reach DataTableProps at all, so there is no
+    // property for an untyped_prop assumption to name - which is exactly
+    // what the kind distinction buys.
+    expect(assumptions.some((a) => a.kind === 'behaviour' && /internal, not props/.test(a.claim))).toBe(true);
   });
 
-  it("DataTableSortButton's assumptions cover the runtime Column instance and the no-typed-parent gap", () => {
-    const assumptions = units['data-table-sort-button'].instance.coverage.assumptions ?? [];
-    expect(assumptions.length).toBeGreaterThan(0);
-    expect(assumptions.some((a) => /Column/.test(a.claim))).toBe(true);
-    expect(assumptions.some((a) => /composes the kit's own Button/.test(a.claim))).toBe(true);
+  it("DataTableSortButton states its mount point outside the kit, in mounts_in and as external_mount", () => {
+    const { instance } = units['data-table-sort-button'];
+    const assumptions = instance.coverage.assumptions ?? [];
+    expect(assumptions.some((a) => a.kind === 'external_mount')).toBe(true);
+    expect(assumptions.some((a) => a.kind === 'hidden_part' && /composes the kit's own Button/.test(a.claim))).toBe(true);
+    expect(assumptions.filter((a) => a.kind === 'untyped_prop').map((a) => a.prop).sort()).toEqual(['children', 'column']);
+    // The typed composition field covers kit-to-kit nesting only: a column's
+    // `header` render function is a TanStack Table prop, not a kit
+    // component, so the mount point takes the external form and is merged
+    // into the derived `parent` rather than naming a component that does not
+    // exist.
+    const kinds = instance.composition.parent?.kinds ?? [];
+    expect(kinds.length).toBe(1);
+    const [mount] = kinds;
+    if (typeof mount === 'string') throw new Error('expected the external form, got a component reference');
+    expect(mount.external).toContain('header');
+    expect(mount.note).toContain('ColumnDef');
   });
 });
 

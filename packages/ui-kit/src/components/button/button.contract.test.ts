@@ -21,7 +21,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addContractTypes,
-  assertNoPassthroughCollision,
   assertOverlayReferencesRealProps,
   assertValidatesAgainst,
   BASE_TYPE_ID,
@@ -32,14 +31,26 @@ import {
   isExternalAlternative,
   loadBaseSchema,
   loadPassthroughSchema,
+  OPEN_UNEVALUATED,
   parseOverlay,
   registerContractTypes,
   resolveTargetExtraction,
+  UNCHECKED_VERDICT_KEY,
+  unassertedPropertyNames,
   type CompiledContract,
   type Overlay,
 } from '../../../scripts/contracts/compile';
 import type { ComponentExtraction } from '../../../scripts/contracts/extract';
-import { bareGtsId, componentTypeRef, CONTRACT_MAJOR, instanceIdPattern, METAMODEL_VERSION, passthroughTypeId } from '../../../scripts/contracts/ids';
+import { classifyProps } from '../../../scripts/contracts/check-lib';
+import {
+  bareGtsId,
+  componentTypeRef,
+  CONTRACT_MAJOR,
+  domPassthroughToken,
+  instanceIdPattern,
+  METAMODEL_VERSION,
+  passthroughTypeId,
+} from '../../../scripts/contracts/ids';
 import {
   applyContractTestTimeout,
   assertContractFreshness,
@@ -53,18 +64,22 @@ import {
 // in the file; see applyContractTestTimeout's own comment in testing.ts.
 applyContractTestTimeout();
 
-// Freshness: the committed button.contract.json, button.contract.instance.json
-// and generated/passthrough.base_ui_button.json must equal a fresh compile. Every
-// other suite below compiles fresh in memory and never touches the committed
-// copy, so this is the one check standing between "the code is right" and
-// "what shipped is right" - see testing.ts.
+// Freshness: the committed button.contract.json and
+// button.contract.instance.json must equal a fresh compile. Every other suite
+// below compiles fresh in memory and never touches the committed copy, so
+// this is the one check standing between "the code is right" and "what
+// shipped is right" - see testing.ts.
 assertContractFreshness('button');
 
 const contract = compileContract('button');
 const instance = compileInstance('button');
 const baseSchema = loadBaseSchema();
-const PASSTHROUGH_TYPE_ID = passthroughTypeId('base_ui_button');
-const passthroughSchema = loadPassthroughSchema('base_ui_button');
+// The element Button renders, and the hand-written type for it - shared with
+// AccordionTrigger and with every future component that renders a <button>,
+// which is why it is committed once under scripts/contracts/passthrough/
+// rather than derived per component.
+const PASSTHROUGH_TYPE_ID = passthroughTypeId(domPassthroughToken('button'));
+const passthroughSchema = loadPassthroughSchema('button');
 
 // A schema keyword ($id, $ref) carries the URI form `gts://...`; gts-ts
 // strips it before parsing or keying the store (store.normalizeSchema), so
@@ -95,11 +110,10 @@ function compileValidator(): ReturnType<Ajv2020['compile']> {
   // schema itself - declared for the same reason: strict mode must not trip
   // over gts-ts's own annotation keyword while checking props.
   ajv.addKeyword({ keyword: 'x-gts-traits-schema' });
-  // The generated passthrough schema (added below) carries this one - see
-  // buildPassthroughSchema's generated_from field (M4). Annotation only,
-  // same standing as $comment; declared so strict mode does not trip over
-  // it while resolving the passthrough $ref this contract composes.
-  ajv.addKeyword({ keyword: 'generated_from' });
+  // The verdict annotation inside the contract's own `unevaluatedProperties`
+  // (compile.ts's OPEN_UNEVALUATED). Declared for the same reason: it asserts
+  // nothing, and strict mode must not trip over it while checking props.
+  ajv.addKeyword({ keyword: UNCHECKED_VERDICT_KEY });
   ajv.addSchema(baseSchema);
   ajv.addSchema(passthroughSchema);
   return ajv.compile(contract);
@@ -124,13 +138,16 @@ describe('button contract conformance', () => {
     }
   });
 
-  it('required is an array mirroring own props with optional:false', () => {
+  it('required mirrors every declared and API prop the extraction reported as non-optional', () => {
     // No fixture: derived from the same extraction the contract was built
-    // from. Button has no required own props today (className, icon,
-    // loading, focusableWhenDisabled are all optional), so this also proves
-    // `required` is `[]`, not an absent field, when nothing is required.
+    // from, and over BOTH prop sets - an API prop of the primitive underneath
+    // reaches `properties` on the same footing as a declared one, so it
+    // reaches `required` the same way. Button has none today (className,
+    // icon, loading, focusableWhenDisabled, nativeButton, render and style
+    // are all optional), so this also proves `required` is `[]`, not an
+    // absent field, when nothing is required.
     expect(Array.isArray(contract.required)).toBe(true);
-    const expected = extraction.ownProps
+    const expected = [...extraction.ownProps, ...extraction.apiProps]
       .filter((prop) => prop.name in contract.properties && !prop.optional)
       .map((prop) => prop.name)
       .sort();
@@ -142,7 +159,7 @@ describe('button contract conformance', () => {
     for (const prop of Object.keys(contract['x-gts-traits'].deprecations.props ?? {})) {
       expect(known, `deprecated prop "${prop}" is not a real prop`).toContain(prop);
     }
-    const iconsVia = contract['x-gts-traits'].composition.children.icons_via;
+    const iconsVia = contract['x-gts-traits'].composition.children?.icons_via;
     if (iconsVia !== undefined) {
       expect(known).toContain(iconsVia);
     }
@@ -184,12 +201,16 @@ describe('button contract conformance', () => {
     expect(passthroughSchema.$id).toBe(PASSTHROUGH_TYPE_ID);
   });
 
-  it('closes the kit surface with unevaluatedProperties, not additionalProperties', () => {
-    // Not interchangeable: `additionalProperties` only sees its sibling
-    // `properties` and would reject every prop reached through allOf/$ref,
-    // so a correct <Button className="x" /> would fail. Asserted rather than
-    // commented because the two keywords look alike in review.
-    expect(contract.unevaluatedProperties).toBe(false);
+  it('leaves the surface open with an annotated verdict rather than closing it', () => {
+    // `unevaluatedProperties: false` answered "invalid" to two different
+    // things - a typo'd kit prop and a name this harness has not classified
+    // yet - and only the first is a mistake. The schema admits both and
+    // annotates the verdict; classifyProps is what tells them apart (see
+    // "the unchecked-props report" below). `additionalProperties` was never
+    // an option here for a different reason: it only sees its sibling
+    // `properties` and would reject every prop reached through allOf/$ref.
+    expect(contract.unevaluatedProperties).toEqual(OPEN_UNEVALUATED);
+    expect(contract.unevaluatedProperties[UNCHECKED_VERDICT_KEY]).toBe('unchecked');
     expect(contract).not.toHaveProperty('additionalProperties');
   });
 
@@ -197,46 +218,66 @@ describe('button contract conformance', () => {
     expect(extraction.cannotExtract).toEqual([]);
   });
 
-  it('leaves passthrough-owned props to the passthrough type', () => {
-    // `disabled` is never mentioned in button.tsx's own ButtonProps body -
-    // it reaches the props type only through the Omit<ButtonPrimitive.Props,
-    // 'className'> heritage, so it is inherited, and the passthrough type
-    // owns it; the component schema must not carry a competing copy.
-    const passthroughProps = Object.keys((passthroughSchema.properties ?? {}) as Record<string, unknown>);
-    expect(passthroughProps).toContain('disabled');
-    for (const prop of passthroughProps) {
-      expect(Object.keys(contract.properties), `"${prop}" is declared twice`).not.toContain(prop);
-    }
+  it('files a React DOM attribute as forwarded surface and a Base UI part prop as this component\'s API', () => {
+    // The filing rule, on the two props that make it visible. `disabled` is
+    // declared by React's ButtonHTMLAttributes: it is the same attribute for
+    // every component that renders a <button>, so it belongs to the element
+    // surface and not to this contract. `nativeButton` is declared by Base
+    // UI's own props for its Button part: it is Button's API, wearing Base
+    // UI's declaration site as an accident of how the kit wraps it, so it
+    // belongs in `properties` - filed as forwarded surface it was one of 233
+    // entries in a generated file nobody read.
+    expect(extraction.passthroughProps.map((p) => p.name)).toContain('disabled');
+    expect(passthroughSchema.properties).toHaveProperty('disabled');
+    expect(contract.properties).not.toHaveProperty('disabled');
+
+    expect(extraction.apiProps.map((p) => p.name)).toContain('nativeButton');
+    expect(contract.properties.nativeButton).toEqual({ type: 'boolean' });
   });
 
-  it('classifies className as an own prop, not passthrough - the kit narrows it everywhere', () => {
+  it('gives an API prop the schema cannot type its TypeScript type, not an empty schema', () => {
+    // The measured defect: an agent shown three unconstrained properties
+    // concluded they took plain strings. `render` is a union of a React
+    // element and a callback, so nothing can be asserted about it - what a
+    // reader gets instead is the checker's own printed type.
+    expect(contract.properties.render.type).toBeUndefined();
+    expect(contract.properties.render.description).toMatch(/^TS: .*Not expressible in JSON Schema, checked by tsc\.$/s);
+    expect(contract.properties.render.description).toContain('ComponentRenderFn');
+  });
+
+  it('records only the kit\'s own slotted props in x-uikit.slots, not every unasserted property', () => {
+    // Two kinds of property assert nothing, and they are documented in
+    // different places: `icon` is the kit's own slot and its type lives in
+    // x-uikit.slots, while `render`/`style` are the primitive's API and their
+    // types live in their own descriptions plus an untyped_prop assumption.
+    // Both are covered by the assumption pairing (see testing.ts); only the
+    // first is a slot.
+    expect(unassertedPropertyNames(contract)).toEqual(['icon', 'render', 'style']);
+    expect(Object.keys(contract['x-uikit'].slots)).toEqual(['icon']);
+  });
+
+  it('classifies className as a declared prop, and keeps the narrower declaration', () => {
     // button.tsx redeclares `className?: string`, narrower than Base UI's
     // `string | ((state) => string)` union: this is a deliberate, kit-wide
     // convention (every component does it, see accordion.tsx), not an
-    // accidental duplicate, so the checker's own-vs-inherited split (by
-    // declaration file) is the correct signal here, not a defect to work
-    // around with a hardcoded exception.
+    // accidental duplicate. The element surface declares `className` too, as
+    // a plain string - the two agree, and the component's own declaration is
+    // what the contract carries.
     expect(extraction.ownProps.map((p) => p.name)).toContain('className');
-    expect(passthroughSchema.properties).not.toHaveProperty('className');
+    expect(passthroughSchema.properties).toHaveProperty('className');
     expect(contract.properties.className).toEqual({ type: 'string' });
   });
 });
 
 describe('button props validation', () => {
-  it('rejects a typo in a kit prop', () => {
-    // The point of the derived type. `variannt` is evaluated by nothing -
-    // not the component's own properties, not the base, not the
-    // passthrough's aria-/data- patterns - so the closure catches it.
+  it('admits a typo in a kit prop rather than rejecting it', () => {
+    // Deliberate, and the reason `unevaluatedProperties` is open: Ajv cannot
+    // tell `variannt` from a React attribute this harness has not classified,
+    // and answering "invalid" to both made the second unusable. The verdict
+    // on `variannt` is made by classifyProps below, which can see that
+    // `variant` exists.
     const validate = compileValidator();
-    expect(validate({ variannt: 'ghost' })).toBe(false);
-  });
-
-  it('rejects an unknown prop that merely looks plausible', () => {
-    // Distinct from the typo case above: this name is not a near-miss of a
-    // real kit prop, own or inherited - it is evaluated by nothing in the
-    // derived schema, which is exactly what closure exists to catch.
-    const validate = compileValidator();
-    expect(validate({ tooltip: 'Delete' })).toBe(false);
+    expect(validate({ variannt: 'ghost' })).toBe(true);
   });
 
   it('accepts aria-*, data-* and className alongside valid kit props', () => {
@@ -251,14 +292,11 @@ describe('button props validation', () => {
     expect(validate(props), new Ajv2020().errorsText(validate.errors)).toBe(true);
   });
 
-  it('accepts inherited passthrough props - the surface F8 found closed off', () => {
-    // Before T3's checker-based extraction, the hand-written passthrough
-    // type only declared 7 props; everything else Base UI's ButtonProps and
-    // React's ButtonHTMLAttributes actually carry - `name`, `form`, `render`,
-    // `nativeButton` among them - was rejected by `unevaluatedProperties:
-    // false` despite being a real, forwarded prop. The generated passthrough
-    // type is built from the checker's own resolution of what button.tsx's
-    // props type inherits, so all of these now validate.
+  it('accepts the element surface and the primitive API side by side', () => {
+    // `name`/`form`/`title` come from the hand-written <button> surface,
+    // `render`/`nativeButton` from Base UI's own props for its Button part
+    // and so from this contract's own properties. A consumer passing both at
+    // once is the ordinary case, and the two halves have to compose.
     const validate = compileValidator();
     const props = {
       variant: 'default',
@@ -271,6 +309,14 @@ describe('button props validation', () => {
     expect(validate(props), new Ajv2020().errorsText(validate.errors)).toBe(true);
   });
 
+  it('rejects a value the element surface does type', () => {
+    // The element surface is not decoration: `type` on a <button> is one of
+    // three values, and a fourth fails even though the prop itself is
+    // forwarded rather than declared by the kit.
+    const validate = compileValidator();
+    expect(validate({ type: 'sumbit' })).toBe(false);
+  });
+
   it('still rejects a value outside an axis enum', () => {
     // Closure is not the only assertion the schema carries; a real prop with
     // an impossible value has to fail too.
@@ -279,10 +325,67 @@ describe('button props validation', () => {
   });
 
   it('accepts a slot prop the schema cannot type', () => {
-    // `icon` is a ReactNode: annotation-only in the schema, so closure lets
-    // it through instead of rejecting correct usage.
+    // `icon` is a ReactNode: annotation-only in the schema, so it passes
+    // instead of rejecting correct usage.
     const validate = compileValidator();
     expect(validate({ icon: 'anything', 'aria-label': 'Delete' })).toBe(true);
+  });
+});
+
+describe('the unchecked-props report', () => {
+  // What replaced closure. The schema admits every name; this is where a name
+  // gets a verdict, and it is the one that can make the distinction Ajv
+  // cannot: a near-miss of a kit prop is an error, an unrecognized name is
+  // merely unchecked.
+  const passthrough = passthroughSchema as { properties?: Record<string, unknown>; patternProperties?: Record<string, unknown> };
+
+  it('counts a kit prop, a forwarded attribute and a pattern match as known', () => {
+    const report = classifyProps(
+      { variant: 'ghost', nativeButton: true, disabled: true, 'aria-label': 'Delete', 'data-testid': 'x', onClick: () => {} },
+      contract,
+      passthrough,
+    );
+    expect(report.known).toEqual(['aria-label', 'data-testid', 'disabled', 'nativeButton', 'onClick', 'variant']);
+    expect(report.unchecked).toEqual([]);
+    expect(report.nearMiss).toEqual([]);
+  });
+
+  it('upgrades a one-edit miss of a kit prop to a near miss, naming what it is probably meant to be', () => {
+    const report = classifyProps({ variannt: 'ghost' }, contract, passthrough);
+    expect(report.unchecked).toEqual(['variannt']);
+    expect(report.nearMiss).toEqual([{ prop: 'variannt', probably: 'variant' }]);
+  });
+
+  it('leaves an unrecognized name unchecked rather than calling it an error', () => {
+    // `tooltip` is not one edit from any prop Button declares. The honest
+    // answer is that nothing here checks it - which is a report, not a
+    // refusal, and the distinction the open schema exists to preserve.
+    const report = classifyProps({ tooltip: 'Delete' }, contract, passthrough);
+    expect(report.unchecked).toEqual(['tooltip']);
+    expect(report.nearMiss).toEqual([]);
+  });
+
+  it('does not call a near-miss of a forwarded DOM attribute an error', () => {
+    // `classNam` is one edit from `className`, which the kit DOES declare, so
+    // it is a near miss; `titl` is one edit from `title`, which only the
+    // element surface declares - a typo in a DOM attribute is React's
+    // business, not this contract's, and reporting it here would make the
+    // report noisier than the thing it replaced.
+    const nearOwn = classifyProps({ classNam: 'x' }, contract, passthrough);
+    expect(nearOwn.nearMiss).toEqual([{ prop: 'classNam', probably: 'className' }]);
+    const nearElement = classifyProps({ titl: 'x' }, contract, passthrough);
+    expect(nearElement.unchecked).toEqual(['titl']);
+    expect(nearElement.nearMiss).toEqual([]);
+  });
+
+  it('treats a hidden prop as unchecked, because the kit does not offer it', () => {
+    // Accordion's root hides `orientation`; Button hides nothing, so this
+    // checks the mechanism on the contract that has one - a hidden prop is
+    // not in `properties`, so it lands in `unchecked` exactly like any other
+    // name the contract does not account for.
+    const accordion = compileContract('accordion');
+    const report = classifyProps({ orientation: 'horizontal' }, accordion, undefined);
+    expect(report.unchecked).toEqual(['orientation']);
   });
 });
 
@@ -353,28 +456,30 @@ describe('overlay and extraction safety', () => {
   });
 
   // A synthetic extraction, not a fixture component under src/components:
-  // the passthrough-conflict check only needs a ComponentExtraction shape,
-  // and this keeps the test next to the assertion instead of in a directory
-  // a reviewer has to go find. `disabled` is chosen because it is a real
-  // entry in Button's generated passthrough type (boolean, inherited from
-  // React's ButtonHTMLAttributes) - `declarationFile` is irrelevant to
-  // buildPropsAndRequired, so a placeholder is fine.
-  function syntheticExtraction(ownProps: ComponentExtraction['ownProps']): ComponentExtraction {
+  // the element-surface conflict check only needs a ComponentExtraction
+  // shape, and this keeps the test next to the assertion instead of in a
+  // directory a reviewer has to go find. `disabled` is chosen because the
+  // hand-written <button> surface really does declare it as a boolean.
+  function syntheticExtraction(
+    ownProps: ComponentExtraction['ownProps'],
+    apiProps: ComponentExtraction['apiProps'] = [],
+  ): ComponentExtraction {
     return {
       name: 'Button',
       axes: {},
       defaults: {},
       ownProps,
-      inheritedProps: [],
-      passthroughKind: 'button',
-      passthroughOrigin: 'base_ui_button',
+      apiProps,
+      passthroughProps: [],
+      unclassifiedProps: [],
+      elementKind: 'button',
       passthroughSources: [],
       variantSourceLabels: [],
       cannotExtract: [],
     };
   }
 
-  it('rejects a component prop whose type conflicts with the passthrough type, naming both locations', () => {
+  it('rejects a declared prop whose type conflicts with the element surface, naming both locations', () => {
     const conflicting = syntheticExtraction([
       { name: 'disabled', optional: true, typeText: 'string', declarationFile: 'button.tsx' },
     ]);
@@ -383,13 +488,38 @@ describe('overlay and extraction safety', () => {
     );
   });
 
-  it('leaves a passthrough prop alone when the declared types agree', () => {
+  it('keeps a declared prop that agrees with the element surface, rather than deferring to it', () => {
+    // The declaration is the more specific one and the contract carries it:
+    // both schemas apply to the same value through allOf, so agreement is
+    // all that is required, and a reader of `properties` sees every prop the
+    // component declares.
     const agreeing = syntheticExtraction([
       { name: 'disabled', optional: true, typeText: 'boolean | undefined', declarationFile: 'button.tsx' },
     ]);
     const { properties, required } = buildPropsAndRequired('button', agreeing, passthroughSchema);
-    expect(properties).not.toHaveProperty('disabled');
+    expect(properties.disabled).toEqual({ type: 'boolean' });
     expect(required).toEqual([]);
+  });
+
+  it('rejects an API prop whose type conflicts with the element surface, naming its declaration file', () => {
+    const conflicting = syntheticExtraction([], [
+      { name: 'type', optional: true, typeText: 'boolean', declarationFile: '@base-ui/react/internals/types.d.mts' },
+    ]);
+    expect(() => buildPropsAndRequired('button', conflicting, passthroughSchema)).toThrow(
+      /"type".*@base-ui\/react\/internals\/types\.d\.mts.*element surface/s,
+    );
+  });
+
+  it('leaves a hidden API prop out of properties without touching the declared ones', () => {
+    const extraction = syntheticExtraction(
+      [{ name: 'loading', optional: true, typeText: 'boolean | undefined', declarationFile: 'button.tsx' }],
+      [
+        { name: 'nativeButton', optional: true, typeText: 'boolean | undefined', declarationFile: '@base-ui/react/internals/types.d.mts' },
+        { name: 'render', optional: true, typeText: 'ReactElement', declarationFile: '@base-ui/react/internals/types.d.mts' },
+      ],
+    );
+    const { properties } = buildPropsAndRequired('button', extraction, passthroughSchema, ['render']);
+    expect(Object.keys(properties).sort()).toEqual(['loading', 'nativeButton']);
   });
 
   // M11: this cross-check used to live only in the "overlay references only
@@ -422,6 +552,62 @@ describe('overlay and extraction safety', () => {
       /composition\.children\.icons_via references "ghostIcon"/,
     );
   });
+
+  it('rejects an overlay that writes composition.parent, pointing at mounts_in', () => {
+    // Derived from every other contract's children, so an authored copy is
+    // the second writable statement of one fact - the shape that let a part
+    // name a parent whose children did not name it back.
+    const authoredParent = {
+      ...validOverlay,
+      composition: { children: { kinds: ['text'] }, parent: { kinds: ['gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~'] } },
+    };
+    expect(() => parseOverlay('button', authoredParent)).toThrow(/composition\.parent.*mounts_in/s);
+  });
+
+  it('rejects a hidden name the primitive underneath does not declare', () => {
+    const stale: Overlay = { ...validOverlay, hidden: ['orientaton'] };
+    const extraction = syntheticExtraction([], [
+      { name: 'orientation', optional: true, typeText: 'string', declarationFile: '@base-ui/react/internals/types.d.mts' },
+    ]);
+    expect(() => assertOverlayReferencesRealProps('button', stale, extraction)).toThrow(/hides "orientaton"/);
+  });
+
+  it("rejects hiding a prop the component declares itself", () => {
+    // A different mistake from the one above, and it gets a different
+    // refusal: hiding is for a prop of the primitive the kit does not
+    // advertise, never for what the component's own source states.
+    const stale: Overlay = { ...validOverlay, hidden: ['loading'] };
+    const extraction = syntheticExtraction([
+      { name: 'loading', optional: true, typeText: 'boolean', declarationFile: 'button.tsx' },
+    ]);
+    expect(() => assertOverlayReferencesRealProps('button', stale, extraction)).toThrow(/declares itself/);
+  });
+
+  it('rejects an untyped_prop assumption naming a prop that does not exist', () => {
+    const stale: Overlay = {
+      ...validOverlay,
+      coverage: {
+        assumptions: [{ kind: 'untyped_prop', prop: 'ghostIcon', claim: 'placeholder', reason: 'placeholder' }],
+      },
+    };
+    const extraction = syntheticExtraction([]);
+    expect(() => assertOverlayReferencesRealProps('button', stale, extraction)).toThrow(
+      /untyped_prop assumption references "ghostIcon"/,
+    );
+  });
+
+  it('rejects an untyped_prop assumption that names no prop at all', () => {
+    // The metamodel's own if/then makes `prop` required for this kind, so
+    // this is the belt to that braces: an overlay bypassing the schema (a
+    // test fixture, a future caller building an Overlay by hand) still fails
+    // rather than producing an assumption nothing can be paired with.
+    const stale = {
+      ...validOverlay,
+      coverage: { assumptions: [{ kind: 'untyped_prop' as const, claim: 'placeholder', reason: 'placeholder' }] },
+    };
+    const extraction = syntheticExtraction([]);
+    expect(() => assertOverlayReferencesRealProps('button', stale, extraction)).toThrow(/names no prop/);
+  });
 });
 
 describe('M3: assembled output validated against its own schema before writing', () => {
@@ -444,71 +630,6 @@ describe('M3: assembled output validated against its own schema before writing',
     // must read as absent, not as a value to type-check.
     const schema = { type: 'object', properties: { maybe: { type: ['string', 'null'] } }, additionalProperties: false };
     expect(() => assertValidatesAgainst('button', 'test-value', schema, { maybe: undefined })).not.toThrow();
-  });
-});
-
-describe('M4: shared passthrough origin write collision', () => {
-  it('allows a first write with no existing file on disk', () => {
-    expect(() =>
-      assertNoPassthroughCollision('button', 'base_ui_button', '/tmp/x.json', undefined, {
-        properties: { disabled: { type: 'boolean' } },
-        required: [],
-      }),
-    ).not.toThrow();
-  });
-
-  it('allows the same component to recompile after a real source change', () => {
-    // The component already on record is the only owner - a properties
-    // mismatch here is an ordinary recompile, not a collision.
-    expect(() =>
-      assertNoPassthroughCollision(
-        'button',
-        'base_ui_button',
-        '/tmp/x.json',
-        { generatedFrom: ['button'], surface: { properties: { disabled: { type: 'boolean' } }, required: [] } },
-        { properties: { disabled: { type: 'boolean' }, name: { type: 'string' } }, required: [] },
-      ),
-    ).not.toThrow();
-  });
-
-  it('allows a shared origin whose fresh surface still agrees with what is committed', () => {
-    expect(() =>
-      assertNoPassthroughCollision(
-        'icon-button',
-        'base_ui_button',
-        '/tmp/x.json',
-        { generatedFrom: ['button'], surface: { properties: { disabled: { type: 'boolean' } }, required: [] } },
-        { properties: { disabled: { type: 'boolean' } }, required: [] },
-      ),
-    ).not.toThrow();
-  });
-
-  it('rejects a different component writing a mismatched properties set, naming both components', () => {
-    expect(() =>
-      assertNoPassthroughCollision(
-        'icon-button',
-        'base_ui_button',
-        '/tmp/x.json',
-        { generatedFrom: ['button'], surface: { properties: { disabled: { type: 'boolean' } }, required: [] } },
-        { properties: { disabled: { type: 'boolean' }, extraOnly: { type: 'string' } }, required: [] },
-      ),
-    ).toThrow(/icon-button.*shared passthrough origin "base_ui_button".*already committed by button/s);
-  });
-
-  it('rejects a shared origin whose properties agree but whose required list does not', () => {
-    // `required` is the other half of what a passthrough type derives from a
-    // component's inherited props: one primitive making a forwarded prop
-    // mandatory where another leaves it optional is a real disagreement
-    // about the shared file, invisible to a properties-only comparison.
-    expect(() =>
-      assertNoPassthroughCollision(
-        'icon-button',
-        'base_ui_button',
-        '/tmp/x.json',
-        { generatedFrom: ['button'], surface: { properties: { disabled: { type: 'boolean' } }, required: [] } },
-        { properties: { disabled: { type: 'boolean' } }, required: ['disabled'] },
-      ),
-    ).toThrow(/icon-button.*shared passthrough origin "base_ui_button".*already committed by button/s);
   });
 });
 

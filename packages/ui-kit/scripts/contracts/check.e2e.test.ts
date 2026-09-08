@@ -26,6 +26,7 @@ import { dirname, join } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
+import { OPEN_UNEVALUATED } from './compile';
 import { runCompat, runCoverage, runGuard, type CheckContext } from './check';
 import { BASE_TYPE_ID, passthroughTypeId, propsSchemaId } from './ids';
 import { applyContractTestTimeout } from './testing';
@@ -69,30 +70,29 @@ function pascalCase(stem: string): string {
 
 // A minimal but real compiled-shape props schema: the same $id grammar and
 // base-derivation allOf compile.ts emits for every real component, plus the
-// passthrough $ref that `compat` reads the inherited-surface origin off.
+// passthrough $ref that `compat` reads the host element off.
 function contractJson(
   component: string,
-  options: { major?: number; origin?: string; properties?: Record<string, unknown>; required?: string[] } = {},
+  options: { major?: number; element?: string; properties?: Record<string, unknown>; required?: string[] } = {},
 ): Record<string, unknown> {
-  const { major = 1, origin, properties = {}, required = [] } = options;
+  const { major = 1, element, properties = {}, required = [] } = options;
   return {
     $id: propsSchemaId(component, major),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     type: 'object',
-    allOf: [{ $ref: BASE_TYPE_ID }, ...(origin === undefined ? [] : [{ $ref: passthroughTypeId(origin) }])],
+    allOf: [{ $ref: BASE_TYPE_ID }, ...(element === undefined ? [] : [{ $ref: passthroughTypeId(element) }])],
     properties,
     required,
-    unevaluatedProperties: false,
+    unevaluatedProperties: OPEN_UNEVALUATED,
   };
 }
 
-function passthroughJson(origin: string, properties: Record<string, unknown>, required: string[] = []): Record<string, unknown> {
+function passthroughJson(element: string, properties: Record<string, unknown>, required: string[] = []): Record<string, unknown> {
   return {
-    $id: passthroughTypeId(origin),
+    $id: passthroughTypeId(element),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    title: `UiKit ${origin} passthrough`,
+    title: `UiKit ${element} passthrough`,
     type: 'object',
-    generated_from: ['button'],
     properties,
     required,
   };
@@ -162,28 +162,30 @@ function createFixture(): Fixture {
 }
 
 // The ordinary starting point: one covered component with an overlay, a
-// contract and the inherited surface it composes, all committed.
+// contract and the element surface it composes, all committed.
 function committedButtonKit(fixture: Fixture, options: { properties?: Record<string, unknown> } = {}): void {
   fixture.write('scripts/contracts/covered.json', ['button']);
-  fixture.write('scripts/contracts/generated/passthrough.base_ui_button.json', passthroughJson('base_ui_button', {
+  fixture.write('scripts/contracts/passthrough/dom_button.json', passthroughJson('dom_button', {
     className: { type: 'string' },
     disabled: { type: 'boolean' },
   }));
   fixture.write('src/components/button/button.contract.yaml', 'component: button\n');
   fixture.write(
     'src/components/button/button.contract.json',
-    contractJson('button', { origin: 'base_ui_button', properties: options.properties ?? { variant: { type: 'string' } } }),
+    contractJson('button', { element: 'dom_button', properties: options.properties ?? { variant: { type: 'string' } } }),
   );
   fixture.git('add', '-A');
   fixture.git('commit', '-m', 'base state');
 }
 
-describe('compat: a change that drops the inherited surface', () => {
+describe('compat: a change that drops the forwarded surface', () => {
   it('refuses the contract instead of skipping the comparison it can no longer address', () => {
     // The contract stops composing the passthrough type altogether. Reading
-    // the origin off the NEW contract alone left nothing to look up, so the
-    // whole inherited-surface block was skipped and every forwarded prop
-    // vanished under a PASS.
+    // the element off the NEW contract alone left nothing to look up, so the
+    // whole forwarded-surface block was skipped and every forwarded prop
+    // vanished under a PASS. Still the case the removal path has to catch
+    // now that the surfaces are hand-written: a contract can stop composing
+    // one without any file changing.
     const fixture = createFixture();
     committedButtonKit(fixture);
     fixture.write('src/components/button/button.contract.json', contractJson('button', { properties: { variant: { type: 'string' } } }));
@@ -191,7 +193,7 @@ describe('compat: a change that drops the inherited surface', () => {
     expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(1);
     expect(fixture.output()).toContain('passthrough: prop "className" removed');
     expect(fixture.output()).toContain('passthrough: prop "disabled" removed');
-    expect(fixture.output()).toContain('no longer composes the inherited surface');
+    expect(fixture.output()).toContain('no longer composes the forwarded surface');
   });
 });
 
@@ -233,7 +235,7 @@ describe('compat: a contract present at the base reference and gone now', () => 
     fixture.write('src/components/action-button/action-button.contract.yaml', 'component: action-button\n');
     fixture.write(
       'src/components/action-button/action-button.contract.json',
-      contractJson('button', { origin: 'base_ui_button', properties: { variant: { type: 'string' } } }),
+      contractJson('button', { element: 'dom_button', properties: { variant: { type: 'string' } } }),
     );
     fixture.write('scripts/contracts/covered.json', ['action-button']);
 
@@ -243,40 +245,57 @@ describe('compat: a contract present at the base reference and gone now', () => 
   });
 });
 
-describe('compat: a change of inherited-surface origin', () => {
-  it('refuses a forwarded prop that disappears across the origin move', () => {
-    // Both files exist, under two different origin keys - the case that used
-    // to be reported as "signal skipped" and let through.
+describe('compat: a change of host element', () => {
+  it('refuses a forwarded prop that disappears across the move', () => {
+    // A component re-rendered over a different element - a <button> wrapper
+    // that becomes a <div> - forwards a different set of React attributes,
+    // and `disabled` is one a <div> does not take. Both surfaces are
+    // committed, so this is comparable and is compared.
     const fixture = createFixture();
     committedButtonKit(fixture);
-    fixture.write('scripts/contracts/generated/passthrough.base_ui_toggle.json', passthroughJson('base_ui_toggle', {
+    fixture.write('scripts/contracts/passthrough/dom_div.json', passthroughJson('dom_div', {
       className: { type: 'string' },
     }));
     fixture.write(
       'src/components/button/button.contract.json',
-      contractJson('button', { origin: 'base_ui_toggle', properties: { variant: { type: 'string' } } }),
+      contractJson('button', { element: 'dom_div', properties: { variant: { type: 'string' } } }),
     );
 
     expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(1);
     expect(fixture.output()).toContain('passthrough: prop "disabled" removed');
-    expect(fixture.output()).toContain('origin moved "base_ui_button" -> "base_ui_toggle"');
+    expect(fixture.output()).toContain('host element moved "dom_button" -> "dom_div"');
   });
 
   it('accepts the same move when every forwarded prop survives it', () => {
     const fixture = createFixture();
     committedButtonKit(fixture);
-    fixture.write('scripts/contracts/generated/passthrough.base_ui_toggle.json', passthroughJson('base_ui_toggle', {
+    fixture.write('scripts/contracts/passthrough/dom_div.json', passthroughJson('dom_div', {
       className: { type: 'string' },
       disabled: { type: 'boolean' },
-      pressed: { type: 'boolean' },
+      role: { type: 'string' },
     }));
     fixture.write(
       'src/components/button/button.contract.json',
-      contractJson('button', { origin: 'base_ui_toggle', properties: { variant: { type: 'string' } } }),
+      contractJson('button', { element: 'dom_div', properties: { variant: { type: 'string' } } }),
     );
 
     expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(0);
-    expect(fixture.output()).toContain('origin moved "base_ui_button" -> "base_ui_toggle"');
+    expect(fixture.output()).toContain('host element moved "dom_button" -> "dom_div"');
+  });
+
+  it('refuses a narrowing of the shared surface itself, for every component that composes it', () => {
+    // The surfaces are hand-written and shared, so editing one is not a
+    // per-component change: dropping `disabled` from the <button> surface
+    // narrows what every component rendering a button accepts, and the
+    // element does not have to move for that to be a break.
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.write('scripts/contracts/passthrough/dom_button.json', passthroughJson('dom_button', {
+      className: { type: 'string' },
+    }));
+
+    expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(1);
+    expect(fixture.output()).toContain('passthrough: prop "disabled" removed');
   });
 });
 
@@ -338,7 +357,7 @@ describe('the happy path', () => {
     fixture.write(
       'src/components/button/button.contract.json',
       contractJson('button', {
-        origin: 'base_ui_button',
+        element: 'dom_button',
         properties: { variant: { type: 'string' }, size: { type: 'string' } },
       }),
     );
@@ -359,5 +378,34 @@ describe('the happy path', () => {
 
     expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(1);
     expect(fixture.output()).toContain('committed contract artifacts are stale');
+  });
+});
+
+describe('guard: an overlay elsewhere in the kit', () => {
+  it("re-checks every covered component when any overlay changes, because a children list decides another component's parent", () => {
+    // The widening the derived `parent` made necessary. Editing the accordion
+    // overlay changes what AccordionItem's compiled contract says about where
+    // it may be mounted - a contract in the same directory here, and in a
+    // different one as soon as one component's children name another's. A
+    // change-set mapping alone would put only the edited directory in scope.
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.stale.add('button');
+    fixture.write('src/components/accordion/accordion.contract.yaml', 'component: accordion\n');
+
+    expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(1);
+    expect(fixture.output()).toContain('guard: an overlay changed');
+    expect(fixture.output()).toContain('button: covered by covered.json but its committed contract artifacts are stale');
+  });
+
+  it('does not widen when only a compiled artifact changed', () => {
+    // Downstream of an overlay, so it can make nothing else stale - the
+    // guard's scope stays the directory the change actually touched.
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.write('src/components/accordion/accordion.contract.json', contractJson('accordion'));
+
+    expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(0);
+    expect(fixture.output()).not.toContain('guard: an overlay changed');
   });
 });

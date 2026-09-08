@@ -2,9 +2,19 @@
   "$id": "gts://gts.frontx.uikit.trait.coverage_assumption.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UiKit coverage assumption",
-  "description": "A fact the code cannot make true - a generic type parameter, a part composed of two primitives - rather than a verified/checked-no/not-described claim.",
+  "description": "A fact the code cannot make true, rather than a verified/checked-no/not-described claim. `kind` is required and drawn from a closed list, because without it the field was a paragraph: \"JSON Schema has no notion of a generic type parameter\" appeared in three overlays in three wordings and nothing could tell that family of claim apart from \"this part wraps two primitives\" or \"its mount point is outside the kit\". With a kind, the conformance suite can ask whether every prop the schema cannot type has an entry - which is the question those repeated sentences were answering by accident. `untyped_prop` additionally names the prop, checked against the extracted prop list the way a deprecation's key is.",
   "type": "object",
   "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "untyped_prop",
+        "hidden_part",
+        "external_mount",
+        "behaviour"
+      ],
+      "description": "untyped_prop: a property that reaches the contract asserting nothing - a generic, a function, a live object, a React node. hidden_part: a part of the primitive underneath the kit does not expose, or a prop of it the kit does not advertise. external_mount: a mount point outside the kit, where the typed composition field has nothing to point at. behaviour: anything the props type never carries - internal state, a runtime relationship, a fact about the component rather than about its schema."
+    },
     "claim": {
       "type": "string",
       "minLength": 1
@@ -12,11 +22,42 @@
     "reason": {
       "type": "string",
       "minLength": 1
+    },
+    "prop": {
+      "type": "string",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+      "description": "Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test."
     }
   },
   "required": [
+    "kind",
     "claim",
     "reason"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "if": {
+    "properties": {
+      "kind": {
+        "const": "untyped_prop"
+      }
+    },
+    "required": [
+      "kind"
+    ]
+  },
+  "then": {
+    "required": [
+      "kind",
+      "claim",
+      "reason",
+      "prop"
+    ]
+  },
+  "else": {
+    "not": {
+      "required": [
+        "prop"
+      ]
+    }
+  }
 }

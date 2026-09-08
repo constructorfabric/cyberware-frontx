@@ -11,11 +11,10 @@ dont_use_when:
   - rule: A standalone button with no AccordionItem to expand or collapse
     instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~ # Button
 
+# `parent` is derived from AccordionItem's own `children`, not authored here.
 composition:
   children:
     kinds: [text]
-  parent:
-    kinds: [gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~] # AccordionItem
 
 invariants:
   - id: always-renders-a-chevron
@@ -32,13 +31,28 @@ deprecations: {}
 coverage:
   a11y: verified # focus and aria-expanded/aria-controls wiring come from Base UI
   assumptions:
-    - claim: AccordionTrigger wraps two Base UI parts, Header and Trigger
+    - kind: hidden_part
+      claim: AccordionTrigger wraps two Base UI parts, Header and Trigger
       reason: >-
         The kit's AccordionTrigger composes Base UI's Accordion.Header
         (a plain wrapper, not separately exposed by the kit) around
         Accordion.Trigger into one exported component; this contract
         describes the exported surface, not the two-part internal
         composition, so Header's own props are not part of it.
+    - kind: untyped_prop
+      prop: render
+      claim: render replaces the trigger element with one the caller supplies
+      reason: >-
+        Base UI's render prop takes an element or a function of the trigger's
+        state; neither is expressible in JSON Schema. The trailing chevron is
+        rendered as a child, so it survives a replaced element.
+    - kind: untyped_prop
+      prop: style
+      claim: style accepts a function of the trigger's state as well as a plain style object
+      reason: >-
+        Base UI widens React's `CSSProperties` to
+        `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object`
+        would reject the function form.
 
 examples:
   good:

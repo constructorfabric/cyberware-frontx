@@ -55,7 +55,7 @@ The package is a full member of the published-libraries layer that is deliberate
 | `cpt-frontx-ui-kit-fr-component-contract` | `cpt-frontx-ui-kit-component-contract-harness` compiles a described component's overlay together with facts read from its TypeScript into a props schema and a metamodel instance. |
 | `cpt-frontx-ui-kit-fr-contract-single-fact-owner` | The compiler rejects an overlay carrying a machine-owned field, an unknown field, or a reference to a prop the component does not declare (UIKIT-1). |
 | `cpt-frontx-ui-kit-fr-contract-freshness` | The harness's freshness comparison is reached from two directions: a per-component conformance suite in the unit run, and the guard in the continuous-integration run. |
-| `cpt-frontx-ui-kit-fr-contract-compatibility` | The harness compares a contract against the same contract at the change's base reference across three signals - the type system's own verdict, the declared-prop diff and the inherited-surface diff - and accepts an incompatible result only when the contract major moved. |
+| `cpt-frontx-ui-kit-fr-contract-compatibility` | The harness compares a contract against the same contract at the change's base reference across three signals - the type system's own verdict, the declared-prop diff and the forwarded-surface diff - and accepts an incompatible result only when the contract major moved. |
 | `cpt-frontx-ui-kit-fr-contract-incremental-coverage` | The guard's scope is the change's own file set widened to every covered component when the shared tooling itself changed; the coverage report is a report and never an exit code (`cpt-frontx-ui-kit-principle-scoped-enforcement`). |
 
 #### NFR Allocation
@@ -114,7 +114,7 @@ graph TD
 
 - [x] `p2` - **ID**: `cpt-frontx-ui-kit-principle-code-is-the-fact-owner`
 
-A component's exports, variant axes, defaults, declared props and inherited surface are read out of its TypeScript, never transcribed. The hand-authored half of a contract carries meaning and nothing else. This is what keeps the cost of describing a component proportional to the meaning being added, and it is why a contract cannot quietly disagree with the component: there is only one writable statement of each fact.
+A component's exports, variant axes, defaults, declared props, the primitive props it forwards as its own API and the host element it renders are read out of its TypeScript, never transcribed. The hand-authored half of a contract carries meaning and nothing else. This is what keeps the cost of describing a component proportional to the meaning being added, and it is why a contract cannot quietly disagree with the component: there is only one writable statement of each fact.
 
 The alternative - authoring the surface and generating the code from it - was considered and not taken. It would move every component author onto a new authoring path to solve a problem the compatibility comparison solves directly, and it would make the description normative for components whose surface the kit does not own.
 
@@ -165,12 +165,12 @@ Contracts, metamodel instances, overlays and the harness that produces them stay
 | Component | One exported React component together with its stylesheet, its usage document, its unit suite and its public entry point. | A directory under the component root; one build entry per public barrel |
 | Token | A named appearance value the kit defines once for every component to consume. | A CSS custom property on the theme's root and theme blocks |
 | Overlay | The hand-authored half of a contract: meaning, composition rules, invariants, anti-patterns, examples and coverage claims. | A YAML document beside the component, one per described export |
-| Extraction | The machine-owned half: the exported components of a file with their variant axes, defaults, declared props, inherited props and resolved passthrough origin. | An in-memory result of reading the component's TypeScript through the compiler API |
-| Contract | The compiled join of an overlay and an extraction: a closed props schema carrying the component's meaning in two extension blocks. | A JSON Schema 2020-12 document committed beside the component |
+| Extraction | The machine-owned half: the exported components of a file with their variant axes, defaults, the host element each renders, and every prop filed by where its declaration lives - the component's own source, the primitive library's props for the part it wraps, or React's attributes for that element. | An in-memory result of reading the component's TypeScript through the compiler API |
+| Contract | The compiled join of an overlay and an extraction: a props schema carrying the component's meaning in two extension blocks, composing the surface of the element it renders and annotating rather than rejecting a prop nothing evaluates. | A JSON Schema 2020-12 document committed beside the component |
 | Metamodel instance | The same meaning as a standalone typed record, naming the contract as its props schema. | A JSON document committed beside the component |
 | Abstract base type | The root every component contract derives from: it declares no props and states which concepts a contract's validator-read block carries. | A JSON Schema 2020-12 document under the harness, with its own type identifier |
 | Metamodel type | The type every metamodel instance is an instance of: the shape of a contract as a standalone record. | A JSON Schema 2020-12 document under the harness, with its own type identifier |
-| Passthrough type | The surface a component inherits from the primitive it wraps, shared by every component that inherits from the same origin. | A generated JSON Schema document under the harness, keyed by origin |
+| Passthrough type | The attributes React declares for one host element, forwarded by every component that renders it. Hand-written per element kind, not derived: the attributes of a `<button>` are the same for whoever renders one, so a per-component derivation produced near-copies of one fact. A prop the primitive library declares for its own part is NOT here - that is the component's API and lives in its contract's properties. | A hand-written JSON Schema 2020-12 document under the harness, one per element kind, with its own type identifier |
 | Vocabulary type | One concept the overlay states, defined once and referenced by everything that carries it - one type per concept the metamodel references, currently twelve. | A JSON Schema 2020-12 document under the harness, one per concept, each with its own type identifier |
 | Coverage allowlist | The set of components opted into contract enforcement. | A committed list of component directory names |
 
@@ -182,7 +182,9 @@ Two kinds of edge, and the diagram distinguishes them: a **solid** arrow means t
 
 An identifier held as a value names a SPECIFIC contract major. When a component's contract major moves, every reference to it moves with it: a reference to a component that ships a contract must equal that contract's current props-schema identifier exactly, and a reference to a component that ships none may only name major 1. Those identifiers are resolved by each component's conformance suite - against the component directory, and against the contract identifier where a contract exists - not by the type registry: the type system's own reference validator does not follow a reference into another type, and most referenced components ship no contract yet, so the directory is what says the kit ships that component at all.
 
-Three overlay fields are not vocabulary types and stay inline in the metamodel: `invariants`, `anti_patterns` and `examples` are documentation no validator reads, so there is nothing for another type to enforce or for anything else to reference.
+Three overlay fields are not vocabulary types and stay inline in the metamodel: `invariants`, `anti_patterns` and `examples` are documentation no validator reads, so there is nothing for another type to enforce or for anything else to reference. A fourth, `hidden`, is a list of prop names the validator does read but that no other type needs to reference, so it stays inline too.
+
+One composition direction is DERIVED rather than authored. A component's allowed children are stated by that component; its allowed parents are computed from every other contract's children across the whole described set, so the two directions of one relationship cannot disagree - authored on both sides, a part could name a parent whose own children never mentioned the part. A mount point outside the kit has no contract to compute from, so it is authored in the external form the same way an alternative to a "don't" is, and merged into the same field.
 
 ```mermaid
 classDiagram
@@ -205,7 +207,7 @@ classDiagram
     class ExtensionPoint["extension_point"]
 
     Contract --|> BaseType : derives from
-    Contract --> Passthrough : composes
+    Contract --> Passthrough : composes the surface of its host element
     Instance ..> MetaType : typed by
     Instance ..> Contract : props schema
     BaseType --> Rule : trait vocabulary
@@ -222,10 +224,12 @@ classDiagram
     MetaType --> ExtensionPoint : field
     Rule --> External : alternative outside the kit
     Rule ..> Contract : alternative inside the kit
-    Composition --> Children : children
-    Composition --> Parent : parent
+    Composition --> Children : children (authored)
+    Composition --> Parent : parent (derived)
+    Composition --> External : mount point outside the kit
     Children ..> Contract : allowed child
-    Parent ..> Contract : allowed parent
+    Parent ..> Contract : allowed parent, derived
+    Parent --> External : mount point outside the kit
     Deprecations --> PropDeprecation : per prop
     Coverage --> Assumption : assumptions
     Coverage --> Verdict : per claim
@@ -234,20 +238,20 @@ classDiagram
 
 | Type | References | Cardinality | Owner of the fact |
 |------|------------|-------------|-------------------|
-| Component contract | the abstract base type, the passthrough type for its origin | one base, zero or one passthrough | the compiler builds it; the extraction owns the prop facts, the overlay author the meaning |
+| Component contract | the abstract base type, the passthrough type for its host element | one base, zero or one passthrough | the compiler builds it; the extraction owns the prop facts, the overlay author the meaning |
 | Metamodel instance | the metamodel type, the component contract | exactly one of each | the compiler |
 | Abstract base type | each of the six field-level vocabulary types | one each | the trait schema builder |
 | Metamodel type | the same six vocabulary types | one each | the metamodel builder |
-| Passthrough type | nothing; component contracts reference it | one type referenced by one or more contracts | the compiler builds it; the extractor owns which props are inherited and which are mandatory |
+| Passthrough type | nothing; component contracts reference it | one type per element kind, referenced by one or more contracts | hand-written; whoever adds an element kind decides what that element accepts |
 | dont_use_when_rule | a component contract, or an external alternative | exactly one of the two per rule | the overlay author |
 | external_alternative | nothing | zero or one per rule | the overlay author |
-| composition | a child composition, a parent composition | one child, zero or one parent | the overlay author |
-| child_composition | component contracts | one or more kinds, each a reference or a content kind; `icons_via` names one of the component's own props | the overlay author, prop name checked against the extraction |
-| parent_composition | component contracts | one or more | the overlay author |
+| composition | a child composition, a parent composition, external alternatives | zero or one of each | the overlay author for children and for a mount point outside the kit; the compiler for the parent |
+| child_composition | component contracts | one or more kinds, each a reference or a content kind; absent means unconstrained; `icons_via` names one of the component's own props | the overlay author, prop name checked against the extraction |
+| parent_composition | component contracts, external alternatives | one or more | the compiler, from every other contract's children, merged with the overlay's own mount points outside the kit |
 | deprecations | prop deprecations | zero or more, keyed by prop name | the overlay author |
 | prop_deprecation | nothing; `replacement` names one of the component's own props | exactly one per deprecated prop | the overlay author, prop name checked against the extraction |
 | coverage | coverage assumptions, coverage verdicts | zero or more of each; the one open type, so a claim name the kit adds validates without a schema change | the overlay author |
-| coverage_assumption | nothing | zero or more per contract | the overlay author |
+| coverage_assumption | nothing | zero or more per contract | the overlay author; the kind is drawn from a closed list, and the kind about one property names it, checked against the extraction and paired both ways against the properties the schema cannot type |
 | coverage_verdict | nothing | one per coverage claim | the overlay author |
 | family | component contracts | one root; a root names one or more parts, a part names none | the overlay author, resolved by the conformance suite |
 | extension_point | nothing | zero or more per contract | the overlay author |
@@ -379,14 +383,15 @@ Prose describing a component can only be reviewed. This component produces a des
 
 ##### Responsibility scope
 
-- Reads a component's TypeScript for its exported components, variant axes and defaults, declared props, inherited props and the origin of the surface it inherits.
+- Reads a component's TypeScript for its exported components, variant axes and defaults, the host element each renders, and every prop filed by where its declaration lives - the component's own source, the primitive library's props for the part it wraps, or React's attributes for that element.
 - Validates the hand-authored overlay against the overlay vocabulary and refuses one that reaches into the machine's half (UIKIT-1).
-- Compiles the two into a closed props schema and a metamodel instance, and maintains one shared type per inherited-surface origin.
+- Compiles the two into a props schema and a metamodel instance, composing the hand-written surface for the element the component renders and deriving the component's allowed mount points from every other contract's allowed children.
 - Constructs the identifiers the contracts are named in, following the type-definition specification's segment grammar.
 - Routes each meaning field either to the block a validator reads or to the block that is prose, and derives the validator-read half's schema from the same definitions the metamodel uses, by reference to the vocabulary type that owns each concept (see 3.1).
 - Writes the schemas that belong to no single component - the abstract base type, the metamodel, the vocabulary types - from their builders, so the identifier grammar has one source and a stale committed copy is a comparison failure rather than a silent divergence.
 - Supplies the per-component conformance suite that fails when a committed artifact no longer equals a fresh compile.
 - Decides compatibility against a base reference and requires a contract major move for an incompatible difference.
+- Reports the verdict on a prop nothing in a contract evaluates - known, unchecked, or a near miss of a prop the contract declares - because the contract is left open rather than closed and a schema cannot make that distinction.
 - Decides which components a change must be held to, and reports kit-wide coverage without failing on it.
 
 ##### Responsibility boundaries
@@ -462,7 +467,7 @@ What the package may depend on, and which members may depend on it, is not yet s
 
 | Dependency Module | Interface Used | Purpose |
 |-------------------|----------------|---------|
-| Primitive component libraries | Component props and behaviour of unstyled primitives | Supply interaction behaviour and accessibility so the kit owns appearance and composition only. Their prop surface is what a component's inherited surface is derived from. |
+| Primitive component libraries | Component props and behaviour of unstyled primitives | Supply interaction behaviour and accessibility so the kit owns appearance and composition only. The props they declare for a part are the wrapping component's own API, and reach its contract as such. |
 
 **Dependency Rules** (per project conventions):
 - Behaviour comes from a primitive; a component does not reimplement interaction mechanics the primitive provides
@@ -479,7 +484,7 @@ What the package may depend on, and which members may depend on it, is not yet s
 | Carousel library | Carousel engine | Supplies the carousel component. |
 | Resizable-panels library | Panel group and drag handles | Supplies the resizable component. |
 | Icon set | Icon components | The kit's icon vocabulary, referenced by components that render icons. |
-| Secondary primitive library | Headless behaviour for two components | Supplies the behaviour of the two components not built on the main primitive family. Their inherited surface resolves no origin the contract compiler recognizes, which is why they are outside contract coverage today. |
+| Secondary primitive library | Headless behaviour for two components | Supplies the behaviour of the two components not built on the main primitive family. The contract compiler can place their props in neither of the two families it recognizes, which is why they are outside contract coverage today. |
 
 **Dependency Rules** (per project conventions):
 - Each of these belongs to the component that needs it; none becomes a kit-wide concern, and none is re-exported
@@ -526,11 +531,11 @@ sequenceDiagram
     Dev->>CLI: compile the component's contracts
     CLI->>TS: read exports, axes, defaults, props, heritage
     TS-->>CLI: extraction (or an unresolvable-axis failure)
-    CLI->>CLI: validate the overlay; refuse a machine-owned or unknown field
-    alt inherited surface with no resolvable origin
-        CLI-->>Dev: refuse, naming the inherited props it cannot declare
+    CLI->>CLI: validate the overlay; refuse a machine-owned, derived or unknown field
+    alt a prop the extractor cannot place, or no host element for the forwarded ones
+        CLI-->>Dev: refuse, naming the props and where they are declared
     else
-        CLI->>FS: write the contract, the instance and the shared passthrough type
+        CLI->>FS: write the contract and the instance
         CLI-->>Dev: the written paths
     end
     Dev->>CI: submit the change
@@ -550,13 +555,13 @@ Not applicable. The package holds no database and no persistence. Its schemas ar
 
 ## 4. Additional context
 
-Two facts about the current state are worth stating so they are not read as design intent. Contract coverage is a small opt-in subset of the component set, by the design in `cpt-frontx-ui-kit-principle-scoped-enforcement`, and the number is expected to grow with ordinary work rather than through a campaign. And the compiler resolves an inherited surface for two families of origin - a plain DOM element, and the primitive family most of the kit is built on. A component built on another primitive family resolves no origin and is refused rather than described with an invented surface; extending that is design work on the origin resolver, not configuration.
+Two facts about the current state are worth stating so they are not read as design intent. Contract coverage is a small opt-in subset of the component set, by the design in `cpt-frontx-ui-kit-principle-scoped-enforcement`, and the number is expected to grow with ordinary work rather than through a campaign. And the compiler places a prop's declaration in two families - the primitive family most of the kit is built on, whose props for a part are the component's own API, and React's DOM attribute types, which are the surface a component forwards. A component built on another primitive family has props the compiler can place in neither, and is refused rather than described with half its API filed as forwarded surface; extending that is design work on the classifier, not configuration.
 
 The package is also the second adopter of the Constructor Studio kit mechanism, reserving its own resource prefix so its resources cannot collide with the AI tooling framework's (`cpt-frontx-adr-ai-tooling-framework-packaging`). That kit is decided and unbuilt; this design describes no part of it as existing.
 
 Two decisions inside the knowledge layer are open, and both get more expensive the longer coverage grows:
 
-- **The vendor namespace the contract identifiers are built on.** A shorter form and a form carrying a design segment were both proposed and neither was settled. The identifier construction keeps the namespace in a single constant precisely so the change stays a one-line edit, but every committed contract, instance and generated inherited-surface type carries the namespace in its own identifier, so the cost of changing it is proportional to the described set. Trigger: settle it before coverage grows past the pilot components.
+- **The vendor namespace the contract identifiers are built on.** A shorter form and a form carrying a design segment were both proposed and neither was settled. The identifier construction keeps the namespace in a single constant precisely so the change stays a one-line edit, but every committed contract, instance and host-element surface carries the namespace in its own identifier, so the cost of changing it is proportional to the described set. Trigger: settle it before coverage grows past the pilot components.
 - **Whether a type-system runtime is expected to act on the meaning fields, or only to validate and store them.** Today the split between the block a validator reads and the block that is prose assumes the latter. If the answer becomes the former, the prose fields move into the validator-read block and the prose block folds away. The routing map is the single edit point for that move, which is why the split is expressed as a map rather than as two hand-maintained lists. Trigger: the answer to that question in the type-substrate decision.
 
 ## 5. Traceability

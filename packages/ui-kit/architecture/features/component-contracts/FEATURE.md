@@ -17,7 +17,10 @@
   - [Overlay Admission](#overlay-admission)
   - [Contract Compilation](#contract-compilation)
   - [Metamodel Instance Assembly](#metamodel-instance-assembly)
-  - [Inherited-Surface Type Construction](#inherited-surface-type-construction)
+  - [Host Element Surface](#host-element-surface)
+  - [Composition Derivation](#composition-derivation)
+  - [Untyped Properties And Their Assumptions](#untyped-properties-and-their-assumptions)
+  - [Unchecked Property Report](#unchecked-property-report)
   - [Contract Identifier Construction](#contract-identifier-construction)
   - [Trait Schema Derivation](#trait-schema-derivation)
   - [Freshness Comparison](#freshness-comparison)
@@ -90,15 +93,16 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 **Realizes**: `cpt-frontx-ui-kit-seq-contract-compile-and-guard`
 
 **Success Scenarios**:
-- Developer writes an overlay stating meaning only, runs the compile command for the component's directory, and the contract, the metamodel instance and any shared inherited-surface type are written beside the component and under the harness, each written path reported.
+- Developer writes an overlay stating meaning only, runs the compile command for the component's directory, and the contract and the metamodel instance are written beside the component, each written path reported. The surface a component forwards to its host element is hand-written source and nothing is written for it.
 - A directory exporting several components compiles one contract per overlay in it, each named for the export it describes.
 - Developer asks for the shared schemas instead of a directory, and the abstract base type, the metamodel and every vocabulary type are written from their builders, each written path reported.
 
 **Error Scenarios**:
 - No directory named: the usage line is printed and the run fails.
 - The directory carries no overlay: the directory is named and the run fails, so a mistyped directory cannot look like a successful no-op.
-- The overlay restates a fact the compiler reads from the code, carries a field the vocabulary does not define, or names a prop the component does not declare: the compile is refused naming the offence and nothing is written.
-- The component inherits props from a primitive whose origin the compiler cannot place: the compile is refused naming the props it would have had to drop.
+- The overlay restates a fact the compiler reads from the code, writes a field the compiler derives, carries a field the vocabulary does not define, or names a prop the component does not declare: the compile is refused naming the offence and nothing is written.
+- The component carries a prop the compiler cannot place - declared by neither the component, the primitive library it wraps, nor React's DOM attribute types: the compile is refused naming those props and where they are declared.
+- The component forwards DOM attributes and no host element resolves for them, or the host element it resolves has no committed surface: the compile is refused naming the props, or the element and the file to write.
 
 **Steps**:
 1. [x] - `p1` - Developer authors the overlay beside the component, stating meaning only - `inst-author-overlay`
@@ -111,7 +115,6 @@ Prose describing a component can only be reviewed by a person, one screen at a t
    1. [x] - `p1` - Name the directory and **RETURN** a non-zero exit - `inst-no-overlay-exit`
 6. [x] - `p1` - **FOR EACH** overlay in the directory, compile the contract and the metamodel instance and write both beside the component - `inst-compile-each`
 7. [x] - `p1` - **RETURN** each written path to the developer as it is written - `inst-report-paths`
-8. [x] - `p1` - Write the shared inherited-surface type when the component resolves an origin for it, reporting that path too - `inst-write-passthrough`
 
 ### Guard A Change Against The Base Reference
 
@@ -154,7 +157,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 
 **Input**: The path of a component's source file.
 
-**Output**: One extraction per exported React component - its variant axes and defaults, its declared props, its inherited props, the origin of its inherited surface, and a note for each thing the walk could not read: an unresolvable variant declaration, a conflicting axis or default, an unclassifiable heritage node, a property with no declaration behind it.
+**Output**: One extraction per exported React component - its variant axes and defaults, its props filed into three sets by where each one is declared, the props it could file nowhere, the host element it renders, and a note for each thing the walk could not read: an unresolvable variant declaration, a conflicting axis or default, an unclassifiable heritage node, a property with no declaration behind it.
 
 **Steps**:
 1. [x] - `p1` - Build a TypeScript program over the component's source alone, using the package's own shipping-source compiler options, so an extraction depends on the file it reads and on nothing else that shared the run - `inst-ex-program`
@@ -166,11 +169,12 @@ Prose describing a component can only be reviewed by a person, one screen at a t
    1. [x] - `p1` - Record the conflict naming both sources, rather than letting one silently overwrite the other - `inst-ex-axis-conflict-note`
 6. [x] - `p1` - **IF** two heritage entries declare the same default - `inst-ex-default-conflict`
    1. [x] - `p1` - Record it the same way, for the same reason - `inst-ex-default-conflict-note`
-7. [x] - `p1` - Resolve the origin of the inherited surface from the outermost heritage member the walk can place - `inst-ex-origin`
-8. [x] - `p1` - **FOR EACH** resolved property of the props type, classify it as declared here or inherited by where its declaration lives - `inst-ex-props`
+7. [x] - `p1` - Resolve the host element the component renders from the element argument of the props helper its heritage names - `inst-ex-heritage`
+8. [x] - `p1` - **FOR EACH** resolved property of the props type, read its type, its optionality and the file that declares it - `inst-ex-props`
+   1. [x] - `p1` - File it by that declaration site into one of three sets: declared by the component itself, declared by the primitive library as part of the API of the part being wrapped, or declared by React as an attribute of the host element. A prop declared in none of the three is filed nowhere and named, because which side of the API-versus-forwarded line it falls on is a question about that library's conventions and not one the extractor may answer by default - `inst-ex-file-class`
 9. [x] - `p1` - Record a heritage node the walk cannot classify as a note, instead of silently returning with the props behind it unaccounted for - `inst-ex-cannot`
 10. [x] - `p1` - Record a property the checker resolves but no declaration backs, and skip it, rather than reporting an invented declaration site for it - `inst-ex-undeclared-prop`
-11. [x] - `p1` - **RETURN** one extraction per exported component, with both prop lists ordered by name - `inst-ex-return`
+11. [x] - `p1` - **RETURN** one extraction per exported component, with every prop list ordered by name - `inst-ex-return`
 
 ### Overlay Admission
 
@@ -186,11 +190,13 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 2. [x] - `p1` - **IF** the overlay carries a field the vocabulary does not define, or a field of the wrong shape - `inst-oa-unknown-field`
    1. [x] - `p1` - Refuse, naming the field and its position in the document - `inst-oa-unknown-field-refuse`
 3. [x] - `p1` - Admit the alternative a "don't" names in either of the two forms that resolve - a reference to a component this kit ships, or an explicit statement of what to use outside the kit with the reason no kit component fits - and refuse any other shape - `inst-oa-alternative`
-4. [x] - `p1` - **IF** the component the overlay declares is not the one being compiled - `inst-oa-name-mismatch`
+4. [x] - `p1` - **IF** the overlay writes a field the compiler derives - the mount points a component may appear under, computed from every other contract's allowed children - `inst-oa-derived-field`
+   1. [x] - `p1` - Refuse, naming the field and the field that IS authorable for a mount point outside the kit - `inst-oa-derived-field-refuse`
+5. [x] - `p1` - **IF** the component the overlay declares is not the one being compiled - `inst-oa-name-mismatch`
    1. [x] - `p1` - Refuse, naming both - `inst-oa-name-mismatch-refuse`
-5. [x] - `p1` - **RETURN** the admitted overlay - `inst-oa-return`
-6. [x] - `p1` - **IF** the admitted overlay references a prop the component does not declare - `inst-oa-absent-prop`
-   1. [x] - `p1` - Refuse, naming the prop - `inst-oa-absent-prop-refuse`
+6. [x] - `p1` - **RETURN** the admitted overlay - `inst-oa-return`
+7. [x] - `p1` - **IF** the admitted overlay references a prop the component does not have - a deprecation's key, the prop icons arrive through, a prop the overlay hides, a prop an untyped-prop assumption names - `inst-oa-absent-prop`
+   1. [x] - `p1` - Refuse, naming the prop. A deprecation and an icon slot may only name a prop the component declares itself; a hidden name and an assumption may also name one the primitive declares, and a hidden name may NOT name one the component declares, which would be the overlay asking the compiler to drop what the source states - `inst-oa-absent-prop-refuse`
 
 ### Contract Compilation
 
@@ -198,19 +204,21 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 
 **Input**: A component directory and the artifact stem being compiled.
 
-**Output**: The compiled contract - a closed props schema carrying the component's meaning in a validator-read block and a prose block.
+**Output**: The compiled contract - a props schema carrying the component's meaning in a validator-read block and a prose block, composing the surface of the element it renders and annotating rather than rejecting what nothing evaluates.
 
 **Steps**:
 1. [x] - `p1` - Select the extraction whose exported component is the one being compiled, failing when no export matches - `inst-cc-select`
 2. [x] - `p1` - **IF** the extraction could not resolve a variant declaration - `inst-cc-axis-failure`
    1. [x] - `p1` - Fail rather than emit a contract silently missing its axes - `inst-cc-axis-failure-refuse`
-3. [x] - `p1` - Fail when the component inherits props and no origin was resolved for them, naming the props no type could have declared - `inst-cc-orphan-inherited`
+3. [x] - `p1` - Fail when the component carries a prop the extraction could file nowhere, or when it forwards DOM attributes and no host element was resolved for them - naming the props either way, because a contract compiled without them would claim the component does not have them - `inst-cc-orphan-inherited`
 4. [x] - `p1` - Turn each variant axis into an enumerated property carrying its default - `inst-cc-axes`
-5. [x] - `p1` - Leave a prop the inherited surface already declares to that surface, failing when the two declare conflicting shapes - `inst-cc-owner-conflict`
-6. [x] - `p1` - Represent a declared prop that has no schema equivalent as an annotated property recorded as a slot, letting no property leave the compiler asserting nothing and saying nothing - `inst-cc-slots`
-7. [x] - `p1` - Route each meaning field to the block a validator reads or to the block that is prose, exactly once - `inst-cc-route`
-8. [x] - `p1` - Close the derived type so an undeclared prop is refused while the inherited surface still resolves - `inst-cc-close`
-9. [x] - `p1` - **RETURN** the contract after validating its validator-read block against the base type's trait schema - `inst-cc-return`
+5. [x] - `p1` - Represent a declared prop that has no schema equivalent as an annotated property recorded as a slot, letting no property leave the compiler asserting nothing and saying nothing - `inst-cc-slots`
+6. [x] - `p1` - Declare each prop the primitive library states for the part being wrapped as a property of this contract, typed where the provider-safe subset can express it and annotated with its own TypeScript type where it cannot, unless the overlay hides it - such a prop is this component's API, not surface it merely forwards, and filing it as forwarded surface is what buried a compound component's whole domain API in a file no reader opened - `inst-cc-api`
+7. [x] - `p1` - Where a property's name is also declared by the host element's surface, fail when the two shapes disagree: both apply to the same value, so a disagreement is a props object that can satisfy neither - `inst-cc-owner-conflict`
+   1. [x] - `p1` - Refuse, naming the prop, where it was declared and what the element surface states - `inst-cc-owner-conflict-refuse`
+8. [x] - `p1` - Route each meaning field to the block a validator reads or to the block that is prose, exactly once - `inst-cc-route`
+9. [x] - `p1` - Compose the host element's surface and leave the derived type OPEN, with an annotation stating that a prop nothing evaluates is unchecked rather than invalid - a schema cannot tell a typo'd kit prop from an attribute this harness has not classified, and answering "invalid" to both made the second unusable - `inst-cc-close`
+10. [x] - `p1` - **RETURN** the contract after validating its validator-read block against the base type's trait schema - `inst-cc-return`
 
 ### Metamodel Instance Assembly
 
@@ -224,26 +232,70 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 1. [x] - `p1` - Assemble the instance from the admitted overlay in the metamodel's own field order, naming the contract as its props schema - `inst-mi-assemble`
 2. [x] - `p1` - **RETURN** it after validating it against the metamodel - `inst-mi-validate`
 
-### Inherited-Surface Type Construction
+### Host Element Surface
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-passthrough`
 
-**Input**: An origin, the element kind behind it, the inherited props, and the components already recorded against that origin.
+**Input**: The host element a component renders.
 
-**Output**: The shared type for that origin, or a refusal.
+**Output**: The hand-written surface for that element, or a refusal naming the element and the file to write.
+
+The surface a component forwards to its host element is hand-written source, one file per element kind, not compiler output. React's attributes for a `<button>` are the same attributes for every component that renders one, so a per-component derivation produced near-copies of one fact whose only real differences came from the compilation that printed them - which is why it needed an origin key, a collision check, an ownership list and a freshness comparison to keep the copies from overwriting each other. None of that machinery exists any more, and none of it needs to. Each file states the attributes common to every element, the ones the element itself takes, and the accessibility, data and event-handler families by pattern rather than by name; each is a type of its own, identified the same way every other type here is, and referenced by every contract whose component renders that element.
 
 **Steps**:
-1. [x] - `p1` - Declare each inherited prop under the origin's own type, giving a schema shape where one exists and, where none does, stating the prop's TypeScript type and that nothing asserts it rather than leaving the property blank, and list it in the type's own `required` when the extraction reported it as non-optional; the props that carry no consumer-visible shape at all - the element key and the forwarded ref - are left out entirely - `inst-ps-props`
-2. [x] - `p1` - Admit the accessibility and data attribute families by pattern rather than by name - `inst-ps-patterns`
-3. [x] - `p1` - Record which components the type was generated from, and leave the type open so a component's own contract can close its surface instead - `inst-ps-open`
-4. [x] - `p1` - **IF** compiling one component would change the shape another component on the same origin already relies on - the declared props or which of them are mandatory, the whole surface the origin owns - `inst-ps-collision`
-   1. [x] - `p1` - Refuse, naming the other components and the file they share - `inst-ps-collision-refuse`
+1. [x] - `p1` - Load the committed surface for that element - `inst-ps-load`
+2. [x] - `p1` - **IF** no file is committed for it, refuse naming the element and the path expected, rather than compiling a contract that forwards an undeclared surface - `inst-ps-load`
+
+### Composition Derivation
+
+- [x] `p1` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-composition`
+
+**Input**: The artifact stem being compiled, and its admitted overlay.
+
+**Output**: The composition its contract and its instance carry.
+
+Where a component may be mounted is not a fact about that component: it is a fact about the components that allow it inside them. Authored on both sides it was a claim about somebody else's contract, free to disagree with it - a part could name a parent whose own children never mentioned the part - and only a test comparing the two would notice. Derived, there is one statement and the other direction is a view of it.
+
+**Steps**:
+1. [x] - `p1` - Read every overlay in the kit and collect the ones whose allowed children name this component; those components are its parents. Overlays, not compiled contracts: an overlay is the authored source, so the derivation is right even while a committed contract is stale, which is the state every recompile passes through - `inst-co-derive`
+2. [x] - `p1` - Merge the mount points the overlay states in the external form - a mount point outside the kit, where a typed reference has nothing to point at - into the same field, so one field answers "where may this be mounted" whatever the answer is - `inst-co-derive`
+3. [x] - `p1` - Carry the authored children unchanged, and emit neither field when there is nothing to say: an absent children list means unconstrained, and an empty mount-point list would read as "may be mounted nowhere" - `inst-co-derive`
+
+### Untyped Properties And Their Assumptions
+
+- [x] `p1` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-untyped-props`
+
+**Input**: A compiled contract.
+
+**Output**: The properties that assert nothing, and the disagreements between them and the contract's own untyped-prop assumptions.
+
+**Steps**:
+1. [x] - `p1` - Give a property whose TypeScript type has no schema equivalent the checker's own printed type and the statement that the type system, not the schema, is what checks it - never an empty schema, which in a props contract reads as "anything, so probably the obvious thing" - `inst-up-describe`
+2. [x] - `p1` - List every property of the contract that asserts nothing about its value, whichever side of the API-versus-declared split it came from: what they have in common is the only thing that matters to a reader, that a validator will not catch a wrong value there - `inst-up-list`
+3. [x] - `p1` - Pair that list against the contract's untyped-prop assumptions both ways: a property nothing asserts and nothing explains is the gap an evaluation walked into, and an assumption naming a property the schema DOES constrain tells a reader something false about the contract in front of them - `inst-up-pair`
+4. [x] - `p1` - **RETURN** the disagreements for a caller to report rather than raising them: a missing assumption is a documentation gap, and a compile that refused it would make a component uncompilable until its prose caught up - `inst-up-pair`
+
+### Unchecked Property Report
+
+- [x] `p1` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-unchecked-props`
+
+**Input**: A props object, a contract, and the host element surface that contract composes.
+
+**Output**: Which of those props the contract accounts for, which nothing accounts for, and which of the latter are one edit away from a prop the contract declares.
+
+This is what replaced closing the schema. A closed schema answered "invalid" to a typo'd kit prop and to a name this harness has not classified yet - a new React attribute, a prop of a primitive part nobody has described - and only the first is a mistake. Telling them apart needs a comparison a schema cannot make.
+
+**Steps**:
+1. [x] - `p1` - Count a prop as known when the contract declares it, when the element surface declares it, or when it matches one of that surface's patterns - `inst-uc-classify`
+2. [x] - `p1` - Report every other name as unchecked, which is a report and not a refusal - `inst-uc-classify`
+3. [x] - `p1` - Upgrade an unchecked name that is one edit from a prop the CONTRACT declares to a near miss, naming what it is probably meant to be. Only the contract's own props: a near miss of a forwarded DOM attribute is a typo in React's surface, not in the thing this contract exists to describe, and reporting those would make the report noisier than the closure it replaced - `inst-uc-near-miss`
+   1. [x] - `p1` - Measure the distance as a bounded edit distance, since the only question asked of it is whether two names are exactly one edit apart - `inst-uc-distance`
 
 ### Contract Identifier Construction
 
 - [x] `p2` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-identifiers`
 
-**Input**: A component name, a contract major, an inherited-surface origin, or a vocabulary concept.
+**Input**: A component name, a contract major, a host element, or a vocabulary concept.
 
 **Output**: The identifier for the artifact, and the patterns that recognize each identifier shape.
 
@@ -251,7 +303,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 1. [x] - `p1` - Derive the identifier token from the name of the export being described - the directory name where a directory describes one component, the overlay stem where it describes a part of a compound one - `inst-id-token`
 2. [x] - `p1` - Build the props-schema identifier by chaining the component's segment onto the abstract base type, and make that identifier what a reference to the component holds - a component is the type derived from the base, so there is no second identifier to point at - `inst-id-props-schema`
 3. [x] - `p1` - Build the metamodel instance identifier from the same segment, without the terminator that would make it a type - `inst-id-instance`
-4. [x] - `p1` - Build the inherited-surface type identifier from the origin - `inst-id-passthrough`
+4. [x] - `p1` - Build the host-element surface identifier from the element the component renders, normalizing the tag into the token grammar every other identifier here uses - the element kind stays the real tag for a reader, and the token is what an identifier and a file name can carry - `inst-id-passthrough`
 5. [x] - `p1` - Build the vocabulary type identifier from its concept token - `inst-id-trait-type`
 6. [x] - `p1` - **RETURN** the patterns that recognize each identifier shape - `inst-id-patterns`
 
@@ -266,6 +318,10 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 **Steps**:
 1. [x] - `p1` - Build one type per concept the metamodel references, currently twelve - a rule against a use and the alternative outside the kit it may name, a composition and each of its two directions, a deprecation and the per-prop deprecation it holds, a coverage claim with its verdict and its assumptions, a family membership, an extension point - each with its own identifier - `inst-ts-vocabulary`
    1. [x] - `p1` - State the child-composition kind that means "no children at all" as the only kind a list may hold, so a list cannot say both that nothing may appear inside a component and that something may - `inst-ts-children-exclusive`
+   2. [x] - `p1` - Define the non-component content kind in the type itself rather than in prose beside it: a string, a number, a fragment or a formatted inline element - never a kit component, which would be a reference instead - `inst-ts-vocabulary`
+   3. [x] - `p1` - Leave both directions of a composition optional. An absent children list means UNCONSTRAINED, which a layout component needs and cannot state by enumerating a kit it does not know or by claiming a content kind it does not require; a mount-point list is absent for most of the kit, which is mounted anywhere - `inst-ts-vocabulary`
+   4. [x] - `p1` - Give the mount-point list the same two branches an alternative to a "don't" has - a component reference, or the external form - so a mount point outside the kit is stated rather than approximated by the nearest component - `inst-ts-vocabulary`
+   5. [x] - `p1` - Require every assumption to carry a kind drawn from a closed list, and require the kind that is about one property to name that property: without a kind the field was a paragraph, and nothing could ask whether every property the schema cannot type has an entry - `inst-ts-vocabulary`
 2. [x] - `p1` - Take the metamodel's definitions of exactly the fields a validator reads - `inst-ts-fields`
 3. [x] - `p1` - State each of those fields as a reference to the type that owns its shape, so the trait schema and the metamodel resolve one definition rather than each carrying a copy - `inst-ts-ref`
 4. [x] - `p1` - Declare a field that HOLDS another type's identifier with all three of what it must resolve to, the value kind and the grammar of the identifier, because the type store removes the resolution annotation before validating and drops a branch left carrying nothing else - `inst-ts-id-value`
@@ -280,13 +336,13 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 
 **Output**: The differences found, and whether the artifact is fresh.
 
+The surface a component forwards to its host element is not compared here: it is hand-written source, so there is no fresh build to diff it against. What the conformance suite checks about it instead is that a contract composing one names a committed file and that the file's own identifier obeys the grammar.
+
 **Steps**:
 1. [x] - `p1` - Compare the committed contract and the committed metamodel instance against a fresh compile - `inst-fr-artifacts`
 2. [x] - `p1` - Compare every committed schema that belongs to no single component - the abstract base type, the metamodel, and each vocabulary type they reference - against a fresh build on every run, so a stale shared schema is caught by whichever component is checked first - `inst-fr-base`
-3. [x] - `p1` - **IF** the component resolves an inherited-surface origin - `inst-fr-passthrough`
-   1. [x] - `p1` - Compare that type too, carrying forward the record of which components it was generated from rather than recomputing a fact one component cannot know - `inst-fr-passthrough-compare`
-4. [x] - `p1` - Report an annotated property with no slot record, and a slot record on a property that has a schema shape - `inst-fr-slots`
-5. [x] - `p1` - **RETURN** fresh only when every comparison came back empty - `inst-fr-return`
+3. [x] - `p1` - Report a property of a DECLARED prop that asserts nothing and has no slot record, and a slot record on a property that has a schema shape or on a prop the component does not declare. Scoped to declared props: a prop of the primitive underneath can also assert nothing, and its type is documented in its own description and its assumption rather than in the kit's slot record - `inst-fr-slots`
+4. [x] - `p1` - **RETURN** fresh only when every comparison came back empty - `inst-fr-return`
 
 ### Compatibility Decision
 
@@ -297,8 +353,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 **Output**: A pass or a refusal, with the reasons.
 
 **Steps**:
-1. [x] - `p1` - Diff the inherited surface: a removed prop, a changed shape or a dropped value is incompatible, while an added prop is not - `inst-cd-passthrough`
-   1. [x] - `p1` - Where the two revisions inherit from different origins, or the newer one inherits nothing, diff by property name and requiredness alone: a name that disappears rejects a call site whichever surface declared it, while a shape that differs between two unrelated surfaces narrows nothing, there having been no one surface to narrow - `inst-cd-passthrough-origin`
+1. [x] - `p1` - Diff the forwarded surface: a removed prop, a changed shape or a dropped value is incompatible, while an added prop is not. One comparison covers a change of host element as well as a change to a surface itself, because the surfaces are hand-written and shared kit-wide: what two element kinds have in common they state identically by construction, so a difference between them is a real difference rather than an artefact of two derivations disagreeing - `inst-cd-passthrough`
 2. [x] - `p1` - Diff the declared props: a removed prop and a newly required prop are both incompatible, whether the prop was required before or not - `inst-cd-own`
 3. [x] - `p1` - Combine those two with the type system's own backward verdict, which sees neither of them - `inst-cd-combine`
 4. [x] - `p1` - **IF** nothing is incompatible - `inst-cd-pass`
@@ -340,9 +395,9 @@ A base reference answers the question a reviewer has - did this change narrow a 
 3. [x] - `p1` - **IF** no earlier version resolves - `inst-cu-new`
    1. [x] - `p1` - Report the contract as new and **RETURN** a pass - `inst-cu-new-return`
 4. [x] - `p1` - Register both revisions under distinct synthesized versions, so the type system can compare two states of what is otherwise one identifier - `inst-cu-register`
-5. [x] - `p1` - Compare the inherited-surface type at both revisions, reading the origin from each revision's own contract as it shipped rather than from the source as it is now - `inst-cu-passthrough`
-   1. [x] - `p1` - Read the origin from the base revision as well as the current one, and decide the comparison from both: nothing to compare when neither inherits; nothing to report when only the current one does, because an inherited surface that arrives only widens; a comparison by forwarded property name and requiredness when the origin moved or the current revision inherits nothing at all, those being the only signals two different surfaces share; the full shape comparison when the origin is unchanged - `inst-cu-passthrough-both`
-   2. [x] - `p1` - **IF** the comparison genuinely cannot be made - the base reference carries passthrough types but none for the origin this contract shipped with, or no type is committed for the origin it names now - report the inherited-surface signal as skipped for that origin, without refusing the change - `inst-cu-passthrough-skipped`
+5. [x] - `p1` - Compare the forwarded surface at both revisions, reading the host element from each revision's own contract as it shipped rather than from the source as it is now - `inst-cu-passthrough`
+   1. [x] - `p1` - Read the element from the base revision as well as the current one, and decide the comparison from both: nothing to compare when neither forwards; nothing to report when only the current one does, because a forwarded surface that arrives only widens; the shape comparison otherwise, against the empty surface when the current revision forwards nothing, and naming the move when the element changed - `inst-cu-passthrough-both`
+   2. [x] - `p1` - **IF** the comparison genuinely cannot be made - no file at the base reference for the element this contract shipped with, or none committed for the element it names now - report the forwarded-surface signal as skipped for that element, without refusing the change - `inst-cu-passthrough-both`
 6. [x] - `p1` - **RETURN** the decision for this contract, and the base-reference path it was compared against, so a contract that no longer has an heir can be told from one that was never compared - `inst-cu-decide`
 
 ### Contracts Removed Since The Base Reference
@@ -376,6 +431,7 @@ The comparison above walks the contracts on disk and asks each one what it used 
 3. [x] - `p1` - **IF** the change touches the shared contract tooling - `inst-gd-widen`
    1. [x] - `p1` - Widen the scope to every covered component, because a change there can change what any of them compiles to - `inst-gd-widen-scope`
    2. [x] - `p1` - Widen it the same way when the change touches the coverage allowlist itself, for a different reason: the allowlist decides which components are held to the standard at all, so the one file that grants coverage must not be the one file coverage never looks at - `inst-gd-widen-allowlist`
+   3. [x] - `p1` - Widen it the same way when the change touches any overlay, for a third reason: an overlay's allowed children decide another component's derived mount points, so an overlay edit can move a compiled contract in a directory the change never touched - `inst-gd-widen-overlay`
 4. [x] - `p1` - **IF** nothing is in scope - `inst-gd-empty`
    1. [x] - `p1` - Report it and **RETURN** without failing - `inst-gd-empty-return`
 5. [x] - `p1` - **FOR EACH** directory in scope, decide its verdict - `inst-gd-each`
@@ -412,7 +468,10 @@ The comparison above walks the contracts on disk and asks each one what it used 
 3. [x] - `p1` - Assert every committed shared schema - the abstract base type, the metamodel, each vocabulary type - equals a fresh build, and that each vocabulary identifier obeys its own grammar - `inst-cf-base`
 4. [x] - `p1` - Validate a contract's traits through the type store against the base type's trait schema, in a registry holding the vocabulary that schema references - `inst-cf-traits`
 5. [x] - `p1` - Resolve every component identifier the contract holds - a `don't` alternative, a composition kind, a family member - against the kit itself rather than against the type registry, because the type system's reference validator does not follow a reference into another type and most referenced components ship no contract yet: each must name a component the kit ships, and where that component ships a contract the identifier must equal that contract's current props-schema identifier in full, majors included, so a component moving its major moves every reference to it - `inst-cf-refs`
-6. [x] - `p1` - Resolve the instance's own props-schema identifier through the type store, which does reach a reference declared directly on an instance property, so a contract absent from the registry fails by name - `inst-cf-instance-ref`
+6. [x] - `p1` - Assert the pairing between the properties that assert nothing and the contract's untyped-prop assumptions, both ways - `inst-cf-untyped`
+7. [x] - `p1` - Assert every derived mount point is a contract whose own allowed children name this component back, and - where the contract declares a family - that it is a member of that family, so the parts of a compound component are not independently mountable - `inst-cf-parent`
+8. [x] - `p1` - Assert the host-element surface a contract composes is a committed file, and that every committed surface's identifier obeys the passthrough grammar - the surfaces are hand-written, so nothing recompiles them into place - `inst-cf-element`
+9. [x] - `p1` - Resolve the instance's own props-schema identifier through the type store, which does reach a reference declared directly on an instance property, so a contract absent from the registry fails by name - `inst-cf-instance-ref`
 
 ## 4. States (CDSL)
 
@@ -426,7 +485,7 @@ Not applicable. Nothing here has a lifecycle: extraction, compilation and every 
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-overlay-admission`
 
-The system **MUST** refuse a hand-authored overlay that restates a field the code owns, carries a field the overlay vocabulary does not define, declares a component other than the one being compiled, or references a prop the component does not declare - naming the offence in each case and writing nothing. Where an overlay states an alternative to a use it rules out, the system **MUST** admit both a reference to a component this kit ships and an explicit statement that the alternative lies outside the kit, and no other shape: a reader that cannot tell a recommendation from a stand-in named only because the field demanded one is worse served than by no alternative at all.
+The system **MUST** refuse a hand-authored overlay that restates a field the code owns, writes a field the compiler derives, carries a field the overlay vocabulary does not define, declares a component other than the one being compiled, or references a prop the component does not have - naming the offence in each case and writing nothing. A prop the overlay may name differs by field: a deprecation and the icon slot may only name a prop the component declares itself, while a hidden name and an untyped-prop assumption may also name one the primitive underneath declares, and a hidden name may never name one the component declares. Where an overlay states an alternative to a use it rules out, the system **MUST** admit both a reference to a component this kit ships and an explicit statement that the alternative lies outside the kit, and no other shape: a reader that cannot tell a recommendation from a stand-in named only because the field demanded one is worse served than by no alternative at all.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-overlay-admission`
@@ -441,7 +500,7 @@ The system **MUST** refuse a hand-authored overlay that restates a field the cod
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-extraction`
 
-The system **MUST** read a component's exported components, variant axes and defaults, declared props, inherited props and inherited-surface origin from its TypeScript through the compiler's own resolution - never from the names an identifier happens to be written under - and **MUST** record any shape it cannot classify rather than dropping it. An extraction that a contract is compiled from **MUST** depend on the component's own source and nothing else that shared the run: the compiler prints a type's module specifier and orders a union's members from what the whole compilation holds, so an extraction taken from a compilation covering several components is a different extraction, and **MUST NOT** reach an artifact. Where the answer is only counted - which of a file's exports are components, what every export is called - the system **MAY** take it from one shared compilation, or from the syntax with no compilation at all.
+The system **MUST** read a component's exported components, variant axes and defaults, props and host element from its TypeScript through the compiler's own resolution - never from the names an identifier happens to be written under - and **MUST** record any shape it cannot classify rather than dropping it. It **MUST** file every prop by WHERE ITS DECLARATION LIVES into three sets - the component's own source, the primitive library's props for the part being wrapped, React's attributes for the host element - and **MUST** name, rather than file, a prop declared in none of the three: the primitive library's own props for a part are the component's API, React's attributes are surface it forwards, and which of the two a third library's props are is a question about that library that the extractor may not answer by default. An extraction that a contract is compiled from **MUST** depend on the component's own source and nothing else that shared the run: the compiler prints a type's module specifier and orders a union's members from what the whole compilation holds, so an extraction taken from a compilation covering several components is a different extraction, and **MUST NOT** reach an artifact. Where the answer is only counted - which of a file's exports are components, what every export is called - the system **MAY** take it from one shared compilation, or from the syntax with no compilation at all.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-extraction`
@@ -455,12 +514,15 @@ The system **MUST** read a component's exported components, variant axes and def
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-compilation`
 
-The system **MUST** compile an admitted overlay and an extraction into a closed props schema whose properties carry the variant axes with their defaults and the component's declared props, whose inherited surface is referenced rather than copied, and whose meaning fields are split between the block a validator reads and the block that is prose. Every property it emits, in the contract and in the inherited-surface type alike, **MUST** either assert something about the value or state the TypeScript type behind it and that the type system, not the schema, is what checks it - a property that asserts nothing and says nothing reads to its intended reader as a property that accepts anything. It **MUST** fail rather than emit a contract whose axes could not be resolved or whose inherited props no type could declare.
+The system **MUST** compile an admitted overlay and an extraction into a props schema whose properties carry the variant axes with their defaults, the component's declared props and the props the primitive library states for the part it wraps, whose forwarded surface is referenced rather than copied, and whose meaning fields are split between the block a validator reads and the block that is prose. A prop the overlay hides **MUST NOT** appear among them. Every property it emits **MUST** either assert something about the value or state the TypeScript type behind it and that the type system, not the schema, is what checks it - a property that asserts nothing and says nothing reads to its intended reader as a property that accepts anything - and where a property's name is also declared by the host element's surface the two shapes **MUST** agree or the compile **MUST** fail, both applying to the same value. The derived type **MUST** be left open with the verdict on an unevaluated prop annotated rather than closed against it: a schema cannot tell a typo'd kit prop from an attribute this harness has not classified, so the harness **MUST** provide the report that does - which props a contract accounts for, which nothing accounts for, and which of the latter are one edit from a prop the contract declares. It **MUST** fail rather than emit a contract whose axes could not be resolved, whose props it could not place, or whose forwarded attributes belong to no resolvable host element.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-compilation`
 - `cpt-frontx-ui-kit-algo-component-contracts-instance`
 - `cpt-frontx-ui-kit-algo-component-contracts-passthrough`
+- `cpt-frontx-ui-kit-algo-component-contracts-composition`
+- `cpt-frontx-ui-kit-algo-component-contracts-untyped-props`
+- `cpt-frontx-ui-kit-algo-component-contracts-unchecked-props`
 
 **Constraints**: `cpt-frontx-ui-kit-constraint-contracts-repository-only`
 
@@ -471,7 +533,7 @@ The system **MUST** compile an admitted overlay and an extraction into a closed 
 
 - [x] `p2` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-identifiers`
 
-The system **MUST** construct every contract, instance, inherited-surface and vocabulary identifier from one vendor namespace, so that a contract is a type derived from the kit's abstract base type and an instance is not a type at all, and **MUST** expose the patterns that recognize each shape rather than leaving callers to write their own. A reference to a component **MUST** be that component's own derived identifier, not a second identifier standing for the same component, and **MUST** be spelled in the form the type system parses rather than the form a schema keyword requires. A component identifier's token is derived from the name of the export it describes - the directory name where a directory describes one component, the overlay stem where it describes one part of a compound one, so a part carries its own identifier rather than its family's; an inherited-surface identifier takes the origin key the extractor already produced in that token form, so no second derivation applies to it.
+The system **MUST** construct every contract, instance, host-element-surface and vocabulary identifier from one vendor namespace, so that a contract is a type derived from the kit's abstract base type and an instance is not a type at all, and **MUST** expose the patterns that recognize each shape rather than leaving callers to write their own. A reference to a component **MUST** be that component's own derived identifier, not a second identifier standing for the same component, and **MUST** be spelled in the form the type system parses rather than the form a schema keyword requires. A component identifier's token is derived from the name of the export it describes - the directory name where a directory describes one component, the overlay stem where it describes one part of a compound one, so a part carries its own identifier rather than its family's; a host-element-surface identifier takes the element the extractor resolved, normalized into the same token grammar, so the element kind stays the real tag wherever a reader sees it and only an identifier carries the normalized form.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-identifiers`
@@ -483,7 +545,7 @@ The system **MUST** construct every contract, instance, inherited-surface and vo
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-trait-schema`
 
-The system **MUST** express the overlay's validator-read vocabulary as one type per concept, each with its own identifier, and **MUST** derive the trait schema the abstract base type carries from the metamodel's own field definitions rather than maintaining a second copy of them - by reference, so that a concept is defined once and the trait schema and the metamodel resolve the same definition. It **MUST** make the one mechanical adjustment the type store requires, an optional field given a null alternative and default placed so the referenced type cannot overwrite it, without changing the shape a component that sets those fields must satisfy. Where a field holds the identifier of another type, the declaration **MUST** carry both the reference and the grammar that rejects a malformed identifier, because the type store removes the reference annotation before validating and a declaration left with nothing else in it stops constraining the value at all. Where one value of a field contradicts every other - the child-composition kind meaning "no children at all" - the vocabulary **MUST** state that in the type rather than in prose beside it, so a list cannot say both that nothing may appear inside a component and that something may.
+The system **MUST** express the overlay's validator-read vocabulary as one type per concept, each with its own identifier, and **MUST** derive the trait schema the abstract base type carries from the metamodel's own field definitions rather than maintaining a second copy of them - by reference, so that a concept is defined once and the trait schema and the metamodel resolve the same definition. It **MUST** make the one mechanical adjustment the type store requires, an optional field given a null alternative and default placed so the referenced type cannot overwrite it, without changing the shape a component that sets those fields must satisfy. Where a field holds the identifier of another type, the declaration **MUST** carry both the reference and the grammar that rejects a malformed identifier, because the type store removes the reference annotation before validating and a declaration left with nothing else in it stops constraining the value at all. Where one value of a field contradicts every other - the child-composition kind meaning "no children at all" - the vocabulary **MUST** state that in the type rather than in prose beside it, so a list cannot say both that nothing may appear inside a component and that something may. Every kind a field admits **MUST** be defined in the type that admits it, including the non-component content kind, so a reader never has to find the definition elsewhere. Both directions of a composition **MUST** be optional, because an absent children list is the only honest way to say "unconstrained" and most of the kit has no mount point to state; and an assumption about what a contract cannot express **MUST** carry a kind from a closed list, with the kind that is about one property naming that property, so a family of such claims can be checked against the contract instead of read one at a time.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-trait-schema`
@@ -495,7 +557,7 @@ The system **MUST** express the overlay's validator-read vocabulary as one type 
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-freshness`
 
-The system **MUST** compare a component's committed contract, metamodel instance and inherited-surface type - and, on every run, every committed schema that belongs to no single component: the abstract base type, the metamodel, and each vocabulary type they reference - against a fresh build, and **MUST** report every difference by path rather than reporting only that something differs.
+The system **MUST** compare a component's committed contract and metamodel instance - and, on every run, every committed schema that belongs to no single component: the abstract base type, the metamodel, and each vocabulary type they reference - against a fresh build, and **MUST** report every difference by path rather than reporting only that something differs. The surface a component forwards to its host element is hand-written source and **MUST NOT** be compared against a build; what **MUST** hold of it instead is that a contract composing one names a committed file whose identifier obeys the grammar.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-freshness`
@@ -507,7 +569,7 @@ The system **MUST** compare a component's committed contract, metamodel instance
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-conformance`
 
-The system **MUST** provide a reusable suite that fails a component's unit run when its committed artifacts no longer equal a fresh compile, when an annotated property has no slot record or a shaped property has one, or when any committed shared schema has fallen behind - so that staleness reaches the developer who caused it, in the run they already execute. A component's contract **MUST** be validated in a registry holding the vocabulary its trait schema references, and an instance's reference to its own props schema **MUST** be resolved against that registry rather than checked for grammar alone.
+The system **MUST** provide a reusable suite that fails a component's unit run when its committed artifacts no longer equal a fresh compile, when an annotated declared prop has no slot record or a shaped property has one, or when any committed shared schema has fallen behind - so that staleness reaches the developer who caused it, in the run they already execute. It **MUST** also fail that run when a property the schema cannot type has no assumption naming it or an assumption names a property the schema does constrain, when a derived mount point is a contract whose own children do not name the component back or lies outside a declared family, and when the host-element surface a contract composes is not committed. A component's contract **MUST** be validated in a registry holding the vocabulary its trait schema references and the element surfaces its contracts compose, and an instance's reference to its own props schema **MUST** be resolved against that registry rather than checked for grammar alone.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-conformance`
@@ -519,7 +581,7 @@ The system **MUST** provide a reusable suite that fails a component's unit run w
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-compatibility`
 
-The system **MUST** decide a contract's backward compatibility from three signals - the type system's own verdict, the declared-prop diff and the inherited-surface diff - **MUST** treat an addition as compatible and a removal, a narrowing or a newly required prop as not, and **MUST** accept an incompatible difference only when the contract's own major moved, naming every reason either way. It **MUST** read the inherited surface from BOTH revisions of the contract rather than from the current one alone, so that a contract which drops its inherited surface, or moves it to another origin, is compared by what a consumer can still pass rather than skipped for want of something to look up. It **MUST** compare every contract present at the base reference, including one that no committed contract is the heir of: such a removal is backward-incompatible and is accepted only once the coverage allowlist no longer names the component, the same acknowledgement the guard demands of a removed directory. It **MUST** refuse to run at all against a base reference that names no commit in this repository, because every verdict it could give against one would be vacuous. Where a comparison genuinely cannot be made - no file at the base reference for the origin this contract shipped with, no committed file for the origin it names now - the system **MUST** report that signal as skipped rather than let its absence read as agreement.
+The system **MUST** decide a contract's backward compatibility from three signals - the type system's own verdict, the declared-prop diff and the inherited-surface diff - **MUST** treat an addition as compatible and a removal, a narrowing or a newly required prop as not, and **MUST** accept an incompatible difference only when the contract's own major moved, naming every reason either way. It **MUST** read the forwarded surface from BOTH revisions of the contract rather than from the current one alone, so that a contract which drops its forwarded surface, or renders a different host element, is compared by what a consumer can still pass rather than skipped for want of something to look up. It **MUST** compare every contract present at the base reference, including one that no committed contract is the heir of: such a removal is backward-incompatible and is accepted only once the coverage allowlist no longer names the component, the same acknowledgement the guard demands of a removed directory. It **MUST** refuse to run at all against a base reference that names no commit in this repository, because every verdict it could give against one would be vacuous. Where a comparison genuinely cannot be made - no file at the base reference for the element this contract shipped with, no committed file for the element it names now - the system **MUST** report that signal as skipped rather than let its absence read as agreement.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-compat-decision`
@@ -534,7 +596,7 @@ The system **MUST** decide a contract's backward compatibility from three signal
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-guard-scope`
 
-The system **MUST** hold to the full standard only the components a change touches that are also opted into coverage, **MUST** widen that scope to every covered component when any file that produces or compares a compiled contract changed - the extractor, the compiler, the identifier and schema inputs, the freshness comparison and the shared comparison logic it depends on - and **MUST** treat a touched but uncovered component as information rather than as a failure. It **MUST** widen the scope the same way, for its own reason, when the coverage allowlist itself changed: the file that decides which components are checked cannot be the one file no check reads, and an entry naming a directory that does not exist or an overlay that was never written **MUST** fail the guard rather than count as coverage. Excluded from the compile-or-compare widening are only the guard's own entry point, because nothing on the comparison path imports it and re-checking on it would be circular, its own tests, and prose.
+The system **MUST** hold to the full standard only the components a change touches that are also opted into coverage, **MUST** widen that scope to every covered component when any file that produces or compares a compiled contract changed - the extractor, the compiler, the identifier and schema inputs, the freshness comparison and the shared comparison logic it depends on - and **MUST** treat a touched but uncovered component as information rather than as a failure. It **MUST** widen the scope the same way, for its own reason, when the coverage allowlist itself changed: the file that decides which components are checked cannot be the one file no check reads, and an entry naming a directory that does not exist or an overlay that was never written **MUST** fail the guard rather than count as coverage. It **MUST** widen it the same way again, for a third reason, when any overlay changed: an overlay's allowed children decide another component's derived mount points, so an overlay edit can leave a compiled contract stale in a directory the change never touched. Excluded from the compile-or-compare widening are only the guard's own entry point, because nothing on the comparison path imports it and re-checking on it would be circular, its own tests, and prose.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-guard`
@@ -564,10 +626,14 @@ The system **MUST** report the described set against the component set, with a p
 - [x] An overlay whose alternative to a ruled-out use is a component the kit ships names it by reference; one whose honest alternative is outside the kit says so and why, rather than naming the nearest kit component as a stand-in; anything else in that position is refused.
 - [x] A component's variant axes, their values and their defaults appear in its contract as read from the code, and an axis declared twice by two heritage entries is reported naming both rather than silently resolved.
 - [x] A wrapper import renamed at its import site, and a locally shadowed utility type of the same name as a real one, are both classified by what they resolve to rather than by what they are called.
-- [x] A prop the component declares appears in its contract; a prop it inherits appears in the shared type for its origin and not in the contract's own properties; a prop with no schema equivalent appears as an annotated property with a matching slot record.
-- [x] No property of a compiled contract or an inherited-surface type is empty: one that asserts nothing names its TypeScript type and says the type system checks it, so a generic, a function or a union of non-literal members is never readable as an unconstrained value.
-- [x] A component whose props inherit from an origin the compiler cannot place is refused naming those props, rather than compiled with them missing.
-- [x] A contract's identifier is a type derived from the abstract base type and parses into the expected segments; a metamodel instance's identifier is not a type; a reference to a component is that component's own derived identifier.
+- [x] A prop the component declares appears in its contract; so does a prop the primitive library declares for the part it wraps, unless the overlay hides it; a prop React declares as an attribute of the host element appears in the shared surface for that element and not in the contract's own properties.
+- [x] A declared prop with no schema equivalent appears as an annotated property with a matching slot record; an API prop with no schema equivalent appears as an annotated property with no slot record, because the kit's slot record is for the kit's own slots.
+- [x] No property of a compiled contract or a host-element surface is empty: one that asserts nothing names its TypeScript type and says the type system checks it, so a generic, a function or a union of non-literal members is never readable as an unconstrained value.
+- [x] Every property that asserts nothing is named by exactly one untyped-prop assumption, and every untyped-prop assumption names a property that asserts nothing - checked both ways on every described component's run.
+- [x] A component carrying a prop declared by neither itself, the primitive library nor React's DOM attribute types is refused naming those props and where they are declared; one forwarding DOM attributes with no resolvable host element is refused naming those props; one whose host element has no committed surface is refused naming the element and the file to write.
+- [x] A prop a component declares and a prop the primitive declares for the same name resolve to one property, with the component's own declaration kept; a property whose name the host-element surface also declares with a conflicting shape is refused naming both sides.
+- [x] A contract's identifier is a type derived from the abstract base type and parses into the expected segments; a metamodel instance's identifier is not a type; a reference to a component is that component's own derived identifier; a host-element surface's identifier carries the element in the same token grammar, with a hyphenated tag normalized only there.
+- [x] A prop nothing in a contract evaluates is admitted rather than rejected, and the harness's own report says which props are known, which are unchecked, and which unchecked name is one edit from a prop the contract declares - a near miss of a forwarded DOM attribute among the unchecked ones, not among the near misses.
 - [x] The trait schema carried by the abstract base type equals a fresh derivation from the metamodel, states each of its fields as a reference to the type that owns the concept, and rejects an unknown key in a contract's validator-read block by name.
 - [x] A contract validated in a registry that is missing one of the vocabulary types its trait schema references fails naming the unresolved reference, rather than passing against a schema that was never applied.
 - [x] A metamodel instance whose props schema is absent from the registry is refused naming the unresolved reference, and one whose reference is malformed is refused by grammar.
@@ -577,12 +643,16 @@ The system **MUST** report the described set against the component set, with a p
 - [x] A contract whose file moved is compared against its earlier path rather than reported as new.
 - [x] A change touching a component that is not opted into coverage passes with that component reported as not yet requiring a contract.
 - [x] A change to any file on the compile-or-compare path - the shared comparison logic included - re-checks every covered component, not only the ones the change touched; a change to the guard's own entry point does not.
-- [x] A contract that stops composing its inherited surface is refused naming every forwarded prop that disappeared with it, rather than passing because there was no origin left to look up.
-- [x] A contract whose inherited-surface origin moved is compared by forwarded property name and requiredness across the move, and refused when a prop does not survive it; a move every prop survives passes, naming the move.
+- [x] A contract that stops composing its forwarded surface is refused naming every forwarded prop that disappeared with it, rather than passing because there was no element left to look up.
+- [x] A contract whose host element moved is compared across the move and refused when a forwarded prop does not survive it; a move every prop survives passes, naming the move. Narrowing a shared element surface itself is refused for every contract that composes it.
 - [x] A contract present at the base reference that no committed contract is the heir of is reported as a removal: refused while the coverage allowlist still names its component, accepted and named once it does not; a contract that merely moved is reported as renamed and compared, not as a removal.
 - [x] A base reference that names no commit in this repository stops both the guard and the compatibility check with that reference named, instead of a run in which every contract reads as new.
 - [x] A covered component whose directory has been removed fails the guard, naming the allowlist entry to remove.
 - [x] A change to the coverage allowlist re-checks every component it names; an entry naming no component directory, or a directory with no overlay, fails the guard and is reported by the coverage report without being counted as coverage.
+- [x] A change to any overlay re-checks every covered component; a change to a compiled artifact alone does not.
+- [x] A component's mount points are derived from every other contract's allowed children, never authored: an overlay writing them is refused pointing at the field that IS authorable, a mount point outside the kit is stated in that field and merged, and a part of a compound component is only ever derived a parent inside its own family.
+- [x] A children list may be absent, and absence means unconstrained; a component that takes no children says so with the kind that means it, and pairing that kind with any other is refused by the vocabulary.
+- [x] Every assumption carries a kind from the closed list, and one about a single property names that property; a kind that is about no property carries none.
 - [x] The coverage report prints the described set against the component set and sets no exit code, whatever the numbers are.
 - [x] A children list stating that a component takes no children carries that kind alone; one pairing it with a component reference or with text is refused by the vocabulary.
 - [x] Recompiling every described component produces byte-identical artifacts whatever else ran in the same process, and the counting that feeds the coverage report and the guard's completeness check never reaches the extraction a contract is compiled from.

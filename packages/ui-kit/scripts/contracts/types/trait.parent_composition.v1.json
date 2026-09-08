@@ -2,17 +2,24 @@
   "$id": "gts://gts.frontx.uikit.trait.parent_composition.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UiKit parent composition",
-  "description": "Where this component may be mounted. Only a compound component's part states one: the root or item kind(s) it is only ever used under. Nothing about Button constrains where it may appear, so most components have no parent at all.",
+  "description": "Where this component may be mounted. DERIVED, never authored: a kit parent is any component whose own child composition names this one, computed across every contract at compile time, so the two directions of one relationship cannot disagree. A mount point OUTSIDE the kit takes the external form, authored in the overlay as `composition.mounts_in` and merged in here - the typed reference covers kit-to-kit nesting only, and a part whose real mount point is a third-party render function has nothing to point at. Nothing about Button constrains where it may appear, so most components have no parent at all.",
   "type": "object",
   "properties": {
     "kinds": {
       "type": "array",
       "items": {
-        "type": "string",
-        "pattern": "^gts\\.frontx\\.uikit\\.base\\.component\\.v1~frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
-        "x-gts-ref": "gts.frontx.uikit.base.component.v1~*",
-        "description": "GTS id of another kit component: the props schema derived from the abstract base component type. `x-gts-ref` declares what it must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating.",
-        "$comment": "GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu)."
+        "oneOf": [
+          {
+            "type": "string",
+            "pattern": "^gts\\.frontx\\.uikit\\.base\\.component\\.v1~frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
+            "x-gts-ref": "gts.frontx.uikit.base.component.v1~*",
+            "description": "GTS id of another kit component: the props schema derived from the abstract base component type. `x-gts-ref` declares what it must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating.",
+            "$comment": "GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu)."
+          },
+          {
+            "$ref": "gts://gts.frontx.uikit.trait.external_alternative.v1~"
+          }
+        ]
       },
       "minItems": 1
     }

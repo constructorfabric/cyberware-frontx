@@ -1,10 +1,9 @@
 // Fixture for extract.test.ts (M2): ComponentProps<'tag'> with a hyphenated
 // custom element tag name - a normal pattern (a component wrapping
-// <my-custom-element>). The dom_ origin branch built its token as
-// `dom_${tag}` verbatim, leaking the tag's hyphen into a token grammar
-// that must be snake_case everywhere else (the base_ui branch normalizes
-// every token; this one did not) - a real GTS id grammar violation with
-// nothing to catch it before this fixture existed.
+// <my-custom-element>). The element kind reaches an identifier and a file
+// name through domPassthroughToken, and a tag's hyphen would otherwise leak
+// into a token grammar that is snake_case everywhere else - a real GTS id
+// grammar violation with nothing to catch it before this fixture existed.
 //
 // `keyof JSX.IntrinsicElements` (React's own ComponentProps constraint)
 // only recognizes tags React ships types for, so a genuinely unknown custom

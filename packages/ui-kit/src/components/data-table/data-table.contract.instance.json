@@ -52,20 +52,45 @@
     "rtl": "not-described",
     "assumptions": [
       {
-        "claim": "TData is a generic type parameter with no concrete shape",
-        "reason": "JSON Schema has no notion of a generic type parameter; `columns` and `data` stay annotation-only (slots) in the compiled contract rather than typed properties - there is no TData to type them against without a concrete consumer."
+        "kind": "behaviour",
+        "claim": "sorting, row-selection and pagination state are internal, not props",
+        "reason": "`sorting`/`rowSelection`/`pagination` are component-owned useState, never lifted to DataTableProps, so there is no way to preset or control them - \"DataTable is sortable/selectable/paginated\" is discoverable only from `columns`' own fields and `enableRowSelection`. A consumer needing controlled state builds against `useTable` directly (see the dataTableFeatures extension point)."
       },
       {
-        "claim": "columns is an array of @tanstack/react-table ColumnDef objects",
-        "reason": "ColumnDef carries function-valued fields (header/cell render functions among them) from a third-party package this contract does not own; it is opaque to the provider-safe JSON Schema subset the same way a function prop is, and is declared as an extension_point instead of enumerated."
+        "kind": "untyped_prop",
+        "prop": "columns",
+        "claim": "columns is an array of @tanstack/react-table ColumnDef objects, generic over TData",
+        "reason": "ColumnDef carries function-valued fields (header/cell render functions among them) from a third-party package this contract does not own, and it is generic over the row type - a type parameter has no JSON Schema representation either. Declared as an extension_point rather than enumerated."
       },
       {
+        "kind": "untyped_prop",
+        "prop": "data",
+        "claim": "data is an array of the caller's own row type",
+        "reason": "`TData[]` - a generic type parameter, so there is no shape to assert without a concrete consumer. It must be the same `TData` the `columns` were built for; that pairing is a call-site type error, not something this schema can check."
+      },
+      {
+        "kind": "untyped_prop",
+        "prop": "selectionSummary",
         "claim": "selectionSummary is a function prop, not data",
         "reason": "`(selected, total) => ReactNode` has no JSON Schema representation; it is a function returning a plurals-aware sentence, not a value this schema can assert shape against."
       },
       {
-        "claim": "sorting, row-selection and pagination state are internal, not props",
-        "reason": "`sorting`/`rowSelection`/`pagination` are component-owned useState, never lifted to DataTableProps - \"DataTable is sortable/selectable/ paginated\" is discoverable only from `columns`' own fields and `enableRowSelection`, not from this contract's prop schema."
+        "kind": "untyped_prop",
+        "prop": "emptyMessage",
+        "claim": "emptyMessage is a React node, not a string",
+        "reason": "`ReactNode` - an element, a string or a fragment, all valid and indistinguishable to JSON Schema. It replaces the whole \"no results\" row body, so an element is the usual case."
+      },
+      {
+        "kind": "untyped_prop",
+        "prop": "previousLabel",
+        "claim": "previousLabel is a React node, not a string",
+        "reason": "`ReactNode`, so an icon or an element is as valid as a string. It is the pagination button's own label, which is why it is a node rather than a translated string this component would have to own."
+      },
+      {
+        "kind": "untyped_prop",
+        "prop": "nextLabel",
+        "claim": "nextLabel is a React node, not a string",
+        "reason": "`ReactNode`, same as previousLabel above and for the same reason."
       }
     ]
   },

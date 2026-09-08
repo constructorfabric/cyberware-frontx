@@ -8,16 +8,48 @@
       "$ref": "gts://gts.frontx.uikit.base.component.v1~"
     },
     {
-      "$ref": "gts://gts.frontx.uikit.passthrough.base_ui_accordion_root.v1~"
+      "$ref": "gts://gts.frontx.uikit.passthrough.dom_div.v1~"
     }
   ],
   "properties": {
     "className": {
       "type": "string"
+    },
+    "defaultValue": {
+      "description": "TS: import(\"@base-ui/react/accordion/index\").AccordionValue<Value> | undefined. Not expressible in JSON Schema, checked by tsc."
+    },
+    "disabled": {
+      "type": "boolean"
+    },
+    "hiddenUntilFound": {
+      "type": "boolean"
+    },
+    "keepMounted": {
+      "type": "boolean"
+    },
+    "loopFocus": {
+      "type": "boolean"
+    },
+    "multiple": {
+      "type": "boolean"
+    },
+    "onValueChange": {
+      "description": "TS: ((value: import(\"@base-ui/react/accordion/index\").AccordionValue<Value>, eventDetails: import(\"@base-ui/react/accordion/index\").AccordionRootChangeEventDetails) => void) | undefined. Not expressible in JSON Schema, checked by tsc."
+    },
+    "render": {
+      "description": "TS: import(\"@types/react/index\").ReactElement<unknown, string | import(\"@types/react/index\").JSXElementConstructor<any>> | import(\"@base-ui/react/types/index\").ComponentRenderFn<import(\"@base-ui/react/types/index\").HTMLProps, AccordionPrimitive.Root.State<Value>> | undefined. Not expressible in JSON Schema, checked by tsc."
+    },
+    "style": {
+      "description": "TS: import(\"@types/react/index\").CSSProperties | ((state: AccordionPrimitive.Root.State<Value>) => import(\"@types/react/index\").CSSProperties | undefined) | undefined. Not expressible in JSON Schema, checked by tsc."
+    },
+    "value": {
+      "description": "TS: import(\"@base-ui/react/accordion/index\").AccordionValue<Value> | undefined. Not expressible in JSON Schema, checked by tsc."
     }
   },
   "required": [],
-  "unevaluatedProperties": false,
+  "unevaluatedProperties": {
+    "x-uikit-verdict": "unchecked"
+  },
   "x-uikit": {
     "metamodel": "1.0.0",
     "intent": "Show one or more sections at a time, collapsing the rest to their headers.",
@@ -91,8 +123,39 @@
       "rtl": "not-described",
       "assumptions": [
         {
-          "claim": "value, defaultValue and onValueChange are typed in terms of a generic Value parameter",
-          "reason": "JSON Schema has no notion of a generic type parameter, so none of the three gets a typed property. They are inherited from Base UI's Accordion.Root props, so they are carried by the generated passthrough type this contract composes (scripts/contracts/generated/passthrough.base_ui_accordion_root.json) as description-only entries reading \"TS: ...\", not by this contract's own x-uikit.slots, which is empty. accordion.md's own example uses string values (value=\"item-1\"), which is the documented usage."
+          "kind": "hidden_part",
+          "claim": "orientation is a Base UI Accordion.Root prop this kit does not offer",
+          "reason": "The kit's root stylesheet fixes `flex-direction: column`, so the only value `orientation` could add - \"horizontal\" - would set Base UI's keyboard axis against the layout the kit renders. See `hidden` above."
+        },
+        {
+          "kind": "untyped_prop",
+          "prop": "value",
+          "claim": "value is an array of the root's own generic Value parameter",
+          "reason": "`AccordionValue<Value>` is an ARRAY of the type parameter, not a single value, and a generic has no JSON Schema representation - which is exactly the misreading this entry exists to prevent: an agent shown an unconstrained `value` concluded it took a plain string. The property carries the checker's own printed type text. accordion.md's example uses string item values (`value=\"item-1\"` on the item), so a root value is an array of those."
+        },
+        {
+          "kind": "untyped_prop",
+          "prop": "defaultValue",
+          "claim": "defaultValue is an array of the root's own generic Value parameter",
+          "reason": "Same type as `value` above, and the same reason nothing asserts it - the uncontrolled starting point is a LIST of open item values, not one of them."
+        },
+        {
+          "kind": "untyped_prop",
+          "prop": "onValueChange",
+          "claim": "onValueChange is a callback, not a value",
+          "reason": "`(value: AccordionValue<Value>, eventDetails) => void` - a function of the generic above plus Base UI's own event-details object. No JSON Schema type covers a function."
+        },
+        {
+          "kind": "untyped_prop",
+          "prop": "render",
+          "claim": "render replaces the root element with one the caller supplies",
+          "reason": "Base UI's render prop takes an element or a function of the root's state; neither is expressible in JSON Schema. Replacing the root element means taking over the wrapper the kit's own layout styles (`.root`) are attached to."
+        },
+        {
+          "kind": "untyped_prop",
+          "prop": "style",
+          "claim": "style accepts a function of the root's state as well as a plain style object",
+          "reason": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
         }
       ]
     },
@@ -104,6 +167,9 @@
         "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~",
         "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_content.v1~"
       ]
-    }
+    },
+    "hidden": [
+      "orientation"
+    ]
   }
 }

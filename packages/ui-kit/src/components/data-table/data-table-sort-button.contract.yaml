@@ -2,9 +2,9 @@
 # contract in this directory (see data-table.contract.yaml). Not a family
 # part of DataTable the way AccordionItem is a part of Accordion: it is
 # mounted inside a column's `header` render function, which TanStack Table
-# owns, not a kit component with its own contract - see the
-# `no-typed-parent-for-header-cell` assumption below for why `composition.parent`
-# stays unset here instead of pointing at one.
+# owns, not a kit component with its own contract - so its mount point is
+# stated in `composition.mounts_in` below, the external form the typed
+# `parent` reference has nothing to hold.
 component: data-table-sort-button
 
 intent: A sortable column's header button, toggling that column's sort state and showing its current direction.
@@ -22,6 +22,18 @@ composition:
     # `children` is the button's own label (e.g. "Email") - the trailing
     # sort-direction arrow is fixed and always rendered alongside it, the
     # same way AccordionTrigger's chevron is never part of children.
+  # The typed `parent` field covers kit-to-kit nesting only, and it is derived
+  # from other contracts' children rather than authored; a mount point that is
+  # not a kit component takes this form and is merged into `parent`.
+  mounts_in:
+    - external: >-
+        a column's `header` render function -
+        `header: ({ column }) => <DataTableSortButton column={column} />`
+      note: >-
+        TanStack Table's `header` is a plain function prop on `ColumnDef`,
+        not a kit component, so there is no component this could reference.
+        It is also where the live `column` instance comes from: outside that
+        call there is nothing to pass.
 
 invariants:
   - id: requires-a-real-column-instance
@@ -40,30 +52,39 @@ deprecations: {}
 coverage:
   a11y: not-described
   assumptions:
-    - claim: column is a live @tanstack/react-table Column instance, not data
+    - kind: untyped_prop
+      prop: column
+      claim: column is a live @tanstack/react-table Column instance, generic over TData and TValue
       reason: >-
         `Column<DataTableFeatures, TData, TValue>` carries methods
         (`toggleSorting`, `getIsSorted`) and internal state, not a
-        serializable shape - it stays annotation-only (a slot) in the
-        compiled contract, the same way a function prop does.
-    - claim: TData and TValue are generic type parameters with no concrete shape
+        serializable shape, and two of its three type arguments are the
+        caller's own type parameters - neither a live object nor a generic
+        has a JSON Schema representation. It is handed in by TanStack
+        Table's own render call; a consumer never constructs one.
+    - kind: untyped_prop
+      prop: children
+      claim: children is a React node - the column's label
       reason: >-
-        JSON Schema has no notion of a generic type parameter; both stay
-        implicit in `column`'s slot type rather than typed properties.
-    - claim: DataTableSortButton composes the kit's own Button internally
+        `ReactNode`, so an element is as valid as a string. Required, because
+        a sort button with no label is a button whose only content is a
+        direction arrow.
+    - kind: hidden_part
+      claim: DataTableSortButton composes the kit's own Button internally
       reason: >-
         It renders a `<Button variant="ghost" size="sm">` around its own
         label and a trailing sort-arrow icon - this is internal composition
         (JSX in DataTableSortButton's own render body), not a props-type
-        heritage relationship, so the extractor reports it with no
-        passthrough origin at all: DataTableSortButtonProps declares
+        heritage relationship, so none of Button's own props reach this
+        contract: DataTableSortButtonProps declares
         `column`/`children`/`className` itself and extends nothing.
-    - claim: its only real mount point is a column's header render function, which has no contract of its own
+    - kind: external_mount
+      claim: its only real mount point is a column's header render function, which has no contract of its own
       reason: >-
         TanStack Table's `header: ({ column }) => ...` is a plain function
-        prop on `ColumnDef`, not a kit component - there is no
-        component_type_ref this contract could put in `composition.parent`
-        for it, so the relationship is recorded here in prose instead.
+        prop on `ColumnDef`, not a kit component, so `composition.mounts_in`
+        above states it in the external form rather than referencing a
+        component that does not exist.
 
 examples:
   good:

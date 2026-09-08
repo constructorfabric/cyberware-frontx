@@ -13,23 +13,27 @@
 // linked through the instance's props_schema field.
 //
 // A component's props schema is not a standalone schema that happens to look
-// like its neighbours: it derives from base.component.json and composes one
-// GENERATED passthrough type per ORIGIN of inherited props (a Base UI
-// primitive part, or a plain DOM element type - passthrough.base_ui_button.json
-// for Button's own Base UI primitive, one file per origin under
-// scripts/contracts/generated/; see extract.ts's ComponentExtraction.passthroughOrigin
-// for why origin, not DOM tag, is the key). base.component.json is hand-written source -
-// it describes no component's code, so there is nothing to extract for it.
-// The passthrough types are compiled output: they are built from a
-// component's own INHERITED props (extract.ts's ComponentExtraction), the
-// same way the component's own contract is, and are committed next to it so
-// a reviewer sees the forwarded surface change in the same diff as the
-// source change that caused it. What the derivation buys is closure: because
-// the forwarded DOM props are declared by a schema this one $refs, the
-// derived type can set `unevaluatedProperties: false` and reject a typo'd
-// kit prop without also rejecting className, aria-* or data-*.
-// `additionalProperties` could not do that job - it cannot see through $ref
-// or allOf, so it would reject every inherited prop.
+// like its neighbours: it derives from base.component.json and composes the
+// hand-written passthrough type for the HOST ELEMENT it renders
+// (passthrough/dom_button.json for Button, dom_div.json for Accordion's
+// root). Both of those are hand-written source - they describe no component's
+// code, so there is nothing to extract for either. React's DOM attributes for
+// a given element are the same surface for every component that renders it,
+// and a prop the primitive library declares for its own part is the
+// component's API rather than forwarded surface (extract.ts's
+// declaration-site classification), so what is left to generate per component
+// is nothing at all.
+//
+// What composing the element type buys is a statement of what passes through:
+// `className`, `aria-*`, `data-*` and every React event handler are declared
+// once, by the element they belong to, so a reader of one contract can tell
+// the kit's own API from the DOM surface underneath it without diffing two
+// files. The derived type does NOT close itself: `unevaluatedProperties`
+// carries an annotated open schema instead of `false`, so a prop nothing
+// evaluates is admitted and marked UNCHECKED rather than rejected - see
+// OPEN_UNEVALUATED below for why a schema is the wrong place to decide that a
+// prop is wrong, and check-lib.ts's classifyProps for where the verdict is
+// actually reported.
 //
 // The overlay itself is validated before it is trusted: an unknown key (a
 // typo, a stray JSON-schema keyword like `type`/`required`) fails the
@@ -49,8 +53,7 @@
 //
 // Usage: npm run contracts:compile -- <component> [outPath]
 //        The instance path is outPath with `.json` swapped for
-//        `.instance.json`; both files are written together, and the
-//        component's generated passthrough.<origin>.json alongside them.
+//        `.instance.json`; both files are written together.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -75,6 +78,7 @@ import {
   componentTypeRef,
   componentTypeRefPattern,
   CONTRACT_MAJOR,
+  domPassthroughToken,
   instanceId,
   instanceIdPattern,
   METAMODEL_TYPE_ID,
@@ -94,15 +98,42 @@ export interface Examples {
 
 export type CoverageVerdict = 'verified' | 'checked-no' | 'not-described';
 
-// A claim the code cannot make true, recorded next to why - "generic over
-// Value" and "wraps two Base UI parts" are facts about the TYPE SYSTEM's
-// limits, not a verdict on whether the kit tested something. Modeled as its
-// own array under `coverage.assumptions` rather than another
-// coverage_verdict key: a verdict is one word, an assumption needs a reason
-// a reader can check.
+// The kinds of thing an assumption can be. A closed list, because an
+// assumption with no kind is a paragraph: four entries said "JSON Schema has
+// no notion of a generic type parameter" in four different sentences across
+// three overlays, and nothing could tell that family of claim apart from
+// "this part is composed of two primitives" or "its mount point is outside
+// the kit". With a kind, a reader (and the conformance suite) can ask whether
+// every prop the schema cannot type has an entry, which is exactly the
+// question the four repeated sentences were answering by accident.
+export type CoverageAssumptionKind =
+  // A prop that reaches `properties` asserting nothing - a generic, a
+  // function, a live object, a ReactNode. `prop` names it, and the pairing is
+  // checked both ways by the conformance suite.
+  | 'untyped_prop'
+  // A part of the primitive underneath that the kit does not expose as a
+  // component of its own, or a prop of it the kit does not advertise.
+  | 'hidden_part'
+  // A mount point outside the kit, where the typed composition field has
+  // nothing to point at.
+  | 'external_mount'
+  // Anything the props type never carries: internal state, a runtime
+  // relationship, a fact about the component rather than about its schema.
+  | 'behaviour';
+
+// A claim the code cannot make true, recorded next to why. Modeled as its own
+// array under `coverage.assumptions` rather than another coverage_verdict
+// key: a verdict is one word, an assumption needs a reason a reader can
+// check - and a kind, so that a family of assumptions can be checked against
+// the contract it is about instead of read one at a time.
 export interface CoverageAssumption {
+  kind: CoverageAssumptionKind;
   claim: string;
   reason: string;
+  // Required for, and only legal on, `untyped_prop`: the prop the claim is
+  // about, checked against the extracted prop list the way
+  // `deprecations.props` keys are.
+  prop?: string;
 }
 
 // Free-form claim ids (a11y, rtl, ...) map to a verdict; `assumptions` is the
@@ -183,12 +214,25 @@ export interface Overlay {
   // form above rather than the nearest kit component standing in for one.
   dont_use_when: { rule: string; instead: Alternative }[];
   composition: {
-    children: { kinds: string[]; icons_via?: string };
-    // Optional, and only meaningful for a compound component's part - the
-    // root/item(s) it is only ever mounted under. Button and the rest of
-    // the kit never set this: nothing constrains where they may appear.
-    parent?: { kinds: string[] };
+    // Optional: absent means unconstrained. A layout component that accepts
+    // whatever a consumer puts in it can say nothing here, instead of
+    // enumerating a kit it does not know or claiming `text` it does not
+    // require.
+    children?: { kinds: string[]; icons_via?: string };
+    // Mount points OUTSIDE the kit, in the same external form
+    // `dont_use_when.instead` uses. Authored here rather than in `parent`
+    // because `parent` is derived from every other contract's children (see
+    // deriveParentKinds) and an overlay may not write it; the two are merged
+    // into `parent` at compile time.
+    mounts_in?: ExternalAlternative[];
   };
+  // Props of the primitive underneath that the kit does not advertise. They
+  // are extracted (so the compiler can check the name is real) and then left
+  // out of `properties`: a component whose own stylesheet contradicts a
+  // primitive prop, or whose usage document routes it to another part of the
+  // family, is not offering that prop, and listing it as API would be the
+  // contract's own statement that it is.
+  hidden?: string[];
   invariants: { id: string; text: string }[];
   anti_patterns: { dont: string; instead: string }[];
   deprecations: { props?: Record<string, { since: string; replacement: string; hint: string }> };
@@ -204,9 +248,20 @@ export interface Overlay {
   extension_points?: ExtensionPoint[];
 }
 
+// The composition an instance carries: the authored children, plus the
+// `parent` the compiler derives from every other contract in the kit. The
+// overlay's own `mounts_in` is merged into `parent` rather than carried
+// separately - one field answers "where may this be mounted", whether the
+// answer is a kit component or something outside it.
+export interface CompiledComposition {
+  children?: { kinds: string[]; icons_via?: string };
+  parent?: { kinds: Alternative[] };
+}
+
 // The contract instance: the overlay, typed by the metamodel and pointing at
 // the props schema. Field order here is the on-disk order.
-export interface ContractInstance extends Omit<Overlay, 'component'> {
+export interface ContractInstance extends Omit<Overlay, 'component' | 'composition'> {
+  composition: CompiledComposition;
   id: string;
   // The type this instance is an instance of, in the field name gts-ts looks
   // for (GtsExtractor's schemaIdFields) - without it GTS.validateInstance
@@ -262,6 +317,7 @@ const SEMANTIC_FIELDS = [
   'examples',
   'family',
   'extension_points',
+  'hidden',
 ] as const;
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
 
@@ -281,6 +337,7 @@ const SEMANTIC_FIELD_TARGETS = {
   examples: 'x-uikit',
   family: 'x-gts-traits',
   extension_points: 'x-gts-traits',
+  hidden: 'x-gts-traits',
 } as const satisfies Record<SemanticField, SemanticTarget>;
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
 
@@ -310,10 +367,10 @@ export interface CompiledContract {
   // set - so a component with no required own props (Button, today) still
   // emits `required: []`, not an absent field.
   required: string[];
-  // Closes the kit's own surface. Must be `unevaluatedProperties`, not
-  // `additionalProperties`: the latter only sees sibling `properties` and
-  // would reject everything reached through the allOf refs above.
-  unevaluatedProperties: false;
+  // What a prop nothing else in this schema evaluates means. Not `false`:
+  // see OPEN_UNEVALUATED for why a schema is the wrong place to decide that
+  // an unrecognized prop is an error.
+  unevaluatedProperties: OpenUnevaluated;
   'x-uikit': {
     metamodel: string;
     slots: Record<string, { typeText: string; optional: boolean }>;
@@ -328,13 +385,14 @@ export interface CompiledContract {
   } & Pick<Overlay, UikitFields>;
   // The validator-read half of the overlay, checked by gts-ts against
   // base.component.json's x-gts-traits-schema (GTS.validateEntity ->
-  // GtsStore.validateSchemaTraits) - see buildGtsTraitsSchema. `family` and
-  // `extension_points` are genuinely absent (not merely `undefined`) for a
-  // component whose overlay omits them, exactly like their x-uikit-routed
-  // counterparts always have been - the trait schema's own nullable+default
-  // shape is what makes that absence resolve instead of failing gts-ts's
-  // completeness check.
-  'x-gts-traits': Pick<Overlay, TraitFields>;
+  // GtsStore.validateSchemaTraits) - see buildGtsTraitsSchema. `family`,
+  // `extension_points` and `hidden` are genuinely absent (not merely
+  // `undefined`) for a component whose overlay omits them, exactly like their
+  // x-uikit-routed counterparts always have been - the trait schema's own
+  // nullable+default shape is what makes that absence resolve instead of
+  // failing gts-ts's completeness check. `composition` is the compiled one
+  // (derived `parent`, `mounts_in` merged into it), not the authored one.
+  'x-gts-traits': Omit<Pick<Overlay, TraitFields>, 'composition'> & { composition: CompiledComposition };
 }
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -343,8 +401,22 @@ const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 // rather than inlined so the artifacts, the conformance test and Ajv all see
 // one copy of each.
 const SCHEMA_DIR = dirname(fileURLToPath(import.meta.url));
-const GENERATED_DIR = join(SCHEMA_DIR, 'generated');
+const PASSTHROUGH_DIR = join(SCHEMA_DIR, 'passthrough');
 const TYPES_DIR = join(SCHEMA_DIR, 'types');
+
+// What a prop nothing in the schema evaluates means. `unevaluatedProperties:
+// false` made a schema the place where "the kit does not declare this" turned
+// into "this is invalid", and those are different statements: a consumer
+// passing a genuinely new React attribute, or a prop of a primitive part this
+// harness has not classified yet, got the same answer as a consumer who typed
+// `variannt`. An annotated open schema admits the value and records the
+// verdict instead, so the useful distinction - a near-miss of a real kit prop
+// is an error, an unrecognized name is merely unchecked - is made by whoever
+// reads the props (check-lib.ts's classifyProps) rather than by Ajv, which
+// cannot tell the two apart.
+export const UNCHECKED_VERDICT_KEY = 'x-uikit-verdict';
+export type OpenUnevaluated = { readonly [UNCHECKED_VERDICT_KEY]: 'unchecked' };
+export const OPEN_UNEVALUATED: OpenUnevaluated = { [UNCHECKED_VERDICT_KEY]: 'unchecked' };
 
 export function loadBaseSchema(): Record<string, unknown> {
   return JSON.parse(readFileSync(join(SCHEMA_DIR, 'base.component.json'), 'utf8')) as Record<string, unknown>;
@@ -381,6 +453,11 @@ export function addContractTypes(ajv: Ajv2020): void {
   // the `pattern` beside it, and the reference itself is resolved by a GTS
   // store.
   if (!ajv.getKeyword('x-gts-ref')) ajv.addKeyword({ keyword: 'x-gts-ref' });
+  // The verdict annotation inside every contract's `unevaluatedProperties`
+  // (OPEN_UNEVALUATED above). Declared for the same reason as x-gts-ref: it
+  // asserts nothing, and Ajv's strict mode must not trip over it while
+  // checking props.
+  if (!ajv.getKeyword(UNCHECKED_VERDICT_KEY)) ajv.addKeyword({ keyword: UNCHECKED_VERDICT_KEY });
   for (const type of loadTraitTypes()) ajv.addSchema(type);
 }
 
@@ -388,14 +465,41 @@ export function registerContractTypes(register: (entity: Record<string, unknown>
   for (const type of loadTraitTypes()) register(JSON.parse(JSON.stringify(type)) as Record<string, unknown>);
 }
 
-// The generated per-origin passthrough type this component's inherited
-// props were compiled into (see buildPassthroughSchema). Reads the
-// COMMITTED copy - the same file the freshness check in T4 diffs a fresh
-// compile against - not a value kept only in memory, so a stale copy is
-// something CI can catch instead of something only the compiler ever sees.
-export function loadPassthroughSchema(originKey: string): Record<string, unknown> {
-  const path = join(GENERATED_DIR, `passthrough.${originKey}.json`);
+// The hand-written passthrough type for one host element - what a component
+// rendering that element forwards to it. One file per element kind under
+// scripts/contracts/passthrough/, never generated: React's DOM attributes for
+// a `<button>` are the same for every component that renders one, so a
+// per-component derivation produced 233-entry files that differed only in
+// which component's compilation happened to print a union's members first.
+//
+// A kind with no committed file fails here by name rather than compiling a
+// contract that silently forwards an undeclared surface: adding an element
+// kind means writing its twenty lines, which is the point at which somebody
+// decides what that element actually accepts.
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-load
+export function loadPassthroughSchema(elementKind: string): Record<string, unknown> {
+  const token = domPassthroughToken(elementKind);
+  const path = join(PASSTHROUGH_DIR, `${token}.json`);
+  if (!existsSync(path)) {
+    throw new Error(
+      `no hand-written passthrough type for element kind "${elementKind}" - expected ` +
+        `scripts/contracts/passthrough/${token}.json. Write it (see dom_button.json for the shape: the common ` +
+        `attributes, the element's own, and the aria-/data-/on* patterns) rather than deriving one per component`,
+    );
+  }
   return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-load
+
+// Every committed element-kind type, for a reader that needs the whole set: a
+// GTS store registering what contracts compose, and the conformance suite's
+// identifier-grammar check.
+export function loadPassthroughSchemas(): Record<string, unknown>[] {
+  return readdirSync(PASSTHROUGH_DIR)
+    .filter((name) => name.endsWith('.json'))
+    .sort()
+    .map((name) => JSON.parse(readFileSync(join(PASSTHROUGH_DIR, name), 'utf8')) as Record<string, unknown>);
 }
 
 // name -> declared JSON Schema `type`, for every prop the passthrough type
@@ -424,11 +528,11 @@ const MACHINE_OWNED = ['axes', 'props', 'defaults', 'variants', 'required', 'slo
 // exactly, or a string literal union as an enum. Everything else - a
 // function, ReactNode, an element, an object shape - has no JSON Schema
 // representation and is annotation-only (see buildPropsAndRequired's slot
-// branch and buildPassthroughSchema's else branch). One function, used by
+// branch and the API-prop branch beside it). One function, used by
 // both a component's own props and its generated passthrough type, so the
 // same TypeScript shape is always classified the same way regardless of
 // which side of the own/inherited split it happens to land on.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-describe
 function classifyProviderSafeType(typeText: string): ContractProperty | undefined {
   const normalized = normalizeTypeText(typeText);
   if (normalized === 'boolean' || normalized === 'string' || normalized === 'number') {
@@ -437,14 +541,14 @@ function classifyProviderSafeType(typeText: string): ContractProperty | undefine
   const enumValues = parseStringLiteralUnion(normalized);
   if (enumValues) return { type: 'string', enum: enumValues };
   return undefined;
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-describe
 }
 
 // The JSON Schema keywords that make a property schema assert something
 // about a value. A schema carrying none of them - and no prose either - is
 // the bare `{}` this compiler used to emit for every inherited prop the
 // provider-safe subset could not express.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-describe
 const ASSERTING_KEYWORDS = ['type', 'enum', 'const', '$ref', 'anyOf', 'oneOf'] as const;
 
 // A property schema this compiler may emit, plus the assertion keywords the
@@ -471,93 +575,7 @@ export function describeUntypeableProperty(schema: PropertySchema, typeText: str
   if (schema.description !== undefined) return schema;
   if (ASSERTING_KEYWORDS.some((keyword) => schema[keyword] !== undefined)) return schema;
   return { ...schema, description: `TS: ${typeText}. Not expressible in JSON Schema, checked by tsc.` };
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
-}
-
-// Generates a passthrough type from a component's inherited (non-own) props.
-// `key`/`ref` are React/JSX machinery, not props a consumer sets, so neither
-// belongs in a props contract. Individual `aria-*` names are excluded the
-// same way the OLD hand-written file handled them: React's AriaAttributes
-// type declares ~50 of them by literal name, and enumerating each one here
-// would bury the file in exactly the boilerplate the shared `^aria-` pattern
-// property already covers for free; `data-*` attributes are not typed as
-// literal properties at all (JSX accepts them structurally), so there is
-// nothing to exclude there beyond keeping the same `^data-` pattern property
-// as before.
-//
-// `originKey` (see extract.ts's ComponentExtraction.passthroughOrigin) is
-// the storage/id identity - what the $id and the generated filename use;
-// `domTag` is the real HTML tag this describes, kept separate so the
-// human-readable title/description always name a real element even when the
-// origin is a Base UI part rather than the tag itself. `generatedFrom` is
-// every component stem currently known to compile this origin - M4: a
-// shared origin key with no record of who put what into it is how two
-// components silently overwrote each other's file; committing the list next
-// to the properties it backs makes the write path (compileOne below) able
-// to compare "what's here now" against "who put it here" instead of
-// guessing, and gives a reviewer reading the diff the same answer.
-// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1
-export function buildPassthroughSchema(
-  originKey: string,
-  domTag: string,
-  inheritedProps: ExtractedProp[],
-  generatedFrom: string[],
-): Record<string, unknown> {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
-  const properties: Record<string, ContractProperty> = {};
-  // Mirrors buildPropsAndRequired's own-prop rule (`!prop.optional` ->
-  // required): a primitive that turns an inherited prop required is a real
-  // narrowing of what a consumer may omit, and was invisible to freshness
-  // and compatibility before this list existed - every inherited prop read
-  // as optional regardless of what the checker actually reported. Sorted,
-  // and emitted even when empty (compileContract's own `required` does the
-  // same for own props - "a component with no required own props still
-  // emits `required: []`, not an absent field"), so a fresh compile is
-  // never ambiguous between "nothing required" and "not computed".
-  const required: string[] = [];
-  for (const prop of inheritedProps) {
-    if (prop.name === 'key' || prop.name === 'ref') continue;
-    if (prop.name.startsWith('aria-') || prop.name.startsWith('data-')) continue;
-    properties[prop.name] = describeUntypeableProperty(classifyProviderSafeType(prop.typeText) ?? {}, prop.typeText);
-    if (!prop.optional) required.push(prop.name);
-  }
-  required.sort();
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
-
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
-  return {
-    $id: passthroughTypeId(originKey),
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    title: `UiKit ${originKey} passthrough`,
-    description: `The props a kit component forwards to an underlying <${domTag}> element (directly or through Base UI), generated from this component's inherited (non-own) props. A component schema $refs this from its allOf, so the props it merely forwards are EVALUATED - which is what lets the derived type close itself with unevaluatedProperties: false without rejecting className, aria-* or data-*. Keyed by the ORIGIN of the inherited props (a Base UI primitive part, or a plain DOM element type) rather than the DOM tag alone, so two components forwarding to the same tag through unrelated type surfaces never collide; two components genuinely wrapping the same origin share this file by construction. Regenerate with \`npm run contracts:compile -- <directory>\`; a stale copy fails the freshness check.`,
-    type: 'object',
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
-    // Every component stem that has ever compiled into this shared file, so
-    // a mismatched recompile can name who else is on the hook before
-    // silently overwriting their facts (see compileOne's write path).
-    // Not consumed by Ajv/GTS - annotation only, same standing as $comment.
-    generated_from: [...generatedFrom].sort(),
-    properties,
-    required,
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-patterns
-    patternProperties: {
-      '^aria-': {
-        description:
-          'Any ARIA attribute passes. Enumerating the WAI-ARIA set here would go stale against the spec and buy nothing: a contract\'s job is to stop typos in KIT props, and the a11y rules that actually matter (icon-only needs aria-label) are invariants, not a property list.',
-      },
-      '^data-': {
-        description:
-          'Any data attribute passes: they are open by construction, and consumers add their own (data-testid being the common one).',
-      },
-    },
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-patterns
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
-    $comment:
-      'Intentionally NOT closed (no unevaluatedProperties/additionalProperties): this is one of several in-place applicators a component composes, so it cannot know what the others contribute. Closure happens once, in the derived component type.',
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
-  };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-describe
 }
 
 // How a reference to another kit component is spelled, everywhere one
@@ -668,7 +686,7 @@ export function buildTraitTypes(): Record<string, unknown>[] {
     traitType(
       'child_composition',
       'UiKit child composition',
-      'What may appear inside this component. A component reference when the child IS a kit component - typed so a reader can resolve it and the conformance suite can check it exists - or the literal "text" for plain textual content, or "none" for a component that takes no children at all (DataTable renders its Table internally: "text" would claim a slot that does not exist, "none" says so honestly). "none" stands alone - a list that pairs it with anything else says both that nothing may appear inside and that something may. Not an open string: a typo\'d reference would otherwise silently read as a content kind.',
+      'What may appear inside this component. A component reference when the child IS a kit component - typed so a reader can resolve it and the conformance suite can check it exists - or one of two content kinds. "text" means a non-component React node: a string, a number, a fragment, or a formatted inline element (<strong>, <code>) - never a kit component, which would be a reference instead. "none" means the component takes no children at all (DataTable renders its Table internally: "text" would claim a slot that does not exist, "none" says so honestly), and stands alone - a list that pairs it with anything else says both that nothing may appear inside and that something may. Not an open string: a typo\'d reference would otherwise silently read as a content kind.',
       {
         type: 'object',
         properties: {
@@ -696,11 +714,15 @@ export function buildTraitTypes(): Record<string, unknown>[] {
     traitType(
       'parent_composition',
       'UiKit parent composition',
-      "Where this component may be mounted. Only a compound component's part states one: the root or item kind(s) it is only ever used under. Nothing about Button constrains where it may appear, so most components have no parent at all.",
+      "Where this component may be mounted. DERIVED, never authored: a kit parent is any component whose own child composition names this one, computed across every contract at compile time, so the two directions of one relationship cannot disagree. A mount point OUTSIDE the kit takes the external form, authored in the overlay as `composition.mounts_in` and merged in here - the typed reference covers kit-to-kit nesting only, and a part whose real mount point is a third-party render function has nothing to point at. Nothing about Button constrains where it may appear, so most components have no parent at all.",
       {
         type: 'object',
         properties: {
-          kinds: { type: 'array', items: componentRefSchema(), minItems: 1 },
+          kinds: {
+            type: 'array',
+            items: { oneOf: [componentRefSchema(), { $ref: traitTypeId('external_alternative') }] },
+            minItems: 1,
+          },
         },
         required: ['kinds'],
         additionalProperties: false,
@@ -709,14 +731,14 @@ export function buildTraitTypes(): Record<string, unknown>[] {
     traitType(
       'composition',
       'UiKit composition',
-      'How this component nests: what may go inside it, and - for a part of a compound component - what it may be mounted under. The two are separate facts and separate types; only the first is required, because every component has an answer for what it contains and most have none for where they belong.',
+      'How this component nests: what may go inside it, and what it may be mounted under. Separate facts, separate types, and both optional. `children` absent means UNCONSTRAINED - a layout component that accepts whatever a consumer puts in it neither enumerates a kit it does not know nor claims "text" it does not require, and an empty or invented list would read as a rule rather than as its absence. `parent` is derived from every other contract\'s `children` and merged with the overlay\'s own `mounts_in`; an overlay may not write it (the compiler refuses one that does).',
       {
         type: 'object',
         properties: {
           children: { $ref: traitTypeId('child_composition') },
+          mounts_in: { type: 'array', items: { $ref: traitTypeId('external_alternative') }, minItems: 1 },
           parent: { $ref: traitTypeId('parent_composition') },
         },
-        required: ['children'],
         additionalProperties: false,
       },
     ),
@@ -751,15 +773,28 @@ export function buildTraitTypes(): Record<string, unknown>[] {
     traitType(
       'coverage_assumption',
       'UiKit coverage assumption',
-      'A fact the code cannot make true - a generic type parameter, a part composed of two primitives - rather than a verified/checked-no/not-described claim.',
+      'A fact the code cannot make true, rather than a verified/checked-no/not-described claim. `kind` is required and drawn from a closed list, because without it the field was a paragraph: "JSON Schema has no notion of a generic type parameter" appeared in three overlays in three wordings and nothing could tell that family of claim apart from "this part wraps two primitives" or "its mount point is outside the kit". With a kind, the conformance suite can ask whether every prop the schema cannot type has an entry - which is the question those repeated sentences were answering by accident. `untyped_prop` additionally names the prop, checked against the extracted prop list the way a deprecation\'s key is.',
       {
         type: 'object',
         properties: {
+          kind: {
+            type: 'string',
+            enum: ['untyped_prop', 'hidden_part', 'external_mount', 'behaviour'],
+            description:
+              'untyped_prop: a property that reaches the contract asserting nothing - a generic, a function, a live object, a React node. hidden_part: a part of the primitive underneath the kit does not expose, or a prop of it the kit does not advertise. external_mount: a mount point outside the kit, where the typed composition field has nothing to point at. behaviour: anything the props type never carries - internal state, a runtime relationship, a fact about the component rather than about its schema.',
+          },
           claim: { type: 'string', minLength: 1 },
           reason: { type: 'string', minLength: 1 },
+          prop: propNameSchema(),
         },
-        required: ['claim', 'reason'],
+        required: ['kind', 'claim', 'reason'],
         additionalProperties: false,
+        // Instance-type-scoped keywords throughout, so this applies to a real
+        // assumption object and is vacuously true of anything else - the same
+        // property nullableTraitProperty relies on for `family`.
+        if: { properties: { kind: { const: 'untyped_prop' } }, required: ['kind'] },
+        then: { required: ['kind', 'claim', 'reason', 'prop'] },
+        else: { not: { required: ['prop'] } },
       },
     ),
     traitType(
@@ -978,6 +1013,13 @@ export function buildMetamodel(): Record<string, unknown> {
         items: { $ref: traitTypeId('extension_point') },
         minItems: 1,
       },
+      hidden: {
+        type: 'array',
+        description:
+          "Props of the primitive underneath that this kit does not advertise, so they are left out of the contract's own properties. Every entry is checked against the extracted prop list - a name the primitive no longer declares fails the compile rather than hiding nothing - and may not name a prop the component declares itself, which would be the overlay asking the compiler to drop what the source states. Absent for a component that advertises everything it forwards, which is most of them.",
+        items: propNameSchema(),
+        minItems: 1,
+      },
       // The one reference gts-ts itself resolves against the registry: it
       // sits directly on an instance property, which is as deep as
       // XGtsRefValidator's own walk goes, so GTS.validateInstance fails an
@@ -1121,7 +1163,7 @@ export function buildBaseSchema(): Record<string, unknown> {
       "Abstract base type every kit component's props schema derives from. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which belongs to the per-origin passthrough type, because a base shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, the validator-read half of the overlay vocabulary that GTS.validateEntity checks a component's own x-gts-traits against. That vocabulary is six references to the types that own each concept (gts.frontx.uikit.trait.*), not six inline definitions - see the domain model in the package DESIGN for how they relate.",
     type: 'object',
     $comment:
-      "No additionalProperties/unevaluatedProperties here on purpose. gts-ts's validateSchemaAgainstParent rejects a derived schema that adds properties when the base sets additionalProperties: false, and closing the base would mean every component had to restate it. Closure is the DERIVED type's job (unevaluatedProperties: false), where the full property set is finally known.",
+      "No additionalProperties/unevaluatedProperties here on purpose. gts-ts's validateSchemaAgainstParent rejects a derived schema that adds properties when the base sets additionalProperties: false, and closing the base would mean every component had to restate it. A derived component type does not close itself either: its unevaluatedProperties carries an annotated open schema ({ \"x-uikit-verdict\": \"unchecked\" }), so a prop nothing evaluates is admitted and reported as UNCHECKED by whoever reads the props rather than rejected by Ajv, which cannot tell a typo'd kit prop from an attribute this harness has not classified yet.",
     'x-gts-traits-schema': buildGtsTraitsSchema(),
   };
 }
@@ -1235,6 +1277,24 @@ export function parseOverlay(component: string, raw: unknown): Overlay {
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-unknown-field
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-derived-field
+  // `composition.parent` is derived from every other contract's children
+  // (deriveParentKinds), so an authored copy is a second writable statement
+  // of one fact - the shape that let a part name a parent whose children did
+  // not name it back. Refused here rather than removed from the vocabulary:
+  // the field has to stay in the `composition` type for the compiled
+  // instance to validate, so the check is on the AUTHORING side, which is
+  // the side that must not write it.
+  if (raw.composition !== null && typeof raw.composition === 'object' && 'parent' in raw.composition) {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-derived-field-refuse
+    throw new Error(
+      `${component}: overlay writes composition.parent, which the compiler derives from every other contract's ` +
+        `composition.children - for a mount point outside the kit, use composition.mounts_in instead`,
+    );
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-derived-field-refuse
+  }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-derived-field
+
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-name-mismatch
   if (raw.component !== component) {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-name-mismatch-refuse
@@ -1289,7 +1349,7 @@ export function compileInstance(directory: string, exportStem: string = director
     intent: overlay.intent,
     typical_uses: overlay.typical_uses,
     dont_use_when: overlay.dont_use_when,
-    composition: overlay.composition,
+    composition: compileComposition(exportStem, overlay),
     invariants: overlay.invariants,
     anti_patterns: overlay.anti_patterns,
     deprecations: overlay.deprecations,
@@ -1297,6 +1357,7 @@ export function compileInstance(directory: string, exportStem: string = director
     examples: overlay.examples,
     family: overlay.family,
     extension_points: overlay.extension_points,
+    hidden: overlay.hidden,
     // The bare id, not the `gts://` URI form the contract's own $id carries:
     // an id-VALUED field holds an id, and gts-ts's reference validator
     // rejects the URI form outright (Gts.isValidGtsID).
@@ -1319,16 +1380,31 @@ export interface PropsAndRequired {
   slots: CompiledContract['x-uikit']['slots'];
 }
 
-// The machine-owned half of a component's props schema: cva axes, own
-// props (typed where the provider-safe subset can express them, slots
-// where it cannot) and which own props are required. Split out from
+// The machine-owned half of a component's props schema: cva axes, the props
+// the component declares itself, and the props the primitive library declares
+// for the part it wraps - typed where the provider-safe subset can express
+// them, annotated with their TypeScript type where it cannot. Split out from
 // compileContract so it can be unit-tested with a synthetic
-// ComponentExtraction - in particular the passthrough type-conflict check,
+// ComponentExtraction - in particular the element-surface conflict check,
 // which needs no real component file to exercise.
+//
+// An API prop reaches `properties` on the same footing as a declared one, and
+// that is the whole point of the change it came with: `multiple`,
+// `defaultValue` and `onValueChange` are Accordion's API whether the kit
+// types them out again or inherits them from Base UI's own AccordionRootProps,
+// and an evaluation that read them out of a 233-entry generated file concluded
+// `defaultValue` took a plain string.
+//
+// `hidden` names API props the kit does not advertise. They are still
+// extracted - which is what lets the compiler reject a `hidden` entry naming
+// nothing - and then left out: a component whose own stylesheet or usage
+// document contradicts a primitive prop is not offering it, and a contract
+// listing it would say the opposite.
 export function buildPropsAndRequired(
   component: string,
   extraction: ComponentExtraction,
   passthroughSchema: Record<string, unknown>,
+  hidden: readonly string[] = [],
 ): PropsAndRequired {
   const properties: Record<string, ContractProperty> = {};
   const slots: PropsAndRequired['slots'] = {};
@@ -1336,6 +1412,7 @@ export function buildPropsAndRequired(
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
   const passthroughTypes = passthroughPropertyTypes(passthroughSchema);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
+  const hiddenNames = new Set(hidden);
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-axes
   for (const [axis, values] of Object.entries(extraction.axes)) {
@@ -1344,62 +1421,148 @@ export function buildPropsAndRequired(
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-axes
 
+  // Declared props first, then API props: the two share one `properties` map
+  // and one `required` list, so a name can only belong to one of them, and
+  // the declared side wins by arriving first - a kit component that
+  // re-declares a primitive prop (every one of them narrows `className`) is
+  // stating the narrower fact deliberately.
   for (const prop of extraction.ownProps) {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
-    if (passthroughTypes.has(prop.name)) {
-      const declared = passthroughTypes.get(prop.name);
-      // `declared === undefined` means the passthrough entry is
-      // annotation-only (onClick, children, style): nothing to compare
-      // against, so the name still counts as owned but the type check is
-      // skipped.
-      if (declared !== undefined) {
-        const ownClassified = classifyProviderSafeType(prop.typeText);
-        const agrees =
-          ownClassified !== undefined &&
-          ownClassified.type === declared.type &&
-          JSON.stringify(ownClassified.enum) === JSON.stringify(declared.enum);
-        if (!agrees) {
-          throw new Error(
-            `${component}: prop "${prop.name}" declared "${prop.typeText}" in ${component}.tsx conflicts with the ` +
-              `passthrough type's declared type "${declared.type}" - one prop, one owner, and the two disagree`,
-          );
-        }
-      }
-      // Declared by the passthrough type already - leave it there.
-      continue;
-    }
+    assertAgreesWithElementSurface(component, prop, `${component}.tsx`, passthroughTypes);
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
     const normative = classifyProviderSafeType(prop.typeText);
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
     if (normative) {
       properties[prop.name] = normative;
     } else {
-      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
-      // Not expressible in the provider-safe subset - recorded as a slot
-      // with its source type, checked by the lint, not by Ajv. It still gets
-      // an annotation-only property entry, or `unevaluatedProperties: false`
-      // below would reject a correct `<Button icon={...} />`.
+      // Not expressible in the provider-safe subset - recorded as a slot with
+      // its source type, checked by the lint and by tsc, not by Ajv. It still
+      // gets an annotation-only property entry so a reader of `properties`
+      // sees every prop the component declares, not only the typeable ones.
       slots[prop.name] = { typeText: prop.typeText, optional: prop.optional };
       properties[prop.name] = {
         description: `Slot: ${prop.typeText}. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots.`,
       };
-      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
     }
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
-    // The same "never emit a property that asserts nothing and says
-    // nothing" rule the passthrough type applies, held here as a
-    // post-condition rather than duplicated per branch: the slot branch
-    // above already writes its own, more specific description and a typed
-    // property already asserts something, so this changes nothing today -
-    // it is what keeps the rule true for whatever branch is added next.
+    // The same "never emit a property that asserts nothing and says nothing"
+    // rule the API branch below applies, held here as a post-condition rather
+    // than duplicated per branch: the slot branch above already writes its
+    // own, more specific description and a typed property already asserts
+    // something, so this changes nothing today - it is what keeps the rule
+    // true for whatever branch is added next.
     properties[prop.name] = describeUntypeableProperty(properties[prop.name], prop.typeText);
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
     if (!prop.optional) required.push(prop.name);
   }
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-api
+  for (const prop of extraction.apiProps) {
+    if (hiddenNames.has(prop.name)) continue;
+    if (prop.name in properties) {
+      // The component declares this name itself, and its own declaration is
+      // the narrower one (`className?: string` over Base UI's
+      // `string | ((state) => string)`). Nothing to add, and nothing to
+      // reconcile: `required` already carries the declared side's answer.
+      continue;
+    }
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
+    assertAgreesWithElementSurface(component, prop, prop.declarationFile, passthroughTypes);
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
+    // No slot record: `x-uikit.slots` is the kit's own slotted props, and a
+    // forwarded API prop the schema cannot type is not one - its TypeScript
+    // type goes in the description, and the `untyped_prop` assumption naming
+    // it is what a reader gets instead of a second machine-readable copy.
+    properties[prop.name] = describeUntypeableProperty(classifyProviderSafeType(prop.typeText) ?? {}, prop.typeText);
+    if (!prop.optional) required.push(prop.name);
+  }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-api
+
+  required.sort();
   return { properties, required, slots };
 }
+
+// One prop, one shape. Where a prop's name is also declared by the
+// element-kind passthrough type this contract composes, the two schemas both
+// apply to the same value, so a disagreement is not a precedence question -
+// it is a props object that can satisfy neither. Only an ASSERTING entry on
+// the element side can disagree: an annotation-only one (`style`, `children`)
+// states nothing to contradict, which is exactly why a Base UI component's
+// state-function `style` composes cleanly over React's plain object.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
+function assertAgreesWithElementSurface(
+  component: string,
+  prop: ExtractedProp,
+  declaredIn: string,
+  passthroughTypes: Map<string, ContractProperty | undefined>,
+): void {
+  const declared = passthroughTypes.get(prop.name);
+  if (declared === undefined) return;
+  const classified = classifyProviderSafeType(prop.typeText);
+  const agrees =
+    classified !== undefined &&
+    classified.type === declared.type &&
+    JSON.stringify(classified.enum) === JSON.stringify(declared.enum);
+  if (agrees) return;
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict-refuse
+  throw new Error(
+    `${component}: prop "${prop.name}" declared "${prop.typeText}" in ${declaredIn} conflicts with the ` +
+      `element surface's declared type "${declared.type}" - one prop, one shape, and the two disagree`,
+  );
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict-refuse
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
+
+// Every property of a compiled contract that asserts nothing about its value
+// - a slot the kit declares, or an API prop of the primitive underneath whose
+// type JSON Schema cannot express. What they have in common is the only thing
+// that matters to a reader: Ajv will not catch a wrong value here, so the
+// prop's real type has to be stated in prose and its existence acknowledged.
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-list
+export function unassertedPropertyNames(contract: CompiledContract): string[] {
+  return Object.entries(contract.properties)
+    .filter(([, schema]) => !ASSERTING_KEYWORDS.some((keyword) => (schema as PropertySchema)[keyword] !== undefined))
+    .map(([name]) => name)
+    .sort();
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-list
+
+// The pairing between those properties and the overlay's `untyped_prop`
+// assumptions, both ways. A property nothing asserts and nothing explains is
+// the defect the whole assumption-kind change came from: an evaluation read
+// three such properties out of a generated file and decided they took plain
+// strings. An assumption naming a property the schema DOES constrain is the
+// mirror error - a reader told that `multiple` cannot be typed while the
+// contract types it as a boolean has been told something false about the
+// contract in front of them.
+//
+// Reported rather than thrown: this is a documentation gap, and a compile
+// that refuses it would make a component uncompilable until its prose caught
+// up, which is the wrong order. The conformance suite fails on it instead,
+// in the run the author already executes.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-pair
+export function findUntypedPropMismatches(contract: CompiledContract): string[] {
+  const unasserted = new Set(unassertedPropertyNames(contract));
+  const named = new Set(
+    (contract['x-gts-traits'].coverage.assumptions ?? [])
+      .filter((assumption) => assumption.kind === 'untyped_prop')
+      .map((assumption) => assumption.prop)
+      .filter((prop): prop is string => prop !== undefined),
+  );
+  const problems: string[] = [];
+  for (const name of [...unasserted].sort()) {
+    if (!named.has(name)) {
+      problems.push(`"${name}" asserts nothing in properties but no untyped_prop assumption names it`);
+    }
+  }
+  for (const name of [...named].sort()) {
+    if (!unasserted.has(name)) {
+      problems.push(`an untyped_prop assumption names "${name}", which the contract's properties do constrain`);
+    }
+  }
+  return problems;
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-pair
 
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
 function fieldsTargeting(target: SemanticTarget): SemanticField[] {
@@ -1462,30 +1625,110 @@ export function resolveTargetExtraction(directory: string, exportStem: string = 
 }
 
 // M11: the overlay must only ever point at a prop the extractor actually
-// found. `deprecations.props` keys and `composition.children.icons_via` are
-// the two prop-name-bearing overlay fields today - moved here from Button's
-// own test file so every component gets this cross-check unconditionally,
-// not just the one whose test author remembered to write it (Accordion and
-// DataTable had no equivalent protection before this). Extend this list if
-// the metamodel ever adds a third prop-name-bearing overlay field.
+// found. Four prop-name-bearing overlay fields today - `deprecations.props`
+// keys, `composition.children.icons_via`, every `hidden` entry, and an
+// `untyped_prop` assumption's `prop` - checked here so every component gets
+// the cross-check unconditionally rather than only the one whose test author
+// remembered to write it. Extend the list if the metamodel ever adds a fifth.
+//
+// Which props count as real differs by field, and deliberately: the kit's own
+// declared props and its variant axes are what a deprecation or an icon slot
+// can name, while `hidden` and an `untyped_prop` assumption are about the
+// primitive's API too, so they may name an API prop as well. A `hidden` entry
+// naming a prop the kit itself declares would be the overlay asking the
+// compiler to drop a prop the component's own source states, which is a
+// different mistake and gets its own refusal.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop
 export function assertOverlayReferencesRealProps(component: string, overlay: Overlay, extraction: ComponentExtraction): void {
-  const known = new Set([...Object.keys(extraction.axes), ...extraction.ownProps.map((prop) => prop.name)]);
+  const declared = new Set([...Object.keys(extraction.axes), ...extraction.ownProps.map((prop) => prop.name)]);
+  const api = new Set(extraction.apiProps.map((prop) => prop.name));
+  const refuse = (message: string): never => {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop-refuse
+    throw new Error(`${component}: ${message}`);
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop-refuse
+  };
+
   for (const prop of Object.keys(overlay.deprecations.props ?? {})) {
-    if (!known.has(prop)) {
-      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop-refuse
-      throw new Error(`${component}: overlay deprecations.props references "${prop}", which is not a real prop`);
-      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop-refuse
+    if (!declared.has(prop)) refuse(`overlay deprecations.props references "${prop}", which is not a real prop`);
+  }
+  const iconsVia = overlay.composition.children?.icons_via;
+  if (iconsVia !== undefined && !declared.has(iconsVia)) {
+    refuse(`overlay composition.children.icons_via references "${iconsVia}", which is not a real prop`);
+  }
+  for (const prop of overlay.hidden ?? []) {
+    if (declared.has(prop)) {
+      refuse(
+        `overlay hides "${prop}", which ${component}.tsx declares itself - hiding is for a prop of the primitive ` +
+          `underneath that the kit does not advertise, not for the kit's own API`,
+      );
+    }
+    if (!api.has(prop)) {
+      refuse(
+        `overlay hides "${prop}", which the primitive underneath does not declare - hidden names are checked ` +
+          `against the extracted prop list so a renamed or removed primitive prop fails here rather than silently ` +
+          `hiding nothing`,
+      );
     }
   }
-  const iconsVia = overlay.composition.children.icons_via;
-  if (iconsVia !== undefined && !known.has(iconsVia)) {
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop-refuse
-    throw new Error(`${component}: overlay composition.children.icons_via references "${iconsVia}", which is not a real prop`);
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop-refuse
+  for (const assumption of overlay.coverage.assumptions ?? []) {
+    if (assumption.kind !== 'untyped_prop') continue;
+    const prop = assumption.prop;
+    if (prop === undefined) refuse(`an untyped_prop assumption ("${assumption.claim}") names no prop`);
+    else if (!declared.has(prop) && !api.has(prop)) {
+      refuse(`untyped_prop assumption references "${prop}", which is not a real prop`);
+    }
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop
 }
+
+// Where a part may be mounted, derived rather than authored. Every overlay in
+// the kit is read and asked which components it allows as children; the ones
+// naming THIS component are its parents.
+//
+// This is the direction the fact actually runs. An authored `parent` was a
+// claim about somebody else's contract - AccordionTrigger saying "I go inside
+// AccordionItem" while AccordionItem's own children list was free to not
+// mention triggers at all - so the pair could disagree and only a conformance
+// test comparing them would notice. Derived, the two cannot disagree: there
+// is one statement, `children`, and `parent` is a view of it.
+//
+// Overlays, not compiled contracts: an overlay is the authored source, so a
+// derivation taken from it is right even while a committed contract is stale,
+// which is the state every recompile passes through. No TypeScript program is
+// built - this is a directory listing and a YAML parse per described
+// component.
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-composition:p1
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-composition:p1:inst-co-derive
+export function deriveParentKinds(exportStem: string): string[] {
+  const self = componentTypeRef(exportStem, CONTRACT_MAJOR);
+  const parents: string[] = [];
+  const componentsDir = join(kitRoot, 'src', 'components');
+  for (const entry of readdirSync(componentsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    for (const stem of overlayStems(entry.name)) {
+      if (stem === exportStem) continue;
+      const overlay = loadOverlay(entry.name, stem);
+      if ((overlay.composition.children?.kinds ?? []).includes(self)) {
+        parents.push(componentTypeRef(stem, CONTRACT_MAJOR));
+      }
+    }
+  }
+  return parents.sort();
+}
+
+// The composition an instance carries: the authored children unchanged, and a
+// `parent` assembled from the derivation above plus whatever mount points
+// outside the kit the overlay stated. Absent entirely when there is neither -
+// most of the kit is mounted anywhere, and an empty list would read as a
+// constraint rather than as its absence.
+export function compileComposition(exportStem: string, overlay: Overlay): CompiledComposition {
+  const kinds: Alternative[] = [...deriveParentKinds(exportStem), ...(overlay.composition.mounts_in ?? [])];
+  const composition: CompiledComposition = {};
+  if (overlay.composition.children !== undefined) composition.children = overlay.composition.children;
+  if (kinds.length > 0) composition.parent = { kinds };
+  return composition;
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-composition:p1:inst-co-derive
 
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1
 // @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-compilation:p1
@@ -1512,48 +1755,52 @@ export function compileContract(directory: string, exportStem: string = director
   assertOverlayReferencesRealProps(exportStem, overlay, extraction);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop
 
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
+  if (extraction.unclassifiedProps.length > 0) {
+    // A prop declared outside the component, the primitive library and
+    // React's DOM types: the compiler cannot tell whether it is part of this
+    // component's API or forwarded surface, and either guess would be a fact
+    // the contract states without knowing it.
+    const names = extraction.unclassifiedProps.map((prop) => `"${prop.name}" (${prop.declarationFile})`).join(', ');
+    throw new Error(
+      `${exportStem}: ${extraction.unclassifiedProps.length} prop(s) declared where the extractor cannot place ` +
+        `them - ${names}. Neither this component's own source, the primitive library it wraps, nor React's DOM ` +
+        `attribute types declare them, so the compiler cannot tell this component's API from what it forwards ` +
+        `(see extract.ts's declaration-site classification)`,
+    );
+  }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
+
   let passthroughSchema: Record<string, unknown> | undefined;
   let passthroughRef: SchemaRef | undefined;
-  if (extraction.passthroughOrigin) {
-    if (!extraction.passthroughKind) {
-      // The origin walk and the domTag walk read the same heritage graph and
-      // must agree on whether one exists at all; disagreeing here means one
-      // of the two walks changed without the other, which is a harness bug,
-      // not a fact about the component's own source.
+  if (extraction.passthroughProps.length > 0) {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
+    if (!extraction.elementKind) {
+      // Props forwarded to a host element, and no host element resolved for
+      // them: the heritage walk gave up somewhere (its own `cannot_extract`
+      // notes say where), and there is no honest schema to declare the
+      // forwarded surface in. Refused rather than compiled without it - the
+      // contract would then claim the component forwards nothing.
       throw new Error(
-        `${exportStem}: resolved passthrough origin "${extraction.passthroughOrigin}" but no DOM element kind - the ` +
-          `origin and kind walks disagreed, which should never happen`,
+        `${exportStem}: ${extraction.passthroughProps.length} forwarded DOM prop(s) found (e.g. ` +
+          `"${extraction.passthroughProps[0].name}") but no host element kind could be resolved from ` +
+          `${directory}.tsx's props type - cannot say which element surface they belong to`,
       );
     }
-    // The generated_from list is only meaningful at write time (M4's
-    // collision check, in compileOne below) - compileContract only reads
-    // `.properties` off this schema (buildPropsAndRequired's own-vs-
-    // passthrough type-conflict check), so a single-element placeholder is
-    // enough here and never gets written to disk.
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
-    passthroughSchema = buildPassthroughSchema(extraction.passthroughOrigin, extraction.passthroughKind, extraction.inheritedProps, [
-      exportStem,
-    ]);
+    passthroughSchema = loadPassthroughSchema(extraction.elementKind);
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
-    passthroughRef = { $ref: passthroughTypeId(extraction.passthroughOrigin) };
+    passthroughRef = { $ref: passthroughTypeId(domPassthroughToken(extraction.elementKind)) };
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
-  } else if (extraction.inheritedProps.length > 0) {
-    // Inherited props exist but no origin could be resolved for them -
-    // exactly the case a silent extractor would have dropped them in.
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
-    throw new Error(
-      `${exportStem}: ${extraction.inheritedProps.length} inherited prop(s) found (e.g. "${extraction.inheritedProps[0].name}") ` +
-        `but no passthrough origin could be resolved from ${directory}.tsx's props type - cannot generate a ` +
-        `passthrough type to declare them in`,
-    );
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
   }
 
   const { properties, required, slots } = buildPropsAndRequired(
     exportStem,
     extraction,
     passthroughSchema ?? { properties: {} },
+    overlay.hidden ?? [],
   );
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
@@ -1578,7 +1825,7 @@ export function compileContract(directory: string, exportStem: string = director
     properties,
     required,
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
-    unevaluatedProperties: false,
+    unevaluatedProperties: OPEN_UNEVALUATED,
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
     'x-uikit': {
       metamodel: METAMODEL_VERSION,
@@ -1593,7 +1840,7 @@ export function compileContract(directory: string, exportStem: string = director
       cannot_extract: extraction.cannotExtract,
     },
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
-    'x-gts-traits': pickFields(overlay, gtsTraitsFields),
+    'x-gts-traits': { ...pickFields(overlay, gtsTraitsFields), composition: compileComposition(exportStem, overlay) },
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
   };
   // M3: validated against buildGtsTraitsSchema() here, not only inside
@@ -1637,7 +1884,6 @@ export function overlayStems(directory: string): string[] {
 
 function compileOne(directory: string, exportStem: string): void {
   // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-compile-each
-  const extraction = resolveTargetExtraction(directory, exportStem);
   const contract = compileContract(directory, exportStem);
   const instance = compileInstance(directory, exportStem);
   // Output sits next to the component's source, alongside the overlay it was
@@ -1656,91 +1902,6 @@ function compileOne(directory: string, exportStem: string): void {
   console.log(`wrote ${out}`);
   console.log(`wrote ${instanceOut}`);
   // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-report-paths
-  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-write-passthrough
-  if (extraction.passthroughOrigin && extraction.passthroughKind) {
-    const passthroughOut = join(GENERATED_DIR, `passthrough.${extraction.passthroughOrigin}.json`);
-    const existing = existsSync(passthroughOut) ? (JSON.parse(readFileSync(passthroughOut, 'utf8')) as Record<string, unknown>) : undefined;
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
-    const existingGeneratedFrom = Array.isArray(existing?.generated_from) ? (existing.generated_from as string[]) : [];
-    const generatedFrom = Array.from(new Set([...existingGeneratedFrom, exportStem]));
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-open
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
-    const passthroughSchema = buildPassthroughSchema(
-      extraction.passthroughOrigin,
-      extraction.passthroughKind,
-      extraction.inheritedProps,
-      generatedFrom,
-    );
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision
-    assertNoPassthroughCollision(
-      exportStem,
-      extraction.passthroughOrigin,
-      passthroughOut,
-      existing && { generatedFrom: existingGeneratedFrom, surface: { properties: existing.properties, required: existing.required } },
-      { properties: passthroughSchema.properties, required: passthroughSchema.required },
-    );
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision
-    mkdirSync(GENERATED_DIR, { recursive: true });
-    writeFileSync(passthroughOut, `${JSON.stringify(passthroughSchema, null, 2)}\n`);
-    console.log(`wrote ${passthroughOut}`);
-  }
-  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-write-passthrough
-}
-
-// M4: a shared origin key is exactly that - shared. Two components can
-// resolve the SAME origin key (Omit's own excluded-keys argument is not
-// part of the key - see extract.ts's resolvePassthroughOrigin) while
-// genuinely inheriting DIFFERENT prop sets from it. Whichever compiled last
-// used to win silently; this compares the incoming surface against whatever
-// is already committed, and a real mismatch - as opposed to this same
-// component simply recompiling after a source change - fails the build
-// naming every component on record for this file instead of overwriting
-// them. Pure (no I/O) so it is unit-testable without touching the real
-// generated/ directory - compileOne above is the only real caller.
-//
-// The compared surface is everything buildPassthroughSchema derives from the
-// component's inherited props: `properties` AND `required`. Everything else
-// in the file is fixed by the origin (title, description, patternProperties,
-// $id) or is the ownership list itself. Comparing properties alone would let
-// two components disagree about which forwarded props are MANDATORY - one
-// primitive turning `value` required where the other has it optional - and
-// the later compile would overwrite the earlier component's answer in
-// silence, which is the exact failure this refusal exists to prevent.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision
-export interface PassthroughOwnedSurface {
-  properties: unknown;
-  required: unknown;
-}
-
-function sameOwnedSurface(committed: PassthroughOwnedSurface, fresh: PassthroughOwnedSurface): boolean {
-  const normalize = (surface: PassthroughOwnedSurface): string =>
-    JSON.stringify({ properties: surface.properties ?? {}, required: surface.required ?? [] });
-  return normalize(committed) === normalize(fresh);
-}
-
-export function assertNoPassthroughCollision(
-  exportStem: string,
-  originKey: string,
-  passthroughPath: string,
-  existing: { generatedFrom: string[]; surface: PassthroughOwnedSurface } | undefined,
-  freshSurface: PassthroughOwnedSurface,
-): void {
-  if (!existing) return;
-  const otherOwners = existing.generatedFrom.filter((stem) => stem !== exportStem);
-  if (otherOwners.length === 0) return;
-  if (sameOwnedSurface(existing.surface, freshSurface)) return;
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision-refuse
-  throw new Error(
-    `${exportStem}: shared passthrough origin "${originKey}" is already committed by ${otherOwners.join(', ')} ` +
-      `with a different inherited-props set - compiling ${exportStem} would silently overwrite ${passthroughPath} ` +
-      `for ${otherOwners.length === 1 ? 'that component' : 'those components'}. If these components genuinely ` +
-      `inherit different props from the same origin, the origin key itself needs to change (see ` +
-      `resolvePassthroughOrigin in extract.ts); if they should match, recompile ${otherOwners.join(', ')} too so ` +
-      `both sides agree`,
-  );
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision-refuse
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision
 }
 
 // The three schemas that belong to no single component - the abstract base

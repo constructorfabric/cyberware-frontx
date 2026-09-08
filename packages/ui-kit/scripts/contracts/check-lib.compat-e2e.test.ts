@@ -53,7 +53,7 @@ function schema(major: number, properties: Record<string, unknown>, required: st
     allOf: [{ $ref: 'gts://gts.frontx.uikit.base.component.v1~' }],
     properties,
     required,
-    unevaluatedProperties: false as const,
+    unevaluatedProperties: { 'x-uikit-verdict': 'unchecked' } as const,
   };
 }
 

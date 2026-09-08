@@ -11,46 +11,164 @@ the domain model - the diagram and the relationship table - lives in section
 numbered instructions the code carries markers into live in the feature spec
 (`packages/ui-kit/architecture/features/component-contracts/FEATURE.md`).
 
-## Passthrough key fix: keyed by origin, not DOM tag
+## A prop of the primitive is the component's API, not forwarded surface
 
-Accordion's `resolvePassthroughKindKey(directory, exportStem, domTag)` (see Deviation 2
-below) scoped a compound component's part to `<domTag>_<stem>` while an
-ordinary single-overlay directory kept the plain `<domTag>` key unchanged.
-That asymmetry was itself a latent collision, just one Accordion never triggered:
-the plain `<domTag>` key was keyed by WHAT ELEMENT gets rendered, not by
-WHERE the forwarded props come from. Two single-overlay directories that
-both resolve to `button` - Button itself, and any future component that
-wraps a plain `<button>` with no Base UI primitive underneath it at all -
-would have shared `passthrough.button.json` and silently overwritten each
-other's generated file, exactly the defect Deviation 2 fixed for compound
-parts but left open kit-wide.
+**Observed.** Every prop declared outside the component's own file was filed
+as inherited, and every inherited prop was written into a generated
+passthrough type keyed by the ORIGIN of the declaration - one file per Base UI
+primitive part, five of them, 224 to 233 properties each, 732 to 764 lines
+each. Two things were wrong with that, and only one of them was about size.
 
-**Fix**: the storage/id key is now the ORIGIN of the inherited props, not
-the DOM tag they end up rendering. Extract.ts's `resolvePassthroughOrigin`
-walks the same top-level heritage graph `topLevelHeritageLabels` already
-built for the human-readable `x-uikit.passthrough` labels, and classifies
-the outermost resolvable heritage member two ways: a declaration file under
-`node_modules/@base-ui/react/<component>/<part>/...` (a real Base UI
-primitive) yields `base_ui_<component>[_<part>]` - no part token when the
-primitive has none, e.g. `base_ui_button` for Button, one token when it
-does, e.g. `base_ui_accordion_root`/`_item`/`_trigger`/`_panel` for
-Accordion's four parts; a plain `ComponentProps<'tag'>` or
-`ComponentPropsWithRef<'tag'>` with no Base UI involved yields `dom_<tag>`;
-a props type with no such heritage at all (DataTable's own interface)
-yields nothing, and the contract's `allOf` then carries only the base type.
-`resolvePassthroughKindKey` and the directory/exportStem-scoped key it
-computed are gone entirely - origin identity already carries whatever
-uniqueness the old stem-scoping was working around, and two kit components
-that really do wrap the SAME origin now share one generated file **by
-construction**, not by coincidence: their inherited-prop sets come from the
-same declaration, so sharing is correct rather than a residual gap to flag.
+The first is what an evaluation measured: an agent asked what Accordion's
+`value` and `defaultValue` accept answered "plain strings". Those are the
+root's own API - Base UI declares them in `AccordionRootProps`, the kit
+forwards them, and `accordion.md` documents them as kit-level props - and they
+were entry 200-something of a file whose title said "the props a kit component
+forwards to an underlying `<div>`". Nine of the root's props were in there
+with them: `multiple`, `onValueChange`, `hiddenUntilFound`, `keepMounted`,
+`disabled`, `loopFocus`, `orientation`. A reader looking for the Accordion's
+API found `className` and nothing else in `properties`.
 
-This is a compiler/extractor-only change: no overlay content, no metamodel
-field, no new `coverage.assumptions` entry. The generated files themselves
-were renamed (`passthrough.button.json` -> `passthrough.base_ui_button.json`;
-Accordion's four analogously), and `button.contract.json`/each Accordion
-contract's `allOf` ref changed to match - the only content change in either
-component's compiled artifacts.
+The second is that the files were derived per component at all. React's DOM
+attributes for a `<button>` are the same attributes for every component that
+renders one, so five derivations produced five near-copies whose only real
+differences came from the compilation that printed them - a union's member
+order, an `import("...")` specifier - which is why the harness needed an origin
+key, a collision check, a `generated_from` ownership list and a freshness
+comparison to keep five copies of one fact from overwriting each other.
+
+**Changed.** The extractor files a prop by its declaration site into one of
+three sets (`classifyDeclarationSite`): the component's own source, the
+primitive library's props for the part it wraps, or React's DOM attribute
+types. The middle set reaches the contract's own `properties` next to the
+declared props, with its real type where the provider-safe subset can express
+one and the checker's printed type text where it cannot. React's attributes go
+through one hand-written schema per host element - `passthrough/dom_button.json`,
+`passthrough/dom_div.json`, about forty lines each: the common attributes, the
+element's own, and the `^aria-`/`^data-`/`^on[A-Z]` patterns. A prop declared
+in none of the three places is named in `unclassifiedProps` and the compiler
+refuses the component, because which side of the line it falls on is a
+question about that library's conventions.
+
+Accordion's root went from 1 property to 11, and `value`/`defaultValue` now
+carry `TS: AccordionValue<Value> | undefined` where the file used to carry
+`{}`. Button went from 6 to 9. The five generated files, the origin registry
+(`resolvePassthroughOrigin`, `baseUiOriginFromDeclarationFile`), the collision
+check, `generated_from` and the generated files' freshness comparison are all
+gone: with one hand-written file per element there is no ownership to track and
+nothing to regenerate.
+
+**Decisions taken along the way.**
+
+- **The origin key is gone, but comparing the surface across a move is not.**
+  The origin registry existed to keep five derivations apart; nothing keeps two
+  hand-written files apart, so it went with them. The compatibility check still
+  reads the host element from BOTH revisions of a contract and compares the two
+  surfaces: a component re-rendered from a `<button>` over a `<div>` stops
+  forwarding `type`, `form`, `name`, `disabled`, `value` and `autoFocus`, which
+  is a real narrowing a consumer feels. Dropping that comparison along with the
+  registry would have reopened a hole closed one commit earlier.
+- **Only the element kinds the kit renders are committed.** `dom_button` and
+  `dom_div` are what the three described components resolve; `dom_anchor` and
+  `dom_input` are not written, because a committed schema no contract composes
+  is a file nothing checks and nothing reads. A kind with no file fails the
+  compile by name, which is the point at which somebody decides what that
+  element accepts.
+- **No overlay field for the host element.** The extractor resolves it for all
+  seven contracts, and a component with forwarded DOM props and no resolvable
+  element is refused naming the props - the same shape as the refusal for props
+  whose declaration site cannot be placed. An authored `element:` would be a
+  second writable statement of a fact the extractor owns, in the same commit
+  that removed one of those from `composition.parent`.
+- **`className` stays a declared prop.** Every kit component redeclares it
+  narrower than Base UI's `string | ((state) => string)`, and the element
+  surface declares it as a plain string. The two agree, and the contract
+  carries the component's own declaration - the element surface is a shared
+  statement about the element, not a claim to own the name.
+
+## Composition: children optional, parent derived
+
+**Observed.** `composition.children` was required, so a component with no
+answer had to invent one: DataTable said `kinds: [none]` (correct - it renders
+its Table internally), but a layout component that accepts whatever a consumer
+puts in it had only two options, both false - enumerate a kit it does not know,
+or claim `text`. And `composition.parent` was authored, which made it a claim
+about somebody else's contract: AccordionTrigger stated "I go inside
+AccordionItem" while AccordionItem's own `children` list was free not to
+mention triggers at all. The pair could disagree, and only a conformance test
+comparing them would ever notice.
+
+**Changed.** `children` is optional; its absence means unconstrained, and
+`none` keeps its exclusivity - a list that pairs it with anything else says
+both that nothing may appear inside and that something may. `text` gained a
+definition in the vocabulary type rather than in prose beside it: a
+non-component React node - a string, a number, a fragment, a formatted inline
+element - never a kit component, which would be a reference instead. `parent`
+is computed at compile time from every other overlay's `children.kinds`
+(`deriveParentKinds`) and an overlay that writes it is refused, pointing at
+`mounts_in`. The two directions of one relationship cannot disagree any more,
+because there is one statement and `parent` is a view of it.
+
+**Decisions taken along the way.**
+
+- **Derived from overlays, not from committed contracts.** An overlay is the
+  authored source, so a derivation taken from it is right even while a
+  committed contract is stale - which is the state every recompile passes
+  through. It costs a directory listing and a YAML parse per described
+  component; no TypeScript program is built.
+- **A third widening signal for the guard.** Because a children list decides
+  another component's derived parent, an overlay edit can move a contract in a
+  directory the change never touched. `touchesAnyOverlay` widens the guard to
+  every covered component, kept distinct from the tooling and allowlist
+  signals so the guard's own output still says which reason applied.
+- **A mount point outside the kit takes the external form, under its own key.**
+  `composition.mounts_in` is authored and merged into the derived `parent`, the
+  same `{ external, note }` shape `dont_use_when.instead` already uses. It is a
+  separate key because `parent` is not authorable: DataTableSortButton's real
+  mount point is a `ColumnDef`'s `header` render function, which TanStack Table
+  owns, and the typed reference covers kit-to-kit nesting only.
+
+## Assumption kinds, and the pairing they make checkable
+
+**Observed.** `coverage.assumptions` was a `claim`/`reason` pair, and four
+entries across three overlays said "JSON Schema has no notion of a generic type
+parameter" in four different sentences. Nothing could tell that family of claim
+apart from "this part wraps two Base UI primitives" or "its mount point is
+outside the kit", so nothing could ask the question those four sentences were
+answering by accident: does every prop the schema cannot type have an entry?
+
+**Changed.** Every assumption carries a `kind` from a closed list -
+`untyped_prop`, `hidden_part`, `external_mount`, `behaviour` - and
+`untyped_prop` also names its `prop`, checked against the extracted prop list
+the way `deprecations.props` keys are. The conformance suite then pairs the two
+sides both ways (`findUntypedPropMismatches`): a property that asserts nothing
+must have an `untyped_prop` assumption naming it, and an assumption naming a
+property the schema DOES constrain is a claim about a different contract. The
+three pilots carry 24 `untyped_prop` assumptions between them, which is the
+number of properties across seven contracts that Ajv will not check.
+
+**Decisions taken along the way.**
+
+- **The pairing is over what asserts nothing, not over one description
+  wording.** A declared slot carries `Slot: ...` and an API prop the schema
+  cannot type carries `TS: ...` - two wordings because they are documented in
+  two places (`x-uikit.slots` for the kit's own slots, the description plus the
+  assumption for a forwarded API prop). The check reads the schema keywords
+  instead, so it cannot be fooled by either wording changing.
+- **Reported by the conformance suite, not by the compiler.** A missing
+  assumption is a documentation gap; a compile that refused it would make a
+  component uncompilable until its prose caught up, which is the wrong order.
+  The suite fails on it in the run the author already executes.
+- **`hidden` is one honest use, not a convenience.** Accordion's root hides
+  Base UI's `orientation`: the kit's own stylesheet fixes `.root` to
+  `flex-direction: column`, so the only value it could add - `horizontal` -
+  would set Base UI's keyboard axis against the layout the kit renders. Nothing
+  else is hidden. AccordionContent's `keepMounted` and `hiddenUntilFound` were
+  considered and left visible: `accordion.md` documents them on the root, but
+  the panel really does accept them, and hiding a working typed boolean because
+  a document is terse would remove a true fact rather than a misleading one.
+  What the overlay says instead is a `behaviour` assumption naming where they
+  are usually set.
 
 ## Accordion
 
@@ -77,7 +195,7 @@ would then reject item-only props (`value`, `disabled`) as undeclared
 additions under a base the derivation treats as closed.
 
 What shipped instead: **four independent contracts**, each its own derived
-type from `base.component` (`allOf: [base, passthrough.<kind-key>]`), with
+type from `base.component` (`allOf: [base, the host element's surface]`), with
 ids kept flat via `gtsToken` (`accordion-item` -> `accordion_item`, one
 token, so the "5 dot-tokens per segment" GTS grammar is unaffected by the
 dash). Family membership moved out of the schema and into the metamodel
@@ -91,110 +209,86 @@ Everywhere a plan or a metamodel description spoke of the compiled contract
 accurate "each export derives independently from base.component; family
 membership is recorded, not inherited."
 
-### Deviation 2: the passthrough-per-kind assumption did not survive contact with Accordion
+### Deviation 2: one passthrough type per DOM element kind, shared kit-wide
 
-The harness through Button built the generated passthrough type
-(`passthrough.<kind>.json`) as ONE FILE PER DOM ELEMENT KIND, shared
-kit-wide, implicitly assuming every component that resolves to a given kind
-(`div`, `button`, ...) forwards the same inherited-prop set. That held by
-coincidence: Button was the only `button`-kind component, so nothing tested
-the assumption.
+The harness through Button built the passthrough type as ONE FILE PER DOM
+ELEMENT KIND, shared kit-wide, implicitly assuming every component that
+resolves to a given kind (`div`, `button`, ...) forwards the same inherited
+prop set. That held by coincidence: Button was the only `button`-kind
+component, so nothing tested the assumption.
 
-Accordion breaks it twice over, confirmed by compiling both components and
+Accordion broke it twice over, confirmed by compiling both components and
 diffing their generated passthrough output before deciding anything:
 
 - `AccordionTrigger` also resolves to kind `button` (same as Button). Their
-  inherited-prop sets are ALMOST identical (same underlying native `<button>`
-  attributes) but not byte-identical: a probe compiling both in the same
-  process found the checker prints the native `type`/`popover` attribute
-  unions in a DIFFERENT member order depending on which component's own
-  Props type led the checker to them - a pre-existing TypeScript union-
-  printing instability the harness had never been exposed to before two
-  components shared a kind.
+  inherited-prop sets were ALMOST identical (same underlying native
+  `<button>` attributes) but not byte-identical: the checker printed the
+  native `type`/`popover` attribute unions in a DIFFERENT member order
+  depending on which component's own Props type led it to them - a
+  pre-existing TypeScript union-printing instability the harness had never
+  been exposed to before two components shared a kind.
 - `Accordion`, `AccordionItem` and `AccordionContent` all resolve to `div`,
-  but forward genuinely different sets: the root alone forwards nine
+  but forwarded genuinely different sets: the root alone carried nine
   accordion-specific fields (`value`, `multiple`, `onValueChange`,
-  `hiddenUntilFound`, ...) that are inherited-by-declaration-file (they live
-  in Base UI's own `AccordionRootProps`, not in the kit's `accordion.tsx`)
-  even though they are conceptually the root's own domain API, not generic
-  `<div>` forwarding.
+  `hiddenUntilFound`, ...) that were inherited-by-declaration-file even
+  though they are the root's own domain API.
 
-Sharing one file per kind across a compound family would have made three of
-Accordion's four contracts compete to overwrite the same generated file with
-different, incompatible content - a non-deterministic build (whichever
-export compiles last "wins") that the freshness check would have caught only
-by intermittently failing depending on compile order, never diagnosing the
-real cause.
+Both halves of that are now answered by the filing rule at the top of this
+file rather than by a key: the root's nine fields are its API and reach its
+own `properties`, and what remains - React's attributes for a `<div>` - is
+one hand-written file per element kind, so there is no derivation whose
+printed output could depend on which component compiled it. The
+origin-keyed generated files this deviation shipped, and the collision check
+and ownership list they needed, are gone; the "one file per element kind"
+shape it started from is what the harness ended up with, for the reason it
+could not have then: nothing is derived, so nothing can disagree.
 
-**Fix**: `resolvePassthroughKindKey(directory, exportStem, domTag)` in
-compile.ts. A directory's part whose export stem differs from the directory
-name (every Accordion export except the root) gets a passthrough file scoped
-to `<kind>_<stem>` (`div_accordion_item`, `div_accordion_content`,
-`button_accordion_trigger`); the ordinary case (`exportStem === directory` -
-Button, and every component before Accordion) keeps the plain `<kind>` filename
-unchanged, so Button's own generated artifact is untouched by this except
-for the description text (see "Text changes to Button's committed
-artifacts" below).
+### Deviation 3: `composition.kinds` had to become typed refs
 
-**Known residual gap, out of scope for this pilot**: this fix is directory-scoped.
-Two DIFFERENT single-overlay directories that happen to resolve to the same
-kind (a hypothetical future `IconButton` alongside `Button`, say) would still
-collide under a plain `<kind>` filename - that risk pre-dates this pilot and was
-simply never triggered before Accordion. Closing it kit-wide (e.g. keying
-every passthrough file by directory unconditionally, or truly generating one
-shared, unioned type per kind) is a call for whoever owns the harness past
-these two pilots, not something this pilot needed to decide.
-
-**Superseded** (see "Passthrough key fix: keyed by origin, not DOM tag"
-above, done before DataTable): `resolvePassthroughKindKey` and the directory/stem
-scoping described here are gone. The residual gap this section flagged was
-exactly the case that fix closes - it is no longer open.
-
-### Deviation 3: `composition.kinds` had to become typed refs, and gained a `parent` field
-
-The pre-Accordion harness's `composition.children.kinds` was a plain array of free-form strings
-(Button's overlay: `kinds: [text]`) - no schema-level connection to the GTS
-component-ref grammar `dont_use_when.instead` already used. Describing a
-family's actual allowed children (`Accordion` -> only `AccordionItem`;
-`AccordionItem` -> `AccordionTrigger` and `AccordionContent`) as free text
-would have been a strictly weaker fact than `dont_use_when` already carries
-for the SAME kind of claim ("point at a real component, not a name nothing
-can resolve"). Fixed by typing `children.kinds` items as
-`oneOf: [component_type_ref, {const: "text"}]` - the one non-component
-content-kind already in real use (Button) stays valid, and any future
+The pre-Accordion harness's `composition.children.kinds` was a plain array of
+free-form strings (Button's overlay: `kinds: [text]`) - no schema-level
+connection to the GTS component-ref grammar `dont_use_when.instead` already
+used. Describing a family's actual allowed children (`Accordion` -> only
+`AccordionItem`; `AccordionItem` -> `AccordionTrigger` and
+`AccordionContent`) as free text would have been a strictly weaker fact than
+`dont_use_when` already carried for the SAME kind of claim ("point at a real
+component, not a name nothing can resolve"). Fixed by typing `children.kinds`
+items as `oneOf: [component_type_ref, {const: "text"}]` - the one
+non-component content-kind already in real use (Button) stays valid, and any
 component-shaped entry is now checked the same way `dont_use_when` is.
 
-Also added: `composition.parent`, an optional mirror of `children` for a
-part's allowed mount points (`AccordionTrigger`/`AccordionContent`'s parent
-is `AccordionItem`; `AccordionItem`'s parent is `Accordion`) - nothing before
-Accordion was ever "only ever mounted under" something else, so nothing
-before it needed this field. Both changes are additive and optional at the
-schema level (existing `properties`/`additionalProperties` shape), so Button's
-overlay validates unchanged and its committed contract JSON is unaffected in
-content (only in the passthrough description text, see below).
+Accordion also needed a place for a part's allowed mount points
+(`AccordionTrigger`/`AccordionContent` under `AccordionItem`, `AccordionItem`
+under `Accordion`) - nothing before it was ever "only ever mounted under"
+something else. That shipped as an authored `composition.parent`, and is now
+derived from the children lists instead: see "Composition: children optional,
+parent derived" above for why an authored mirror of somebody else's fact was
+the wrong shape for it.
 
 ### Deviation 4: the generic `Value` type parameter
 
 `Accordion<Value = unknown>` makes `value`, `defaultValue` and
 `onValueChange` depend on a type parameter with no JSON Schema
-representation. This did NOT require a compiler or extractor change: the
-extractor's own/inherited split already routes these three props into the
-INHERITED set (their declaration lives in Base UI's `AccordionRootProps`,
-not in the kit's own `accordion.tsx`), and `classifyProviderSafeType`
-already turns a non-provider-safe inherited type into an annotation-only
-passthrough entry (`{}`) - so the generic collapses to "documented as a
-slot" for free, the same mechanism that already handles `ReactNode` and
-function props. The only addition was a place to WRITE DOWN that this is
+representation, so `classifyProviderSafeType` can express none of the three
+and each reaches the contract as a property that asserts nothing. What that
+needed was not a compiler change but a place to WRITE DOWN that it is
 deliberate rather than a gap: `coverage.assumptions`, a new optional
-sub-field of the existing `coverage` object (`claim`/`reason` pairs,
-additive, Button's `coverage: { a11y, rtl }` is unaffected), asserted
-present by the conformance test. No custom JSON Schema keyword was added.
+sub-field of the existing `coverage` object (additive, Button's
+`coverage: { a11y, rtl }` was unaffected), asserted present by the
+conformance test. No custom JSON Schema keyword was added.
+
+Two things about those three props changed after this deviation shipped, both
+recorded at the top of this file: they are the root's API and reach its own
+`properties` rather than a generated forwarded surface, and their assumptions
+now carry `kind: untyped_prop` and name the prop, so the pairing between "a
+property Ajv will not check" and "an assumption saying why" is checkable
+instead of a convention.
 
 The same `coverage.assumptions` mechanism also documents a second, unrelated
 fact about `AccordionTrigger`: it composes Base UI's `Accordion.Header` (not
 separately exposed by the kit) around `Accordion.Trigger` into one exported
 component, so the contract describes the exported surface, not the two-part
-internal composition.
+internal composition. That entry now carries `kind: hidden_part`.
 
 ### Deviation 5: the extractor needed no change
 
@@ -218,18 +312,16 @@ reasons unrelated to Accordion's own facts:
 - `scripts/contracts/ui-component.meta.json` - regenerated from
   `buildMetamodel()` after the `family`, `coverage.assumptions` and
   `composition.parent` additions (all additive/optional; Button's own
-  compiled contract properties are unaffected).
-- `scripts/contracts/generated/passthrough.base_ui_button.json` - Accordion
-  changed only its `description` string (rewritten to describe the general,
-  per-directory-or-per-export passthrough mechanism rather than the old
-  "one file per kind, no exceptions" wording that Accordion falsified); its
-  `properties` are byte-identical to before, and its filename, `$id` and
-  `title` carry the separate origin-key rename described at the top of this
-  file.
+  compiled contract properties were unaffected).
+- Button's own generated passthrough type, whose description was rewritten
+  to describe the general per-export mechanism rather than the "one file per
+  kind, no exceptions" wording Accordion falsified.
 
-Both are required by the harness's own freshness invariant (a committed
+Both were required by the harness's own freshness invariant (a committed
 artifact must equal a fresh compile) - not scope creep, the direct
 consequence of the compiler producing different output for the SAME inputs.
+The second file no longer exists: the forwarded surface is hand-written per
+element kind and nothing regenerates it.
 
 ### Harness files touched to fit a compound component
 
@@ -283,9 +375,9 @@ happen to share a directory, so neither overlay sets `family`. Both props
 types are from-scratch interfaces with no `Omit<...>`/`ComponentProps<...>`
 heritage at all - `DataTableProps` extends nothing, `DataTableSortButtonProps`
 extends nothing - so both compile with `allOf: [base.component]` only, no
-generated passthrough type, confirmed by `resolveTargetExtraction(...).passthroughOrigin`
-being `undefined` for both (asserted directly in
-`data-table.contract.test.ts`).
+forwarded surface at all, confirmed by `resolveTargetExtraction(...)`
+reporting no host element and no forwarded or API props for either (asserted
+directly in `data-table.contract.test.ts`).
 
 ### Forced change 1: coverage must count components, not exports
 
@@ -384,9 +476,10 @@ or the component's source in isolation.
 - **A typed composition parent for `DataTableSortButton`**: its real mount
   point is a `ColumnDef`'s `header` render function, a plain function prop
   TanStack Table owns, not a kit component - there is no `component_type_ref`
-  for "a table header cell" to put in `composition.parent`, so the
-  relationship is recorded in `coverage.assumptions` prose instead of the
-  typed field Accordion's parts use for the same kind of fact.
+  for "a table header cell" to put in `composition.parent`. It was recorded
+  in `coverage.assumptions` prose at the time; it now states the mount point
+  in `composition.mounts_in`, the external form the derived `parent` merges
+  in, with the assumption carrying `kind: external_mount` beside it.
 
 ### Effort
 
@@ -397,7 +490,7 @@ the absolute-path defect (found, diagnosed and fixed against the real
 `columns` type, not anticipated from reading the plan) and writing two
 honest overlays with real invariants/assumptions rather than placeholders.
 Four forced harness changes for two contracts, a higher ratio than
-Accordion's one (`resolvePassthroughKindKey`, later superseded) for four -
+Accordion's one (`resolvePassthroughKindKey`, since removed) for four -
 DataTable's facts were individually smaller but touched more DIFFERENT
 corners of the metamodel (coverage counting, composition vocabulary,
 extension surface, and a portability bug outside the overlay vocabulary
@@ -409,15 +502,16 @@ entirely) rather than one deep problem repeated four times.
 |---|---|---|---|
 | Overlay lines (yaml, all contracts in the directory) | 85 | 275 (102+58+59+56) | 219 (137+82) |
 | Own props: typed vs annotation-only (slot), summed across the directory's contracts | 5 typed, 1 slot | 4 typed, 0 slots | 4 typed, 8 slots |
-| Passthrough origin(s) | `base_ui_button` (one, shared by all consumers of Base UI's Button) | `base_ui_accordion_root`/`_item`/`_trigger`/`_panel` (four, one per Base UI primitive part) | none for either contract - no DOM/Base UI heritage on either props type |
-| Harness/compiler changes this component forced | 0 (harness already fit it - the original harness was built FOR Button) | `family`, `coverage.assumptions`, `composition.parent`, `composition.kinds` typed as refs, the (later superseded) passthrough-key scoping fix | coverage counts components not exports, `extension_points`, a `none` composition child kind, absolute-path normalization in printed type text |
+| Host element / forwarded surface | `button` (`passthrough/dom_button.json`) | `div` for the root, item and panel, `button` for the trigger - two hand-written surfaces across four contracts | none for either contract - no DOM/Base UI heritage on either props type |
+| Properties in the compiled contract | 9 (2 axes, 4 declared, 3 Base UI API) | 11 root, 6 item, 4 trigger, 5 panel (1 declared each, the rest Base UI API) | 9 and 3, all declared |
+| Harness/compiler changes this component forced | 0 (harness already fit it - the original harness was built FOR Button) | `family`, `coverage.assumptions`, a composition parent, `composition.kinds` typed as refs, the (since removed) passthrough-key scoping fix | coverage counts components not exports, `extension_points`, a `none` composition child kind, absolute-path normalization in printed type text |
 
 The typed-vs-slot ratio is the sharpest signal in that table: Button and
 Accordion both wrap a Base UI primitive whose own props are mostly
-provider-safe types (`boolean`, `string`, string-literal unions) inherited
-through the passthrough mechanism, so their OWN props (the ones this table
+provider-safe types (`boolean`, `string`, string-literal unions) reaching
+their contracts as API props, so their DECLARED props (the ones this table
 counts) are a small, mostly-typeable set on top of that. DataTable has no
-such inherited floor - every one of its own props is either provider-safe
+such floor underneath it - every one of its own props is either provider-safe
 (`pageSize`, `enableRowSelection`, `className`) or fully opaque (`columns`,
 `data`, three `ReactNode` labels, `selectionSummary`) with nothing in
 between, because there is no underlying primitive contributing a typed
@@ -605,16 +699,19 @@ Accordion's case) kit components, not blocks.
 
 ## An empty property schema is not a neutral statement
 
-**Observed.** An agent-facing evaluation pointed an agent at
-`generated/passthrough.base_ui_accordion_root.json` and asked what
-`Accordion`'s `value` and `defaultValue` accept. It answered "plain
-strings." The real type is `AccordionValue<Value>` - an array of the root's
-own generic parameter. Nothing in the file said otherwise: `value`,
-`defaultValue` and `onValueChange` were each the literal `{}`, because
-`classifyProviderSafeType` returned `undefined` for them and the compiler
-had nowhere to put the fact it had already read. `{}` in JSON Schema means
-"no assertion", and a reader with no other source of truth reads that as
-"anything, so probably the obvious thing."
+**Observed.** An agent-facing evaluation pointed an agent at the accordion
+root's forwarded surface and asked what `Accordion`'s `value` and
+`defaultValue` accept. It answered "plain strings." The real type is
+`AccordionValue<Value>` - an array of the root's own generic parameter.
+Nothing said otherwise: `value`, `defaultValue` and `onValueChange` were each
+the literal `{}`, because `classifyProviderSafeType` returned `undefined` for
+them and the compiler had nowhere to put the fact it had already read. `{}` in
+JSON Schema means "no assertion", and a reader with no other source of truth
+reads that as "anything, so probably the obvious thing."
+
+Where those three props LIVE was the second half of the same finding, and it
+is answered separately - see "A prop of the primitive is the component's API"
+at the top of this file. This section is about the writing.
 
 The gap was only ever in the WRITING. The extractor had the checker's
 printed type text for every prop, own and inherited, and had had it since
@@ -630,13 +727,14 @@ root's forwarded props (every event handler, `style`, `children`,
 **Changed.** `describeUntypeableProperty` (compile.ts): a property schema
 carrying none of `type`, `enum`, `const`, `$ref`, `anyOf`, `oneOf` and no
 description of its own gets
-`TS: <type text>. Not expressible in JSON Schema, checked by tsc.` Applied
-in `buildPassthroughSchema` for inherited props and as a post-condition in
-`buildPropsAndRequired` for own props, where it is deliberately a no-op
-today - the slot branch already writes a more specific description and a
-typed property already asserts something - so that the rule holds for
-whatever branch is added next rather than being restated per branch. The
-slot wording is untouched.
+`TS: <type text>. Not expressible in JSON Schema, checked by tsc.` Applied to
+every API prop and as a post-condition on every declared one, where it is
+deliberately a no-op - the slot branch already writes a more specific
+description and a typed property already asserts something - so that the rule
+holds for whatever branch is added next rather than being restated per branch.
+The slot wording is untouched, and the hand-written element surfaces carry the
+same wording for the two React attributes no JSON Schema type covers (`style`,
+`children`).
 
 **Decisions taken along the way.**
 
@@ -667,34 +765,38 @@ extracted; what took the time was confirming the compatibility path treats
 prose as prose, since a wrong answer there would have made every existing
 contract refuse its own recompile.
 
-## Compiler coupling: Base UI and DOM only, for now
+## Compiler coupling: one primitive library and React, for now
 
-`extract.ts`'s origin resolver (`resolvePassthroughOrigin`,
-`classifyHeritageReference`, `baseUiOriginFromDeclarationFile`) recognizes
-exactly two families of inherited-props origin: a plain DOM element via
-React's `ComponentProps`/`ComponentPropsWithRef` (the `dom_<tag>` branch),
-and a Base UI primitive part via `BaseUIComponentProps`, keyed by its
-declaration file under `node_modules/@base-ui/react/`. Nothing else. A
-component whose inherited props come from a different headless-primitive
-library (Radix, react-aria, Ariakit, MUI unstyled) resolves no origin at
-all; `compileContract` then hard-fails on it (`... but no passthrough origin
-could be resolved ...`), by design (see extract.ts's own module comment) -
-the compiler refuses to guess rather than silently drop the props, but it
-still cannot compile such a component today.
+`extract.ts`'s `classifyDeclarationSite` recognizes exactly two families of
+declaration site for a prop the component does not declare itself: the
+primitive library, by the `@base-ui/react/` prefix on the already-relativized
+declaration path, and React's own DOM attribute types, by `@types/react/`.
+Nothing else. A prop declared by a different headless-primitive library
+(Radix, react-aria, Ariakit, MUI unstyled) is filed in `unclassifiedProps`,
+and `compileContract` refuses the component naming those props and their
+declaration files - by design: the compiler cannot tell that library's API
+from what it forwards, and either guess would be a fact the contract states
+without knowing it.
+
+The element side is a separate, narrower coupling: `walkPropsType` reads the
+host element out of a `BaseUIComponentProps<'tag', ...>` or
+`ComponentProps<'tag'>` generic argument, and a component whose props type
+offers neither anchor resolves no element. With forwarded DOM props and no
+element, `compileContract` refuses that too, because there is no honest
+surface to declare them in.
 
 This is a real, current limit of the compiler itself, not just of the three
 overlays this pilot ships - the demo review's M5 finding named it precisely.
-Adding a second primitive library requires, at minimum: (1) a
-`classifyHeritageReference` shape for that library's own props-forwarding
-helper (the same symbol + declaration-file check every other shape here
-uses, never identifier text); (2) an origin-token branch parallel to
-`baseUiOriginFromDeclarationFile`, deriving a stable, collision-safe
-snake_case key from that library's own directory layout; (3) confirming the
-new origin's generated passthrough type still composes correctly under
-`unevaluatedProperties: false` the way `base_ui_*`/`dom_*` do today. None of
-that is designed against here - only DOM and Base UI were ever in scope for
-this pilot's three components - so treat "add a primitive library" as new
-design work on the origin resolver, not a config toggle.
+Adding a second primitive library requires, at minimum: (1) its prefix in
+`classifyDeclarationSite`, and a decision about which of its declaration
+files are a part's API rather than a shared helper's; (2) a
+`classifyHeritageReference` shape for its own props-forwarding helper (the
+same symbol + declaration-file check every other shape here uses, never
+identifier text), so the host element still resolves; (3) a hand-written
+passthrough schema for any element kind the kit did not already render. None
+of that is designed against here - only Base UI and React were ever in scope
+for this pilot's three components - so treat "add a primitive library" as new
+design work on the classifier, not a config toggle.
 
 ## "Not a component of this kit" is an answer the metamodel had no way to give
 
@@ -818,9 +920,9 @@ yet, and "the kit ships this component" is a directory, not a registration.
 harness reported success on a change it exists to catch. Each was reproduced
 before it was fixed.
 
-- **The inherited surface could be dropped whole.** The passthrough origin was
-  read off the NEW contract only. A contract that stops composing its
-  passthrough type has no origin to look up, so the entire inherited-surface
+- **The forwarded surface could be dropped whole.** The passthrough reference
+  was read off the NEW contract only. A contract that stops composing its
+  passthrough type has nothing to look up, so the entire forwarded-surface
   block was skipped and the comparison reported "backward compatible" while
   every forwarded prop disappeared.
 - **A deleted contract was never compared.** The comparison walks the contract
@@ -834,11 +936,13 @@ before it was fixed.
   left behind for one that was deleted, and nothing checked it until some
   unrelated change happened to touch that directory. The coverage report
   counted such an entry as coverage.
-- **A change of origin failed nothing.** When a component is re-based onto a
-  different primitive, the base reference has no file for the new origin key,
-  so the comparison reported the signal as skipped and let the change through
-  - including when props disappeared across the move. Both files were
-  available the whole time, under two different names.
+- **A change of forwarded surface failed nothing.** When a component was
+  re-based onto a different primitive, the base reference had no file for the
+  new key, so the comparison reported the signal as skipped and let the change
+  through - including when props disappeared across the move. Both files were
+  available the whole time, under two different names. The same rule now
+  applies to a change of HOST ELEMENT, which is what a re-base changes about
+  the forwarded surface once the surfaces are per-element and hand-written.
 - **A base reference that does not resolve.** Reported by the reviewer as
   passing silently; measured, it was louder than that - `git diff
   base...HEAD` fails, so the run died with Node's whole spawn record around a
@@ -848,14 +952,16 @@ before it was fixed.
   well as "nothing to match against" - a swallowed failure that would now be
   a wrong verdict rather than a missing hint.
 
-**Changed.** The origin is read from both revisions and the two answers decide
-the comparison: nothing when neither inherits; nothing to report when only the
-current revision does, an arriving surface being the widening direction; a
-comparison by forwarded property name and requiredness when the origin moved
-or the current revision inherits nothing, those being the only signals two
-different surfaces share; the full shape comparison when the origin is
-unchanged. A skipped note is kept for what genuinely cannot be compared and
-for nothing else. Every base-reference contract no committed contract claimed
+**Changed.** The passthrough reference is read from both revisions and the two
+answers decide the comparison: nothing when neither forwards; nothing to
+report when only the current revision does, an arriving surface being the
+widening direction; the shape comparison otherwise, against the empty surface
+when the current revision forwards nothing and with the move named when the
+host element changed. A skipped note is kept for what genuinely cannot be
+compared and for nothing else. (Written against the origin-keyed generated
+files; it reads the host element now, and the shape comparison covers a move
+because two hand-written element surfaces share their common attributes by
+construction rather than by two derivations agreeing.) Every base-reference contract no committed contract claimed
 is swept up as a removal, refused while `covered.json` still names its
 component and accepted, named, once it does not - the same acknowledgement the
 guard already demands of a removed directory, so the two rules are one rule.
@@ -899,9 +1005,10 @@ program over all 63 roots 0.73s.
 **The result the obvious fix would have changed.** One shared program for
 every extraction is not a free substitution, and the freshness comparison said
 so immediately: with all 63 components in one program, `button` and both
-accordion parts reported their committed passthrough types as stale. Two
-things `checker.typeToString` prints are properties of the whole compilation
-rather than of the file:
+accordion parts reported their committed forwarded surfaces as stale (at the
+time those were derived per component; the same instability would now show up
+in the API props' own type text). Two things `checker.typeToString` prints are
+properties of the whole compilation rather than of the file:
 
 - the module specifier inside an `import("...")` type - the same Base UI event
   type prints as `import("@base-ui/react/types/index")` out of a one-root

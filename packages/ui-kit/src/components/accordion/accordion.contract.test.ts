@@ -54,14 +54,13 @@ function compileUnit(stem: string): CompiledUnit {
   const extraction = resolveTargetExtraction(DIRECTORY, stem);
   const contract = compileContract(DIRECTORY, stem);
   const instance = compileInstance(DIRECTORY, stem);
-  // Every export here forwards to a real element (all four wrap a Base UI
-  // primitive), so passthroughOrigin is never undefined - a defensive
-  // message beats a bare "Cannot read properties of undefined" if that ever
-  // changes.
-  if (!extraction.passthroughOrigin) {
-    throw new Error(`${stem}: expected a passthrough origin, extraction resolved none`);
+  // Every export here renders a real element (all four wrap a Base UI
+  // primitive), so elementKind is never undefined - a defensive message
+  // beats a bare "Cannot read properties of undefined" if that ever changes.
+  if (!extraction.elementKind) {
+    throw new Error(`${stem}: expected a host element kind, extraction resolved none`);
   }
-  return { stem, contract, instance, passthroughSchema: loadPassthroughSchema(extraction.passthroughOrigin) };
+  return { stem, contract, instance, passthroughSchema: loadPassthroughSchema(extraction.elementKind) };
 }
 
 const units: Record<string, CompiledUnit> = Object.fromEntries(ALL_STEMS.map((stem) => [stem, compileUnit(stem)]));
@@ -126,25 +125,42 @@ describe('accordion family: family references resolve', () => {
 
 describe('accordion family: composition references resolve', () => {
   // Every children.kinds/parent.kinds entry across the family that is
-  // actually a component ref (not the "text" leaf kind Button also uses) -
-  // gathered once so the resolution check does not repeat itself per unit.
+  // actually a component ref (not the "text" leaf kind Button also uses, and
+  // not the external form a mount point outside the kit takes) - gathered
+  // once so the resolution check does not repeat itself per unit.
   function typedCompositionRefs(contract: CompiledContract): string[] {
     const composition = contract['x-gts-traits'].composition;
-    const refs = [...composition.children.kinds, ...(composition.parent?.kinds ?? [])];
-    return refs.filter((ref) => ref !== 'text');
+    const refs = [...(composition.children?.kinds ?? []), ...(composition.parent?.kinds ?? [])];
+    return refs.filter((ref): ref is string => typeof ref === 'string' && ref !== 'text');
   }
 
   it("the root's only allowed child is AccordionItem", () => {
-    expect(units[DIRECTORY].contract['x-gts-traits'].composition.children.kinds).toEqual([
+    expect(units[DIRECTORY].contract['x-gts-traits'].composition.children?.kinds).toEqual([
       componentTypeRef('accordion-item', CONTRACT_MAJOR),
     ]);
   });
 
-  it("every part's parent.kinds names a directory that exists", () => {
-    for (const stem of PART_STEMS) {
-      const kinds = units[stem].contract['x-gts-traits'].composition.parent?.kinds ?? [];
-      expect(kinds.length, stem).toBeGreaterThan(0);
+  it("every part's parent is DERIVED from the contract whose children name it", () => {
+    // The family's shape read back out of the derivation rather than
+    // authored: the root names the item as its only child, the item names
+    // the trigger and the panel, and each part's `parent` is exactly the
+    // contract that named it. Nothing in the four overlays writes `parent`,
+    // so the two directions cannot disagree - what is asserted here is that
+    // the derivation produces the family the overlays describe.
+    expect(units['accordion-item'].contract['x-gts-traits'].composition.parent?.kinds).toEqual([
+      componentTypeRef(DIRECTORY, CONTRACT_MAJOR),
+    ]);
+    for (const stem of ['accordion-trigger', 'accordion-content'] as const) {
+      expect(units[stem].contract['x-gts-traits'].composition.parent?.kinds, stem).toEqual([
+        componentTypeRef('accordion-item', CONTRACT_MAJOR),
+      ]);
     }
+  });
+
+  it('gives the root no parent at all - nothing in the kit mounts an Accordion', () => {
+    // Absent, not an empty list: no contract names the root as a child, and
+    // an empty `kinds` would read as "may be mounted nowhere".
+    expect(units[DIRECTORY].contract['x-gts-traits'].composition.parent).toBeUndefined();
   });
 
   it('every composition reference in the family points inside the family', () => {
@@ -162,17 +178,49 @@ describe('accordion family: composition references resolve', () => {
   });
 });
 
-describe('accordion family: generic assumptions present', () => {
-  it("the root's coverage.assumptions documents the Value generic", () => {
+describe('accordion family: assumptions carry a kind', () => {
+  it("the root's untyped_prop assumptions name the three generic-typed props by prop", () => {
+    // The measured defect this closes: an agent shown the root's `value` and
+    // `defaultValue` as unconstrained properties concluded they took plain
+    // strings. They are now properties of this contract carrying the
+    // checker's own type text, and each is named by an assumption whose kind
+    // says why nothing asserts it.
     const assumptions = units[DIRECTORY].instance.coverage.assumptions ?? [];
-    expect(assumptions.length).toBeGreaterThan(0);
-    expect(assumptions.some((a) => /Value/.test(a.claim))).toBe(true);
+    const untyped = assumptions.filter((a) => a.kind === 'untyped_prop').map((a) => a.prop);
+    for (const prop of ['value', 'defaultValue', 'onValueChange']) {
+      expect(untyped, prop).toContain(prop);
+    }
+    const properties = units[DIRECTORY].contract.properties;
+    for (const prop of ['value', 'defaultValue']) {
+      expect(properties[prop].type, prop).toBeUndefined();
+      expect(properties[prop].description, prop).toContain('AccordionValue<Value>');
+    }
   });
 
-  it("the trigger's coverage.assumptions documents the Header+Trigger composition", () => {
+  it("the root hides orientation and says so as a hidden_part assumption", () => {
+    // The kit's own root stylesheet fixes a column layout, so Base UI's
+    // horizontal orientation is not something this kit offers. Left out of
+    // `properties` and stated once, rather than listed as API the kit does
+    // not support.
+    expect(units[DIRECTORY].instance.hidden).toEqual(['orientation']);
+    expect(units[DIRECTORY].contract.properties).not.toHaveProperty('orientation');
+    const assumptions = units[DIRECTORY].instance.coverage.assumptions ?? [];
+    expect(assumptions.some((a) => a.kind === 'hidden_part' && /orientation/.test(a.claim))).toBe(true);
+  });
+
+  it("the trigger's hidden_part assumption documents the Header+Trigger composition", () => {
     const assumptions = units['accordion-trigger'].instance.coverage.assumptions ?? [];
-    expect(assumptions.length).toBeGreaterThan(0);
-    expect(assumptions.some((a) => /Header/.test(a.claim) || /Header/.test(a.reason))).toBe(true);
+    expect(assumptions.some((a) => a.kind === 'hidden_part' && (/Header/.test(a.claim) || /Header/.test(a.reason)))).toBe(true);
+  });
+
+  it('files a Base UI part prop as API and a React attribute as forwarded surface', () => {
+    // The filing rule on the family: `multiple` is Base UI's own
+    // AccordionRootProps and reaches the contract typed, while `children`
+    // and `role` are React's div attributes and stay on the element surface.
+    expect(units[DIRECTORY].contract.properties.multiple).toEqual({ type: 'boolean' });
+    for (const prop of ['children', 'role', 'onClick']) {
+      expect(units[DIRECTORY].contract.properties, prop).not.toHaveProperty(prop);
+    }
   });
 });
 
@@ -183,13 +231,12 @@ describe('accordion family in a GTS store', () => {
     // The vocabulary the base type's trait schema references: a store
     // missing one fails every entity in it, not just the trait block.
     registerContractTypes((entity) => gts.register(entity));
-    // Every passthrough schema this family's four contracts $ref, once each
-    // - root, item, trigger and panel are four different Base UI primitive
-    // parts, so each resolves to its own passthrough origin (see
-    // ComponentExtraction.passthroughOrigin) and all four are already
-    // distinct; registering the same $id twice would mask a real collision
-    // instead of catching one.
-    for (const { passthroughSchema } of Object.values(units)) gts.register(passthroughSchema);
+    // The element surfaces this family's four contracts $ref. Three of the
+    // four render a <div> and the trigger renders a <button>, so there are
+    // two distinct schemas across four contracts - de-duplicated by $id,
+    // because registering the same one twice is not a fact about the family.
+    const byId = new Map(Object.values(units).map(({ passthroughSchema }) => [String(passthroughSchema.$id), passthroughSchema]));
+    for (const passthroughSchema of byId.values()) gts.register(passthroughSchema);
     for (const { contract } of Object.values(units)) gts.register(contract);
     return gts;
   }
@@ -211,7 +258,8 @@ describe('accordion family in a GTS store', () => {
 
   it('fails when the parent type is not registered - negative control', () => {
     const gts = new GTS();
-    for (const { passthroughSchema } of Object.values(units)) gts.register(passthroughSchema);
+    const byId = new Map(Object.values(units).map(({ passthroughSchema }) => [String(passthroughSchema.$id), passthroughSchema]));
+    for (const passthroughSchema of byId.values()) gts.register(passthroughSchema);
     for (const { contract } of Object.values(units)) gts.register(contract);
     const result = gts.validateEntity(bareGtsId(units[DIRECTORY].contract.$id));
     expect(result.ok).toBe(false);

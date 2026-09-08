@@ -5,13 +5,12 @@
 // extraction). A fixture that regresses silently is worse than one that
 // fails loudly, so several of these assert on the FAILURE path too
 // (cva-unresolvable), not just the happy path.
-import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { extractComponent, normalizeTypeText, parseStringLiteralUnion } from './extract';
-import { passthroughTypeId, passthroughTypeIdPattern } from './ids';
+import { classifyDeclarationSite, extractComponent, normalizeTypeText, parseStringLiteralUnion } from './extract';
+import { domPassthroughToken, passthroughTypeId, passthroughTypeIdPattern } from './ids';
 import { applyContractTestTimeout } from './testing';
 
 // Each fixture below is its own tsx path, so extractComponent's per-path
@@ -54,62 +53,89 @@ describe('extractComponent: type alias and intersection props (F15)', () => {
     expect(parseStringLiteralUnion(normalizeTypeText(tone!.typeText))).toEqual(['info', 'warning', 'critical']);
   });
 
-  it('classifies the ComponentProps<\'div\'> half as inherited, not own', () => {
+  it('classifies the ComponentProps<\'div\'> half as forwarded DOM surface, not own', () => {
     const own = new Set(banner.ownProps.map((p) => p.name));
-    const inherited = new Set(banner.inheritedProps.map((p) => p.name));
+    const forwarded = new Set(banner.passthroughProps.map((p) => p.name));
     expect(own.has('tone')).toBe(true);
     expect(own.has('id')).toBe(false);
-    expect(inherited.has('id')).toBe(true);
-    expect(inherited.has('hidden')).toBe(true);
+    expect(forwarded.has('id')).toBe(true);
+    expect(forwarded.has('hidden')).toBe(true);
+    // No primitive library in this fixture's heritage, so nothing is this
+    // component's API by way of one - the middle set is empty, not merged
+    // into either of the other two.
+    expect(banner.apiProps).toEqual([]);
+    expect(banner.unclassifiedProps).toEqual([]);
   });
 
-  it("resolves the passthrough element kind from ComponentProps<'div'>", () => {
-    expect(banner.passthroughKind).toBe('div');
-  });
-
-  it("resolves the passthrough origin as dom_div - a plain DOM tag, no Base UI involved", () => {
-    expect(banner.passthroughOrigin).toBe('dom_div');
+  it("resolves the host element from ComponentProps<'div'>", () => {
+    expect(banner.elementKind).toBe('div');
   });
 });
 
-describe('extractComponent: passthrough origin (harness fix - keyed by origin, not DOM tag)', () => {
-  const extractions = extractComponent(fixture('base-ui-origin.fixture.tsx'));
+describe('extractComponent: a Base UI part prop is API, a React attribute is forwarded surface', () => {
+  const extractions = extractComponent(fixture('base-ui-api-props.fixture.tsx'));
   const wrapsButton = extractions.find((e) => e.name === 'WrapsButtonPrimitive')!;
   const wrapsAccordionRoot = extractions.find((e) => e.name === 'WrapsAccordionRootPrimitive')!;
 
-  it('resolves a Base UI primitive declared with no part subdirectory to base_ui_<component>, no trailing part', () => {
-    // Button.Props lives directly in button/Button.d.mts - no root/item/...
-    // part folder - so the origin has no third token, unlike Accordion below.
-    expect(wrapsButton.passthroughKind).toBe('button');
-    expect(wrapsButton.passthroughOrigin).toBe('base_ui_button');
+  it("files a Base UI part's own props as this component's API", () => {
+    // The rule the whole classification exists for: these are declared under
+    // @base-ui/react, so filing them by declaration file alone would have
+    // called them forwarded DOM surface - which is how nine accordion-root
+    // props ended up in a 233-entry generated file nobody read.
+    const buttonApi = new Set(wrapsButton.apiProps.map((p) => p.name));
+    for (const prop of ['nativeButton', 'render']) expect(buttonApi, prop).toContain(prop);
+    const rootApi = new Set(wrapsAccordionRoot.apiProps.map((p) => p.name));
+    for (const prop of ['multiple', 'value', 'defaultValue', 'onValueChange']) expect(rootApi, prop).toContain(prop);
   });
 
-  it('resolves a Base UI primitive declared under a part subdirectory to base_ui_<component>_<part>', () => {
-    expect(wrapsAccordionRoot.passthroughKind).toBe('div');
-    expect(wrapsAccordionRoot.passthroughOrigin).toBe('base_ui_accordion_root');
+  it("files React's own DOM attributes as forwarded surface, whichever primitive is underneath", () => {
+    for (const extraction of [wrapsButton, wrapsAccordionRoot]) {
+      const forwarded = new Set(extraction.passthroughProps.map((p) => p.name));
+      for (const prop of ['id', 'title', 'onClick', 'children']) expect(forwarded, `${extraction.name}: ${prop}`).toContain(prop);
+      expect(extraction.apiProps.map((p) => p.name), extraction.name).not.toContain('onClick');
+    }
   });
 
-  it('gives two components wrapping the same DOM tag through different origins two different keys', () => {
-    // The exact bug the fix closes: both resolve to a <button>-shaped
-    // domTag, but one is Base UI's Button and the other (Banner, the
-    // ComponentProps<'div'> fixture above) is a plain DOM element - a
-    // shared plain-tag key would have let one overwrite the other.
-    expect(wrapsButton.passthroughOrigin).not.toBe(wrapsAccordionRoot.passthroughOrigin);
+  it('resolves the host element each primitive renders, which is what decides the shared surface', () => {
+    expect(wrapsButton.elementKind).toBe('button');
+    expect(wrapsAccordionRoot.elementKind).toBe('div');
+  });
+
+  it('classifies nothing as unplaceable, so neither component is refused', () => {
+    for (const extraction of [wrapsButton, wrapsAccordionRoot]) {
+      expect(extraction.unclassifiedProps, extraction.name).toEqual([]);
+    }
   });
 });
 
-describe('extractComponent: no passthrough origin for a from-scratch props type', () => {
+describe('classifyDeclarationSite', () => {
+  // The whole of the harness's coupling to one headless library, asserted
+  // directly: a second primitive library resolves to neither side, which is
+  // what makes the compiler refuse such a component instead of filing its
+  // API as forwarded surface.
+  it('recognizes the primitive library and React, and nothing else', () => {
+    expect(classifyDeclarationSite('@base-ui/react/accordion/root/AccordionRoot.d.mts')).toBe('primitive-library');
+    expect(classifyDeclarationSite('@base-ui/react/internals/types.d.mts')).toBe('primitive-library');
+    expect(classifyDeclarationSite('@types/react/index.d.ts')).toBe('react-dom');
+    expect(classifyDeclarationSite('@radix-ui/react-accordion/dist/index.d.ts')).toBe('elsewhere');
+    expect(classifyDeclarationSite('src/components/button/button.tsx')).toBe('elsewhere');
+  });
+});
+
+describe('extractComponent: no host element for a from-scratch props type', () => {
   // Alpha/Beta (two-components.fixture.tsx) extend nothing - no DOM element,
   // no Base UI primitive - the exact shape DataTableProps has (T6): every
-  // own prop is declared in the component's own file, so there is nothing
-  // to generate a passthrough type FOR, and the origin walk must say so
-  // rather than guessing.
+  // own prop is declared in the component's own file, so there is no
+  // forwarded surface to name and the element walk must say so rather than
+  // guessing.
   const extractions = extractComponent(fixture('two-components.fixture.tsx'));
 
-  it('leaves passthroughKind and passthroughOrigin both undefined', () => {
+  it('leaves elementKind undefined and every inherited set empty', () => {
     for (const extraction of extractions) {
-      expect(extraction.passthroughKind).toBeUndefined();
-      expect(extraction.passthroughOrigin).toBeUndefined();
+      expect(extraction.elementKind).toBeUndefined();
+      expect(extraction.apiProps).toEqual([]);
+      expect(extraction.passthroughProps).toEqual([]);
+      expect(extraction.unclassifiedProps).toEqual([]);
     }
   });
 });
@@ -171,8 +197,8 @@ describe('extractComponent: JSDoc @default, on a real component', () => {
   // rather than discarding at extraction time.
   const [button] = extractComponent(join(process.cwd(), 'src/components/button/button.tsx'));
 
-  it("reads an inherited prop's @default tag from its Base UI declaration", () => {
-    const nativeButton = button.inheritedProps.find((p) => p.name === 'nativeButton');
+  it("reads an API prop's @default tag from its Base UI declaration", () => {
+    const nativeButton = button.apiProps.find((p) => p.name === 'nativeButton');
     expect(nativeButton?.jsDocDefault).toBe('true');
   });
 
@@ -214,10 +240,9 @@ describe('extractComponent: heritage shapes recognized by resolved symbol, not i
     // the identifier "ComponentProps" would have missed this entirely.
     const [card] = extractComponent(fixture('aliased-component-props.fixture.tsx'));
     expect(card.cannotExtract).toEqual([]);
-    expect(card.passthroughKind).toBe('section');
-    expect(card.passthroughOrigin).toBe('dom_section');
+    expect(card.elementKind).toBe('section');
     expect(card.ownProps.map((p) => p.name)).toContain('heading');
-    expect(card.inheritedProps.map((p) => p.name)).toContain('id');
+    expect(card.passthroughProps.map((p) => p.name)).toContain('id');
   });
 
   it('does not mistake a locally shadowed "Omit" for the real global utility type', () => {
@@ -226,14 +251,14 @@ describe('extractComponent: heritage shapes recognized by resolved symbol, not i
     // a local name collision. The old text match would have unwrapped this
     // shadow's first "type argument" (ComponentProps<'span'>) and silently
     // resolved a `span` passthrough kind/origin through a utility type that
-    // is not really Omit<T, K> at all. The real inherited props ARE present
-    // on the checker-resolved type (this shadow really does forward them)
-    // - proving this is a case of "found real props, refused to guess their
-    // origin," not "there was nothing here to find."
+    // is not really Omit<T, K> at all. The forwarded props ARE present on
+    // the checker-resolved type (this shadow really does forward them) -
+    // proving this is a case of "found real props, refused to guess which
+    // element they belong to," not "there was nothing here to find." The
+    // compiler refuses such a component; see compileContract.
     const [gadget] = extractComponent(fixture('aliased-omit.fixture.tsx'));
-    expect(gadget.passthroughKind).toBeUndefined();
-    expect(gadget.passthroughOrigin).toBeUndefined();
-    expect(gadget.inheritedProps.length).toBeGreaterThan(0);
+    expect(gadget.elementKind).toBeUndefined();
+    expect(gadget.passthroughProps.length).toBeGreaterThan(0);
     expect(gadget.cannotExtract.length).toBeGreaterThan(0);
   });
 
@@ -254,23 +279,17 @@ describe('extractComponent: bare union type in heritage position (N2)', () => {
   });
 });
 
-describe('extractComponent: dom_ origin token normalized to snake_case (M2)', () => {
+describe('extractComponent: a hyphenated element tag reaches a snake_case token (M2)', () => {
   const PASSTHROUGH_ID_PATTERN = new RegExp(passthroughTypeIdPattern());
 
-  it('replaces a hyphenated custom element tag with underscores in the origin key', () => {
-    const [widget] = extractComponent(fixture('custom-element-origin.fixture.tsx'));
-    expect(widget.passthroughOrigin).toBe('dom_my_custom_element');
-    expect(passthroughTypeId(widget.passthroughOrigin!)).toMatch(PASSTHROUGH_ID_PATTERN);
-  });
-
-  it('every committed generated passthrough file carries an $id matching the grammar', () => {
-    const generatedDir = join(process.cwd(), 'scripts/contracts/generated');
-    const files = readdirSync(generatedDir).filter((name) => name.endsWith('.json'));
-    expect(files.length).toBeGreaterThan(0);
-    for (const name of files) {
-      const schema = JSON.parse(readFileSync(join(generatedDir, name), 'utf8')) as { $id: string };
-      expect(schema.$id, name).toMatch(PASSTHROUGH_ID_PATTERN);
-    }
+  it("keeps the tag as the element kind and normalizes it only where an identifier needs it", () => {
+    // Two different things, deliberately: the element kind is the real tag
+    // (what a reader and the description call it), and the token is what an
+    // identifier and a file name can carry.
+    const [widget] = extractComponent(fixture('custom-element-kind.fixture.tsx'));
+    expect(widget.elementKind).toBe('my-custom-element');
+    expect(domPassthroughToken(widget.elementKind!)).toBe('dom_my_custom_element');
+    expect(passthroughTypeId(domPassthroughToken(widget.elementKind!))).toMatch(PASSTHROUGH_ID_PATTERN);
   });
 });
 
@@ -295,7 +314,7 @@ describe('extractComponent: synthetic property symbol with no declaration (N4)',
   });
 
   it('never emits declarationFile: "unknown" as ordinary prop data', () => {
-    const allProps = [...widget.ownProps, ...widget.inheritedProps];
+    const allProps = [...widget.ownProps, ...widget.apiProps, ...widget.passthroughProps, ...widget.unclassifiedProps];
     expect(allProps.some((p) => p.declarationFile === 'unknown')).toBe(false);
   });
 
@@ -313,12 +332,12 @@ describe('extractComponent: forwardRef/memo-wrapped components (M8)', () => {
   });
 });
 
-describe('extractComponent: own/inherited props sorted by name (N3)', () => {
-  it('returns ownProps and inheritedProps in ascending name order', () => {
+describe('extractComponent: every prop list sorted by name (N3)', () => {
+  it('returns each of the four prop lists in ascending name order', () => {
     const [button] = extractComponent(join(process.cwd(), 'src/components/button/button.tsx'));
-    const ownNames = button.ownProps.map((p) => p.name);
-    const inheritedNames = button.inheritedProps.map((p) => p.name);
-    expect(ownNames).toEqual([...ownNames].sort());
-    expect(inheritedNames).toEqual([...inheritedNames].sort());
+    for (const list of [button.ownProps, button.apiProps, button.passthroughProps, button.unclassifiedProps]) {
+      const names = list.map((p) => p.name);
+      expect(names).toEqual([...names].sort());
+    }
   });
 });

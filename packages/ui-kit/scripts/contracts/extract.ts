@@ -9,16 +9,34 @@
 // defect than a loud failure: `cannotExtract` exists so a fact the extractor
 // could not read shows up in the compiled contract instead of vanishing.
 //
-// A component's own props are whatever properties the checker resolves on
-// its first parameter's type AND whose declaration lives in the component's
-// own source file; every other resolved property - a Base UI primitive's
-// `render`, React's `onClick`, an aria-* attribute - is inherited, and is
-// what the generated per-origin passthrough type is built from (see
-// compile.ts's PassthroughSource / generated/passthrough.<origin>.json). This
-// is what a text-only extractor structurally cannot see: `Omit<X, 'className'>`
-// only removes `className` from X's shape, so every other field X declares
-// - including ones the component's own source never mentions - is still
-// part of the checker-resolved props type.
+// Every property the checker resolves on the component's first parameter is
+// filed by WHERE ITS DECLARATION LIVES, into one of three sets:
+//
+//   - the component's own source file           -> ownProps
+//   - the primitive library's props for a part  -> apiProps
+//   - React's DOM attribute types               -> passthroughProps
+//
+// The middle set is the one that matters most to a reader. A prop declared in
+// a Base UI part's own props type - Accordion root's `multiple`, Button's
+// `render`/`nativeButton` - is not something the kit merely forwards to an
+// element: it IS this component's API, wearing the primitive library's
+// declaration site as an accident of how the kit wraps that primitive. Filing
+// it as forwarded DOM surface is what buried nine accordion-root props in a
+// 233-entry generated file nobody read. React's own DOM attributes really are
+// forwarded surface, and they are the same surface for every component that
+// renders the same host element, which is why they are declared once per
+// element kind by hand (see compile.ts's loadPassthroughSchema) instead of
+// re-derived per component.
+//
+// This is what a text-only extractor structurally cannot see: `Omit<X,
+// 'className'>` only removes `className` from X's shape, so every other field
+// X declares - including ones the component's own source never mentions - is
+// still part of the checker-resolved props type.
+//
+// A property declared in none of the three places is filed nowhere and named
+// in `unclassifiedProps`: the compiler refuses such a component rather than
+// guessing which side of the API/forwarded line the prop falls on (see the
+// coupling note below).
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,33 +67,32 @@ export interface ComponentExtraction {
   name: string;
   axes: Record<string, string[]>;
   defaults: Record<string, string>;
+  // Declared in the component's own source file.
   ownProps: ExtractedProp[];
-  inheritedProps: ExtractedProp[];
-  // The element kind the inherited props ultimately derive from (`button`,
-  // `div`, `table`, ...), resolved through Omit/Pick and BaseUIComponentProps
-  // / ComponentProps generic arguments - undefined when the props type has
-  // no such anchor (a from-scratch interface with no DOM/Base UI heritage).
-  // Human-readable only (feeds the generated passthrough type's description
-  // text); see passthroughOrigin below for the storage/id identity.
-  passthroughKind?: string;
-  // Storage/id key for the generated passthrough type: WHERE the inherited
-  // props come from, not what DOM tag they end up rendering. Two components
-  // can both forward to a `<button>` (Button itself, and a hand-rolled
-  // Base UI-free `ComponentProps<'button'>` wrapper) while inheriting from
-  // completely different type surfaces - keying by `passthroughKind` alone
-  // let one silently overwrite the other's generated file. Derived from the
-  // declaration file of the outermost heritage member the component's own
-  // Props type extends: a Base UI primitive part
-  // (node_modules/@base-ui/react/<component>/<part>/...) gives
-  // `base_ui_<component>_<part>` (no `_<part>` when the primitive has none,
-  // e.g. Button); a plain `ComponentProps<'tag'>`/`ComponentPropsWithRef<'tag'>`
-  // gives `dom_<tag>`; a props type with no such heritage at all (a
-  // from-scratch interface, e.g. DataTable's) leaves this undefined even
-  // when passthroughKind is also undefined - the two always agree on
-  // presence, since they read the same heritage graph. A single snake_case
-  // token throughout, matching the GTS segment grammar (5 dot-tokens per
-  // segment) ids.ts's passthroughTypeId chains this onto.
-  passthroughOrigin?: string;
+  // Declared in the primitive library's own props type for the part this
+  // component wraps - this component's API, reached through the wrapping
+  // rather than typed out again in the kit's source. Compiled into the
+  // contract's own `properties` next to ownProps, not into the forwarded
+  // surface.
+  apiProps: ExtractedProp[];
+  // Declared in React's DOM attribute types: the surface every component
+  // rendering the same host element forwards, declared once per element kind
+  // by hand rather than re-derived here.
+  passthroughProps: ExtractedProp[];
+  // Declared somewhere none of the three above covers - a second primitive
+  // library, a utility package. Named rather than filed: which side of the
+  // API/forwarded line such a prop belongs on is a question about that
+  // library's conventions, and the compiler refuses the component instead of
+  // guessing (see the module comment).
+  unclassifiedProps: ExtractedProp[];
+  // The host element this component renders (`button`, `div`, `table`, ...),
+  // resolved through Omit/Pick and BaseUIComponentProps / ComponentProps
+  // generic arguments - undefined when the props type has no such anchor (a
+  // from-scratch interface with no DOM/Base UI heritage, e.g. DataTable's).
+  // It decides WHICH hand-written passthrough schema the contract composes,
+  // so a component with forwarded DOM props and no resolvable element kind
+  // is refused rather than compiled without them.
+  elementKind?: string;
   // Human-readable labels for the non-variant heritage this component's own
   // Props type declares - "what the component forwards to an element",
   // kept for readers of the compiled contract, not consumed by the compiler.
@@ -557,7 +574,7 @@ function resolveTopLevelMembers(
   depth: number,
   cannotExtract: string[],
 ): ts.TypeNode[] {
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   if (depth > 12) return [node];
   if (ts.isIntersectionTypeNode(node)) {
     return node.types.flatMap((member) => resolveTopLevelMembers(member, checker, visited, depth + 1, cannotExtract));
@@ -568,7 +585,7 @@ function resolveTopLevelMembers(
   if (ts.isTypeLiteralNode(node)) return [node];
 
   const parts = typeRefParts(node);
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
   if (!parts) {
     cannotExtract.push(
@@ -577,18 +594,18 @@ function resolveTopLevelMembers(
     return [node];
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   if (classifyHeritageReference(parts.location, checker)) return [node];
 
   const symbol = checker.getSymbolAtLocation(parts.location);
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
   if (!symbol) {
     cannotExtract.push(`heritage: "${node.getText()}" has no resolvable symbol - cannot extract`);
     return [node];
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   const resolved = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
   if (visited.has(resolved)) return [node];
   visited.add(resolved);
@@ -606,7 +623,7 @@ function resolveTopLevelMembers(
       members.push(...resolveTopLevelMembers(decl.type, checker, visited, depth + 1, cannotExtract));
     }
   }
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
   if (!unwrapped) {
     cannotExtract.push(
@@ -618,9 +635,9 @@ function resolveTopLevelMembers(
   // literal, an interface/type alias declaring no `extends`) is itself the
   // leaf - legitimate, not an error; `unwrapped` above already distinguishes
   // that case from a genuinely opaque one.
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
   return members.length > 0 ? members : [node];
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
 }
 
 // x-uikit.passthrough / x-uikit.variant_sources: what the component's own
@@ -667,91 +684,33 @@ function topLevelHeritageLabels(
   return { passthroughSources, variantSourceLabels };
 }
 
-// A declaration file already relativized by relativeDeclarationFile (so it
-// reads "@base-ui/react/accordion/root/AccordionRoot.d.mts", never an
-// absolute path) into the origin token resolvePassthroughOrigin needs: the
-// package's own directory layout is `<component>/<part?>/<File>.d.mts` -
-// Button has no part directory (button/Button.d.mts), Accordion's parts each
-// get one (accordion/root/AccordionRoot.d.mts). Anything not under
-// `@base-ui/react/` is not a Base UI origin at all - undefined, not a guess.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
-function baseUiOriginFromDeclarationFile(relativeFile: string): string | undefined {
-  const prefix = '@base-ui/react/';
-  if (!relativeFile.startsWith(prefix)) return undefined;
-  const segments = relativeFile.slice(prefix.length).split('/');
-  // Last segment is always the file itself; everything before the leading
-  // component name is a part directory (zero or more - none for Button, one
-  // for every Accordion part seen so far, and this generalizes to a deeper
-  // package layout without change).
-  if (segments.length < 2) return undefined;
-  const [component, ...rest] = segments;
-  const part = rest.slice(0, -1);
-  return ['base_ui', component, ...part].map((token) => token.replace(/-/g, '_')).join('_');
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
-}
+// Where a prop's declaration lives decides which of the three sets it is
+// filed into (see the module comment). Two prefixes, checked against the
+// already-relativized declaration path rather than against a symbol, because
+// the question is genuinely about the FILE: the same helper type
+// (BaseUIComponentProps) contributes `render` and `style`, and React's own
+// DOM attribute interfaces contribute everything else, and no symbol name
+// separates them.
+//
+// The primitive-library prefix is the whole of this harness's coupling to a
+// specific headless library. A component whose props come from a different
+// one (Radix, react-aria, Ariakit) files every such prop as unclassified and
+// is refused by the compiler rather than described with the wrong half of its
+// API buried in a forwarded surface. Adding a library is one more prefix here
+// plus whatever its own declaration layout requires - new design work on this
+// classifier, not a config toggle.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-file-class
+const PRIMITIVE_LIBRARY_PREFIX = '@base-ui/react/';
+const REACT_DOM_TYPES_PREFIX = '@types/react/';
 
-// Classifies ONE heritage type reference - either a component's direct
-// extends-clause member, or what an Omit/Pick's first argument names - into
-// a passthrough origin token. Two shapes are recognized: a bare
-// `ComponentProps<'tag'>`/`ComponentPropsWithRef<'tag'>` (React's own DOM
-// props helper, no Base UI involved - the literal tag argument is the whole
-// story) and anything else, resolved through the checker to the file that
-// actually declares it. A reference to neither (an inline object type, a
-// kit-local interface with no DOM/Base UI heritage of its own) yields
-// undefined, which is exactly right for DataTable's from-scratch props.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
-function originFromTypeRef(node: ts.TypeNode, checker: ts.TypeChecker, kitRoot: string): string | undefined {
-  const parts = typeRefParts(node);
-  if (!parts) return undefined;
-  const shape = classifyHeritageReference(parts.location, checker);
-  if (shape?.kind === 'component-props' && parts.args?.length) {
-    const first = parts.args[0];
-    // GTS tokens are snake_case; a custom element tag (`<my-custom-element>`)
-    // is a real, ordinary ComponentProps<'tag'> argument and carries a
-    // hyphen the base_ui branch below already strips - M2: without this the
-    // dom_ branch was the one place a hyphen leaked into an id grammar that
-    // is snake_case everywhere else.
-    return ts.isLiteralTypeNode(first) && ts.isStringLiteral(first.literal)
-      ? `dom_${first.literal.text.replace(/-/g, '_')}`
-      : undefined;
-  }
-  const symbol = checker.getSymbolAtLocation(parts.location);
-  const resolved = symbol && (symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol);
-  const decl = resolved?.getDeclarations()?.[0];
-  if (!decl) return undefined;
-  return baseUiOriginFromDeclarationFile(relativeDeclarationFile(decl.getSourceFile().fileName, kitRoot));
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
-}
+export type PropDeclarationSite = 'primitive-library' | 'react-dom' | 'elsewhere';
 
-// The origin (see ComponentExtraction.passthroughOrigin) of a component's
-// inherited props: the FIRST top-level heritage member that resolves to one
-// (matching walkPropsType's "first found wins" rule for domTag, so the two
-// never disagree about whether a component has a passthrough at all -
-// resolveTopLevelMembers stops at the same six shapes walkPropsType's own
-// kind detection eventually bottoms out past, which is what makes this the
-// OUTERMOST resolvable reference rather than the deepest one: Accordion's
-// Trigger resolves against `AccordionPrimitive.Trigger.Props` here, never
-// unwrapping into the Header+Trigger composition underneath it the way
-// walkPropsType's kind walk does to reach the literal 'button' tag.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
-export function resolvePassthroughOrigin(
-  node: ts.TypeNode,
-  checker: ts.TypeChecker,
-  kitRoot: string,
-  cannotExtract: string[],
-): string | undefined {
-  for (const member of resolveTopLevelMembers(node, checker, new Set(), 0, cannotExtract)) {
-    const parts = typeRefParts(member);
-    if (!parts) continue;
-    const shape = classifyHeritageReference(parts.location, checker);
-    if (shape?.kind === 'variant-props') continue;
-    const target = shape?.kind === 'omit-pick' && parts.args?.length ? parts.args[0] : member;
-    const origin = originFromTypeRef(target, checker, kitRoot);
-    if (origin) return origin;
-  }
-  return undefined;
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
+export function classifyDeclarationSite(declarationFile: string): PropDeclarationSite {
+  if (declarationFile.startsWith(PRIMITIVE_LIBRARY_PREFIX)) return 'primitive-library';
+  if (declarationFile.startsWith(REACT_DOM_TYPES_PREFIX)) return 'react-dom';
+  return 'elsewhere';
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-file-class
 
 function jsDocDefault(symbol: ts.Symbol): string | undefined {
   const tag = symbol.getJsDocTags().find((t) => t.name === 'default');
@@ -966,9 +925,10 @@ function extractFromSource(source: ts.SourceFile, checker: ts.TypeChecker): Comp
       const cannotExtract: string[] = [];
       const param = firstParameter(candidate, checker);
       const ownProps: ExtractedProp[] = [];
-      const inheritedProps: ExtractedProp[] = [];
-      let passthroughKind: string | undefined;
-      let passthroughOrigin: string | undefined;
+      const apiProps: ExtractedProp[] = [];
+      const passthroughProps: ExtractedProp[] = [];
+      const unclassifiedProps: ExtractedProp[] = [];
+      let elementKind: string | undefined;
       let passthroughSources: string[] = [];
       let variantSourceLabels: string[] = [];
       let axes: Record<string, string[]> = {};
@@ -984,12 +944,9 @@ function extractFromSource(source: ts.SourceFile, checker: ts.TypeChecker): Comp
           const labels = topLevelHeritageLabels(param.type, checker, kitRoot, cannotExtract);
           passthroughSources = labels.passthroughSources;
           variantSourceLabels = labels.variantSourceLabels;
-          // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
-          passthroughOrigin = resolvePassthroughOrigin(param.type, checker, kitRoot, cannotExtract);
-          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-origin
         }
         // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
-        passthroughKind = walk.kind;
+        elementKind = walk.kind;
         // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
         // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-cannot
         cannotExtract.push(...walk.cannotExtract);
@@ -1037,12 +994,23 @@ function extractFromSource(source: ts.SourceFile, checker: ts.TypeChecker): Comp
             declarationFile: relativeDeclarationFile(declaration.getSourceFile().fileName, kitRoot),
             jsDocDefault: jsDocDefault(prop),
           };
+          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-props
+          // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-file-class
           if (ownDeclaration) {
             ownProps.push(extracted);
           } else {
-            inheritedProps.push(extracted);
+            switch (classifyDeclarationSite(extracted.declarationFile)) {
+              case 'primitive-library':
+                apiProps.push(extracted);
+                break;
+              case 'react-dom':
+                passthroughProps.push(extracted);
+                break;
+              default:
+                unclassifiedProps.push(extracted);
+            }
           }
-          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-props
+          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-file-class
         }
       }
 
@@ -1058,17 +1026,17 @@ function extractFromSource(source: ts.SourceFile, checker: ts.TypeChecker): Comp
       // its way to guarantee.
       // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-return
       const byName = (a: ExtractedProp, b: ExtractedProp): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-      ownProps.sort(byName);
-      inheritedProps.sort(byName);
+      for (const list of [ownProps, apiProps, passthroughProps, unclassifiedProps]) list.sort(byName);
 
       extractions.push({
         name,
         axes,
         defaults,
         ownProps,
-        inheritedProps,
-        passthroughKind,
-        passthroughOrigin,
+        apiProps,
+        passthroughProps,
+        unclassifiedProps,
+        elementKind,
         passthroughSources,
         variantSourceLabels,
         cannotExtract,

@@ -1,7 +1,10 @@
 // Freshness: whether the artifacts committed next to a component's source
-// (<name>.contract.json, <name>.contract.instance.json, and its generated
-// per-origin passthrough type) are exactly what compiling the component right
-// now produces. Both the per-component vitest suite (see testing.ts) and
+// (<name>.contract.json and <name>.contract.instance.json) are exactly what
+// compiling the component right now produces. The element-kind passthrough
+// types are hand-written source, not compiler output, so there is nothing to
+// compare them against - what the conformance suite checks about them instead
+// is that their identifiers obey the grammar and that a contract composing
+// one names a file that exists. Both the per-component vitest suite (see testing.ts) and
 // the merge-scoped guard (check.ts's `guard` subcommand) need the identical
 // comparison - one to fail a test with a diff, the other to fail a CI check
 // with the same diff - so the comparison lives here once; each caller only
@@ -14,7 +17,6 @@ import { jsonDiff } from './check-lib';
 import {
   buildBaseSchema,
   buildMetamodel,
-  buildPassthroughSchema,
   buildTraitTypes,
   compileContract,
   compileInstance,
@@ -25,24 +27,21 @@ import {
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CONTRACTS_DIR = join(kitRoot, 'scripts', 'contracts');
-const GENERATED_DIR = join(CONTRACTS_DIR, 'generated');
 const TYPES_DIR = join(CONTRACTS_DIR, 'types');
 
 export interface FreshnessReport {
   component: string;
   contractDiff: string[];
   instanceDiff: string[];
-  // 'not-applicable' for a component with no DOM/Base UI passthrough origin at
-  // all (nothing forwarded, so no generated file to be stale) - distinct
-  // from an empty diff array, which means a passthrough file exists and
-  // matches.
-  passthroughDiff: string[] | 'not-applicable';
-  // Every annotation-only property in `properties` (no `type`, no `enum` -
-  // Ajv asserts nothing about it) exists only so unevaluatedProperties:false
-  // does not reject it; x-uikit.slots is where its real TS shape is
-  // recorded. The two lists are written by different code paths in
-  // buildPropsAndRequired from the same loop, so they cannot drift on their
-  // own - this catches the day something edits one without the other.
+  // Every property of a prop the component DECLARES that asserts nothing (no
+  // `type`, no `enum` - Ajv asserts nothing about it) is a slot, and
+  // x-uikit.slots is where its real TS shape is recorded. The two are written
+  // by the same loop in buildPropsAndRequired, so they cannot drift on their
+  // own - this catches the day something edits one without the other. Scoped
+  // to declared props on purpose: an API prop of the primitive underneath can
+  // also assert nothing, and its type lives in its own description plus an
+  // untyped_prop assumption rather than in x-uikit.slots, which is the kit's
+  // own slotted props and nothing else.
   slotSchemaMismatches: string[];
   // The schemas that belong to no single component - the abstract base type,
   // the metamodel, and each vocabulary type the two of them reference -
@@ -92,43 +91,19 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-base
 
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-passthrough
-  const extraction = resolveTargetExtraction(directory, exportStem);
-  let passthroughDiff: string[] | 'not-applicable' = 'not-applicable';
-  if (extraction.passthroughOrigin && extraction.passthroughKind) {
-    const committedPassthrough = readJsonIfExists(join(GENERATED_DIR, `passthrough.${extraction.passthroughOrigin}.json`)) as
-      | Record<string, unknown>
-      | undefined;
-    // Freshness compares THIS component's own compiled output against what
-    // is committed - multi-owner correctness of generated_from is the write
-    // path's job (compile.ts's compileOne, M4), not this check's; carrying
-    // the committed list forward (falling back to just this component when
-    // nothing is committed yet) keeps a per-component freshness run from
-    // flagging a diff over a fact it has no way to recompute on its own.
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-passthrough-compare
-    const generatedFrom = Array.isArray(committedPassthrough?.generated_from)
-      ? (committedPassthrough.generated_from as string[])
-      : [exportStem];
-    const freshPassthrough = buildPassthroughSchema(
-      extraction.passthroughOrigin,
-      extraction.passthroughKind,
-      extraction.inheritedProps,
-      generatedFrom,
-    );
-    passthroughDiff = jsonDiff(committedPassthrough, freshPassthrough);
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-passthrough-compare
-  }
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-passthrough
-
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-slots
+  const extraction = resolveTargetExtraction(directory, exportStem);
+  const declaredProps = new Set(extraction.ownProps.map((prop) => prop.name));
   const slotSchemaMismatches: string[] = [];
   for (const [name, prop] of Object.entries(freshContract.properties)) {
     const isSlotShaped = prop.type === undefined && prop.enum === undefined;
     const hasSlotEntry = name in freshContract['x-uikit'].slots;
-    if (isSlotShaped && !hasSlotEntry) {
-      slotSchemaMismatches.push(`"${name}" is an annotation-only property but has no x-uikit.slots entry`);
+    if (isSlotShaped && declaredProps.has(name) && !hasSlotEntry) {
+      slotSchemaMismatches.push(`"${name}" is an annotation-only declared prop but has no x-uikit.slots entry`);
     } else if (hasSlotEntry && !isSlotShaped) {
       slotSchemaMismatches.push(`"${name}" has an x-uikit.slots entry but is typed or enumerated in properties`);
+    } else if (hasSlotEntry && !declaredProps.has(name)) {
+      slotSchemaMismatches.push(`"${name}" has an x-uikit.slots entry but is not a prop ${exportStem} declares itself`);
     }
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-slots
@@ -137,10 +112,9 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
   const fresh =
     contractDiff.length === 0 &&
     instanceDiff.length === 0 &&
-    (passthroughDiff === 'not-applicable' || passthroughDiff.length === 0) &&
     slotSchemaMismatches.length === 0 &&
     Object.values(sharedSchemaDiffs).every((diff) => diff.length === 0);
 
-  return { component: exportStem, contractDiff, instanceDiff, passthroughDiff, slotSchemaMismatches, sharedSchemaDiffs, fresh };
+  return { component: exportStem, contractDiff, instanceDiff, slotSchemaMismatches, sharedSchemaDiffs, fresh };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-return
 }

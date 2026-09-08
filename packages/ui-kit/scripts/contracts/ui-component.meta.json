@@ -176,6 +176,16 @@
       },
       "minItems": 1
     },
+    "hidden": {
+      "type": "array",
+      "description": "Props of the primitive underneath that this kit does not advertise, so they are left out of the contract's own properties. Every entry is checked against the extracted prop list - a name the primitive no longer declares fails the compile rather than hiding nothing - and may not name a prop the component declares itself, which would be the overlay asking the compiler to drop what the source states. Absent for a component that advertises everything it forwards, which is most of them.",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+        "description": "Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test."
+      },
+      "minItems": 1
+    },
     "props_schema": {
       "type": "string",
       "pattern": "^gts\\.frontx\\.uikit\\.base\\.component\\.v1~frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",

@@ -62,9 +62,42 @@ anti_patterns:
 deprecations: {}
 
 # "verified: no" and "not described" are different answers - say which.
+# `assumptions` carry a `kind`; every `untyped_prop` names a property this
+# contract declares but cannot type, and the conformance suite checks the
+# pairing both ways - a property Ajv will not check must say so here, and a
+# claim about a property the schema DOES type is a claim about a different
+# contract.
 coverage:
   a11y: verified # focus, aria-busy and disabled semantics come from Base UI plus the loading contract above
   rtl: not-described
+  assumptions:
+    - kind: untyped_prop
+      prop: icon
+      claim: icon is a React node, not a value
+      reason: >-
+        `ReactNode` has no JSON Schema representation - an element, a string,
+        a fragment and `false` are all valid and only tsc can tell them from
+        a mistake. The slot exists so the icon gets sized, spaced, hidden
+        while `loading` and marked decorative; what may go in it is
+        "anything React renders", which is the whole assertion.
+    - kind: untyped_prop
+      prop: render
+      claim: render replaces the rendered element with one the caller supplies
+      reason: >-
+        Base UI's render prop takes an element or a function of the button's
+        own state, so its type is a union of a React element and a callback -
+        neither expressible in JSON Schema. It is what makes
+        `render={<a href="..." />}` with `nativeButton={false}` the way to
+        keep an action reading as a button while it navigates.
+    - kind: untyped_prop
+      prop: style
+      claim: style accepts a function of the button's state as well as a plain style object
+      reason: >-
+        Base UI widens React's `CSSProperties` to
+        `CSSProperties | ((state) => CSSProperties)` so a caller can style off
+        the primitive's own state. A JSON Schema `object` would reject the
+        function form, so nothing is asserted; the kit's own styling goes
+        through `variant`/`size` and CSS Modules, not through this.
 
 # Canonical snippets. `good` is what to copy, `bad` is what generation
 # actually produces when it guesses; every `bad` states why, because a

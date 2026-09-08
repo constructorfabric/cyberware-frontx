@@ -39,6 +39,7 @@ import {
   mapChangedFilesToComponents,
   resolveRenameSource,
   synthesizeVersionedId,
+  touchesAnyOverlay,
   touchesCoverageAllowlist,
   touchesSharedContractTooling,
   type BaseRefContractEntry,
@@ -122,8 +123,8 @@ function componentsDir(ctx: CheckContext): string {
   return join(ctx.kitRoot, 'src', 'components');
 }
 
-function generatedDir(ctx: CheckContext): string {
-  return join(ctx.kitRoot, 'scripts', 'contracts', 'generated');
+function passthroughDir(ctx: CheckContext): string {
+  return join(ctx.kitRoot, 'scripts', 'contracts', 'passthrough');
 }
 
 function coveredPath(ctx: CheckContext): string {
@@ -268,23 +269,6 @@ function contractRenameMap(ctx: CheckContext, base: string): Map<string, string>
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
 
-// Whether the base ref carries any generated passthrough type at all. This
-// separates "the origin key changed, so the file for THIS origin is missing"
-// - a real skipped comparison worth reporting - from "the base predates
-// generated passthrough types entirely", where there is nothing to compare
-// against for any component and silence is correct.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
-function baseRefHasAnyPassthrough(ctx: CheckContext, base: string): boolean {
-  const prefix = packagePrefix(ctx);
-  const output = gitOrThrow(
-    ctx,
-    ['ls-tree', '-r', '--name-only', base, '--', `${prefix}scripts/contracts/generated`],
-    'listing generated passthrough types at the base ref',
-  );
-  return output.split('\n').some((line) => line.endsWith('.json'));
-}
-// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
-
 // Every `*.contract.json` committed at `base`, with its own `$id` and stem.
 // Two readers: `resolveRenameSource`'s id/stem scan searches this pool when a
 // unit's current path did not exist at `base` and git's own rename detection
@@ -335,17 +319,20 @@ function changedFilesSince(ctx: CheckContext, base: string): string[] {
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
 
-// The passthrough origin a contract's own allOf carries, read off its
-// passthrough $ref rather than re-derived through extraction - `compat`
-// compares two POINTS IN TIME of the same contract, and the ref each one
-// actually shipped with is the ground truth for which passthrough file it
-// composes, not whatever extraction says the CURRENT source resolves to.
-// Called for BOTH revisions: see comparePassthroughSurfaces in check-lib.ts
-// for what each combination of the two answers means.
+// The host element a contract's own allOf carries, read off its passthrough
+// $ref rather than re-derived through extraction - `compat` compares two
+// POINTS IN TIME of the same contract, and the ref each one actually shipped
+// with is the ground truth for which passthrough file it composes, not
+// whatever extraction says the CURRENT source resolves to. Called for BOTH
+// revisions: see comparePassthroughSurfaces in check-lib.ts for what each
+// combination of the two answers means.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough
-function passthroughOriginFromContract(contract: CompiledContract): string | undefined {
+function passthroughElementFromContract(contract: CompiledContract): string | undefined {
   for (const ref of contract.allOf) {
     const match = /passthrough\.([a-z0-9_]+)\.v\d+~$/.exec(ref.$ref);
+    // The token, not the tag: `dom_button`, which is also the file name under
+    // scripts/contracts/passthrough/ - the two are one identity, so nothing
+    // here has to reverse domPassthroughToken.
     if (match) return match[1];
   }
   return undefined;
@@ -382,7 +369,6 @@ function checkCompatForUnit(
   base: string,
   renames: Map<string, string>,
   baseContracts: BaseRefContractEntry[],
-  baseHasAnyPassthrough: boolean,
 ): UnitCompatResult {
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-read
   const { directory, stem: component } = unit;
@@ -447,16 +433,17 @@ function checkCompatForUnit(
   registerContractTypes((entity) => gts.register(entity));
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-both
-  // Both revisions' origins, and the schema each one names: the old one as it
-  // shipped at the base ref, the new one as it is committed here. Reading the
-  // origin off the new contract alone made an entire class of change
-  // invisible - drop the passthrough $ref and there is no origin to look up,
-  // so the block was skipped and every forwarded prop disappeared silently.
-  const newOrigin = passthroughOriginFromContract(newContract);
-  const oldOrigin = passthroughOriginFromContract(oldContract);
+  // Both revisions' host elements, and the schema each one names: the old one
+  // as it shipped at the base ref, the new one as it is committed here.
+  // Reading the element off the new contract alone made an entire class of
+  // change invisible - drop the passthrough $ref and there is no element to
+  // look up, so the block was skipped and every forwarded prop disappeared
+  // silently.
+  const newElement = passthroughElementFromContract(newContract);
+  const oldElement = passthroughElementFromContract(oldContract);
   let newPassthrough: Record<string, unknown> | undefined;
-  if (newOrigin !== undefined) {
-    const newPassthroughPath = join(generatedDir(ctx), `passthrough.${newOrigin}.json`);
+  if (newElement !== undefined) {
+    const newPassthroughPath = join(passthroughDir(ctx), `${newElement}.json`);
     if (existsSync(newPassthroughPath)) {
       newPassthrough = JSON.parse(readFileSync(newPassthroughPath, 'utf8')) as Record<string, unknown>;
       // Registered so the store this comparison runs in can resolve the
@@ -465,21 +452,20 @@ function checkCompatForUnit(
     }
   }
   const oldPassthrough =
-    oldOrigin === undefined ? undefined : readJsonAt(ctx, base, `scripts/contracts/generated/passthrough.${oldOrigin}.json`);
+    oldElement === undefined ? undefined : readJsonAt(ctx, base, `scripts/contracts/passthrough/${oldElement}.json`);
   // The old revision's own surface, when it is a different type from the new
   // one: registered so the store can resolve BOTH synthetic revisions' allOf
-  // rather than only the current one's. Skipped when the origin is unchanged,
-  // where the two carry the same $id and the second registration would only
-  // overwrite the first.
-  if (oldPassthrough !== undefined && oldOrigin !== newOrigin) gts.register(oldPassthrough);
+  // rather than only the current one's. Skipped when the element is
+  // unchanged, where the two carry the same $id and the second registration
+  // would only overwrite the first.
+  if (oldPassthrough !== undefined && oldElement !== newElement) gts.register(oldPassthrough);
 
   const passthrough = comparePassthroughSurfaces({
     component,
-    oldOrigin,
-    newOrigin,
+    oldElement,
+    newElement,
     oldSchema: oldPassthrough,
     newSchema: newPassthrough,
-    baseHasAnyPassthrough,
   });
   const passthroughDiff: PassthroughDiff | undefined = passthrough.diff;
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-both
@@ -539,13 +525,8 @@ export function runCompat(base: string, options: { json: boolean }, ctx: CheckCo
   const renames = contractRenameMap(ctx, base);
   const baseContracts = listBaseRefContracts(ctx, base);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
-  const baseHasAnyPassthrough = baseRefHasAnyPassthrough(ctx, base);
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
   // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-compat-exit
-  const results: UnitCompatResult[] = units.map((unit) =>
-    checkCompatForUnit(ctx, unit, base, renames, baseContracts, baseHasAnyPassthrough),
-  );
+  const results: UnitCompatResult[] = units.map((unit) => checkCompatForUnit(ctx, unit, base, renames, baseContracts));
   // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-compat-exit
 
   // Everything the base ref carried that no unit above compared itself
@@ -632,15 +613,22 @@ export function runGuard(base: string, options: { json: boolean }, ctx: CheckCon
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
   const allowlistChanged = touchesCoverageAllowlist(changedFiles);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
+  // An overlay's children list decides another component's derived parent, so
+  // an edit to any overlay can move a contract in a directory this change
+  // never touched.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-overlay
+  const overlayChanged = touchesAnyOverlay(changedFiles);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-overlay
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-scope
-  const touched = toolingChanged || allowlistChanged ? new Set([...touchedDirectly, ...covered]) : touchedDirectly;
+  const touched =
+    toolingChanged || allowlistChanged || overlayChanged ? new Set([...touchedDirectly, ...covered]) : touchedDirectly;
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-scope
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-empty
   if (touched.size === 0) {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-empty-return
     if (options.json) {
-      ctx.log(JSON.stringify({ command: 'guard', base, violated: false, toolingChanged, allowlistChanged, results: [] }));
+      ctx.log(JSON.stringify({ command: 'guard', base, violated: false, toolingChanged, allowlistChanged, overlayChanged, results: [] }));
     } else {
       ctx.log('guard: no component files changed - nothing to check.');
     }
@@ -659,6 +647,11 @@ export function runGuard(base: string, options: { json: boolean }, ctx: CheckCon
       ctx.log('guard: covered.json changed - re-checking every component it names.');
     }
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-overlay
+    if (overlayChanged) {
+      ctx.log('guard: an overlay changed - re-checking every covered component, because a children list decides another component\'s derived parent.');
+    }
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-overlay
   }
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-each
@@ -701,7 +694,7 @@ export function runGuard(base: string, options: { json: boolean }, ctx: CheckCon
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-return
   if (options.json) {
-    ctx.log(JSON.stringify({ command: 'guard', base, violated, toolingChanged, allowlistChanged, results }));
+    ctx.log(JSON.stringify({ command: 'guard', base, violated, toolingChanged, allowlistChanged, overlayChanged, results }));
   } else {
     for (const result of results) {
       const label =

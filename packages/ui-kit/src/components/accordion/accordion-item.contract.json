@@ -8,16 +8,33 @@
       "$ref": "gts://gts.frontx.uikit.base.component.v1~"
     },
     {
-      "$ref": "gts://gts.frontx.uikit.passthrough.base_ui_accordion_item.v1~"
+      "$ref": "gts://gts.frontx.uikit.passthrough.dom_div.v1~"
     }
   ],
   "properties": {
     "className": {
       "type": "string"
+    },
+    "disabled": {
+      "type": "boolean"
+    },
+    "onOpenChange": {
+      "description": "TS: ((open: boolean, eventDetails: import(\"@base-ui/react/accordion/index\").AccordionItemChangeEventDetails) => void) | undefined. Not expressible in JSON Schema, checked by tsc."
+    },
+    "render": {
+      "description": "TS: import(\"@types/react/index\").ReactElement<unknown, string | import(\"@types/react/index\").JSXElementConstructor<any>> | import(\"@base-ui/react/types/index\").ComponentRenderFn<import(\"@base-ui/react/types/index\").HTMLProps, import(\"@base-ui/react/accordion/index\").AccordionItemState> | undefined. Not expressible in JSON Schema, checked by tsc."
+    },
+    "style": {
+      "description": "TS: import(\"@types/react/index\").CSSProperties | ((state: import(\"@base-ui/react/accordion/index\").AccordionItemState) => import(\"@types/react/index\").CSSProperties | undefined) | undefined. Not expressible in JSON Schema, checked by tsc."
+    },
+    "value": {
+      "description": "TS: any. Not expressible in JSON Schema, checked by tsc."
     }
   },
   "required": [],
-  "unevaluatedProperties": false,
+  "unevaluatedProperties": {
+    "x-uikit-verdict": "unchecked"
+  },
   "x-uikit": {
     "metamodel": "1.0.0",
     "intent": "One collapsible section of an Accordion, identified by a unique value.",
@@ -82,7 +99,33 @@
     },
     "deprecations": {},
     "coverage": {
-      "a11y": "verified"
+      "a11y": "verified",
+      "assumptions": [
+        {
+          "kind": "untyped_prop",
+          "prop": "value",
+          "claim": "value is an opaque identifier, typed `any` by Base UI",
+          "reason": "Base UI's Accordion.Item declares `value?: any` - it is compared by identity against the root's `value`/`defaultValue` array and never interpreted, so the primitive types it as anything. Strings are what accordion.md uses, and what a reader should reach for."
+        },
+        {
+          "kind": "untyped_prop",
+          "prop": "onOpenChange",
+          "claim": "onOpenChange is a callback, not a value",
+          "reason": "`(open: boolean, eventDetails) => void` - a function of Base UI's own event-details object. No JSON Schema type covers a function."
+        },
+        {
+          "kind": "untyped_prop",
+          "prop": "render",
+          "claim": "render replaces the item element with one the caller supplies",
+          "reason": "Base UI's render prop takes an element or a function of the item's state; neither is expressible in JSON Schema."
+        },
+        {
+          "kind": "untyped_prop",
+          "prop": "style",
+          "claim": "style accepts a function of the item's state as well as a plain style object",
+          "reason": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
+        }
+      ]
     },
     "family": {
       "root": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",

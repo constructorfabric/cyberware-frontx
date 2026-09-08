@@ -2,14 +2,14 @@
 // provider-safe subset cannot express reaches a reader: it is described, not
 // left blank.
 //
-// The defect this suite pins down was found by reading the generated
-// artifacts as an agent would. `passthrough.base_ui_accordion_root.json`
-// carried `"value": {}`, `"defaultValue": {}` and `"onValueChange": {}` -
-// and an empty schema in a props contract reads as "anything goes", so the
-// reader concluded `value` and `defaultValue` were plain strings when their
-// real type is `AccordionValue<Value>`. Nothing in the harness was wrong
-// about the TYPE; the compiler simply had nowhere to put it once
-// classifyProviderSafeType returned undefined.
+// The defect this suite pins down was found by reading the compiled
+// artifacts as an agent would. The accordion root's `value`, `defaultValue`
+// and `onValueChange` were each the literal `{}` - and an empty schema in a
+// props contract reads as "anything goes", so the reader concluded `value`
+// and `defaultValue` were plain strings when their real type is
+// `AccordionValue<Value>`. Nothing in the harness was wrong about the TYPE;
+// the compiler simply had nowhere to put it once classifyProviderSafeType
+// returned undefined.
 //
 // Compiled from a real extraction rather than a synthetic
 // ComponentExtraction: the whole point is that the type text a reader ends
@@ -19,7 +19,15 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { buildBaseSchema, buildGtsTraitsSchema, buildMetamodel, buildPassthroughSchema, buildPropsAndRequired, buildTraitTypes, describeUntypeableProperty } from './compile';
+import {
+  buildBaseSchema,
+  buildGtsTraitsSchema,
+  buildMetamodel,
+  buildPropsAndRequired,
+  buildTraitTypes,
+  describeUntypeableProperty,
+  loadPassthroughSchema,
+} from './compile';
 import { extractComponent } from './extract';
 import { applyContractTestTimeout } from './testing';
 
@@ -32,37 +40,38 @@ applyContractTestTimeout();
 const fixture = (name: string) => join(process.cwd(), 'scripts/contracts/__fixtures__', name);
 
 const [picker] = extractComponent(fixture('untypeable-props.fixture.tsx'));
-const passthrough = buildPassthroughSchema('dom_div', 'div', picker.inheritedProps, ['picker']);
-const passthroughProperties = passthrough.properties as Record<string, { type?: string; description?: string }>;
+const passthrough = loadPassthroughSchema('div');
 
-describe('an inherited prop with no JSON Schema representation', () => {
-  it('carries the checker type text and the reason nothing asserts it', () => {
-    // `defaultValue` is the accordion root's own misread prop name, here on
-    // a plain <div>: a union with non-literal members, so no type and no
-    // enum, exactly the case that used to emit `{}`.
-    const defaultValue = passthroughProperties.defaultValue;
-    expect(defaultValue.type).toBeUndefined();
-    expect(defaultValue.description).toBe(
-      'TS: string | number | readonly string[] | undefined. Not expressible in JSON Schema, checked by tsc.',
-    );
+describe('the hand-written element surface', () => {
+  const properties = passthrough.properties as Record<string, { type?: string; description?: string }>;
+
+  it('states the TypeScript type of every attribute it cannot assert', () => {
+    // `style` and `children` are the two React attributes no JSON Schema
+    // type covers - and the case that used to emit `{}` per component, 233
+    // times over, for props nobody had written down.
+    expect(properties.style.type).toBeUndefined();
+    expect(properties.style.description).toContain('TS: CSSProperties');
+    expect(properties.children.description).toContain('TS: ReactNode');
   });
 
-  it('leaves a prop the subset CAN express untouched', () => {
-    // The rule is "describe what cannot be asserted", not "describe
-    // everything" - a typed prop gaining prose would be a second, drifting
-    // statement of the same fact.
-    expect(passthroughProperties.className).toEqual({ type: 'string' });
+  it('types the attributes it can, rather than describing everything', () => {
+    expect(properties.className).toEqual({ type: 'string' });
+    expect(properties.tabIndex).toEqual({ type: 'number' });
   });
 
   it('leaves no property schema empty', () => {
-    const empty = Object.entries(passthroughProperties)
+    const empty = Object.entries(properties)
       .filter(([, schema]) => Object.keys(schema).length === 0)
       .map(([name]) => name);
     expect(empty).toEqual([]);
   });
+
+  it('admits the aria-, data- and event-handler families by pattern rather than by name', () => {
+    expect(Object.keys(passthrough.patternProperties as Record<string, unknown>).sort()).toEqual(['^aria-', '^data-', '^on[A-Z]']);
+  });
 });
 
-describe('an own prop with no JSON Schema representation', () => {
+describe('a declared prop with no JSON Schema representation', () => {
   const { properties, slots } = buildPropsAndRequired('picker', picker, passthrough);
 
   it('states its type text next to the slot record that holds it', () => {

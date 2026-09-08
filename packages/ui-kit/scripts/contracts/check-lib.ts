@@ -63,24 +63,20 @@ export interface PassthroughDiff {
   added: string[];
   removed: string[];
   narrowed: { prop: string; reason: string }[];
-  // A generated passthrough type is one of several in-place applicators a
-  // component schema composes (see compile.ts's buildPassthroughSchema
-  // $comment) - gts-ts's flat property/required/enum comparison never sees
-  // it, because it never resolves the component contract's allOf/$ref. This
-  // is the check that closes that gap: an added forwarded prop only widens
-  // what a consumer may pass (backward compatible), while a removed prop or
-  // a narrowed enum/type can reject something that used to validate.
+  // An element-kind passthrough type is one of several in-place applicators a
+  // component schema composes (see its own $comment) - gts-ts's flat
+  // property/required/enum comparison never sees it, because it never
+  // resolves the component contract's allOf/$ref. This is the check that
+  // closes that gap: an added forwarded prop only widens what a consumer may
+  // pass (backward compatible), while a removed prop or a narrowed enum/type
+  // can reject something that used to validate.
   compatible: boolean;
 }
 
-// The name-level half of every inherited-surface comparison: which forwarded
-// props vanished, which arrived, and which became mandatory. Split out
-// because it is the only half that survives a change of ORIGIN - two origins
-// describe two unrelated surfaces, so a type or enum difference between them
-// says nothing about what a consumer used to be able to pass, while a name
-// that disappears says it exactly. diffPassthroughOriginChange below is that
-// half on its own; diffPassthroughSchema is this half plus the shape checks
-// that only mean something within one origin.
+// The name-level half of the forwarded-surface comparison: which forwarded
+// props vanished, which arrived, and which became mandatory. Split out from
+// the shape checks below because the two answer different questions and a
+// reader of either should not have to skip the other.
 function comparePassthroughNames(
   oldSchema: PassthroughSchemaLike,
   newSchema: PassthroughSchemaLike,
@@ -159,20 +155,6 @@ export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchem
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
 
-// The same comparison across a change of ORIGIN, or across the surface being
-// dropped altogether: property names and requiredness only. A prop that
-// disappears from the surface a contract composes rejects a call site that
-// used to pass it, whichever origin declared it; a prop whose type differs
-// between two unrelated origins is not a narrowing of anything, because
-// there was never one surface for it to narrow.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough-origin
-export function diffPassthroughOriginChange(oldSchema: PassthroughSchemaLike, newSchema: PassthroughSchemaLike): PassthroughDiff {
-  const { added, removed, newlyRequired } = comparePassthroughNames(oldSchema, newSchema);
-  const narrowed = newlyRequired.map((prop) => ({ prop, reason: NEWLY_REQUIRED_REASON }));
-  return { added, removed, narrowed, compatible: removed.length === 0 && narrowed.length === 0 };
-}
-// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough-origin
-
 // gts-ts's own `checkCompatibility(..., 'backward')` diffs a component's OWN
 // properties/required the same shallow way `diffPassthroughSchema` diffs the
 // passthrough surface - but empirically (see check-lib.compat-e2e.test.ts,
@@ -215,55 +197,37 @@ export function diffOwnPropsSchema(oldSchema: OwnPropsSchemaLike, newSchema: Own
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
 
-// A component re-based onto a different primitive part changes its passthrough
-// ORIGIN key, so `gitShow` looks for `passthrough.<new origin>.json` at the base
-// ref and finds nothing. `passthroughDiff` then stays undefined and `decideCompat`
-// reads the missing signal as "nothing incompatible" - the inherited surface
-// changed wholesale and no one is told. This does not make the change a refusal
-// (the old and new surfaces are not comparable prop-by-prop), but the skipped
-// signal has to be visible in the report rather than inferred from its absence.
-// A base ref carrying no generated passthrough type at all is the genuine
-// first-contract case and stays silent.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
-export function skippedPassthroughNote(
-  component: string,
-  origin: string,
-  baseHasOriginFile: boolean,
-  baseHasAnyPassthrough: boolean,
-): string | undefined {
-  if (baseHasOriginFile || !baseHasAnyPassthrough) return undefined;
-  return `${component}: inherited-surface signal skipped - the base ref carries no passthrough type for origin "${origin}"`;
-}
-// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
-
-// Which inherited-surface comparison a contract's two revisions admit. The
-// origin is read from EACH revision's own allOf rather than from the new one
-// alone: a contract that dropped its passthrough $ref outright has no origin
-// to look up, so reading only the new side skipped the whole block and
-// reported "compatible" for a change that removed every forwarded prop at
+// Which forwarded-surface comparison a contract's two revisions admit. The
+// host element is read from EACH revision's own allOf rather than from the
+// new one alone: a contract that dropped its passthrough $ref outright has no
+// element to look up, so reading only the new side skipped the whole block
+// and reported "compatible" for a change that removed every forwarded prop at
 // once. Four shapes, and only the last is the ordinary one:
-//  - neither revision inherits anything: nothing to compare;
-//  - only the new one does: an inherited surface appeared, which only widens
+//  - neither revision forwards anything: nothing to compare;
+//  - only the new one does: a forwarded surface appeared, which only widens
 //    what a consumer may pass, so there is nothing to report;
-//  - the origin moved, or the new revision inherits nothing at all: compare
-//    by name and requiredness (diffPassthroughOriginChange), because the two
-//    surfaces are not the same surface at two points in time;
-//  - the origin is unchanged: the full shape comparison.
+//  - the new revision forwards nothing at all: compare against the empty
+//    surface, which reports every forwarded prop as removed;
+//  - both forward: the shape comparison, with the element move named when the
+//    two are different elements. The surfaces are hand-written and shared
+//    kit-wide, so the props two element kinds have in common carry the same
+//    declarations by construction and a shape difference between them is a
+//    real difference rather than an artefact of comparing two derivations -
+//    which is why the move does not need a comparison of its own.
 // A skipped signal is still reported as skipped rather than left to read as
-// agreement, but it is now only reported for what genuinely cannot be
-// compared - a base ref with no file for the origin the contract shipped
-// with, or an origin whose generated file is not committed here.
+// agreement, and only for what genuinely cannot be compared: no committed
+// file for the element this contract names now, or none at the base ref for
+// the element it named there.
 export interface PassthroughComparisonInput {
   component: string;
-  // The origin each revision's own allOf names, undefined when that revision
-  // composes no passthrough type at all.
-  oldOrigin?: string;
-  newOrigin?: string;
-  // The schema for that revision's origin - at the base ref for the old one,
+  // The host element each revision's own allOf names, undefined when that
+  // revision composes no passthrough type at all.
+  oldElement?: string;
+  newElement?: string;
+  // The schema for that revision's element - at the base ref for the old one,
   // as committed here for the new one - undefined when the file is absent.
   oldSchema?: PassthroughSchemaLike;
   newSchema?: PassthroughSchemaLike;
-  baseHasAnyPassthrough: boolean;
 }
 
 export interface PassthroughComparison {
@@ -273,30 +237,32 @@ export interface PassthroughComparison {
 
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-both
 export function comparePassthroughSurfaces(input: PassthroughComparisonInput): PassthroughComparison {
-  const { component, oldOrigin, newOrigin, oldSchema, newSchema, baseHasAnyPassthrough } = input;
+  const { component, oldElement, newElement, oldSchema, newSchema } = input;
 
-  if (oldOrigin === undefined) return {};
+  if (oldElement === undefined) return {};
   if (oldSchema === undefined) {
-    return { note: skippedPassthroughNote(component, oldOrigin, false, baseHasAnyPassthrough) };
-  }
-  if (newOrigin === undefined) {
     return {
-      diff: diffPassthroughOriginChange(oldSchema, {}),
-      note: `${component}: the contract no longer composes the inherited surface it carried at the base ref (origin "${oldOrigin}")`,
+      note: `${component}: forwarded-surface signal skipped - the base ref carries no passthrough type for element "${oldElement}"`,
+    };
+  }
+  if (newElement === undefined) {
+    return {
+      diff: diffPassthroughSchema(oldSchema, {}),
+      note: `${component}: the contract no longer composes the forwarded surface it carried at the base ref (element "${oldElement}")`,
     };
   }
   if (newSchema === undefined) {
     return {
-      note: `${component}: inherited-surface signal skipped - no committed passthrough type for origin "${newOrigin}"`,
+      note: `${component}: forwarded-surface signal skipped - no committed passthrough type for element "${newElement}"`,
     };
   }
-  if (oldOrigin !== newOrigin) {
-    return {
-      diff: diffPassthroughOriginChange(oldSchema, newSchema),
-      note: `${component}: inherited-surface origin moved "${oldOrigin}" -> "${newOrigin}" - compared by forwarded property name and requiredness, the only signals two different origins share`,
-    };
-  }
-  return { diff: diffPassthroughSchema(oldSchema, newSchema) };
+  return {
+    diff: diffPassthroughSchema(oldSchema, newSchema),
+    note:
+      oldElement === newElement
+        ? undefined
+        : `${component}: host element moved "${oldElement}" -> "${newElement}"`,
+  };
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-both
 
@@ -480,6 +446,24 @@ export function touchesCoverageAllowlist(changedFiles: string[]): boolean {
   return changedFiles.includes(COVERAGE_ALLOWLIST_FILE);
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
+
+// A third widening signal, and the one the derived `parent` made necessary: a
+// component's allowed mount points are computed from every OTHER overlay's
+// `composition.children`, so editing one overlay's children list changes the
+// compiled contract of whatever component that list names - a component in a
+// different directory, which no change-set mapping would put in scope. The
+// guard would then report the edited directory as fresh and never look at the
+// contract the edit actually moved.
+//
+// Its own signal rather than a widening of touchesSharedContractTooling, for
+// the same reason the allowlist has one: the two reasons stay distinguishable
+// in the guard's own output, and this one is about authored content rather
+// than about the machinery that compiles it.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-overlay
+export function touchesAnyOverlay(changedFiles: string[]): boolean {
+  return changedFiles.some((file) => /^src\/components\/[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*\.contract\.yaml$/.test(file));
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-overlay
 
 // A base-ref contract file `resolveRenameSource` can compare a "not found at
 // this path" unit against - `path` is package-relative (matches
@@ -699,3 +683,98 @@ export interface DirectoryExportCoverage {
   // undescribed gaps".
   skippedNonComponents: string[];
 }
+
+// What a props object looks like against one contract: which names the
+// contract or the element surface it composes accounts for, which nothing
+// accounts for, and which of those are one edit away from a real kit prop.
+//
+// This is the report that replaces `unevaluatedProperties: false`. Closing
+// the schema made Ajv answer "invalid" to two different things - a typo'd kit
+// prop, and a name this harness has not classified yet (a new React
+// attribute, a prop of a primitive part nobody has described) - and only the
+// first is a mistake. Splitting them needs a comparison the schema cannot
+// make: `variannt` is an error because `variant` exists, while `tooltip` is
+// merely unchecked. So the schema admits everything and annotates the verdict
+// (compile.ts's OPEN_UNEVALUATED), and this is where the verdict is decided.
+//
+// The consumer this exists for - a plan validator that reads a component's
+// props before anything renders - is out of scope here; what is in scope is
+// that the harness owns the rule rather than each caller reinventing an edit
+// distance.
+export interface ContractPropsLike {
+  properties?: Record<string, unknown>;
+}
+
+export interface PassthroughPropsLike {
+  properties?: Record<string, unknown>;
+  patternProperties?: Record<string, unknown>;
+}
+
+export interface PropsClassification {
+  // Declared by the contract itself, or by the element surface it composes,
+  // or matching one of that surface's patterns (aria-*, data-*, on*).
+  known: string[];
+  // Accounted for by nothing. Not an error on its own: the schema admits it
+  // and says so.
+  unchecked: string[];
+  // The subset of `unchecked` within one edit of a prop the CONTRACT declares
+  // - the kit's own API, not the DOM surface underneath it, because a
+  // near-miss of `className` is a typo in a DOM attribute and a near-miss of
+  // `variant` is a typo in the thing this contract exists to describe. Each
+  // entry names what it is probably meant to be, so a caller can say it.
+  nearMiss: { prop: string; probably: string }[];
+}
+
+// Levenshtein distance, bounded at 2 - the only question asked of it is
+// "exactly one edit apart", and a full matrix over two prop names is cheap
+// enough that the bound is for clarity rather than for speed.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-distance
+function editDistance(a: string, b: string): number {
+  if (Math.abs(a.length - b.length) > 1) return 2;
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      current[j] = Math.min(
+        previous[j] + 1,
+        current[j - 1] + 1,
+        previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    previous = current;
+  }
+  return previous[b.length];
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-distance
+
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-classify
+export function classifyProps(
+  props: Record<string, unknown>,
+  contract: ContractPropsLike,
+  passthrough?: PassthroughPropsLike,
+): PropsClassification {
+  const contractProps = Object.keys(contract.properties ?? {});
+  const elementProps = new Set(Object.keys(passthrough?.properties ?? {}));
+  const patterns = Object.keys(passthrough?.patternProperties ?? {}).map((source) => new RegExp(source));
+  const declared = new Set(contractProps);
+
+  const known: string[] = [];
+  const unchecked: string[] = [];
+  const nearMiss: { prop: string; probably: string }[] = [];
+
+  for (const name of Object.keys(props).sort()) {
+    if (declared.has(name) || elementProps.has(name) || patterns.some((pattern) => pattern.test(name))) {
+      known.push(name);
+      continue;
+    }
+    unchecked.push(name);
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-near-miss
+    const probably = contractProps.filter((candidate) => editDistance(name, candidate) === 1).sort()[0];
+    if (probably !== undefined) nearMiss.push({ prop: name, probably });
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-near-miss
+  }
+
+  return { known, unchecked, nearMiss };
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-classify

@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildCoverageReport,
+  classifyProps,
+  comparePassthroughSurfaces,
   decideCompat,
   diffOwnPropsSchema,
   diffPassthroughSchema,
@@ -16,7 +18,7 @@ import {
   mapChangedFilesToComponents,
   resolveRenameSource,
   synthesizeVersionedId,
-  skippedPassthroughNote,
+  touchesAnyOverlay,
   touchesSharedContractTooling,
 } from './check-lib';
 import { applyContractTestTimeout } from './testing';
@@ -265,19 +267,57 @@ describe('mapChangedFilesToComponents', () => {
   });
 });
 
-describe('skippedPassthroughNote', () => {
-  it('reports a skipped signal when the base has passthrough types but none for this origin', () => {
-    expect(skippedPassthroughNote('button', 'base_ui_button', false, true)).toBe(
-      'button: inherited-surface signal skipped - the base ref carries no passthrough type for origin "base_ui_button"',
-    );
+describe('comparePassthroughSurfaces', () => {
+  const surface = { properties: { className: { type: 'string' }, disabled: { type: 'boolean' } }, required: [] };
+
+  it('has nothing to compare when neither revision forwards anything', () => {
+    expect(comparePassthroughSurfaces({ component: 'data-table' })).toEqual({});
   });
 
-  it('is silent when the base carries the origin\'s own file', () => {
-    expect(skippedPassthroughNote('button', 'base_ui_button', true, true)).toBeUndefined();
+  it('reports nothing when only the current revision forwards - an arriving surface only widens', () => {
+    expect(comparePassthroughSurfaces({ component: 'button', newElement: 'dom_button', newSchema: surface })).toEqual({});
   });
 
-  it('is silent when the base carries no passthrough type at all', () => {
-    expect(skippedPassthroughNote('button', 'base_ui_button', false, false)).toBeUndefined();
+  it('reports every forwarded prop as removed when the contract stops composing a surface', () => {
+    // The defect this branch exists for: reading the element off the new
+    // contract alone left nothing to look up, so the block was skipped and
+    // every forwarded prop disappeared under a PASS.
+    const { diff, note } = comparePassthroughSurfaces({ component: 'button', oldElement: 'dom_button', oldSchema: surface });
+    expect(diff?.removed).toEqual(['className', 'disabled']);
+    expect(diff?.compatible).toBe(false);
+    expect(note).toContain('no longer composes the forwarded surface');
+  });
+
+  it('compares across a change of host element, naming the move', () => {
+    const { diff, note } = comparePassthroughSurfaces({
+      component: 'button',
+      oldElement: 'dom_button',
+      newElement: 'dom_div',
+      oldSchema: surface,
+      newSchema: { properties: { className: { type: 'string' } }, required: [] },
+    });
+    expect(diff?.removed).toEqual(['disabled']);
+    expect(note).toContain('host element moved "dom_button" -> "dom_div"');
+  });
+
+  it('says nothing about a move when the element is unchanged', () => {
+    const { diff, note } = comparePassthroughSurfaces({
+      component: 'button',
+      oldElement: 'dom_button',
+      newElement: 'dom_button',
+      oldSchema: surface,
+      newSchema: surface,
+    });
+    expect(diff?.compatible).toBe(true);
+    expect(note).toBeUndefined();
+  });
+
+  it('reports a skipped signal for a surface it genuinely cannot read', () => {
+    const missingAtBase = comparePassthroughSurfaces({ component: 'button', oldElement: 'dom_button', newElement: 'dom_button', newSchema: surface });
+    expect(missingAtBase.diff).toBeUndefined();
+    expect(missingAtBase.note).toContain('the base ref carries no passthrough type for element "dom_button"');
+    const missingHere = comparePassthroughSurfaces({ component: 'button', oldElement: 'dom_button', newElement: 'dom_div', oldSchema: surface });
+    expect(missingHere.note).toContain('no committed passthrough type for element "dom_div"');
   });
 });
 
@@ -298,8 +338,10 @@ describe('touchesSharedContractTooling', () => {
     }
   });
 
-  it('is true for a generated passthrough file', () => {
-    expect(touchesSharedContractTooling(['scripts/contracts/generated/passthrough.base_ui_button.json'])).toBe(true);
+  it('is true for a hand-written element-surface type', () => {
+    // Shared kit-wide: one edit here changes what every component rendering
+    // that element forwards, in every one of their contracts.
+    expect(touchesSharedContractTooling(['scripts/contracts/passthrough/dom_button.json'])).toBe(true);
   });
 
   // A vocabulary type is referenced by the base type's trait schema and by
@@ -427,5 +469,86 @@ describe('buildCoverageReport', () => {
     const report = buildCoverageReport(['button', 'alert'], ['button', 'ghost-component']);
     expect(report.coveredCount).toBe(1);
     expect(report.unknownCovered).toEqual(['ghost-component']);
+  });
+});
+
+describe('touchesAnyOverlay', () => {
+  // The widening the derived `parent` made necessary: a children list decides
+  // another component's parent, so an overlay edit can move a contract in a
+  // directory the change never touched.
+  it('is true for an overlay under any component directory', () => {
+    expect(touchesAnyOverlay(['src/components/accordion/accordion.contract.yaml'])).toBe(true);
+  });
+
+  it('is false for the artifacts an overlay compiles into, and for anything else', () => {
+    // The compiled JSON is downstream of the overlay, so it never widens on
+    // its own - the guard is about what a change could still make stale.
+    for (const file of [
+      'src/components/accordion/accordion.contract.json',
+      'src/components/accordion/accordion.contract.instance.json',
+      'src/components/accordion/accordion.tsx',
+      'scripts/contracts/compile.ts',
+    ]) {
+      expect(touchesAnyOverlay([file]), file).toBe(false);
+    }
+  });
+
+  it('is false for a localized overlay copy, which no compile ever reads', () => {
+    expect(touchesAnyOverlay(['src/components/button/button.contract.ru.yaml'])).toBe(false);
+  });
+});
+
+describe('classifyProps', () => {
+  // The report that replaced `unevaluatedProperties: false`. The pure half is
+  // here; button.contract.test.ts drives it against a real contract and its
+  // real element surface.
+  const contract = { properties: { variant: {}, size: {}, loading: {} } };
+  const passthrough = {
+    properties: { className: {}, title: {} },
+    patternProperties: { '^aria-': {}, '^data-': {}, '^on[A-Z]': {} },
+  };
+
+  it('counts a contract prop, an element attribute and a pattern match as known', () => {
+    const report = classifyProps({ variant: 'ghost', title: 'x', 'aria-label': 'y', onClick: () => {} }, contract, passthrough);
+    expect(report.known).toEqual(['aria-label', 'onClick', 'title', 'variant']);
+    expect(report.unchecked).toEqual([]);
+  });
+
+  it('reports a name nothing accounts for as unchecked, not as an error', () => {
+    const report = classifyProps({ tooltip: 'x' }, contract, passthrough);
+    expect(report.unchecked).toEqual(['tooltip']);
+    expect(report.nearMiss).toEqual([]);
+  });
+
+  it('upgrades a one-edit miss of a contract prop to a near miss', () => {
+    // One edit each way: a substitution, an insertion and a deletion.
+    for (const [typo, real] of [
+      ['varient', 'variant'],
+      ['variantt', 'variant'],
+      ['varant', 'variant'],
+    ] as const) {
+      const report = classifyProps({ [typo]: 'ghost' }, contract, passthrough);
+      expect(report.nearMiss, typo).toEqual([{ prop: typo, probably: real }]);
+    }
+  });
+
+  it('leaves a two-edit miss unchecked - a guess that far off is noise', () => {
+    const report = classifyProps({ varant: 'ghost', vrient: 'ghost' }, contract, passthrough);
+    expect(report.nearMiss.map((entry) => entry.prop)).toEqual(['varant']);
+    expect(report.unchecked).toEqual(['varant', 'vrient']);
+  });
+
+  it('does not treat a near-miss of an element attribute as a near miss', () => {
+    // A typo in a DOM attribute is React's business; reporting it here would
+    // make the report noisier than the closure it replaced.
+    const report = classifyProps({ titl: 'x' }, contract, passthrough);
+    expect(report.unchecked).toEqual(['titl']);
+    expect(report.nearMiss).toEqual([]);
+  });
+
+  it('works with no element surface at all - a component that forwards nothing', () => {
+    const report = classifyProps({ variant: 'ghost', className: 'x' }, contract);
+    expect(report.known).toEqual(['variant']);
+    expect(report.unchecked).toEqual(['className']);
   });
 });

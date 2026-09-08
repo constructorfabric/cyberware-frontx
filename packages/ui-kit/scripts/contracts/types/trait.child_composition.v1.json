@@ -2,7 +2,7 @@
   "$id": "gts://gts.frontx.uikit.trait.child_composition.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UiKit child composition",
-  "description": "What may appear inside this component. A component reference when the child IS a kit component - typed so a reader can resolve it and the conformance suite can check it exists - or the literal \"text\" for plain textual content, or \"none\" for a component that takes no children at all (DataTable renders its Table internally: \"text\" would claim a slot that does not exist, \"none\" says so honestly). \"none\" stands alone - a list that pairs it with anything else says both that nothing may appear inside and that something may. Not an open string: a typo'd reference would otherwise silently read as a content kind.",
+  "description": "What may appear inside this component. A component reference when the child IS a kit component - typed so a reader can resolve it and the conformance suite can check it exists - or one of two content kinds. \"text\" means a non-component React node: a string, a number, a fragment, or a formatted inline element (<strong>, <code>) - never a kit component, which would be a reference instead. \"none\" means the component takes no children at all (DataTable renders its Table internally: \"text\" would claim a slot that does not exist, \"none\" says so honestly), and stands alone - a list that pairs it with anything else says both that nothing may appear inside and that something may. Not an open string: a typo'd reference would otherwise silently read as a content kind.",
   "type": "object",
   "properties": {
     "kinds": {

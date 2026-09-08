@@ -63,7 +63,7 @@ This PRD uses the root PRD's vocabulary ([root PRD §1.4](../../../architecture/
 | Component contract | A machine-readable description of one component: its meaning, stated by hand, joined to the prop facts read out of its TypeScript. |
 | Overlay | The hand-authored half of a contract. It carries meaning only and may not restate a fact the compiler can read from the code. |
 | Described component | A component the kit has opted into contract coverage for. An undescribed component is not a defect; coverage is incremental. |
-| Passthrough surface | The props a component inherits from the primitive it wraps rather than declaring itself. |
+| Passthrough surface | The attributes React declares for the element a component renders, forwarded rather than declared. One statement per element kind, shared by every component that renders it. A prop the primitive library declares for its own part is not part of this: that is the wrapping component's own API. |
 
 ## 2. Actors
 
@@ -211,9 +211,9 @@ The system **MUST** be verified by installing the packaged artifact into clean c
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-fr-component-contract`
 
-The system **MUST** produce, for each described component, a machine-readable contract carrying the component's meaning together with its checkable prop surface: its variant axes and their values, the props it declares itself, and the surface it inherits from the primitive it wraps.
+The system **MUST** produce, for each described component, a machine-readable contract carrying the component's meaning together with its checkable prop surface: its variant axes and their values, the props it declares itself, the props the primitive it wraps declares for that part - which are the component's own API, reached through the wrapping - and a reference to the attributes it forwards to the element it renders.
 
-**Threshold**: A described component's contract states every variant axis and its default, distinguishes the props the component declares from the ones it inherits, and represents a prop that has no machine-checkable shape as an explicitly annotated one rather than omitting it.
+**Threshold**: A described component's contract states every variant axis and its default, carries both the props the component declares and the props the primitive declares for the part it wraps, references the forwarded attribute surface of its host element rather than restating it, and represents a prop that has no machine-checkable shape as an explicitly annotated one - stating the type the type system checks - rather than omitting it or leaving it blank.
 
 **Rationale**: An agent choosing and using a component needs a description a tool can check its output against; prose can only be reviewed by a person.
 
@@ -249,7 +249,7 @@ The system **MUST** hold a described component's committed contract to a fresh c
 
 The system **MUST** compare a described component's contract against the same contract at the change's base reference, and **MUST** refuse a backward-incompatible difference unless the contract's own major version moved.
 
-**Threshold**: Removing a prop, making an optional prop required, dropping a value from a variant axis, or narrowing the inherited surface is refused at an unchanged major and accepted with the major moved, in both cases naming every reason.
+**Threshold**: Removing a prop, making an optional prop required, dropping a value from a variant axis, or narrowing the forwarded surface is refused at an unchanged major and accepted with the major moved, in both cases naming every reason.
 
 **Rationale**: Consumers depend on a described surface. The point of describing it is that a break becomes a decision rather than an accident.
 
@@ -442,7 +442,7 @@ None owned here. The package is distributed under the root PRD's package-registr
 - [x] No component stylesheet introduces an appearance value the kit's theme does not define, and every token defined for one theme is defined for the other - verifiable via `cpt-frontx-ui-kit-fr-token-styling` and `cpt-frontx-ui-kit-fr-theme-selection`.
 - [x] The client-boundary classification is derived from the source and agrees everywhere it is stated, and the published artifact carries the directive for exactly the classified components - verifiable via `cpt-frontx-ui-kit-fr-client-boundary`.
 - [x] Every exported component has a usage document in the published artifact and an entry in the shipped index - verifiable via `cpt-frontx-ui-kit-fr-agent-documentation`.
-- [x] A described component's contract states its variant axes with defaults, separates declared props from inherited ones, and marks a prop with no machine-checkable shape rather than dropping it - verifiable via `cpt-frontx-ui-kit-fr-component-contract`.
+- [x] A described component's contract states its variant axes with defaults, carries both the props the component declares and the props the primitive states for the part it wraps, references the forwarded surface of the element it renders rather than restating it, and marks a prop with no machine-checkable shape rather than dropping it - verifiable via `cpt-frontx-ui-kit-fr-component-contract`.
 - [x] An overlay that restates a machine-owned fact, or names a prop that does not exist, is refused naming the offence - verifiable via `cpt-frontx-ui-kit-fr-contract-single-fact-owner`.
 - [x] A change leaving a described component's committed contract unequal to a fresh compile is refused, naming the regeneration command - verifiable via `cpt-frontx-ui-kit-fr-contract-freshness`.
 - [x] A backward-incompatible contract difference is refused at an unchanged contract major and accepted once the major moves, naming every reason in both cases - verifiable via `cpt-frontx-ui-kit-fr-contract-compatibility`.
@@ -467,7 +467,7 @@ None owned here. The package is distributed under the root PRD's package-registr
 
 - A consuming application owns its React version and its bundler; the package adapts to the consumer rather than the reverse.
 - A component's variant axes and props are declared in its own TypeScript, which is what makes them extractable. A component that hides them behind an indirection the compiler cannot follow is a component the kit must change, not a case for restating the facts by hand.
-- The components whose inherited surface the compiler must resolve are built on the primitive families the compiler recognizes. A component built on a different primitive family is new work on the compiler.
+- The components the compiler must describe are built on the primitive family it recognizes, so it can tell that family's props for a part - the component's own API - from React's attributes for the element underneath. A component built on a different primitive family is new work on the compiler.
 - Coverage is expected to grow with ordinary work rather than through a dedicated campaign.
 
 ## 12. Risks
@@ -478,5 +478,5 @@ None owned here. The package is distributed under the root PRD's package-registr
 | The compiler recognizes only some primitive families, so a component built on another cannot be described at all. | Parts of the kit are structurally out of reach of the knowledge layer. | The limit is stated in this PRD's assumptions and the compiler refuses loudly rather than emitting a contract with an invented surface. Extending it is design work on the compiler, not configuration. |
 | Contracts stay inside the repository, so the check that matters to a product cannot run in the product. | The knowledge layer guards the kit's own changes but not an agent's output in a consuming project. | Recorded as `cpt-frontx-ui-kit-fr-contract-distribution`, unbuilt and marked as such rather than implied by the layer's existence. |
 | The kit's own prose documentation drifts from the component set it describes. | An agent reads a description that does not match the installed surface. | The documentation guard holds every exported component to having an indexed document; the drift risk that remains is in the prose bodies, which no check reads. |
-| The vendor namespace the contract identifiers are built on is not settled: a shorter form and a form carrying a design segment were both proposed and neither was chosen. | Every committed contract, instance and inherited-surface type carries the namespace in its own identifier, so the migration cost rises with every component described. | The namespace lives in one constant, so the change itself stays a one-line edit. The decision is to be taken before coverage grows past the pilot components, which is the point at which the rewrite stops being cheap. |
+| The vendor namespace the contract identifiers are built on is not settled: a shorter form and a form carrying a design segment were both proposed and neither was chosen. | Every committed contract, instance and passthrough surface carries the namespace in its own identifier, so the migration cost rises with every component described. | The namespace lives in one constant, so the change itself stays a one-line edit. The decision is to be taken before coverage grows past the pilot components, which is the point at which the rewrite stops being cheap. |
 | Whether a type-system runtime is expected to act on the meaning fields, or only to validate and store them, is unanswered. | If a runtime acts on them, the fields currently held as prose have to move into the validator-read half, changing every compiled contract's shape. | The two halves are produced from one routing map rather than two hand-maintained lists, so the move is a change to that map and a recompile. The trigger is the answer to that question in the ecosystem's type-substrate decision. |

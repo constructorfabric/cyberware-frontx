@@ -78,17 +78,23 @@ export function traitTypeId(token: string): string {
 // that component, so it is what a reference to a component resolves to.
 export const COMPONENT_REF_TARGET = `${BASE_TYPE_ID_BARE}*`;
 
-// GTS type id of a shared passthrough type - one id per ORIGIN of inherited
-// props (a Base UI primitive part, or a plain DOM element type), not per DOM
-// tag: two components forwarding to the same `<button>` by way of two
-// different, unrelated type surfaces must never share a generated file (see
-// extract.ts's ComponentExtraction.passthroughOrigin for how the key is
-// derived). Independently versioned from any component's contract. A
-// function, not a constant, because the id has to be parameterized the same
-// way the generated file name is.
+// The token a host element contributes to a passthrough type's id and file
+// name. GTS tokens are snake_case and kit element kinds are HTML tag names,
+// so a hyphenated custom element (`<my-custom-element>`) is the one shape
+// that needs normalizing - without it the passthrough namespace would be the
+// single place a hyphen leaked into an id grammar that is snake_case
+// everywhere else.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-passthrough
-export function passthroughTypeId(originKey: string): string {
-  return `gts://gts.${VENDOR_PACKAGE}.passthrough.${originKey}.v1~`;
+export function domPassthroughToken(elementKind: string): string {
+  return `dom_${elementKind.replace(/-/g, '_')}`;
+}
+
+// GTS type id of a passthrough type - one id per HOST ELEMENT, shared by every
+// component that renders that element. Independently versioned from any
+// component's contract. A function, not a constant, because the id has to be
+// parameterized the same way the hand-written file name is.
+export function passthroughTypeId(elementToken: string): string {
+  return `gts://gts.${VENDOR_PACKAGE}.passthrough.${elementToken}.v1~`;
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-passthrough
 
@@ -172,17 +178,16 @@ export function traitTypeIdPattern(): string {
 }
 
 // Grammar of a passthrough type id (passthroughTypeId above): the vendor
-// package, `passthrough`, an origin token, a version. Unlike the component
-// segment above, the origin token has no fixed shape of its own to reuse -
-// it is either `dom_<tag>` or `base_ui_<component>[_<part>]` - but every
-// GTS token is snake_case regardless of origin kind, so the grammar is the
-// same `[a-z_][a-z0-9_]*` charset the metamodel already uses for a
-// component name. Existed only as a hand-checked equality
+// package, `passthrough`, an element token, a version. The token has no fixed
+// shape of its own to reuse - it is `dom_<tag>` for whatever tags the kit
+// renders - but every GTS token is snake_case, so the grammar is the same
+// `[a-z_][a-z0-9_]*` charset the metamodel already uses for a component name.
+// Existed only as a hand-checked equality
 // (`passthroughSchema.$id === PASSTHROUGH_TYPE_ID`) in each component's own
-// test until now - a hyphenated origin token (a custom element tag like
-// `<my-custom-element>` before its own normalization) would pass that
-// equality check just as easily as it would fail this pattern, which is the
-// whole point of asserting the grammar directly instead.
+// test until now - a hyphenated tag (`<my-custom-element>` before
+// domPassthroughToken normalizes it) would pass that equality check just as
+// easily as it would fail this pattern, which is the whole point of asserting
+// the grammar directly instead.
 export function passthroughTypeIdPattern(): string {
   return `^gts://gts\\.${escapeRegExp(VENDOR_PACKAGE)}\\.passthrough\\.[a-z_][a-z0-9_]*\\.v\\d+~$`;
 }
