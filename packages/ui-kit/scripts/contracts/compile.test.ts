@@ -19,7 +19,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { buildPassthroughSchema, buildPropsAndRequired, describeUntypeableProperty } from './compile';
+import { buildBaseSchema, buildGtsTraitsSchema, buildMetamodel, buildPassthroughSchema, buildPropsAndRequired, buildTraitTypes, describeUntypeableProperty } from './compile';
 import { extractComponent } from './extract';
 import { applyContractTestTimeout } from './testing';
 
@@ -105,5 +105,45 @@ describe('describeUntypeableProperty', () => {
   it('leaves an existing description alone', () => {
     const slot = { description: 'Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots.' };
     expect(describeUntypeableProperty(slot, 'ReactNode')).toEqual(slot);
+  });
+});
+
+
+describe('the vocabulary the base type and the metamodel reference', () => {
+  const builtIds = new Set(buildTraitTypes().map((type) => String(type.$id)));
+
+  function gtsRefs(node: unknown, found: string[] = []): string[] {
+    if (Array.isArray(node)) {
+      for (const item of node) gtsRefs(item, found);
+      return found;
+    }
+    if (node !== null && typeof node === 'object') {
+      for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+        if (key === '$ref' && typeof value === 'string' && value.startsWith('gts://')) found.push(value);
+        else gtsRefs(value, found);
+      }
+    }
+    return found;
+  }
+
+  it('is complete: every reference resolves to a type the builder writes', () => {
+    // A field added to the trait schema or the metamodel naming a type
+    // nobody builds would fail at validation time with "Unresolvable trait
+    // schema reference", far from the edit that caused it. This is that
+    // failure moved to the build.
+    const referenced = new Set([...gtsRefs(buildBaseSchema()), ...gtsRefs(buildMetamodel()), ...gtsRefs(buildTraitTypes())]);
+    expect([...referenced].filter((ref) => !builtIds.has(ref))).toEqual([]);
+  });
+
+  it('keeps the reference ahead of the null alternative on an optional trait field', () => {
+    // Key ORDER is load-bearing here, which is why it is asserted:
+    // GtsStore.resolveTraitSchemaRefs merges a resolved reference in at the
+    // position of the `$ref` key, so a `type` written before it is
+    // overwritten by the referenced type's own `object` and `family: null`
+    // silently stops validating for every component that omits the field.
+    const family = (buildGtsTraitsSchema().properties as Record<string, Record<string, unknown>>).family;
+    expect(Object.keys(family)[0]).toBe('$ref');
+    expect(family.type).toEqual(['object', 'null']);
+    expect(family.default).toBeNull();
   });
 });

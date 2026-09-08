@@ -5,6 +5,12 @@ DataTable). English, factual, one section per pilot component. Written by
 the developer who built the harness, for whoever decides whether to extend
 contract coverage past the two pilot components.
 
+How the types the harness produces relate to each other is not repeated here:
+the domain model - the diagram and the relationship table - lives in section
+3.1 of the package DESIGN (`packages/ui-kit/architecture/DESIGN.md`), and the
+numbered instructions the code carries markers into live in the feature spec
+(`packages/ui-kit/architecture/features/component-contracts/FEATURE.md`).
+
 ## Passthrough key fix: keyed by origin, not DOM tag
 
 Accordion's `resolvePassthroughKindKey(directory, exportStem, domTag)` (see Deviation 2
@@ -229,9 +235,8 @@ consequence of the compiler producing different output for the SAME inputs.
 
 - `scripts/contracts/compile.ts` - `Overlay`/`ContractInstance` gained
   `family` and `coverage.assumptions`; `composition` gained `parent`;
-  `buildMetamodel()` grew the matching schema (additive, `METAMODEL_VERSION`
-  stayed `1.1.0` - every addition is optional, so no existing instance needed
-  re-validation against a new required shape); `loadOverlay`,
+  `buildMetamodel()` carries the matching schema (every one of those fields
+  is optional, so no instance is required to state them); `loadOverlay`,
   `compileInstance`, `compileContract`, `resolveTargetExtraction` all gained
   an optional second `exportStem` parameter (defaulting to `directory`, so
   every pre-Accordion call site - `compileContract('button')`, one argument - keeps
@@ -308,11 +313,10 @@ DataTable's growth surface is a small, fixed set of exports
 `dataTableFeatures`) rather than a long tail of individual plugin-shaped
 props - the metamodel had no field for "here is how a consumer extends this
 component" as a first-class concept, only individual typed/slotted props.
-Added `extension_points` (name/kind: prop\|helper\|feature/description/typed_by)
-as an optional array on the metamodel instance, additive (not in
-`required`), so `METAMODEL_VERSION` stayed `1.1.0` - Button's and
-Accordion's committed contracts recompile byte-identical. `typed_by` is
-free text, not a `component_type_ref`: the governing type
+`extension_points` (name/kind: prop\|helper\|feature/description/typed_by) is
+an optional array on the metamodel instance, outside `required`, so a
+component with no growth surface states nothing. `typed_by` is free text,
+not a component reference: the governing type
 (`@tanstack/react-table`'s `ColumnDef`) lives in a package this contract has
 no business re-typing, so a prose pointer is the honest claim.
 
@@ -458,13 +462,13 @@ and confirming against the real package, see testing.ts's
    ENTITY id to resolve in the store - it has no concept of a local JSON
    Schema pointer into the trait schema's own `$defs`, and fails a trait
    schema carrying one with "Unresolvable trait schema reference" rather
-   than a recognizable validation error. `buildGtsTraitsSchema` (compile.ts)
-   therefore INLINES every `#/$defs/...` ref from the corresponding
-   `buildMetamodel()` field definitions (`inlineLocalRefs`) instead of
-   reusing them by reference - the field text itself is still one source
-   (buildMetamodel's), only the ref-vs-inline mechanics differ between the
-   overlay-authoring schema (Ajv, which resolves `$defs` normally) and the
-   trait schema (gts-ts's own resolver, which does not).
+   than a recognizable validation error. Every trait-routed field is
+   therefore a reference to a registered vocabulary type
+   (`gts.frontx.uikit.trait.*`, one per concept - see "The overlay
+   vocabulary as GTS types" below and the domain model in the package
+   DESIGN), which is the shape that resolver is built for; the local `$defs`
+   the metamodel still carries are string grammars used only by fields no
+   validator reads.
 2. `GtsStore.validateSchemaTraits`'s "unresolved trait property" check
    demands EVERY property `x-gts-traits-schema` declares have either a
    provided value or a schema `default`, regardless of this JSON Schema's
@@ -739,18 +743,71 @@ than assumed.
 - **`note` optional, `external` required.** A reason with no next move is the
   same gap a "don't" without an "instead" leaves, one level down; a pointer
   with no reason is often complete on its own.
-- **1.2.0 in this PR rather than deferred.** `METAMODEL_VERSION` moves from
-  1.1.0 to 1.2.0 and all seven instances carry it. The bump is cheap
-  precisely now: nothing outside this repository reads the metamodel, the
-  described set is three directories, and the change only WIDENS a field, so
-  every 1.1.0-shaped instance is a valid 1.2.0 one - which is also why the
-  metamodel's own type id (`...meta.component.v1`) does not move. The
-  compatibility check confirmed the same thing from the other side: it reads
-  the props schema, not the instance, so all seven contracts stayed
-  `backward compatible` across the bump.
+- **The metamodel vocabulary is at `1.0.0`.** Nothing outside this repository
+  reads the metamodel and the described set is three directories, so the
+  version an instance carries states which vocabulary it was compiled
+  against, not a compatibility promise to anyone. The metamodel's own type id
+  (`...meta.component.v1`) is a separate axis: it versions the TYPE, not the
+  field vocabulary.
 
-**Cost.** Under two hours, most of it in the three places the widened type
+**Cost.** Under two hours, most of it in the places the widened type
 propagates rather than in the schema change itself: the trait schema (free -
-`buildGtsTraitsSchema` inlines whatever `buildMetamodel` authors, so the
-object form validates in `x-gts-traits` with no edit) and the two conformance
-suites that resolve refs, which now skip what was never a ref.
+`buildGtsTraitsSchema` takes whatever `buildMetamodel` states for a field, so
+the object form validates in `x-gts-traits` with no edit) and the two
+conformance suites that resolve references, which skip what is not one.
+
+
+## The overlay vocabulary as GTS types
+
+**Observed.** The base component type carried its whole validator-read
+vocabulary inline: 296 lines in which a `don't` rule, a composition, a
+coverage claim, a family membership and an extension point were anonymous
+objects nested inside one schema, and a reference to another kit component
+was a string with a `pattern` and a comment saying a real reference would go
+here. Two consequences, both real rather than stylistic: nothing outside that
+one file could name a concept the overlay is made of, and the metamodel had
+to restate the same definitions locally, kept in step only because
+`buildGtsTraitsSchema` copied them through an inliner.
+
+**Changed.** Twelve types, one concept each, under a `trait` namespace: six
+that are a field of the validator-read block (`dont_use_when_rule`,
+`composition`, `deprecations`, `coverage`, `family`, `extension_point`) and
+six the first six embed (`external_alternative`, `child_composition`,
+`parent_composition`, `prop_deprecation`, `coverage_assumption`,
+`coverage_verdict`). They are committed under `scripts/contracts/types/`,
+written from their builders by `npm run contracts:compile -- --schemas`
+together with the base type and the metamodel, and diffed against a fresh
+build by the freshness comparison on every described component's run. The
+base type's trait schema and the metamodel both reach a concept by reference,
+so a definition exists once. A reference to a component is now that
+component's own derived props-schema id
+(`gts.frontx.uikit.base.component.v1~frontx.uikit.component.<name>.v1~`),
+because that is the type a component IS - there is no second identifier
+standing for the same thing - and it carries `x-gts-ref` naming what it must
+resolve to.
+
+**Why.** A type system's value is that a concept has one definition and an
+identity anything can point at. An inline object has neither: it cannot be
+referenced, cannot be validated on its own, and the second copy of it drifts
+the moment someone edits one of the two. `inlineLocalRefs` existed only to
+carry copies past a resolver that wanted references all along, and is gone.
+
+**What `x-gts-ref` does and does not do here.** Inside
+`x-gts-traits-schema`, `x-gts-ref` is an annotation and nothing more:
+`GtsStore.normalizeSchema` strips it before any validator sees the schema,
+and then drops any `oneOf`/`anyOf`/`allOf` branch that was left with nothing
+else in it. A branch written the way the ecosystem's MFE schemas write one -
+`{ "x-gts-ref": "..." }` alone - therefore disappears, and `instead` silently
+stops accepting component ids at all. Every id-valued field consequently
+carries `type` and `pattern` alongside the reference: the reference states
+what the value must resolve to, the pattern is what rejects a malformed one.
+Resolution against the registry happens where gts-ts actually runs its
+reference validator, on the instance path
+(`GtsStore.validateInstance` -> `XGtsRefValidator`), and only for a property
+carrying `x-gts-ref` directly: the instance's `props_schema` is checked that
+way and fails when the contract it names is not registered. A reference
+nested inside a referenced vocabulary type - a `don't` alternative, a
+composition kind, a family member - is not reached by that walk, so those
+stay resolved by the conformance suites, which also answer a question the
+registry cannot: most components a `don't` rule points at ship no contract
+yet, and "the kit ships this component" is a directory, not a registration.

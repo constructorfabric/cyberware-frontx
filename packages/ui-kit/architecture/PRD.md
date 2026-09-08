@@ -295,6 +295,18 @@ The system **MUST** make a described component's contract readable from an insta
 
 **Status**: Not built. Contract artifacts are committed in the repository and are not part of the published artifact today.
 
+- [ ] `p3` - **ID**: `cpt-frontx-ui-kit-fr-contract-release-compatibility`
+
+The system **MUST** be able to compare a described component's contracts against the contracts of a published version of the package, and **MUST** run that comparison before a release is tagged.
+
+**Threshold**: A compatibility run names a published version as its comparison source, reads that version's shipped contracts, and reports the verdict an upgrading consumer would experience; the release job runs it before tagging.
+
+**Rationale**: The comparison against a reference in this repository answers what a change did since a branch point. A consumer upgrading from one release to the next holds no such reference, and the development branch can carry several unreleased contract changes at once, so a set of individually-passing changes does not add up to a passing release. Depends on the contracts reaching the published artifact at all.
+
+**Actors**: `cpt-frontx-ui-kit-actor-ai-agent`, `cpt-frontx-ui-kit-actor-continuous-integration`
+
+**Status**: Not built. Depends on `cpt-frontx-ui-kit-fr-contract-distribution`.
+
 ## 6. Non-Functional Requirements
 
 ### 6.1 NFR Inclusions
@@ -436,6 +448,7 @@ None owned here. The package is distributed under the root PRD's package-registr
 - [x] A backward-incompatible contract difference is refused at an unchanged contract major and accepted once the major moves, naming every reason in both cases - verifiable via `cpt-frontx-ui-kit-fr-contract-compatibility`.
 - [x] A change touching an undescribed component passes, kit-wide coverage never sets a non-zero exit, and a change to the shared contract tooling re-checks every covered component - verifiable via `cpt-frontx-ui-kit-fr-contract-incremental-coverage` and `cpt-frontx-ui-kit-nfr-gate-adoptability`.
 - [ ] A consuming project can read a described component's contract from its install - verifiable via `cpt-frontx-ui-kit-fr-contract-distribution`.
+- [ ] A release is gated by a compatibility verdict computed against the previously published version, not only against a reference in this repository - verifiable via `cpt-frontx-ui-kit-fr-contract-release-compatibility`.
 - [ ] The package ships a validating Constructor Studio kit manifest whose resources carry the reserved prefix - verifiable via `cpt-frontx-ui-kit-fr-agent-resource-manifest`.
 
 ## 10. Dependencies

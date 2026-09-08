@@ -1,0 +1,32 @@
+{
+  "$id": "gts://gts.frontx.uikit.trait.dont_use_when_rule.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit dont-use-when rule",
+  "description": "One use this component is the wrong answer for, with the alternative that IS the answer. Two shapes for `instead`, one of which must match: a kit component by reference, or the external form for a case the kit ships nothing for. Not a plain string union with the reference: an unmatched string would then read as an alternative nothing can resolve, which is the failure the typed reference exists to prevent.",
+  "type": "object",
+  "properties": {
+    "rule": {
+      "type": "string",
+      "minLength": 1
+    },
+    "instead": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^gts\\.frontx\\.uikit\\.base\\.component\\.v1~frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
+          "x-gts-ref": "gts.frontx.uikit.base.component.v1~*",
+          "description": "GTS id of another kit component: the props schema derived from the abstract base component type. `x-gts-ref` declares what it must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating.",
+          "$comment": "GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu)."
+        },
+        {
+          "$ref": "gts://gts.frontx.uikit.trait.external_alternative.v1~"
+        }
+      ]
+    }
+  },
+  "required": [
+    "rule",
+    "instead"
+  ],
+  "additionalProperties": false
+}

@@ -19,7 +19,7 @@
   "required": [],
   "unevaluatedProperties": false,
   "x-uikit": {
-    "metamodel": "1.2.0",
+    "metamodel": "1.0.0",
     "intent": "Show one or more sections at a time, collapsing the rest to their headers.",
     "typical_uses": [
       "A list of independent sections (FAQ, settings groups) too long to show all at once, where the user opens what is relevant",
@@ -71,17 +71,17 @@
     "dont_use_when": [
       {
         "rule": "A single show/hide toggle for one piece of content",
-        "instead": "gts.frontx.uikit.component.collapsible.v1~"
+        "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.collapsible.v1~"
       },
       {
         "rule": "Primary navigation between sections that stays visible",
-        "instead": "gts.frontx.uikit.component.tabs.v1~"
+        "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.tabs.v1~"
       }
     ],
     "composition": {
       "children": {
         "kinds": [
-          "gts.frontx.uikit.component.accordion_item.v1~"
+          "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
         ]
       }
     },
@@ -97,12 +97,12 @@
       ]
     },
     "family": {
-      "root": "gts.frontx.uikit.component.accordion.v1~",
+      "root": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",
       "role": "root",
       "parts": [
-        "gts.frontx.uikit.component.accordion_item.v1~",
-        "gts.frontx.uikit.component.accordion_trigger.v1~",
-        "gts.frontx.uikit.component.accordion_content.v1~"
+        "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~",
+        "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~",
+        "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_content.v1~"
       ]
     }
   }

@@ -18,13 +18,13 @@ typical_uses:
 
 dont_use_when:
   - rule: A single show/hide toggle for one piece of content
-    instead: gts.frontx.uikit.component.collapsible.v1~ # Collapsible
+    instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.collapsible.v1~ # Collapsible
   - rule: Primary navigation between sections that stays visible
-    instead: gts.frontx.uikit.component.tabs.v1~ # Tabs
+    instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.tabs.v1~ # Tabs
 
 composition:
   children:
-    kinds: [gts.frontx.uikit.component.accordion_item.v1~] # AccordionItem
+    kinds: [gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~] # AccordionItem
 
 invariants:
   - id: multiple-false-at-most-one-open
@@ -104,9 +104,9 @@ examples:
 # part; a part (accordion-item.contract.yaml, ...) points back with `role:
 # part` and no `parts` of its own.
 family:
-  root: gts.frontx.uikit.component.accordion.v1~
+  root: gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~
   role: root
   parts:
-    - gts.frontx.uikit.component.accordion_item.v1~ # AccordionItem
-    - gts.frontx.uikit.component.accordion_trigger.v1~ # AccordionTrigger
-    - gts.frontx.uikit.component.accordion_content.v1~ # AccordionContent
+    - gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~ # AccordionItem
+    - gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~ # AccordionTrigger
+    - gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_content.v1~ # AccordionContent

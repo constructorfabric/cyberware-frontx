@@ -1,6 +1,7 @@
 {
   "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.data_table_sort_button.v1",
-  "metamodel": "1.2.0",
+  "gts_type": "gts.frontx.uikit.meta.component.v1~",
+  "metamodel": "1.0.0",
   "component": "data-table-sort-button",
   "intent": "A sortable column's header button, toggling that column's sort state and showing its current direction.",
   "typical_uses": [
@@ -9,7 +10,7 @@
   "dont_use_when": [
     {
       "rule": "A standalone action button with no column to sort",
-      "instead": "gts.frontx.uikit.component.button.v1~"
+      "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~"
     }
   ],
   "composition": {
@@ -68,5 +69,5 @@
       }
     ]
   },
-  "props_schema": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.data_table_sort_button.v1~"
+  "props_schema": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.data_table_sort_button.v1~"
 }

@@ -25,7 +25,7 @@
   ],
   "unevaluatedProperties": false,
   "x-uikit": {
-    "metamodel": "1.2.0",
+    "metamodel": "1.0.0",
     "intent": "A sortable column's header button, toggling that column's sort state and showing its current direction.",
     "typical_uses": [
       "The header render function of a sortable column in a DataTable"
@@ -77,7 +77,7 @@
     "dont_use_when": [
       {
         "rule": "A standalone action button with no column to sort",
-        "instead": "gts.frontx.uikit.component.button.v1~"
+        "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~"
       }
     ],
     "composition": {

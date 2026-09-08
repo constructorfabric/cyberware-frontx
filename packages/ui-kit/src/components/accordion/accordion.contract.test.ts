@@ -12,6 +12,7 @@ import Ajv2020 from 'ajv/dist/2020';
 import { describe, expect, it } from 'vitest';
 
 import {
+  addContractTypes,
   BASE_TYPE_ID,
   buildMetamodel,
   compileContract,
@@ -19,11 +20,12 @@ import {
   isExternalAlternative,
   loadBaseSchema,
   loadPassthroughSchema,
+  registerContractTypes,
   resolveTargetExtraction,
   type CompiledContract,
   type ContractInstance,
 } from '../../../scripts/contracts/compile';
-import { componentTypeRefPattern } from '../../../scripts/contracts/ids';
+import { bareGtsId, componentTypeRef, componentTypeRefPattern, CONTRACT_MAJOR } from '../../../scripts/contracts/ids';
 import { applyContractTestTimeout, assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
 
 // assertContractFreshness below builds a real TypeScript program - several
@@ -41,7 +43,6 @@ const ALL_STEMS = [DIRECTORY, ...PART_STEMS] as const;
 for (const stem of ALL_STEMS) assertContractFreshness(DIRECTORY, stem);
 
 const componentsDir = join(process.cwd(), 'src/components');
-const bareId = (id: string): string => id.replace(/^gts:\/\//, '');
 
 interface CompiledUnit {
   stem: string;
@@ -69,8 +70,8 @@ const baseSchema = loadBaseSchema();
 const metaSchema = buildMetamodel();
 const COMPONENT_TYPE_REF = new RegExp(componentTypeRefPattern(true));
 
-// Resolves a component_type_ref (e.g. "gts.frontx.uikit.component.
-// accordion_item.v1~") to the directory that ships it, following the same
+// Resolves a component reference (the derived props-schema id of another
+// kit component) to the directory that ships it, following the same
 // "stem === directory, or stem starts with '<directory>-'" rule
 // compile.ts's loadOverlay enforces when it loads a part's overlay - a ref
 // this cannot resolve is exactly the defect (a typo, a moved directory)
@@ -95,11 +96,12 @@ function hasCompiledContract(target: { directory: string; stem: string }): boole
 // The ref every part's own `family.root` and every dont_use_when/composition
 // pointer at Accordion itself should agree on - built once so a typo in one
 // overlay shows up as a mismatch against this, not just against itself.
-const ROOT_REF = 'gts.frontx.uikit.component.accordion.v1~';
+const ROOT_REF = componentTypeRef(DIRECTORY, CONTRACT_MAJOR);
 
 describe('accordion family: metamodel validity', () => {
   it('every instance validates against the component metamodel', () => {
     const ajv = new Ajv2020();
+    addContractTypes(ajv);
     const validate = ajv.compile(metaSchema);
     for (const { stem, instance } of Object.values(units)) {
       expect(validate(instance), `${stem}: ${ajv.errorsText(validate.errors)}`).toBe(true);
@@ -108,7 +110,7 @@ describe('accordion family: metamodel validity', () => {
 
   it("each instance's props_schema points at its own compiled contract", () => {
     for (const { stem, instance, contract } of Object.values(units)) {
-      expect(instance.props_schema, stem).toBe(contract.$id);
+      expect(instance.props_schema, stem).toBe(bareGtsId(contract.$id));
     }
   });
 });
@@ -119,7 +121,7 @@ describe('accordion family: family references resolve', () => {
     expect(root.family?.role).toBe('root');
     expect(root.family?.root).toBe(ROOT_REF);
     expect(root.family?.parts?.sort()).toEqual(
-      PART_STEMS.map((stem) => `gts.frontx.uikit.component.${stem.replace(/-/g, '_')}.v1~`).sort(),
+      PART_STEMS.map((stem) => componentTypeRef(stem, CONTRACT_MAJOR)).sort(),
     );
   });
 
@@ -156,7 +158,7 @@ describe('accordion family: composition references resolve', () => {
 
   it("the root's only allowed child is AccordionItem", () => {
     expect(units[DIRECTORY].contract['x-gts-traits'].composition.children.kinds).toEqual([
-      'gts.frontx.uikit.component.accordion_item.v1~',
+      componentTypeRef('accordion-item', CONTRACT_MAJOR),
     ]);
   });
 
@@ -211,6 +213,9 @@ describe('accordion family in a GTS store', () => {
   function registeredStore(): GTS {
     const gts = new GTS();
     gts.register(baseSchema);
+    // The vocabulary the base type's trait schema references: a store
+    // missing one fails every entity in it, not just the trait block.
+    registerContractTypes((entity) => gts.register(entity));
     // Every passthrough schema this family's four contracts $ref, once each
     // - root, item, trigger and panel are four different Base UI primitive
     // parts, so each resolves to its own passthrough origin (see
@@ -225,7 +230,7 @@ describe('accordion family in a GTS store', () => {
   it('every contract in the family validates as a derived GTS type', () => {
     const gts = registeredStore();
     for (const { stem, contract } of Object.values(units)) {
-      const result = gts.validateEntity(bareId(contract.$id));
+      const result = gts.validateEntity(bareGtsId(contract.$id));
       expect(result.ok, `${stem}: ${result.error}`).toBe(true);
       expect(result.entity_type).toBe('schema');
     }
@@ -241,7 +246,7 @@ describe('accordion family in a GTS store', () => {
     const gts = new GTS();
     for (const { passthroughSchema } of Object.values(units)) gts.register(passthroughSchema);
     for (const { contract } of Object.values(units)) gts.register(contract);
-    const result = gts.validateEntity(bareId(units[DIRECTORY].contract.$id));
+    const result = gts.validateEntity(bareGtsId(units[DIRECTORY].contract.$id));
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Parent schema not found');
   });

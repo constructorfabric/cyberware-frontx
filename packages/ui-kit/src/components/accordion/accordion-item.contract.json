@@ -19,7 +19,7 @@
   "required": [],
   "unevaluatedProperties": false,
   "x-uikit": {
-    "metamodel": "1.2.0",
+    "metamodel": "1.0.0",
     "intent": "One collapsible section of an Accordion, identified by a unique value.",
     "typical_uses": [
       "One entry in an Accordion's list of sections, wrapping a trigger and its panel"
@@ -64,19 +64,19 @@
     "dont_use_when": [
       {
         "rule": "A section that must always stay visible and never collapse",
-        "instead": "gts.frontx.uikit.component.card.v1~"
+        "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~"
       }
     ],
     "composition": {
       "children": {
         "kinds": [
-          "gts.frontx.uikit.component.accordion_trigger.v1~",
-          "gts.frontx.uikit.component.accordion_content.v1~"
+          "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~",
+          "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_content.v1~"
         ]
       },
       "parent": {
         "kinds": [
-          "gts.frontx.uikit.component.accordion.v1~"
+          "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~"
         ]
       }
     },
@@ -85,7 +85,7 @@
       "a11y": "verified"
     },
     "family": {
-      "root": "gts.frontx.uikit.component.accordion.v1~",
+      "root": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",
       "role": "part"
     }
   }

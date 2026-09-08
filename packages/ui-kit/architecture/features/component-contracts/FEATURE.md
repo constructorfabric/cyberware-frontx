@@ -22,6 +22,7 @@
   - [Trait Schema Derivation](#trait-schema-derivation)
   - [Freshness Comparison](#freshness-comparison)
   - [Compatibility Decision](#compatibility-decision)
+  - [Comparison Source Beyond The Repository](#comparison-source-beyond-the-repository)
   - [Per-Contract Comparison Against The Base Reference](#per-contract-comparison-against-the-base-reference)
   - [Guard Scope And Verdicts](#guard-scope-and-verdicts)
   - [Coverage Report](#coverage-report)
@@ -90,6 +91,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 **Success Scenarios**:
 - Developer writes an overlay stating meaning only, runs the compile command for the component's directory, and the contract, the metamodel instance and any shared inherited-surface type are written beside the component and under the harness, each written path reported.
 - A directory exporting several components compiles one contract per overlay in it, each named for the export it describes.
+- Developer asks for the shared schemas instead of a directory, and the abstract base type, the metamodel and every vocabulary type are written from their builders, each written path reported.
 
 **Error Scenarios**:
 - No directory named: the usage line is printed and the run fails.
@@ -100,13 +102,15 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 **Steps**:
 1. [x] - `p1` - Developer authors the overlay beside the component, stating meaning only - `inst-author-overlay`
 2. [x] - `p1` - Developer runs the compile command naming the component's directory - `inst-invoke-compile`
-3. [x] - `p1` - **IF** no directory is named - `inst-missing-argument`
+3. [x] - `p1` - **IF** the shared schemas are asked for instead of a directory - `inst-write-shared`
+   1. [x] - `p1` - Write the vocabulary types, then the abstract base type and the metamodel that reference them, reporting each path, and **RETURN** - `inst-write-shared`
+4. [x] - `p1` - **IF** no directory is named - `inst-missing-argument`
    1. [x] - `p1` - Print the usage line and **RETURN** a non-zero exit - `inst-usage-exit`
-4. [x] - `p1` - **IF** the directory carries no overlay - `inst-no-overlay`
+5. [x] - `p1` - **IF** the directory carries no overlay - `inst-no-overlay`
    1. [x] - `p1` - Name the directory and **RETURN** a non-zero exit - `inst-no-overlay-exit`
-5. [x] - `p1` - **FOR EACH** overlay in the directory, compile the contract and the metamodel instance and write both beside the component - `inst-compile-each`
-6. [x] - `p1` - **RETURN** each written path to the developer as it is written - `inst-report-paths`
-7. [x] - `p1` - Write the shared inherited-surface type when the component resolves an origin for it, reporting that path too - `inst-write-passthrough`
+6. [x] - `p1` - **FOR EACH** overlay in the directory, compile the contract and the metamodel instance and write both beside the component - `inst-compile-each`
+7. [x] - `p1` - **RETURN** each written path to the developer as it is written - `inst-report-paths`
+8. [x] - `p1` - Write the shared inherited-surface type when the component resolves an origin for it, reporting that path too - `inst-write-passthrough`
 
 ### Guard A Change Against The Base Reference
 
@@ -229,23 +233,24 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 1. [x] - `p1` - Declare each inherited prop under the origin's own type, giving a schema shape where one exists and, where none does, stating the prop's TypeScript type and that nothing asserts it rather than leaving the property blank, and list it in the type's own `required` when the extraction reported it as non-optional; the props that carry no consumer-visible shape at all - the element key and the forwarded ref - are left out entirely - `inst-ps-props`
 2. [x] - `p1` - Admit the accessibility and data attribute families by pattern rather than by name - `inst-ps-patterns`
 3. [x] - `p1` - Record which components the type was generated from, and leave the type open so a component's own contract can close its surface instead - `inst-ps-open`
-4. [x] - `p1` - **IF** compiling one component would change the shape another component on the same origin already relies on - `inst-ps-collision`
+4. [x] - `p1` - **IF** compiling one component would change the shape another component on the same origin already relies on - the declared props or which of them are mandatory, the whole surface the origin owns - `inst-ps-collision`
    1. [x] - `p1` - Refuse, naming the other components and the file they share - `inst-ps-collision-refuse`
 
 ### Contract Identifier Construction
 
 - [x] `p2` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-identifiers`
 
-**Input**: A component name, a contract major, or an inherited-surface origin.
+**Input**: A component name, a contract major, an inherited-surface origin, or a vocabulary concept.
 
 **Output**: The identifier for the artifact, and the patterns that recognize each identifier shape.
 
 **Steps**:
 1. [x] - `p1` - Derive the identifier token from the component's directory name - `inst-id-token`
-2. [x] - `p1` - Build the props-schema identifier by chaining the component's segment onto the abstract base type - `inst-id-props-schema`
+2. [x] - `p1` - Build the props-schema identifier by chaining the component's segment onto the abstract base type, and make that identifier what a reference to the component holds - a component is the type derived from the base, so there is no second identifier to point at - `inst-id-props-schema`
 3. [x] - `p1` - Build the metamodel instance identifier from the same segment, without the terminator that would make it a type - `inst-id-instance`
 4. [x] - `p1` - Build the inherited-surface type identifier from the origin - `inst-id-passthrough`
-5. [x] - `p1` - **RETURN** the patterns that recognize each identifier shape - `inst-id-patterns`
+5. [x] - `p1` - Build the vocabulary type identifier from its concept token - `inst-id-trait-type`
+6. [x] - `p1` - **RETURN** the patterns that recognize each identifier shape - `inst-id-patterns`
 
 ### Trait Schema Derivation
 
@@ -253,13 +258,14 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 
 **Input**: The metamodel's field definitions.
 
-**Output**: The trait schema the abstract base type carries, against which every contract's validator-read block is checked.
+**Output**: The vocabulary types the overlay is made of, and the trait schema the abstract base type carries, against which every contract's validator-read block is checked. How those types relate is the domain model in section 3.1 of the package DESIGN.
 
 **Steps**:
-1. [x] - `p1` - Take the metamodel's definitions of exactly the fields a validator reads - `inst-ts-fields`
-2. [x] - `p1` - Inline every local definition reference, which the type store would otherwise read as an entity identifier and fail to resolve - `inst-ts-inline`
-3. [x] - `p1` - Give each field the metamodel does not require a null alternative and a null default, so the store finds a value for every declared trait - `inst-ts-nullable`
-4. [x] - `p1` - **RETURN** the trait schema - `inst-ts-return`
+1. [x] - `p1` - Build one type per concept the overlay states - a rule against a use, a composition and each of its two directions, a deprecation, a coverage claim and its verdict, a family membership, an extension point - each with its own identifier - `inst-ts-vocabulary`
+2. [x] - `p1` - Take the metamodel's definitions of exactly the fields a validator reads - `inst-ts-fields`
+3. [x] - `p1` - State each of those fields as a reference to the type that owns its shape, so the trait schema and the metamodel resolve one definition rather than each carrying a copy - `inst-ts-ref`
+4. [x] - `p1` - Give each field the metamodel does not require a null alternative and a null default, placed after the reference so the referenced type does not overwrite it, so the store finds a value for every declared trait - `inst-ts-nullable`
+5. [x] - `p1` - **RETURN** the trait schema - `inst-ts-return`
 
 ### Freshness Comparison
 
@@ -271,7 +277,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 
 **Steps**:
 1. [x] - `p1` - Compare the committed contract and the committed metamodel instance against a fresh compile - `inst-fr-artifacts`
-2. [x] - `p1` - Compare the committed abstract base type against a fresh build on every run, so a stale shared schema is caught by whichever component is checked first - `inst-fr-base`
+2. [x] - `p1` - Compare every committed schema that belongs to no single component - the abstract base type, the metamodel, and each vocabulary type they reference - against a fresh build on every run, so a stale shared schema is caught by whichever component is checked first - `inst-fr-base`
 3. [x] - `p1` - **IF** the component resolves an inherited-surface origin - `inst-fr-passthrough`
    1. [x] - `p1` - Compare that type too, carrying forward the record of which components it was generated from rather than recomputing a fact one component cannot know - `inst-fr-passthrough-compare`
 4. [x] - `p1` - Report an annotated property with no slot record, and a slot record on a property that has a schema shape - `inst-fr-slots`
@@ -294,6 +300,24 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 5. [x] - `p1` - **IF** the contract major moved - `inst-cd-major`
    1. [x] - `p1` - **RETURN** a pass naming the move and every reason - `inst-cd-major-return`
 6. [x] - `p1` - **RETURN** a refusal naming the unchanged major and every reason - `inst-cd-fail`
+
+### Comparison Source Beyond The Repository
+
+Planned, not built. The requirement is `cpt-frontx-ui-kit-fr-contract-release-compatibility` in the package PRD; this section states what the algorithm above has to grow when it is built, so the limit is recorded where the comparison is specified rather than only where the requirement is.
+
+**Input**: The comparison source a run is given: a base reference in this repository, or a published version of the package.
+
+**Output**: The contracts to compare the committed ones against.
+
+A base reference answers the question a reviewer has - did this change narrow a surface since the branch point - and it is the only source that exists while contracts stay in the repository. It cannot answer the question a consumer has. Someone upgrading from one released version to the next holds no reference into this repository, and the development branch may carry several unreleased contract changes at once, so a change that passes per pull request does not add up to a release that passes: three individually-acknowledged majors and one unacknowledged narrowing look the same at the branch point and different at the tag.
+
+**What it has to do**:
+- [ ] Take the comparison source as a parameter rather than assuming a repository reference, so a run states which question it is answering.
+- [ ] Resolve a published version to the contracts shipped in that version's package artifact, or to a cached copy of them, and compare the committed contracts against those.
+- [ ] Keep the repository reference as the source a per-change run uses, unchanged.
+- [ ] Return the same verdict shape either way, so one decision rule serves both sources.
+
+**Depends on**: `cpt-frontx-ui-kit-fr-contract-distribution` - contracts have to be part of the published artifact before a published version can be read for them. The release job runs the published form before tagging, so the verdict that gates a release is the one a consumer experiences.
 
 ### Per-Contract Comparison Against The Base Reference
 
@@ -419,7 +443,7 @@ The system **MUST** compile an admitted overlay and an extraction into a closed 
 
 - [x] `p2` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-identifiers`
 
-The system **MUST** construct every contract, instance and inherited-surface identifier from one vendor namespace, so that a contract is a type derived from the kit's abstract base type and an instance is not a type at all, and **MUST** expose the patterns that recognize each shape rather than leaving callers to write their own. A component identifier's token is derived from the component's directory name; an inherited-surface identifier takes the origin key the extractor already produced in that token form, so no second derivation applies to it.
+The system **MUST** construct every contract, instance, inherited-surface and vocabulary identifier from one vendor namespace, so that a contract is a type derived from the kit's abstract base type and an instance is not a type at all, and **MUST** expose the patterns that recognize each shape rather than leaving callers to write their own. A reference to a component **MUST** be that component's own derived identifier, not a second identifier standing for the same component, and **MUST** be spelled in the form the type system parses rather than the form a schema keyword requires. A component identifier's token is derived from the component's directory name; an inherited-surface identifier takes the origin key the extractor already produced in that token form, so no second derivation applies to it.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-identifiers`
@@ -431,7 +455,7 @@ The system **MUST** construct every contract, instance and inherited-surface ide
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-trait-schema`
 
-The system **MUST** derive the trait schema the abstract base type carries from the metamodel's own field definitions rather than maintaining a second copy of them, and **MUST** make the two mechanical adjustments the type store requires - local definition references inlined, optional fields given a null alternative and default - without changing the shape a component that sets those fields must satisfy.
+The system **MUST** express the overlay's validator-read vocabulary as one type per concept, each with its own identifier, and **MUST** derive the trait schema the abstract base type carries from the metamodel's own field definitions rather than maintaining a second copy of them - by reference, so that a concept is defined once and the trait schema and the metamodel resolve the same definition. It **MUST** make the one mechanical adjustment the type store requires, an optional field given a null alternative and default placed so the referenced type cannot overwrite it, without changing the shape a component that sets those fields must satisfy. Where a field holds the identifier of another type, the declaration **MUST** carry both the reference and the grammar that rejects a malformed identifier, because the type store removes the reference annotation before validating and a declaration left with nothing else in it stops constraining the value at all.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-trait-schema`
@@ -443,7 +467,7 @@ The system **MUST** derive the trait schema the abstract base type carries from 
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-freshness`
 
-The system **MUST** compare a component's committed contract, metamodel instance and inherited-surface type - and the shared abstract base type on every run - against a fresh build, and **MUST** report every difference by path rather than reporting only that something differs.
+The system **MUST** compare a component's committed contract, metamodel instance and inherited-surface type - and, on every run, every committed schema that belongs to no single component: the abstract base type, the metamodel, and each vocabulary type they reference - against a fresh build, and **MUST** report every difference by path rather than reporting only that something differs.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-freshness`
@@ -455,7 +479,7 @@ The system **MUST** compare a component's committed contract, metamodel instance
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-conformance`
 
-The system **MUST** provide a reusable suite that fails a component's unit run when its committed artifacts no longer equal a fresh compile, when an annotated property has no slot record or a shaped property has one, or when the committed abstract base type has fallen behind - so that staleness reaches the developer who caused it, in the run they already execute.
+The system **MUST** provide a reusable suite that fails a component's unit run when its committed artifacts no longer equal a fresh compile, when an annotated property has no slot record or a shaped property has one, or when any committed shared schema has fallen behind - so that staleness reaches the developer who caused it, in the run they already execute. A component's contract **MUST** be validated in a registry holding the vocabulary its trait schema references, and an instance's reference to its own props schema **MUST** be resolved against that registry rather than checked for grammar alone.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-conformance`
@@ -514,8 +538,11 @@ The system **MUST** report the described set against the component set, with a p
 - [x] A prop the component declares appears in its contract; a prop it inherits appears in the shared type for its origin and not in the contract's own properties; a prop with no schema equivalent appears as an annotated property with a matching slot record.
 - [x] No property of a compiled contract or an inherited-surface type is empty: one that asserts nothing names its TypeScript type and says the type system checks it, so a generic, a function or a union of non-literal members is never readable as an unconstrained value.
 - [x] A component whose props inherit from an origin the compiler cannot place is refused naming those props, rather than compiled with them missing.
-- [x] A contract's identifier is a type derived from the abstract base type and parses into the expected segments; a metamodel instance's identifier is not a type.
-- [x] The trait schema carried by the abstract base type equals a fresh derivation from the metamodel, and an unknown key in a contract's validator-read block is rejected by name.
+- [x] A contract's identifier is a type derived from the abstract base type and parses into the expected segments; a metamodel instance's identifier is not a type; a reference to a component is that component's own derived identifier.
+- [x] The trait schema carried by the abstract base type equals a fresh derivation from the metamodel, states each of its fields as a reference to the type that owns the concept, and rejects an unknown key in a contract's validator-read block by name.
+- [x] A contract validated in a registry that is missing one of the vocabulary types its trait schema references fails naming the unresolved reference, rather than passing against a schema that was never applied.
+- [x] A metamodel instance whose props schema is absent from the registry is refused naming the unresolved reference, and one whose reference is malformed is refused by grammar.
+- [x] Every committed shared schema - the abstract base type, the metamodel, each vocabulary type - equals a fresh build on every described component's run.
 - [x] Editing a described component without recompiling fails that component's own unit run, with the difference reported by path.
 - [x] Removing a prop, making an optional prop required, or dropping a value from a variant axis is refused at an unchanged contract major and accepted with the major moved, in both cases naming every reason; adding a prop is accepted either way.
 - [x] A contract whose file moved is compared against its earlier path rather than reported as new.
@@ -524,3 +551,4 @@ The system **MUST** report the described set against the component set, with a p
 - [x] A contract whose inherited-surface origin key changed reports that signal as skipped rather than passing silently on its absence.
 - [x] A covered component whose directory has been removed fails the guard, naming the allowlist entry to remove.
 - [x] The coverage report prints the described set against the component set and sets no exit code, whatever the numbers are.
+- [ ] A compatibility run states its comparison source, and a run against a published version of the package reports what a consumer upgrading to the committed contracts would experience - not only what changed since a branch point.

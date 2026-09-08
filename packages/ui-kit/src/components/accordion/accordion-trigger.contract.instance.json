@@ -1,6 +1,7 @@
 {
   "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.accordion_trigger.v1",
-  "metamodel": "1.2.0",
+  "gts_type": "gts.frontx.uikit.meta.component.v1~",
+  "metamodel": "1.0.0",
   "component": "accordion-trigger",
   "intent": "The clickable header that expands or collapses its AccordionItem.",
   "typical_uses": [
@@ -9,7 +10,7 @@
   "dont_use_when": [
     {
       "rule": "A standalone button with no AccordionItem to expand or collapse",
-      "instead": "gts.frontx.uikit.component.button.v1~"
+      "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~"
     }
   ],
   "composition": {
@@ -20,7 +21,7 @@
     },
     "parent": {
       "kinds": [
-        "gts.frontx.uikit.component.accordion_item.v1~"
+        "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
       ]
     }
   },
@@ -62,8 +63,8 @@
     ]
   },
   "family": {
-    "root": "gts.frontx.uikit.component.accordion.v1~",
+    "root": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",
     "role": "part"
   },
-  "props_schema": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~"
+  "props_schema": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~"
 }

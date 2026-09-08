@@ -19,7 +19,7 @@
   "required": [],
   "unevaluatedProperties": false,
   "x-uikit": {
-    "metamodel": "1.2.0",
+    "metamodel": "1.0.0",
     "intent": "The clickable header that expands or collapses its AccordionItem.",
     "typical_uses": [
       "The single header/summary child of an AccordionItem"
@@ -62,7 +62,7 @@
     "dont_use_when": [
       {
         "rule": "A standalone button with no AccordionItem to expand or collapse",
-        "instead": "gts.frontx.uikit.component.button.v1~"
+        "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~"
       }
     ],
     "composition": {
@@ -73,7 +73,7 @@
       },
       "parent": {
         "kinds": [
-          "gts.frontx.uikit.component.accordion_item.v1~"
+          "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
         ]
       }
     },
@@ -88,7 +88,7 @@
       ]
     },
     "family": {
-      "root": "gts.frontx.uikit.component.accordion.v1~",
+      "root": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",
       "role": "part"
     }
   }

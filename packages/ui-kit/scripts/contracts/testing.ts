@@ -10,7 +10,8 @@
 import { GTS, type ValidationResult } from '@globaltypesystem/gts-ts';
 import { describe, expect, it, vi } from 'vitest';
 
-import { loadBaseSchema, type CompiledContract } from './compile';
+import { loadBaseSchema, registerContractTypes, type CompiledContract } from './compile';
+import { bareGtsId } from './ids';
 import { checkComponentFreshness, type FreshnessReport } from './freshness';
 
 // Every contracts test file that builds a real TypeScript program - directly
@@ -85,17 +86,18 @@ export function assertContractFreshness(directory: string, exportStem: string = 
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-slots
 
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-base
-    it("committed base.component.json equals a fresh build (buildBaseSchema)", () => {
+    it('every committed shared schema equals a fresh build', () => {
+      // The abstract base type, the metamodel and each vocabulary type they
+      // reference: written by `contracts:compile -- --schemas`, and stale
+      // the moment a builder changes without that being re-run.
       const report = memoizedFreshnessReport(directory, exportStem);
-      expect(report.baseSchemaDiff, `base.component.json is stale:\n${report.baseSchemaDiff.join('\n')}`).toEqual([]);
+      for (const [file, diff] of Object.entries(report.sharedSchemaDiffs)) {
+        expect(diff, `${file} is stale:\n${diff.join('\n')}`).toEqual([]);
+      }
     });
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-base
   });
 }
-
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-traits
-const bareId = (id: string): string => id.replace(/^gts:\/\//, '');
-// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-traits
 
 // Registers base.component.json plus a JSON-round-tripped copy of a compiled
 // contract into a fresh GTS store and returns GTS.validateEntity's result
@@ -135,7 +137,12 @@ const bareId = (id: string): string => id.replace(/^gts:\/\//, '');
 export function validateContractTraits(contract: CompiledContract): ValidationResult & { entity_type: string } {
   const gts = new GTS();
   gts.register(JSON.parse(JSON.stringify(loadBaseSchema())) as Record<string, unknown>);
+  // The vocabulary the base type's trait schema references. Without them
+  // gts-ts fails the whole check with "Unresolvable trait schema reference"
+  // rather than a validation error, which is the right failure - a trait
+  // schema whose types are missing has not been checked against anything.
+  registerContractTypes((entity) => gts.register(entity));
   gts.register(JSON.parse(JSON.stringify(contract)) as Record<string, unknown>);
-  return gts.validateEntity(bareId(contract.$id));
+  return gts.validateEntity(bareGtsId(contract.$id));
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-traits

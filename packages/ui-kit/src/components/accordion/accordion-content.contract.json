@@ -19,7 +19,7 @@
   "required": [],
   "unevaluatedProperties": false,
   "x-uikit": {
-    "metamodel": "1.2.0",
+    "metamodel": "1.0.0",
     "intent": "The height-animated panel revealed when its AccordionItem is open.",
     "typical_uses": [
       "The single body/detail child of an AccordionItem, shown when it is open"
@@ -62,7 +62,7 @@
     "dont_use_when": [
       {
         "rule": "Content that must stay visible regardless of any item's open state",
-        "instead": "gts.frontx.uikit.component.card.v1~"
+        "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~"
       }
     ],
     "composition": {
@@ -73,7 +73,7 @@
       },
       "parent": {
         "kinds": [
-          "gts.frontx.uikit.component.accordion_item.v1~"
+          "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
         ]
       }
     },
@@ -82,7 +82,7 @@
       "a11y": "verified"
     },
     "family": {
-      "root": "gts.frontx.uikit.component.accordion.v1~",
+      "root": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",
       "role": "part"
     }
   }

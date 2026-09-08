@@ -49,7 +49,7 @@
   "required": [],
   "unevaluatedProperties": false,
   "x-uikit": {
-    "metamodel": "1.2.0",
+    "metamodel": "1.0.0",
     "intent": "Trigger a single action in the current context.",
     "typical_uses": [
       "A one-off action with an immediate effect (submit, confirm, open a dialog)",
@@ -124,7 +124,7 @@
       },
       {
         "rule": "Toggling a persistent on/off state",
-        "instead": "gts.frontx.uikit.component.switch.v1~"
+        "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.switch.v1~"
       }
     ],
     "composition": {

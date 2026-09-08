@@ -2,245 +2,37 @@
   "$id": "gts://gts.frontx.uikit.base.component.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UiKit base component",
-  "description": "Abstract base type every kit component's props schema derives from. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which belongs to the per-origin passthrough type, because a base shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, the validator-read half of the overlay vocabulary (see buildGtsTraitsSchema) that GTS.validateEntity checks a component's own x-gts-traits against.",
+  "description": "Abstract base type every kit component's props schema derives from. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which belongs to the per-origin passthrough type, because a base shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, the validator-read half of the overlay vocabulary that GTS.validateEntity checks a component's own x-gts-traits against. That vocabulary is six references to the types that own each concept (gts.frontx.uikit.trait.*), not six inline definitions - see the domain model in the package DESIGN for how they relate.",
   "type": "object",
   "$comment": "No additionalProperties/unevaluatedProperties here on purpose. gts-ts's validateSchemaAgainstParent rejects a derived schema that adds properties when the base sets additionalProperties: false, and closing the base would mean every component had to restate it. Closure is the DERIVED type's job (unevaluatedProperties: false), where the full property set is finally known.",
   "x-gts-traits-schema": {
     "type": "object",
-    "description": "Validator-read half of the overlay: what GTS.validateEntity checks a component contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from base.component down to the component's own contract). Everything here is a fact a validator or lint actually reads - dont_use_when's typed alternative, composition, deprecations, coverage (including its assumptions), family and extension_points; a purely documentary field (intent, typical_uses, invariants, anti_patterns, examples) lives in x-uikit instead, which no validator reads. additionalProperties: false so an unknown trait key fails GTS.validateEntity by name instead of vanishing silently - the exact gap the demo review flagged against the OLD, undifferentiated x-uikit block.",
+    "description": "Validator-read half of the overlay: what GTS.validateEntity checks a component contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from base.component down to the component's own contract). Everything here is a fact a validator or lint actually reads - dont_use_when's typed alternative, composition, deprecations, coverage (including its assumptions), family and extension_points; a purely documentary field (intent, typical_uses, invariants, anti_patterns, examples) lives in x-uikit instead, which no validator reads. Each field is a REFERENCE to the vocabulary type that owns its shape (gts.frontx.uikit.trait.*), so this schema states which concepts a contract carries and each concept is defined once, in one place, for both this schema and the metamodel. additionalProperties: false so an unknown trait key fails GTS.validateEntity by name instead of vanishing silently.",
     "properties": {
       "dont_use_when": {
         "type": "array",
         "items": {
-          "type": "object",
-          "properties": {
-            "rule": {
-              "type": "string",
-              "minLength": 1
-            },
-            "instead": {
-              "oneOf": [
-                {
-                  "type": "string",
-                  "pattern": "^gts\\.frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
-                  "description": "GTS type id of another kit component. Demo stand-in for x-gts-ref: production writes \"x-gts-ref\": \"gts.frontx.uikit.component.*~\" here, which resolves the target in the type registry and fails when no such type is registered. The pattern alone only checks grammar, so a grammatical id for a component that does not exist still needs the registry (in the demo: the directory-existence test).",
-                  "$comment": "GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu)."
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "external": {
-                      "type": "string",
-                      "minLength": 1,
-                      "description": "What to use instead, named as plainly as the reader will have to act on it - the kit ships nothing for this case, so there is no id to resolve."
-                    },
-                    "note": {
-                      "type": "string",
-                      "minLength": 1,
-                      "description": "Why no kit component fits, and what the kit does offer for the neighbouring case. Optional: some rules need no more than the pointer itself."
-                    }
-                  },
-                  "required": [
-                    "external"
-                  ],
-                  "additionalProperties": false,
-                  "description": "The alternative to a \"don't\" when it is outside this kit. Without this form the only way to satisfy a required component ref is to name the nearest kit component as a stand-in, which reads to a resolver as a real recommendation and to an agent as an instruction to reach for a component the rule was written to steer it away from."
-                }
-              ]
-            }
-          },
-          "required": [
-            "rule",
-            "instead"
-          ],
-          "additionalProperties": false
+          "$ref": "gts://gts.frontx.uikit.trait.dont_use_when_rule.v1~"
         },
         "minItems": 1,
-        "description": "A \"don't\" without an alternative leaves the agent with no next move, so `instead` is required, and it is either a kit component's type id (not a display name - a name resolves to nothing) or the external form for a case the kit ships no component for. At least one entry is required for the same reason: a component with nothing it should not be used for would be a modeling gap, not a fact worth leaving unstated."
+        "description": "A \"don't\" without an alternative leaves the agent with no next move, so `instead` is required, and it is either a reference to a kit component (not a display name - a name resolves to nothing) or the external form for a case the kit ships no component for. At least one entry is required for the same reason: a component with nothing it should not be used for would be a modeling gap, not a fact worth leaving unstated."
       },
       "composition": {
-        "type": "object",
-        "properties": {
-          "children": {
-            "type": "object",
-            "properties": {
-              "kinds": {
-                "type": "array",
-                "items": {
-                  "oneOf": [
-                    {
-                      "type": "string",
-                      "pattern": "^gts\\.frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
-                      "description": "GTS type id of another kit component. Demo stand-in for x-gts-ref: production writes \"x-gts-ref\": \"gts.frontx.uikit.component.*~\" here, which resolves the target in the type registry and fails when no such type is registered. The pattern alone only checks grammar, so a grammatical id for a component that does not exist still needs the registry (in the demo: the directory-existence test).",
-                      "$comment": "GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu)."
-                    },
-                    {
-                      "const": "text"
-                    },
-                    {
-                      "const": "none"
-                    }
-                  ]
-                },
-                "minItems": 1
-              },
-              "icons_via": {
-                "type": "string",
-                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-                "description": "Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test."
-              }
-            },
-            "required": [
-              "kinds"
-            ],
-            "additionalProperties": false
-          },
-          "parent": {
-            "type": "object",
-            "properties": {
-              "kinds": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "^gts\\.frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
-                  "description": "GTS type id of another kit component. Demo stand-in for x-gts-ref: production writes \"x-gts-ref\": \"gts.frontx.uikit.component.*~\" here, which resolves the target in the type registry and fails when no such type is registered. The pattern alone only checks grammar, so a grammatical id for a component that does not exist still needs the registry (in the demo: the directory-existence test).",
-                  "$comment": "GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu)."
-                },
-                "minItems": 1
-              }
-            },
-            "required": [
-              "kinds"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "required": [
-          "children"
-        ],
-        "additionalProperties": false
+        "$ref": "gts://gts.frontx.uikit.trait.composition.v1~"
       },
       "deprecations": {
-        "type": "object",
-        "properties": {
-          "props": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "object",
-              "properties": {
-                "since": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "replacement": {
-                  "type": "string",
-                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-                  "description": "Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test."
-                },
-                "hint": {
-                  "type": "string",
-                  "minLength": 1
-                }
-              },
-              "required": [
-                "since",
-                "replacement",
-                "hint"
-              ],
-              "additionalProperties": false
-            }
-          }
-        },
-        "additionalProperties": false
+        "$ref": "gts://gts.frontx.uikit.trait.deprecations.v1~"
       },
       "coverage": {
-        "type": "object",
-        "properties": {
-          "assumptions": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "claim": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "reason": {
-                  "type": "string",
-                  "minLength": 1
-                }
-              },
-              "required": [
-                "claim",
-                "reason"
-              ],
-              "additionalProperties": false
-            }
-          }
-        },
-        "additionalProperties": {
-          "type": "string",
-          "enum": [
-            "verified",
-            "checked-no",
-            "not-described"
-          ],
-          "description": "\"checked-no\" (looked at, does not hold) and \"not-described\" (nobody looked) are different answers and may not collapse into one."
-        }
+        "$ref": "gts://gts.frontx.uikit.trait.coverage.v1~"
       },
       "family": {
+        "$ref": "gts://gts.frontx.uikit.trait.family.v1~",
+        "description": "Absent entirely for a component with no family - Button, most of the kit.",
         "type": [
           "object",
           "null"
         ],
-        "description": "Membership in a compound component's family (Accordion, its Item, Trigger and Content), when this component is one. Deliberately NOT expressed as a schema-level derivation (a part's props schema does not chain from the root's - an item does not inherit the root's props, and a closed base would reject them as undeclared if it did): the relationship lives here, in the instance, and the conformance test checks that every ref resolves to a real compiled contract. Absent entirely for a component with no family - Button, most of the kit.",
-        "properties": {
-          "root": {
-            "type": "string",
-            "pattern": "^gts\\.frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
-            "description": "GTS type id of another kit component. Demo stand-in for x-gts-ref: production writes \"x-gts-ref\": \"gts.frontx.uikit.component.*~\" here, which resolves the target in the type registry and fails when no such type is registered. The pattern alone only checks grammar, so a grammatical id for a component that does not exist still needs the registry (in the demo: the directory-existence test).",
-            "$comment": "GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu)."
-          },
-          "role": {
-            "type": "string",
-            "enum": [
-              "root",
-              "part"
-            ]
-          },
-          "parts": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^gts\\.frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
-              "description": "GTS type id of another kit component. Demo stand-in for x-gts-ref: production writes \"x-gts-ref\": \"gts.frontx.uikit.component.*~\" here, which resolves the target in the type registry and fails when no such type is registered. The pattern alone only checks grammar, so a grammatical id for a component that does not exist still needs the registry (in the demo: the directory-existence test).",
-              "$comment": "GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu)."
-            },
-            "minItems": 1
-          }
-        },
-        "required": [
-          "root",
-          "role"
-        ],
-        "additionalProperties": false,
-        "if": {
-          "properties": {
-            "role": {
-              "const": "root"
-            }
-          },
-          "required": [
-            "role"
-          ]
-        },
-        "then": {
-          "required": [
-            "root",
-            "role",
-            "parts"
-          ]
-        },
         "default": null
       },
       "extension_points": {
@@ -248,38 +40,9 @@
           "array",
           "null"
         ],
-        "description": "Growth points a consumer extends this component through, declared once at the component level instead of enumerating every plugin-shaped prop individually (T6: DataTable's `columns` accepts arbitrary `@tanstack/react-table` ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed). Absent entirely for a component with no such surface - Button, Accordion, most of the kit.",
+        "description": "Growth points a consumer extends this component through, declared once at the component level instead of enumerating every plugin-shaped prop individually (DataTable's `columns` accepts arbitrary third-party ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed). Absent entirely for a component with no such surface - Button, Accordion, most of the kit.",
         "items": {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string",
-              "minLength": 1
-            },
-            "kind": {
-              "type": "string",
-              "enum": [
-                "prop",
-                "helper",
-                "feature"
-              ]
-            },
-            "description": {
-              "type": "string",
-              "minLength": 1
-            },
-            "typed_by": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "name",
-            "kind",
-            "description",
-            "typed_by"
-          ],
-          "additionalProperties": false
+          "$ref": "gts://gts.frontx.uikit.trait.extension_point.v1~"
         },
         "minItems": 1,
         "default": null

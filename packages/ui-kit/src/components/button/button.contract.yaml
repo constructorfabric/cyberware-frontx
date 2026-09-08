@@ -30,7 +30,7 @@ dont_use_when:
         over a real anchor - `render={<a href="..." />}` with
         `nativeButton={false}`.
   - rule: Toggling a persistent on/off state
-    instead: gts.frontx.uikit.component.switch.v1~ # Switch
+    instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.switch.v1~ # Switch
 
 composition:
   children:

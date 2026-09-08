@@ -12,16 +12,19 @@ import Ajv2020 from 'ajv/dist/2020';
 import { describe, expect, it } from 'vitest';
 
 import {
+  addContractTypes,
   BASE_TYPE_ID,
   buildMetamodel,
   compileContract,
   compileInstance,
   loadBaseSchema,
+  registerContractTypes,
   resolveTargetExtraction,
   type CompiledContract,
   type ContractInstance,
 } from '../../../scripts/contracts/compile';
 import { listExportedDeclarationNames } from '../../../scripts/contracts/extract';
+import { bareGtsId } from '../../../scripts/contracts/ids';
 import { applyContractTestTimeout, assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
 
 // resolveTargetExtraction and listExportedDeclarationNames below each build a
@@ -38,7 +41,6 @@ const STEMS = [DIRECTORY, 'data-table-sort-button'] as const;
 
 for (const stem of STEMS) assertContractFreshness(DIRECTORY, stem);
 
-const bareId = (id: string): string => id.replace(/^gts:\/\//, '');
 
 interface CompiledUnit {
   stem: string;
@@ -55,6 +57,7 @@ const baseSchema = loadBaseSchema();
 describe('data-table: metamodel validity', () => {
   it('every instance validates against the component metamodel', () => {
     const ajv = new Ajv2020();
+    addContractTypes(ajv);
     const validate = ajv.compile(metaSchema);
     for (const { stem, instance } of Object.values(units)) {
       expect(validate(instance), `${stem}: ${ajv.errorsText(validate.errors)}`).toBe(true);
@@ -63,7 +66,7 @@ describe('data-table: metamodel validity', () => {
 
   it("each instance's props_schema points at its own compiled contract", () => {
     for (const { stem, instance, contract } of Object.values(units)) {
-      expect(instance.props_schema, stem).toBe(contract.$id);
+      expect(instance.props_schema, stem).toBe(bareGtsId(contract.$id));
     }
   });
 
@@ -169,6 +172,9 @@ describe('data-table in a GTS store', () => {
   function registeredStore(): GTS {
     const gts = new GTS();
     gts.register(baseSchema);
+    // The vocabulary the base type's trait schema references: a store
+    // missing one fails every entity in it, not just the trait block.
+    registerContractTypes((entity) => gts.register(entity));
     for (const { contract } of Object.values(units)) gts.register(contract);
     return gts;
   }
@@ -176,7 +182,7 @@ describe('data-table in a GTS store', () => {
   it('every contract validates as a derived GTS type', () => {
     const gts = registeredStore();
     for (const { stem, contract } of Object.values(units)) {
-      const result = gts.validateEntity(bareId(contract.$id));
+      const result = gts.validateEntity(bareGtsId(contract.$id));
       expect(result.ok, `${stem}: ${result.error}`).toBe(true);
       expect(result.entity_type).toBe('schema');
     }
@@ -191,7 +197,7 @@ describe('data-table in a GTS store', () => {
   it('fails when the parent type is not registered - negative control', () => {
     const gts = new GTS();
     for (const { contract } of Object.values(units)) gts.register(contract);
-    const result = gts.validateEntity(bareId(units[DIRECTORY].contract.$id));
+    const result = gts.validateEntity(bareGtsId(units[DIRECTORY].contract.$id));
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Parent schema not found');
   });

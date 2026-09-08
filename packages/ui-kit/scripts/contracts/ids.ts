@@ -26,23 +26,57 @@ export const CONTRACT_MAJOR = 1;
 // changing is a contract major bump. An instance's `metamodel` field is
 // validated as a const equal to this, so a contract compiled against a
 // stale metamodel fails loudly instead of silently degrading.
-export const METAMODEL_VERSION = '1.2.0';
+export const METAMODEL_VERSION = '1.0.0';
 
 // GTS type id of ui-component.meta.json. Its own major (v1) is the grammar
-// of the metamodel TYPE - a different axis from METAMODEL_VERSION above.
-// 1.1.0's field changes stay backward compatible for an existing instance
-// shape (typical_uses replaces use_when, dont_use_when tightens), so the
-// type id does not need to move for this bump. Neither does 1.2.0's:
-// dont_use_when.instead only WIDENS (a component ref still validates
-// exactly as before), so every 1.1.0-shaped instance is also a valid
-// 1.2.0 one.
+// of the metamodel TYPE - a different axis from METAMODEL_VERSION above,
+// which versions the field vocabulary a contract is compiled against.
 export const METAMODEL_TYPE_ID = `gts.${VENDOR_PACKAGE}.meta.component.v1`;
 
 // GTS type id of base.component.json, the abstract parent every component
 // props schema derives from. Fixed major, independent of CONTRACT_MAJOR:
 // it is the root every component chains from, not any one component's own
 // contract.
-export const BASE_TYPE_ID = `gts://gts.${VENDOR_PACKAGE}.base.component.v1~`;
+//
+// Two spellings, because GTS uses two: the URI form is what a JSON Schema
+// `$id`/`$ref` has to carry, the bare form is what an id-VALUED field
+// holds. gts-ts parses only the bare form (Gts.isValidGtsID rejects the URI
+// prefix outright), so every reference value - an instance's props_schema,
+// a `dont_use_when` alternative, a composition kind - is spelled bare, and
+// only schema keywords carry `gts://`.
+export const BASE_TYPE_ID_BARE = `gts.${VENDOR_PACKAGE}.base.component.v1~`;
+export const BASE_TYPE_ID = `gts://${BASE_TYPE_ID_BARE}`;
+
+// Strips the `gts://` prefix off an id that carries it. One helper rather
+// than the four hand-rolled copies this repeated across check.ts,
+// testing.ts and each component's own contract test.
+export function bareGtsId(id: string): string {
+  return id.replace(/^gts:\/\//, '');
+}
+
+// Contract major of the trait vocabulary - the small GTS types the
+// validator-read overlay block is built out of (one per concept:
+// dont_use_when_rule, composition, coverage, family, ...). Versioned on its
+// own axis: a component's props changing is CONTRACT_MAJOR, the vocabulary
+// of a `don't` rule changing is this.
+export const TRAIT_MAJOR = 1;
+
+// GTS type id of one vocabulary type, from its snake_case token
+// (`dont_use_when_rule` -> gts://gts.frontx.uikit.trait.dont_use_when_rule.v1~).
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-trait-type
+export function traitTypeId(token: string): string {
+  return `gts://gts.${VENDOR_PACKAGE}.trait.${token}.v${TRAIT_MAJOR}~`;
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-trait-type
+
+// The x-gts-ref target every component reference declares: any type derived
+// from the abstract base component type. Written as a trailing-`*` prefix
+// pattern, the one wildcard shape gts-ts implements (XGtsRefValidator's
+// validateGtsPattern matches by prefix) and the same shape the ecosystem's
+// own schemas use (packages/gts-plugin's `gts.frontx.mfes.ext.domain.v1~*`).
+// A component's derived props schema is the only registered type that IS
+// that component, so it is what a reference to a component resolves to.
+export const COMPONENT_REF_TARGET = `${BASE_TYPE_ID_BARE}*`;
 
 // GTS type id of a shared passthrough type - one id per ORIGIN of inherited
 // props (a Base UI primitive part, or a plain DOM element type), not per DOM
@@ -66,13 +100,21 @@ export function gtsToken(component: string): string {
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-token
 
-// A component's props schema id: the base type, then this component's own
-// derived segment at the given contract major.
+// What a reference to a component holds: the component's own derived
+// props-schema id, bare. There is no separate "component type" to point at
+// - a component IS the type derived from the base component type, so the
+// id that names the derived schema is the id anything referring to that
+// component resolves through.
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2
 // @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-identifiers:p2
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-props-schema
+export function componentTypeRef(component: string, major: number): string {
+  return `${BASE_TYPE_ID_BARE}${VENDOR_PACKAGE}.component.${gtsToken(component)}.v${major}~`;
+}
+
+// The same id in the URI form a JSON Schema `$id` has to carry.
 export function propsSchemaId(component: string, major: number): string {
-  return `${BASE_TYPE_ID}${VENDOR_PACKAGE}.component.${gtsToken(component)}.v${major}~`;
+  return `gts://${componentTypeRef(component, major)}`;
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-props-schema
 
@@ -96,7 +138,7 @@ function escapeRegExp(text: string): string {
 
 // The segment shared by every place a component reference is spelled: the
 // vendor.package prefix, `component`, the snake_case name, a version. The
-// three id patterns below all chain onto this rather than restating it.
+// id patterns below all chain onto this rather than restating it.
 // `captureName` wraps the name token in a capture group - the conformance
 // test needs the matched name back (to turn a dont_use_when.instead id into
 // a directory it can check exists); the metamodel's own pattern fields do
@@ -108,11 +150,15 @@ function componentSegmentPattern(captureName = false): string {
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-patterns
 
-// Grammar of a GTS component type reference - dont_use_when.instead, and
-// the conformance test's own check that an id it wrote is grammatical.
+// Grammar of a component reference - dont_use_when.instead, a composition
+// kind, a family member, and the instance's own props_schema, which are all
+// the same thing (componentTypeRef above) and therefore the same pattern.
+// Carried next to `x-gts-ref` rather than replaced by it: gts-ts strips
+// x-gts-ref before validating (GtsStore.normalizeSchema), so the pattern is
+// what actually rejects a malformed id.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-patterns
 export function componentTypeRefPattern(captureName = false): string {
-  return `^gts\\.${componentSegmentPattern(captureName)}~$`;
+  return `^${escapeRegExp(BASE_TYPE_ID_BARE)}${componentSegmentPattern(captureName)}~$`;
 }
 
 // Grammar of a contract instance id (the metamodel's `id` property).
@@ -120,10 +166,9 @@ export function instanceIdPattern(): string {
   return `^${escapeRegExp(METAMODEL_TYPE_ID)}~${componentSegmentPattern()}$`;
 }
 
-// Grammar of a props schema id (the metamodel's `props_schema` property):
-// the base type id, then the same component segment.
-export function propsSchemaIdPattern(): string {
-  return `^${escapeRegExp(BASE_TYPE_ID)}${componentSegmentPattern()}~$`;
+// Grammar of a vocabulary type id (traitTypeId above).
+export function traitTypeIdPattern(): string {
+  return `^gts://gts\\.${escapeRegExp(VENDOR_PACKAGE)}\\.trait\\.[a-z_][a-z0-9_]*\\.v\\d+~$`;
 }
 
 // Grammar of a passthrough type id (passthroughTypeId above): the vendor

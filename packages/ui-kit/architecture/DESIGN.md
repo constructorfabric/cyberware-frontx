@@ -169,7 +169,68 @@ Contracts, metamodel instances, overlays and the harness that produces them stay
 | Contract | The compiled join of an overlay and an extraction: a closed props schema carrying the component's meaning in two extension blocks. | A JSON Schema 2020-12 document committed beside the component |
 | Metamodel instance | The same meaning as a standalone typed record, naming the contract as its props schema. | A JSON document committed beside the component |
 | Passthrough type | The surface a component inherits from the primitive it wraps, shared by every component that inherits from the same origin. | A generated JSON Schema document under the harness, keyed by origin |
+| Vocabulary type | One concept the overlay states - a rule against a use, a composition, a deprecation, a coverage claim, a family membership, an extension point - defined once and referenced by everything that carries it. | A JSON Schema 2020-12 document under the harness, one per concept, each with its own type identifier |
 | Coverage allowlist | The set of components opted into contract enforcement. | A committed list of component directory names |
+
+#### Contract type relationships
+
+The abstract base type states which concepts a contract's validator-read block carries; each concept is a type of its own, and the metamodel reaches the same concepts through the same identifiers. A reference to another component is that component's own derived contract identifier: a component IS the type derived from the base, so nothing else stands in for it.
+
+```mermaid
+classDiagram
+    class BaseType["Abstract base type"]
+    class Contract["Component contract"]
+    class Instance["Metamodel instance"]
+    class Passthrough["Passthrough type"]
+    class Rule["dont_use_when_rule"]
+    class External["external_alternative"]
+    class Composition["composition"]
+    class Children["child_composition"]
+    class Parent["parent_composition"]
+    class Deprecations["deprecations"]
+    class PropDeprecation["prop_deprecation"]
+    class Coverage["coverage"]
+    class Assumption["coverage_assumption"]
+    class Verdict["coverage_verdict"]
+    class Family["family"]
+    class ExtensionPoint["extension_point"]
+
+    Contract --|> BaseType : derives from
+    Contract ..> Passthrough : composes
+    Instance ..> Contract : props schema
+    BaseType ..> Rule : trait vocabulary
+    BaseType ..> Composition : trait vocabulary
+    BaseType ..> Deprecations : trait vocabulary
+    BaseType ..> Coverage : trait vocabulary
+    BaseType ..> Family : trait vocabulary
+    BaseType ..> ExtensionPoint : trait vocabulary
+    Rule --> External : alternative outside the kit
+    Rule ..> Contract : alternative inside the kit
+    Composition --> Children : children
+    Composition --> Parent : parent
+    Children ..> Contract : allowed child
+    Parent ..> Contract : allowed parent
+    Deprecations --> PropDeprecation : per prop
+    Coverage --> Assumption : assumptions
+    Coverage --> Verdict : per claim
+    Family ..> Contract : root and parts
+```
+
+| Type | References | Cardinality | Owner of the fact |
+|------|------------|-------------|-------------------|
+| Component contract | the abstract base type, the passthrough type for its origin | one base, zero or one passthrough | the compiler |
+| Metamodel instance | the component contract | exactly one | the compiler |
+| Abstract base type | each of the six trait vocabulary types | one each | the trait schema builder |
+| dont_use_when_rule | a component contract, or an external alternative | exactly one of the two per rule | the overlay author |
+| external_alternative | nothing | zero or one per rule | the overlay author |
+| composition | a child composition, a parent composition | one child, zero or one parent | the overlay author |
+| child_composition | component contracts | one or more kinds, each a reference or a content kind | the overlay author |
+| parent_composition | component contracts | one or more | the overlay author |
+| deprecations | prop deprecations | zero or more, keyed by prop name | the overlay author, prop name checked against the extraction |
+| coverage | coverage assumptions, coverage verdicts | zero or more of each | the overlay author |
+| family | component contracts | one root, zero or more parts | the overlay author, resolved by the conformance suite |
+| extension_point | nothing | zero or more per contract | the overlay author |
+| Passthrough type | component contracts | one type shared by one or more contracts | the extractor |
 
 ### 3.2 Component Model
 
@@ -302,7 +363,8 @@ Prose describing a component can only be reviewed. This component produces a des
 - Validates the hand-authored overlay against the overlay vocabulary and refuses one that reaches into the machine's half (UIKIT-1).
 - Compiles the two into a closed props schema and a metamodel instance, and maintains one shared type per inherited-surface origin.
 - Constructs the identifiers the contracts are named in, following the type-definition specification's segment grammar.
-- Routes each meaning field either to the block a validator reads or to the block that is prose, and derives the validator-read half's schema from the same definitions the metamodel uses.
+- Routes each meaning field either to the block a validator reads or to the block that is prose, and derives the validator-read half's schema from the same definitions the metamodel uses, by reference to the vocabulary type that owns each concept (see 3.1).
+- Writes the schemas that belong to no single component - the abstract base type, the metamodel, the vocabulary types - from their builders, so the identifier grammar has one source and a stale committed copy is a comparison failure rather than a silent divergence.
 - Supplies the per-component conformance suite that fails when a committed artifact no longer equals a fresh compile.
 - Decides compatibility against a base reference and requires a contract major move for an incompatible difference.
 - Decides which components a change must be held to, and reports kit-wide coverage without failing on it.

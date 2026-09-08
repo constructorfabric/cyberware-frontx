@@ -9,15 +9,15 @@ typical_uses:
 
 dont_use_when:
   - rule: A section that must always stay visible and never collapse
-    instead: gts.frontx.uikit.component.card.v1~ # Card
+    instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~ # Card
 
 composition:
   children:
     kinds:
-      - gts.frontx.uikit.component.accordion_trigger.v1~ # AccordionTrigger
-      - gts.frontx.uikit.component.accordion_content.v1~ # AccordionContent
+      - gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~ # AccordionTrigger
+      - gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_content.v1~ # AccordionContent
   parent:
-    kinds: [gts.frontx.uikit.component.accordion.v1~] # Accordion
+    kinds: [gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~] # Accordion
 
 invariants:
   - id: value-required-to-control-or-default-open
@@ -54,5 +54,5 @@ examples:
         renders nothing usable.
 
 family:
-  root: gts.frontx.uikit.component.accordion.v1~ # Accordion
+  root: gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~ # Accordion
   role: part

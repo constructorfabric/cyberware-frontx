@@ -9,13 +9,13 @@ typical_uses:
 
 dont_use_when:
   - rule: Content that must stay visible regardless of any item's open state
-    instead: gts.frontx.uikit.component.card.v1~ # Card
+    instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~ # Card
 
 composition:
   children:
     kinds: [text]
   parent:
-    kinds: [gts.frontx.uikit.component.accordion_item.v1~] # AccordionItem
+    kinds: [gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~] # AccordionItem
 
 invariants:
   - id: height-animates-via-base-ui-runtime-var
@@ -52,5 +52,5 @@ examples:
         nothing to read.
 
 family:
-  root: gts.frontx.uikit.component.accordion.v1~ # Accordion
+  root: gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~ # Accordion
   role: part

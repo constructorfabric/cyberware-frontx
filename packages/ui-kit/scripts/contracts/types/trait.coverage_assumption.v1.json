@@ -1,0 +1,22 @@
+{
+  "$id": "gts://gts.frontx.uikit.trait.coverage_assumption.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit coverage assumption",
+  "description": "A fact the code cannot make true - a generic type parameter, a part composed of two primitives - rather than a verified/checked-no/not-described claim.",
+  "type": "object",
+  "properties": {
+    "claim": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "claim",
+    "reason"
+  ],
+  "additionalProperties": false
+}

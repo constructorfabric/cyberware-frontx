@@ -1,6 +1,7 @@
 {
   "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.accordion.v1",
-  "metamodel": "1.2.0",
+  "gts_type": "gts.frontx.uikit.meta.component.v1~",
+  "metamodel": "1.0.0",
   "component": "accordion",
   "intent": "Show one or more sections at a time, collapsing the rest to their headers.",
   "typical_uses": [
@@ -10,17 +11,17 @@
   "dont_use_when": [
     {
       "rule": "A single show/hide toggle for one piece of content",
-      "instead": "gts.frontx.uikit.component.collapsible.v1~"
+      "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.collapsible.v1~"
     },
     {
       "rule": "Primary navigation between sections that stays visible",
-      "instead": "gts.frontx.uikit.component.tabs.v1~"
+      "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.tabs.v1~"
     }
   ],
   "composition": {
     "children": {
       "kinds": [
-        "gts.frontx.uikit.component.accordion_item.v1~"
+        "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
       ]
     }
   },
@@ -71,13 +72,13 @@
     ]
   },
   "family": {
-    "root": "gts.frontx.uikit.component.accordion.v1~",
+    "root": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",
     "role": "root",
     "parts": [
-      "gts.frontx.uikit.component.accordion_item.v1~",
-      "gts.frontx.uikit.component.accordion_trigger.v1~",
-      "gts.frontx.uikit.component.accordion_content.v1~"
+      "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~",
+      "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~",
+      "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_content.v1~"
     ]
   },
-  "props_schema": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~"
+  "props_schema": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~"
 }

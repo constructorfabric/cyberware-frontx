@@ -5,50 +5,10 @@
   "description": "Shape of a component contract INSTANCE. The contract is itself a GTS-typed value: every <component>.contract.instance.json validates against this type, so the metamodel is enforced by the same validator that enforces component props instead of by prose. The props schema the instance points at (props_schema) is a separate GTS type and is not described here.",
   "type": "object",
   "$defs": {
-    "component_type_ref": {
-      "type": "string",
-      "pattern": "^gts\\.frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
-      "description": "GTS type id of another kit component. Demo stand-in for x-gts-ref: production writes \"x-gts-ref\": \"gts.frontx.uikit.component.*~\" here, which resolves the target in the type registry and fails when no such type is registered. The pattern alone only checks grammar, so a grammatical id for a component that does not exist still needs the registry (in the demo: the directory-existence test).",
-      "$comment": "GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu)."
-    },
-    "prop_name": {
-      "type": "string",
-      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-      "description": "Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test."
-    },
     "invariant_id": {
       "type": "string",
       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
       "description": "Stable kebab-case handle. Lint findings and evals cite it; never reused after removal."
-    },
-    "coverage_verdict": {
-      "type": "string",
-      "enum": [
-        "verified",
-        "checked-no",
-        "not-described"
-      ],
-      "description": "\"checked-no\" (looked at, does not hold) and \"not-described\" (nobody looked) are different answers and may not collapse into one."
-    },
-    "external_alternative": {
-      "type": "object",
-      "properties": {
-        "external": {
-          "type": "string",
-          "minLength": 1,
-          "description": "What to use instead, named as plainly as the reader will have to act on it - the kit ships nothing for this case, so there is no id to resolve."
-        },
-        "note": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Why no kit component fits, and what the kit does offer for the neighbouring case. Optional: some rules need no more than the pointer itself."
-        }
-      },
-      "required": [
-        "external"
-      ],
-      "additionalProperties": false,
-      "description": "The alternative to a \"don't\" when it is outside this kit. Without this form the only way to satisfy a required component ref is to name the nearest kit component as a stand-in, which reads to a resolver as a real recommendation and to an agent as an instruction to reach for a component the rule was written to steer it away from."
     }
   },
   "properties": {
@@ -57,8 +17,13 @@
       "pattern": "^gts\\.frontx\\.uikit\\.meta\\.component\\.v1~frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+$",
       "description": "GTS instance id: this metamodel's type id, then the instance segment. The instance segment carries exactly 5 dot-tokens (frontx.uikit.component.<name>.v<n>)."
     },
+    "gts_type": {
+      "type": "string",
+      "x-gts-ref": "/$id",
+      "description": "GTS type id of this metamodel - what makes the contract instance a typed value rather than a bare JSON document."
+    },
     "metamodel": {
-      "const": "1.2.0",
+      "const": "1.0.0",
       "description": "Version of the overlay vocabulary the compiler emitted. Checked as a const, not a free string with minLength: a contract compiled against a different metamodel version must fail loudly, not pass silently with a stale value."
     },
     "component": {
@@ -83,85 +48,13 @@
     "dont_use_when": {
       "type": "array",
       "items": {
-        "type": "object",
-        "properties": {
-          "rule": {
-            "type": "string",
-            "minLength": 1
-          },
-          "instead": {
-            "oneOf": [
-              {
-                "$ref": "#/$defs/component_type_ref"
-              },
-              {
-                "$ref": "#/$defs/external_alternative"
-              }
-            ]
-          }
-        },
-        "required": [
-          "rule",
-          "instead"
-        ],
-        "additionalProperties": false
+        "$ref": "gts://gts.frontx.uikit.trait.dont_use_when_rule.v1~"
       },
       "minItems": 1,
-      "description": "A \"don't\" without an alternative leaves the agent with no next move, so `instead` is required, and it is either a kit component's type id (not a display name - a name resolves to nothing) or the external form for a case the kit ships no component for. At least one entry is required for the same reason: a component with nothing it should not be used for would be a modeling gap, not a fact worth leaving unstated."
+      "description": "A \"don't\" without an alternative leaves the agent with no next move, so `instead` is required, and it is either a reference to a kit component (not a display name - a name resolves to nothing) or the external form for a case the kit ships no component for. At least one entry is required for the same reason: a component with nothing it should not be used for would be a modeling gap, not a fact worth leaving unstated."
     },
     "composition": {
-      "type": "object",
-      "properties": {
-        "children": {
-          "type": "object",
-          "properties": {
-            "kinds": {
-              "type": "array",
-              "items": {
-                "oneOf": [
-                  {
-                    "$ref": "#/$defs/component_type_ref"
-                  },
-                  {
-                    "const": "text"
-                  },
-                  {
-                    "const": "none"
-                  }
-                ]
-              },
-              "minItems": 1
-            },
-            "icons_via": {
-              "$ref": "#/$defs/prop_name"
-            }
-          },
-          "required": [
-            "kinds"
-          ],
-          "additionalProperties": false
-        },
-        "parent": {
-          "type": "object",
-          "properties": {
-            "kinds": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/component_type_ref"
-              },
-              "minItems": 1
-            }
-          },
-          "required": [
-            "kinds"
-          ],
-          "additionalProperties": false
-        }
-      },
-      "required": [
-        "children"
-      ],
-      "additionalProperties": false
+      "$ref": "gts://gts.frontx.uikit.trait.composition.v1~"
     },
     "invariants": {
       "type": "array",
@@ -206,64 +99,10 @@
       "$comment": "`instead` here is prose about this component's own API, not a component type ref - the fix stays inside the component."
     },
     "deprecations": {
-      "type": "object",
-      "properties": {
-        "props": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "object",
-            "properties": {
-              "since": {
-                "type": "string",
-                "minLength": 1
-              },
-              "replacement": {
-                "$ref": "#/$defs/prop_name"
-              },
-              "hint": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "required": [
-              "since",
-              "replacement",
-              "hint"
-            ],
-            "additionalProperties": false
-          }
-        }
-      },
-      "additionalProperties": false
+      "$ref": "gts://gts.frontx.uikit.trait.deprecations.v1~"
     },
     "coverage": {
-      "type": "object",
-      "properties": {
-        "assumptions": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "claim": {
-                "type": "string",
-                "minLength": 1
-              },
-              "reason": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "required": [
-              "claim",
-              "reason"
-            ],
-            "additionalProperties": false
-          }
-        }
-      },
-      "additionalProperties": {
-        "$ref": "#/$defs/coverage_verdict"
-      }
+      "$ref": "gts://gts.frontx.uikit.trait.coverage.v1~"
     },
     "examples": {
       "type": "object",
@@ -326,96 +165,28 @@
       "additionalProperties": false
     },
     "family": {
-      "type": "object",
-      "description": "Membership in a compound component's family (Accordion, its Item, Trigger and Content), when this component is one. Deliberately NOT expressed as a schema-level derivation (a part's props schema does not chain from the root's - an item does not inherit the root's props, and a closed base would reject them as undeclared if it did): the relationship lives here, in the instance, and the conformance test checks that every ref resolves to a real compiled contract. Absent entirely for a component with no family - Button, most of the kit.",
-      "properties": {
-        "root": {
-          "$ref": "#/$defs/component_type_ref"
-        },
-        "role": {
-          "type": "string",
-          "enum": [
-            "root",
-            "part"
-          ]
-        },
-        "parts": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/component_type_ref"
-          },
-          "minItems": 1
-        }
-      },
-      "required": [
-        "root",
-        "role"
-      ],
-      "additionalProperties": false,
-      "if": {
-        "properties": {
-          "role": {
-            "const": "root"
-          }
-        },
-        "required": [
-          "role"
-        ]
-      },
-      "then": {
-        "required": [
-          "root",
-          "role",
-          "parts"
-        ]
-      }
+      "$ref": "gts://gts.frontx.uikit.trait.family.v1~",
+      "description": "Absent entirely for a component with no family - Button, most of the kit."
     },
     "extension_points": {
       "type": "array",
-      "description": "Growth points a consumer extends this component through, declared once at the component level instead of enumerating every plugin-shaped prop individually (T6: DataTable's `columns` accepts arbitrary `@tanstack/react-table` ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed). Absent entirely for a component with no such surface - Button, Accordion, most of the kit.",
+      "description": "Growth points a consumer extends this component through, declared once at the component level instead of enumerating every plugin-shaped prop individually (DataTable's `columns` accepts arbitrary third-party ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed). Absent entirely for a component with no such surface - Button, Accordion, most of the kit.",
       "items": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "prop",
-              "helper",
-              "feature"
-            ]
-          },
-          "description": {
-            "type": "string",
-            "minLength": 1
-          },
-          "typed_by": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "name",
-          "kind",
-          "description",
-          "typed_by"
-        ],
-        "additionalProperties": false
+        "$ref": "gts://gts.frontx.uikit.trait.extension_point.v1~"
       },
       "minItems": 1
     },
     "props_schema": {
       "type": "string",
-      "pattern": "^gts://gts\\.frontx\\.uikit\\.base\\.component\\.v1~frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
-      "description": "URI of the machine-owned half: the compiled JSON Schema carrying axes, defaults and normative props. Split so the semantic half stays readable and the props half stays a plain provider-safe schema. A derived-type id: the abstract base component type, then the component's own segment, so the pattern also asserts that the props schema really is a child of the base and not a lookalike.",
+      "pattern": "^gts\\.frontx\\.uikit\\.base\\.component\\.v1~frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
+      "x-gts-ref": "gts.frontx.uikit.base.component.v1~*",
+      "description": "GTS id of the machine-owned half: the compiled JSON Schema carrying axes, defaults and normative props. Split so the semantic half stays readable and the props half stays a plain provider-safe schema. A derived-type id: the abstract base component type, then the component's own segment, so the reference also asserts that the props schema really is a child of the base and not a lookalike.",
       "$comment": "Two segments of 5 dot-tokens each after the fixed `gts.` scheme prefix - the shape gts-ts's Gts.parseSegment accepts (vendor.package.namespace.type.vMAJOR)."
     }
   },
   "required": [
     "id",
+    "gts_type",
     "metamodel",
     "component",
     "intent",

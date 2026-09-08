@@ -35,7 +35,8 @@ import {
   type DirectoryExportCoverage,
   type GuardResult,
 } from './check-lib';
-import { loadBaseSchema, overlayStems, type CompiledContract } from './compile';
+import { loadBaseSchema, overlayStems, registerContractTypes, type CompiledContract } from './compile';
+import { bareGtsId } from './ids';
 import { extractComponent, listExportedDeclarationNames } from './extract';
 import { checkComponentFreshness } from './freshness';
 
@@ -58,17 +59,6 @@ function loadCovered(): string[] {
   return JSON.parse(readFileSync(COVERED_PATH, 'utf8')) as string[];
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
-
-// The GTS URI form (`gts://...`) is how a JSON Schema $id/$ref has to look;
-// gts-ts's own id parser (Gts.parseGtsID, which checkCompatibility calls)
-// requires the bare `gts.` prefix and rejects the URI form outright - see
-// button.contract.test.ts's identical bareId helper for the schema-level
-// version of the same fact.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
-function bareId(id: string): string {
-  return id.replace(/^gts:\/\//, '');
-}
-// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
 
 // Path git accepts for `git show <ref>:<path>` (repo-root-relative), from a
 // path relative to this package. Cached: it never changes mid-run and a
@@ -311,6 +301,11 @@ function checkCompatForUnit(
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
   const gts = new GTS();
   gts.register(loadBaseSchema());
+  // The vocabulary the base type's trait schema references: registered here
+  // too, so a store this tool builds is a complete registry rather than one
+  // whose trait schema cannot resolve, and so a future change to one of
+  // those types is compared through the same store as every other schema.
+  registerContractTypes((entity) => gts.register(entity));
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough
   const origin = passthroughOriginFromContract(newContract);
@@ -344,7 +339,7 @@ function checkCompatForUnit(
   const newSynthetic = { ...newContract, $id: synthesizeVersionedId(newContract.$id, 1) };
   gts.register(oldSynthetic);
   gts.register(newSynthetic);
-  const result = gts.checkCompatibility(bareId(oldSynthetic.$id), bareId(newSynthetic.$id), 'backward');
+  const result = gts.checkCompatibility(bareGtsId(oldSynthetic.$id), bareGtsId(newSynthetic.$id), 'backward');
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
 
   // gts-ts's own backward check misses a newly required own prop and a

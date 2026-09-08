@@ -1,0 +1,12 @@
+{
+  "$id": "gts://gts.frontx.uikit.trait.coverage_verdict.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit coverage verdict",
+  "description": "The answer to one coverage claim. \"checked-no\" (looked at, does not hold) and \"not-described\" (nobody looked) are different answers and may not collapse into one.",
+  "type": "string",
+  "enum": [
+    "verified",
+    "checked-no",
+    "not-described"
+  ]
+}

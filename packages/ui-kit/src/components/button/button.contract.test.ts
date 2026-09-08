@@ -20,6 +20,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import {
+  addContractTypes,
   assertNoPassthroughCollision,
   assertOverlayReferencesRealProps,
   assertValidatesAgainst,
@@ -32,12 +33,13 @@ import {
   loadBaseSchema,
   loadPassthroughSchema,
   parseOverlay,
+  registerContractTypes,
   resolveTargetExtraction,
   type CompiledContract,
   type Overlay,
 } from '../../../scripts/contracts/compile';
 import type { ComponentExtraction } from '../../../scripts/contracts/extract';
-import { componentTypeRefPattern, instanceIdPattern, METAMODEL_VERSION, passthroughTypeId } from '../../../scripts/contracts/ids';
+import { bareGtsId, componentTypeRefPattern, instanceIdPattern, METAMODEL_VERSION, passthroughTypeId } from '../../../scripts/contracts/ids';
 import { applyContractTestTimeout, assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
 
 // assertContractFreshness below builds a real TypeScript program - several
@@ -59,11 +61,10 @@ const baseSchema = loadBaseSchema();
 const PASSTHROUGH_TYPE_ID = passthroughTypeId('base_ui_button');
 const passthroughSchema = loadPassthroughSchema('base_ui_button');
 
-// GTS ids are written here in URI form (`gts://...`), which is how a JSON
-// Schema $id/$ref has to look; gts-ts strips that prefix before parsing or
-// keying the store (store.normalizeSchema), so anything talking to the
-// library gets the bare id.
-const bareId = (id: string): string => id.replace(/^gts:\/\//, '');
+// A schema keyword ($id, $ref) carries the URI form `gts://...`; gts-ts
+// strips it before parsing or keying the store (store.normalizeSchema), so
+// anything talking to the library gets the bare id - bareGtsId (ids.ts) is
+// the one place that conversion lives.
 
 // The contract is a derived type: it is only a complete schema once its
 // parent and the shared passthrough type are resolvable, so every validator
@@ -154,7 +155,7 @@ describe('button contract conformance', () => {
     // gts-ts, and a hand-rolled copy is exactly how the previous id came to
     // be ungrammatical without anything noticing. `gts://` is a URI prefix
     // the store strips before parsing, so it is stripped here too.
-    const parsed = parseGtsID(bareId(contract.$id));
+    const parsed = parseGtsID(bareGtsId(contract.$id));
     expect(parsed.ok, parsed.error).toBe(true);
     // Two segments: the parent type, then this component's own. Each carries
     // 5 dot-tokens (vendor.package.namespace.type.vMAJOR) - the token count
@@ -295,7 +296,7 @@ const validOverlay: Overlay = {
   component: 'button',
   intent: 'Trigger a single action in the current context.',
   typical_uses: ['A one-off action with an immediate effect'],
-  dont_use_when: [{ rule: 'Navigation between routes or pages', instead: 'gts.frontx.uikit.component.navigation_menu.v1~' }],
+  dont_use_when: [{ rule: 'Navigation between routes or pages', instead: 'gts.frontx.uikit.base.component.v1~frontx.uikit.component.navigation_menu.v1~' }],
   composition: { children: { kinds: ['text'] } },
   invariants: [],
   anti_patterns: [],
@@ -450,7 +451,12 @@ describe('M3: assembled output validated against its own schema before writing',
 
 describe('M4: shared passthrough origin write collision', () => {
   it('allows a first write with no existing file on disk', () => {
-    expect(() => assertNoPassthroughCollision('button', 'base_ui_button', '/tmp/x.json', undefined, { disabled: { type: 'boolean' } })).not.toThrow();
+    expect(() =>
+      assertNoPassthroughCollision('button', 'base_ui_button', '/tmp/x.json', undefined, {
+        properties: { disabled: { type: 'boolean' } },
+        required: [],
+      }),
+    ).not.toThrow();
   });
 
   it('allows the same component to recompile after a real source change', () => {
@@ -461,20 +467,20 @@ describe('M4: shared passthrough origin write collision', () => {
         'button',
         'base_ui_button',
         '/tmp/x.json',
-        { generatedFrom: ['button'], properties: { disabled: { type: 'boolean' } } },
-        { disabled: { type: 'boolean' }, name: { type: 'string' } },
+        { generatedFrom: ['button'], surface: { properties: { disabled: { type: 'boolean' } }, required: [] } },
+        { properties: { disabled: { type: 'boolean' }, name: { type: 'string' } }, required: [] },
       ),
     ).not.toThrow();
   });
 
-  it('allows a shared origin whose fresh properties still agree with what is committed', () => {
+  it('allows a shared origin whose fresh surface still agrees with what is committed', () => {
     expect(() =>
       assertNoPassthroughCollision(
         'icon-button',
         'base_ui_button',
         '/tmp/x.json',
-        { generatedFrom: ['button'], properties: { disabled: { type: 'boolean' } } },
-        { disabled: { type: 'boolean' } },
+        { generatedFrom: ['button'], surface: { properties: { disabled: { type: 'boolean' } }, required: [] } },
+        { properties: { disabled: { type: 'boolean' } }, required: [] },
       ),
     ).not.toThrow();
   });
@@ -485,8 +491,24 @@ describe('M4: shared passthrough origin write collision', () => {
         'icon-button',
         'base_ui_button',
         '/tmp/x.json',
-        { generatedFrom: ['button'], properties: { disabled: { type: 'boolean' } } },
-        { disabled: { type: 'boolean' }, extraOnly: { type: 'string' } },
+        { generatedFrom: ['button'], surface: { properties: { disabled: { type: 'boolean' } }, required: [] } },
+        { properties: { disabled: { type: 'boolean' }, extraOnly: { type: 'string' } }, required: [] },
+      ),
+    ).toThrow(/icon-button.*shared passthrough origin "base_ui_button".*already committed by button/s);
+  });
+
+  it('rejects a shared origin whose properties agree but whose required list does not', () => {
+    // `required` is the other half of what a passthrough type derives from a
+    // component's inherited props: one primitive making a forwarded prop
+    // mandatory where another leaves it optional is a real disagreement
+    // about the shared file, invisible to a properties-only comparison.
+    expect(() =>
+      assertNoPassthroughCollision(
+        'icon-button',
+        'base_ui_button',
+        '/tmp/x.json',
+        { generatedFrom: ['button'], surface: { properties: { disabled: { type: 'boolean' } }, required: [] } },
+        { properties: { disabled: { type: 'boolean' } }, required: ['disabled'] },
       ),
     ).toThrow(/icon-button.*shared passthrough origin "base_ui_button".*already committed by button/s);
   });
@@ -495,6 +517,10 @@ describe('M4: shared passthrough origin write collision', () => {
 describe('button contract instance', () => {
   it('validates against the component metamodel', () => {
     const ajv = new Ajv2020();
+    // The metamodel reaches most of its shape through references to the
+    // vocabulary types, and declares GTS's own reference annotation on the
+    // fields that hold an id.
+    addContractTypes(ajv);
     const validate = ajv.compile(metaSchema);
     expect(validate(instance), ajv.errorsText(validate.errors)).toBe(true);
   });
@@ -516,7 +542,9 @@ describe('button contract instance', () => {
   });
 
   it('points at the props schema it was compiled with', () => {
-    expect(instance.props_schema).toBe(contract.$id);
+    // The bare id: `$id` carries the `gts://` URI form a JSON Schema keyword
+    // needs, an id-valued field carries the id gts-ts can parse.
+    expect(instance.props_schema).toBe(bareGtsId(contract.$id));
   });
 
   it("carries the navigation rule's alternative as an external one, in the instance and in the validator-read block", () => {
@@ -590,6 +618,11 @@ describe('button contract in a GTS store', () => {
   function registeredStore(): GTS {
     const gts = new GTS();
     gts.register(baseSchema);
+    // The vocabulary the base type's trait schema references. A store
+    // missing one of them fails every entity in it with "Unresolvable trait
+    // schema reference" - see "fails when a vocabulary type is not
+    // registered" below, which is that failure asserted deliberately.
+    registerContractTypes((entity) => gts.register(entity));
     gts.register(passthroughSchema);
     gts.register(contract);
     return gts;
@@ -601,7 +634,7 @@ describe('button contract in a GTS store', () => {
     // cannot pass this same call.
     const gts = registeredStore();
     for (const id of [PASSTHROUGH_TYPE_ID, contract.$id]) {
-      const result = gts.validateEntity(bareId(id));
+      const result = gts.validateEntity(bareGtsId(id));
       expect(result.ok, `${id}: ${result.error}`).toBe(true);
       expect(result.entity_type).toBe('schema');
     }
@@ -613,7 +646,7 @@ describe('button contract in a GTS store', () => {
     const gts = new GTS();
     gts.register(passthroughSchema);
     gts.register(contract);
-    const result = gts.validateEntity(bareId(contract.$id));
+    const result = gts.validateEntity(bareGtsId(contract.$id));
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Parent schema not found');
   });
@@ -631,9 +664,50 @@ describe('button contract in a GTS store', () => {
     // x-gts-traits-schema" below proves for the case that matters.
     const gts = new GTS();
     gts.register(baseSchema);
-    const result = gts.validateEntity(bareId(BASE_TYPE_ID));
+    registerContractTypes((entity) => gts.register(entity));
+    const result = gts.validateEntity(bareGtsId(BASE_TYPE_ID));
     expect(result.ok).toBe(false);
     expect(result.error).toContain('required property');
+  });
+
+  it("resolves the instance's props_schema reference against the registry", () => {
+    // The reference gts-ts itself checks: x-gts-ref sits directly on the
+    // metamodel's props_schema property, which is as deep as
+    // XGtsRefValidator's own walk reaches, so this is a real registry
+    // lookup rather than a grammar check - the contract must BE in the
+    // store, not merely be named by a well-formed id.
+    const gts = registeredStore();
+    gts.register(buildMetamodel());
+    gts.register(JSON.parse(JSON.stringify(instance)) as Record<string, unknown>);
+    const result = gts.validateInstance(instance.id);
+    expect(result.ok, result.error).toBe(true);
+  });
+
+  it("fails when the contract the instance's props_schema names is absent from the registry", () => {
+    // Negative control for the check above: without it, a passing
+    // validateInstance would prove only that the id is grammatical.
+    const gts = new GTS();
+    gts.register(baseSchema);
+    registerContractTypes((entity) => gts.register(entity));
+    gts.register(buildMetamodel());
+    gts.register(JSON.parse(JSON.stringify(instance)) as Record<string, unknown>);
+    const result = gts.validateInstance(instance.id);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('not found in registry');
+  });
+
+  it('fails when a vocabulary type the trait schema references is not registered', () => {
+    // Negative control for registeredStore's own registration: the trait
+    // schema names its concepts by reference, so a registry missing one has
+    // not checked a contract against a smaller schema - it has not checked
+    // it at all, and says so.
+    const gts = new GTS();
+    gts.register(baseSchema);
+    gts.register(passthroughSchema);
+    gts.register(contract);
+    const result = gts.validateEntity(bareGtsId(contract.$id));
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('Unresolvable trait schema reference');
   });
 
   it("validates x-gts-traits against base.component.json's x-gts-traits-schema", () => {

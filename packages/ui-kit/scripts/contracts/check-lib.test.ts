@@ -302,6 +302,14 @@ describe('touchesSharedContractTooling', () => {
     expect(touchesSharedContractTooling(['scripts/contracts/generated/passthrough.base_ui_button.json'])).toBe(true);
   });
 
+  // A vocabulary type is referenced by the base type's trait schema and by
+  // the metamodel, so changing one reshapes what every covered component is
+  // validated against - the same standing as the two files that reference
+  // it, which this list already covers.
+  it('is true for a vocabulary type', () => {
+    expect(touchesSharedContractTooling(['scripts/contracts/types/trait.dont_use_when_rule.v1.json'])).toBe(true);
+  });
+
   // freshness.ts imports jsonDiff from check-lib.ts, so this module sits on
   // every covered component's comparison path: a change here can flip every
   // freshness verdict without touching a single component directory. Only

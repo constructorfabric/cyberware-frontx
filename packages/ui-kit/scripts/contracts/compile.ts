@@ -69,7 +69,10 @@ import { parse as parseYaml } from 'yaml';
 
 import { extractComponent, normalizeTypeText, parseStringLiteralUnion, type ComponentExtraction, type ExtractedProp } from './extract';
 import {
+  bareGtsId,
   BASE_TYPE_ID,
+  COMPONENT_REF_TARGET,
+  componentTypeRef,
   componentTypeRefPattern,
   CONTRACT_MAJOR,
   instanceId,
@@ -78,10 +81,11 @@ import {
   METAMODEL_VERSION,
   passthroughTypeId,
   propsSchemaId,
-  propsSchemaIdPattern,
+  traitTypeId,
+  VENDOR_PACKAGE,
 } from './ids';
 
-export { BASE_TYPE_ID, passthroughTypeId, propsSchemaId, instanceId };
+export { BASE_TYPE_ID, passthroughTypeId, propsSchemaId, instanceId, componentTypeRef };
 
 export interface Examples {
   good: { title: string; code: string }[];
@@ -204,6 +208,10 @@ export interface Overlay {
 // the props schema. Field order here is the on-disk order.
 export interface ContractInstance extends Omit<Overlay, 'component'> {
   id: string;
+  // The type this instance is an instance of, in the field name gts-ts looks
+  // for (GtsExtractor's schemaIdFields) - without it GTS.validateInstance
+  // answers "No schema found for instance" instead of validating.
+  gts_type: string;
   metamodel: string;
   component: string;
   props_schema: string;
@@ -336,9 +344,48 @@ const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 // one copy of each.
 const SCHEMA_DIR = dirname(fileURLToPath(import.meta.url));
 const GENERATED_DIR = join(SCHEMA_DIR, 'generated');
+const TYPES_DIR = join(SCHEMA_DIR, 'types');
 
 export function loadBaseSchema(): Record<string, unknown> {
   return JSON.parse(readFileSync(join(SCHEMA_DIR, 'base.component.json'), 'utf8')) as Record<string, unknown>;
+}
+
+// The committed copies of the vocabulary types the base type's trait schema
+// and the metamodel both reference. Read from disk for the same reason
+// loadBaseSchema does: whoever registers them in a GTS store or an Ajv
+// instance must see the shipped file, not a fresh build that might differ
+// from it - the freshness check is what makes those two the same thing.
+export function loadTraitTypes(): Record<string, unknown>[] {
+  return readdirSync(TYPES_DIR)
+    .filter((name) => name.endsWith('.json'))
+    .sort()
+    .map((name) => JSON.parse(readFileSync(join(TYPES_DIR, name), 'utf8')) as Record<string, unknown>);
+}
+
+// A vocabulary type resolves through TWO resolvers with different rules, so
+// both have to be given the types explicitly:
+//   - a GTS store resolves `$ref` by looking the id up among registered
+//     entities (GtsStore.resolveTraitSchemaRefs, and the store's own Ajv for
+//     a ref inside a oneOf branch), failing with "Unresolvable trait schema
+//     reference" when one is missing;
+//   - a plain Ajv instance resolves the same `gts://...` string as an
+//     absolute URI, which it can only do once the target has been added.
+// Both loops used to be spelled out at every call site; these two helpers
+// are what keep a new vocabulary type from having to be remembered in six
+// places.
+export function addContractTypes(ajv: Ajv2020): void {
+  // GTS's own reference annotation. Declared rather than switched off with
+  // `strict: false`, which would also swallow a genuine typo like
+  // `unevaluatedProperites` - exactly the class of mistake these schemas
+  // exist to catch. It asserts nothing here: Ajv checks the grammar through
+  // the `pattern` beside it, and the reference itself is resolved by a GTS
+  // store.
+  if (!ajv.getKeyword('x-gts-ref')) ajv.addKeyword({ keyword: 'x-gts-ref' });
+  for (const type of loadTraitTypes()) ajv.addSchema(type);
+}
+
+export function registerContractTypes(register: (entity: Record<string, unknown>) => void): void {
+  for (const type of loadTraitTypes()) register(JSON.parse(JSON.stringify(type)) as Record<string, unknown>);
 }
 
 // The generated per-origin passthrough type this component's inherited
@@ -513,45 +560,76 @@ export function buildPassthroughSchema(
   };
 }
 
-// The metamodel schema, built from ids.ts rather than typed twice: the
-// committed ui-component.meta.json is a generated copy of this object's
-// JSON.stringify output, and a test asserts the two never drift (see
-// button.contract.test.ts). Building it here, not reading it from disk,
-// is what makes buildOverlaySchema below able to derive the overlay's
-// vocabulary from the metamodel's authored fields instead of keeping a
-// second, hand-maintained list.
-export function buildMetamodel(): Record<string, unknown> {
+// How a reference to another kit component is spelled, everywhere one
+// appears: a `don't` alternative, a composition kind, a family member, the
+// instance's own props_schema.
+//
+// THREE keywords, and all three are load-bearing:
+//   - `x-gts-ref` is the reference itself - it names what the value must
+//     resolve to in a type registry (any type derived from the abstract
+//     base component type), which is what makes this a reference rather
+//     than a string that happens to look like an id;
+//   - `type` and `pattern` stay beside it because gts-ts STRIPS x-gts-ref
+//     before any validator sees the schema (GtsStore.normalizeSchema), and
+//     then deletes any oneOf/anyOf branch that was left with nothing else
+//     in it. A branch written as x-gts-ref alone therefore disappears, and
+//     `instead` would silently stop accepting component ids at all. With
+//     the pattern kept, a malformed id still fails by name.
+// Enforcement of the reference itself (does this id resolve?) happens where
+// gts-ts actually runs its ref validator: on the INSTANCE path, for a
+// property carrying x-gts-ref directly - see the instance's props_schema
+// below. A reference nested inside a referenced vocabulary type is not
+// reached by that walker, so those stay resolved by the conformance suite.
+function componentRefSchema(): Record<string, unknown> {
   return {
-    $id: `gts://${METAMODEL_TYPE_ID}~`,
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    title: 'UiKit component contract metamodel',
+    type: 'string',
+    pattern: componentTypeRefPattern(),
+    'x-gts-ref': COMPONENT_REF_TARGET,
     description:
-      'Shape of a component contract INSTANCE. The contract is itself a GTS-typed value: every <component>.contract.instance.json validates against this type, so the metamodel is enforced by the same validator that enforces component props instead of by prose. The props schema the instance points at (props_schema) is a separate GTS type and is not described here.',
-    type: 'object',
-    $defs: {
-      component_type_ref: {
-        type: 'string',
-        pattern: componentTypeRefPattern(),
-        description:
-          'GTS type id of another kit component. Demo stand-in for x-gts-ref: production writes "x-gts-ref": "gts.frontx.uikit.component.*~" here, which resolves the target in the type registry and fails when no such type is registered. The pattern alone only checks grammar, so a grammatical id for a component that does not exist still needs the registry (in the demo: the directory-existence test).',
-        $comment: 'GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu).',
-      },
-      prop_name: {
-        type: 'string',
-        pattern: '^[a-zA-Z_][a-zA-Z0-9_]*$',
-        description: 'Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test.',
-      },
-      invariant_id: {
-        type: 'string',
-        pattern: '^[a-z0-9]+(-[a-z0-9]+)*$',
-        description: 'Stable kebab-case handle. Lint findings and evals cite it; never reused after removal.',
-      },
-      coverage_verdict: {
-        type: 'string',
-        enum: ['verified', 'checked-no', 'not-described'],
-        description: '"checked-no" (looked at, does not hold) and "not-described" (nobody looked) are different answers and may not collapse into one.',
-      },
-      external_alternative: {
+      "GTS id of another kit component: the props schema derived from the abstract base component type. `x-gts-ref` declares what it must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating.",
+    $comment: 'GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu).',
+  };
+}
+
+function propNameSchema(): Record<string, unknown> {
+  return {
+    type: 'string',
+    pattern: '^[a-zA-Z_][a-zA-Z0-9_]*$',
+    description: 'Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test.',
+  };
+}
+
+function traitType(token: string, title: string, description: string, body: Record<string, unknown>): Record<string, unknown> {
+  return {
+    $id: traitTypeId(token),
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    title,
+    description,
+    ...body,
+  };
+}
+
+// The overlay vocabulary as GTS types, one concept per type, referenced by
+// both the metamodel (what an instance must look like) and the base type's
+// trait schema (what a validator checks x-gts-traits against) instead of
+// being written out twice or copied through an inliner. Six of them are a
+// field of the validator-read overlay block; six are the value objects
+// those six embed - `composition` says what may nest inside a component and
+// what it may be mounted under, and each of those two is a fact with its
+// own shape, not an anonymous object inside a bigger schema.
+//
+// Referenced, not inlined: gts-ts resolves a `$ref` in a trait schema by
+// looking the id up among registered entities, so a type that is not
+// registered fails loudly ("Unresolvable trait schema reference") instead
+// of a component's `composition` quietly validating against nothing.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-vocabulary
+export function buildTraitTypes(): Record<string, unknown>[] {
+  return [
+    traitType(
+      'external_alternative',
+      'UiKit external alternative',
+      'The alternative to a "don\'t" when it is outside this kit. Without this form the only way to satisfy a required component ref is to name the nearest kit component as a stand-in, which reads to a resolver as a real recommendation and to an agent as an instruction to reach for a component the rule was written to steer it away from.',
+      {
         type: 'object',
         properties: {
           external: {
@@ -567,8 +645,197 @@ export function buildMetamodel(): Record<string, unknown> {
         },
         required: ['external'],
         additionalProperties: false,
-        description:
-          'The alternative to a "don\'t" when it is outside this kit. Without this form the only way to satisfy a required component ref is to name the nearest kit component as a stand-in, which reads to a resolver as a real recommendation and to an agent as an instruction to reach for a component the rule was written to steer it away from.',
+      },
+    ),
+    traitType(
+      'dont_use_when_rule',
+      'UiKit dont-use-when rule',
+      'One use this component is the wrong answer for, with the alternative that IS the answer. Two shapes for `instead`, one of which must match: a kit component by reference, or the external form for a case the kit ships nothing for. Not a plain string union with the reference: an unmatched string would then read as an alternative nothing can resolve, which is the failure the typed reference exists to prevent.',
+      {
+        type: 'object',
+        properties: {
+          rule: { type: 'string', minLength: 1 },
+          // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-alternative
+          instead: { oneOf: [componentRefSchema(), { $ref: traitTypeId('external_alternative') }] },
+          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-alternative
+        },
+        required: ['rule', 'instead'],
+        additionalProperties: false,
+      },
+    ),
+    traitType(
+      'child_composition',
+      'UiKit child composition',
+      'What may appear inside this component. A component reference when the child IS a kit component - typed so a reader can resolve it and the conformance suite can check it exists - or the literal "text" for plain textual content, or "none" for a component that takes no children at all (DataTable renders its Table internally: "text" would claim a slot that does not exist, "none" says so honestly). Not an open string: a typo\'d reference would otherwise silently read as a content kind.',
+      {
+        type: 'object',
+        properties: {
+          kinds: {
+            type: 'array',
+            items: { oneOf: [componentRefSchema(), { const: 'text' }, { const: 'none' }] },
+            minItems: 1,
+          },
+          icons_via: propNameSchema(),
+        },
+        required: ['kinds'],
+        additionalProperties: false,
+      },
+    ),
+    traitType(
+      'parent_composition',
+      'UiKit parent composition',
+      "Where this component may be mounted. Only a compound component's part states one: the root or item kind(s) it is only ever used under. Nothing about Button constrains where it may appear, so most components have no parent at all.",
+      {
+        type: 'object',
+        properties: {
+          kinds: { type: 'array', items: componentRefSchema(), minItems: 1 },
+        },
+        required: ['kinds'],
+        additionalProperties: false,
+      },
+    ),
+    traitType(
+      'composition',
+      'UiKit composition',
+      'How this component nests: what may go inside it, and - for a part of a compound component - what it may be mounted under. The two are separate facts and separate types; only the first is required, because every component has an answer for what it contains and most have none for where they belong.',
+      {
+        type: 'object',
+        properties: {
+          children: { $ref: traitTypeId('child_composition') },
+          parent: { $ref: traitTypeId('parent_composition') },
+        },
+        required: ['children'],
+        additionalProperties: false,
+      },
+    ),
+    traitType(
+      'prop_deprecation',
+      'UiKit prop deprecation',
+      'One deprecated prop: when it was deprecated, the prop that replaces it, and what a caller has to do differently. All three are required - a deprecation without a replacement leaves the caller with no next move, which is the same failure a "don\'t" without an alternative has.',
+      {
+        type: 'object',
+        properties: {
+          since: { type: 'string', minLength: 1 },
+          replacement: propNameSchema(),
+          hint: { type: 'string', minLength: 1 },
+        },
+        required: ['since', 'replacement', 'hint'],
+        additionalProperties: false,
+      },
+    ),
+    traitType('deprecations', 'UiKit deprecations', "Everything about this component that is on its way out, keyed by the prop's own name.", {
+      type: 'object',
+      properties: {
+        props: { type: 'object', additionalProperties: { $ref: traitTypeId('prop_deprecation') } },
+      },
+      additionalProperties: false,
+    }),
+    traitType(
+      'coverage_verdict',
+      'UiKit coverage verdict',
+      'The answer to one coverage claim. "checked-no" (looked at, does not hold) and "not-described" (nobody looked) are different answers and may not collapse into one.',
+      { type: 'string', enum: ['verified', 'checked-no', 'not-described'] },
+    ),
+    traitType(
+      'coverage_assumption',
+      'UiKit coverage assumption',
+      'A fact the code cannot make true - a generic type parameter, a part composed of two primitives - rather than a verified/checked-no/not-described claim.',
+      {
+        type: 'object',
+        properties: {
+          claim: { type: 'string', minLength: 1 },
+          reason: { type: 'string', minLength: 1 },
+        },
+        required: ['claim', 'reason'],
+        additionalProperties: false,
+      },
+    ),
+    traitType(
+      'coverage',
+      'UiKit coverage',
+      "What this contract claims about itself: a verdict per claim, plus the claims nothing could verify. Open by construction - the claim names are the kit's own and grow with it - which is why the verdict type is referenced from additionalProperties rather than from a fixed property list.",
+      {
+        type: 'object',
+        properties: {
+          assumptions: { type: 'array', items: { $ref: traitTypeId('coverage_assumption') } },
+        },
+        additionalProperties: { $ref: traitTypeId('coverage_verdict') },
+      },
+    ),
+    traitType(
+      'family',
+      'UiKit family',
+      "Membership in a compound component's family (Accordion, its Item, Trigger and Content), when this component is one. Deliberately NOT expressed as a schema-level derivation (a part's props schema does not chain from the root's - an item does not inherit the root's props, and a closed base would reject them as undeclared if it did): the relationship lives here, in the instance, and the conformance test checks that every reference resolves to a real compiled contract.",
+      {
+        type: 'object',
+        properties: {
+          root: componentRefSchema(),
+          role: { type: 'string', enum: ['root', 'part'] },
+          // Root-only: a part points at the root via `root` above and does
+          // not restate its siblings.
+          parts: { type: 'array', items: componentRefSchema(), minItems: 1 },
+        },
+        required: ['root', 'role'],
+        additionalProperties: false,
+        if: { properties: { role: { const: 'root' } }, required: ['role'] },
+        then: { required: ['root', 'role', 'parts'] },
+      },
+    ),
+    traitType(
+      'extension_point',
+      'UiKit extension point',
+      "One growth point a consumer extends this component through, declared at the component level instead of enumerating every plugin-shaped prop individually (DataTable's `columns` accepts arbitrary third-party ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed).",
+      {
+        type: 'object',
+        properties: {
+          name: { type: 'string', minLength: 1 },
+          kind: { type: 'string', enum: ['prop', 'helper', 'feature'] },
+          description: { type: 'string', minLength: 1 },
+          // Free text, not a reference: the governing type usually lives in
+          // a third-party package this contract has no business re-typing.
+          typed_by: { type: 'string', minLength: 1 },
+        },
+        required: ['name', 'kind', 'description', 'typed_by'],
+        additionalProperties: false,
+      },
+    ),
+  ];
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-vocabulary
+
+// The file name a vocabulary type is committed under: its own id token, so
+// the directory listing reads as the type list.
+export function traitTypeFileName(type: Record<string, unknown>): string {
+  const bare = bareGtsId(String(type.$id));
+  return `${bare.replace(`gts.${VENDOR_PACKAGE}.`, '').replace(/~$/, '')}.json`;
+}
+
+// The metamodel schema, built from ids.ts rather than typed twice: the
+// committed ui-component.meta.json is a generated copy of this object's
+// JSON.stringify output, and the freshness check asserts the two never
+// drift. Building it here, not reading it from disk, is what makes
+// buildOverlaySchema below able to derive the overlay's vocabulary from the
+// metamodel's authored fields instead of keeping a second, hand-maintained
+// list.
+export function buildMetamodel(): Record<string, unknown> {
+  return {
+    $id: `gts://${METAMODEL_TYPE_ID}~`,
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    title: 'UiKit component contract metamodel',
+    description:
+      'Shape of a component contract INSTANCE. The contract is itself a GTS-typed value: every <component>.contract.instance.json validates against this type, so the metamodel is enforced by the same validator that enforces component props instead of by prose. The props schema the instance points at (props_schema) is a separate GTS type and is not described here.',
+    type: 'object',
+    // One local definition left: a string grammar, used by a field no
+    // validator reads. Everything the validator-read half of the overlay is
+    // made of is a referenced type (buildTraitTypes above) rather than a
+    // definition local to this document, so the metamodel and the base
+    // type's trait schema reach the same shape through the same id instead
+    // of each carrying a copy of it.
+    $defs: {
+      invariant_id: {
+        type: 'string',
+        pattern: '^[a-z0-9]+(-[a-z0-9]+)*$',
+        description: 'Stable kebab-case handle. Lint findings and evals cite it; never reused after removal.',
       },
     },
     properties: {
@@ -577,6 +844,19 @@ export function buildMetamodel(): Record<string, unknown> {
         pattern: instanceIdPattern(),
         description:
           "GTS instance id: this metamodel's type id, then the instance segment. The instance segment carries exactly 5 dot-tokens (frontx.uikit.component.<name>.v<n>).",
+      },
+      // How gts-ts finds the type an instance is an instance OF: it reads a
+      // schema-id field off the entity itself (GtsExtractor's schemaIdFields
+      // list), and without one GTS.validateInstance answers "No schema found
+      // for instance" instead of validating. `$schema` is not usable here -
+      // a document carrying one that starts with `gts` is treated as a
+      // SCHEMA, not an instance - so this is the snake_case member of that
+      // list. `x-gts-ref` is the pointer form: it resolves against this
+      // metamodel's own $id, so an instance claiming a different type fails.
+      gts_type: {
+        type: 'string',
+        'x-gts-ref': '/$id',
+        description: "GTS type id of this metamodel - what makes the contract instance a typed value rather than a bare JSON document.",
       },
       metamodel: {
         const: METAMODEL_VERSION,
@@ -603,73 +883,12 @@ export function buildMetamodel(): Record<string, unknown> {
       },
       dont_use_when: {
         type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            rule: { type: 'string', minLength: 1 },
-            // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-alternative
-            // Two shapes, one of which must match: a kit component by type
-            // id, or the external form for a case the kit ships nothing
-            // for. Not a plain string union with the ref: an unmatched
-            // string would then read as an alternative nothing can resolve,
-            // which is the failure the typed ref exists to prevent.
-            instead: { oneOf: [{ $ref: '#/$defs/component_type_ref' }, { $ref: '#/$defs/external_alternative' }] },
-            // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-alternative
-          },
-          required: ['rule', 'instead'],
-          additionalProperties: false,
-        },
+        items: { $ref: traitTypeId('dont_use_when_rule') },
         minItems: 1,
         description:
-          'A "don\'t" without an alternative leaves the agent with no next move, so `instead` is required, and it is either a kit component\'s type id (not a display name - a name resolves to nothing) or the external form for a case the kit ships no component for. At least one entry is required for the same reason: a component with nothing it should not be used for would be a modeling gap, not a fact worth leaving unstated.',
+          'A "don\'t" without an alternative leaves the agent with no next move, so `instead` is required, and it is either a reference to a kit component (not a display name - a name resolves to nothing) or the external form for a case the kit ships no component for. At least one entry is required for the same reason: a component with nothing it should not be used for would be a modeling gap, not a fact worth leaving unstated.',
       },
-      composition: {
-        type: 'object',
-        properties: {
-          children: {
-            type: 'object',
-            properties: {
-              kinds: {
-                type: 'array',
-                // A component type ref (see component_type_ref) when the
-                // child IS a kit component - typed the same way
-                // dont_use_when.instead is, so a reader can resolve it and
-                // the conformance test can check it exists - or the literal
-                // "text" for a plain textual content kind (Button's own
-                // overlay), or "none" for a component with no children prop
-                // at all (T6: DataTable renders Table internally and takes
-                // no children - "text" would claim a slot that does not
-                // exist; "none" says so honestly instead). Not an open
-                // string: a typo'd ref would otherwise silently read as a
-                // content kind.
-                items: { oneOf: [{ $ref: '#/$defs/component_type_ref' }, { const: 'text' }, { const: 'none' }] },
-                minItems: 1,
-              },
-              icons_via: { $ref: '#/$defs/prop_name' },
-            },
-            required: ['kinds'],
-            additionalProperties: false,
-          },
-          // Only a compound component's part sets this: the root/item
-          // kind(s) it is only ever mounted under. Optional and absent from
-          // every other component's overlay - nothing about Button
-          // constrains where it may appear.
-          parent: {
-            type: 'object',
-            properties: {
-              kinds: {
-                type: 'array',
-                items: { $ref: '#/$defs/component_type_ref' },
-                minItems: 1,
-              },
-            },
-            required: ['kinds'],
-            additionalProperties: false,
-          },
-        },
-        required: ['children'],
-        additionalProperties: false,
-      },
+      composition: { $ref: traitTypeId('composition') },
       invariants: {
         type: 'array',
         items: {
@@ -695,47 +914,8 @@ export function buildMetamodel(): Record<string, unknown> {
         },
         $comment: "`instead` here is prose about this component's own API, not a component type ref - the fix stays inside the component.",
       },
-      deprecations: {
-        type: 'object',
-        properties: {
-          props: {
-            type: 'object',
-            additionalProperties: {
-              type: 'object',
-              properties: {
-                since: { type: 'string', minLength: 1 },
-                replacement: { $ref: '#/$defs/prop_name' },
-                hint: { type: 'string', minLength: 1 },
-              },
-              required: ['since', 'replacement', 'hint'],
-              additionalProperties: false,
-            },
-          },
-        },
-        additionalProperties: false,
-      },
-      coverage: {
-        type: 'object',
-        properties: {
-          // Reserved key: a fact the code cannot make true (a generic type
-          // parameter, a part composed of two Base UI primitives) rather
-          // than a verified/checked-no/not-described claim - see the
-          // CoverageAssumption type this validates against in compile.ts.
-          assumptions: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                claim: { type: 'string', minLength: 1 },
-                reason: { type: 'string', minLength: 1 },
-              },
-              required: ['claim', 'reason'],
-              additionalProperties: false,
-            },
-          },
-        },
-        additionalProperties: { $ref: '#/$defs/coverage_verdict' },
-      },
+      deprecations: { $ref: traitTypeId('deprecations') },
+      coverage: { $ref: traitTypeId('coverage') },
       examples: {
         type: 'object',
         properties: {
@@ -771,56 +951,41 @@ export function buildMetamodel(): Record<string, unknown> {
         required: ['good', 'bad'],
         additionalProperties: false,
       },
+      // `$ref` first, siblings after: the trait-schema copy of this property
+      // wraps it nullable (nullableTraitProperty below), and gts-ts merges a
+      // resolved reference in at the position of the `$ref` key - a `type`
+      // written before it would be overwritten by the referenced type's own.
       family: {
-        type: 'object',
-        description:
-          "Membership in a compound component's family (Accordion, its Item, Trigger and Content), when this component is one. Deliberately NOT expressed as a schema-level derivation (a part's props schema does not chain from the root's - an item does not inherit the root's props, and a closed base would reject them as undeclared if it did): the relationship lives here, in the instance, and the conformance test checks that every ref resolves to a real compiled contract. Absent entirely for a component with no family - Button, most of the kit.",
-        properties: {
-          root: { $ref: '#/$defs/component_type_ref' },
-          role: { type: 'string', enum: ['root', 'part'] },
-          // Root-only: a part points at the root via `root` above and does
-          // not restate its siblings.
-          parts: {
-            type: 'array',
-            items: { $ref: '#/$defs/component_type_ref' },
-            minItems: 1,
-          },
-        },
-        required: ['root', 'role'],
-        additionalProperties: false,
-        if: { properties: { role: { const: 'root' } }, required: ['role'] },
-        then: { required: ['root', 'role', 'parts'] },
+        $ref: traitTypeId('family'),
+        description: 'Absent entirely for a component with no family - Button, most of the kit.',
       },
       extension_points: {
         type: 'array',
         description:
-          "Growth points a consumer extends this component through, declared once at the component level instead of enumerating every plugin-shaped prop individually (T6: DataTable's `columns` accepts arbitrary `@tanstack/react-table` ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed). Absent entirely for a component with no such surface - Button, Accordion, most of the kit.",
-        items: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', minLength: 1 },
-            kind: { type: 'string', enum: ['prop', 'helper', 'feature'] },
-            description: { type: 'string', minLength: 1 },
-            // Free text, not a GTS ref: the governing type usually lives in a
-            // third-party package this contract has no business re-typing
-            // (e.g. "@tanstack/react-table ColumnDef").
-            typed_by: { type: 'string', minLength: 1 },
-          },
-          required: ['name', 'kind', 'description', 'typed_by'],
-          additionalProperties: false,
-        },
+          "Growth points a consumer extends this component through, declared once at the component level instead of enumerating every plugin-shaped prop individually (DataTable's `columns` accepts arbitrary third-party ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed). Absent entirely for a component with no such surface - Button, Accordion, most of the kit.",
+        items: { $ref: traitTypeId('extension_point') },
         minItems: 1,
       },
+      // The one reference gts-ts itself resolves against the registry: it
+      // sits directly on an instance property, which is as deep as
+      // XGtsRefValidator's own walk goes, so GTS.validateInstance fails an
+      // instance whose props schema is not a registered type (see the
+      // component contract suites). A reference nested inside a referenced
+      // vocabulary type - a `don't` alternative, a composition kind - is not
+      // reached by that walk and is resolved by the conformance suite
+      // instead.
       props_schema: {
         type: 'string',
-        pattern: propsSchemaIdPattern(),
+        pattern: componentTypeRefPattern(),
+        'x-gts-ref': COMPONENT_REF_TARGET,
         description:
-          'URI of the machine-owned half: the compiled JSON Schema carrying axes, defaults and normative props. Split so the semantic half stays readable and the props half stays a plain provider-safe schema. A derived-type id: the abstract base component type, then the component\'s own segment, so the pattern also asserts that the props schema really is a child of the base and not a lookalike.',
+          "GTS id of the machine-owned half: the compiled JSON Schema carrying axes, defaults and normative props. Split so the semantic half stays readable and the props half stays a plain provider-safe schema. A derived-type id: the abstract base component type, then the component's own segment, so the reference also asserts that the props schema really is a child of the base and not a lookalike.",
         $comment: "Two segments of 5 dot-tokens each after the fixed `gts.` scheme prefix - the shape gts-ts's Gts.parseSegment accepts (vendor.package.namespace.type.vMAJOR).",
       },
     },
     required: [
       'id',
+      'gts_type',
       'metamodel',
       'component',
       'intent',
@@ -838,37 +1003,6 @@ export function buildMetamodel(): Record<string, unknown> {
   };
 }
 
-// Replaces every local `{ $ref: '#/$defs/X' }` in a metamodel field
-// definition with the $defs entry it points to, recursively. Needed because
-// gts-ts's own trait-schema ref resolver (GtsStore.resolveTraitSchemaRefs,
-// called from validateSchemaTraits before a trait schema is compiled) reads
-// ANY `$ref`/`$$ref` key as a GTS ENTITY id to look up in the store - it has
-// no concept of a local JSON-Schema pointer into the same object's own
-// $defs, and fails a trait schema carrying one with "Unresolvable trait
-// schema reference" rather than a validation error a reviewer would
-// recognize as a $defs problem. buildMetamodel()'s field definitions (and
-// the committed ui-component.meta.json, and every overlay-authoring schema
-// buildOverlaySchema derives from them) keep using $ref/$defs as normal -
-// they go through Ajv, which resolves those the standard way - this
-// inlining exists only for the copy buildGtsTraitsSchema below feeds to
-// gts-ts.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-inline
-function inlineLocalRefs(node: unknown, defs: Record<string, unknown>): unknown {
-  if (Array.isArray(node)) return node.map((item) => inlineLocalRefs(item, defs));
-  if (node !== null && typeof node === 'object') {
-    const obj = node as Record<string, unknown>;
-    if (typeof obj.$ref === 'string' && obj.$ref.startsWith('#/$defs/')) {
-      const defName = obj.$ref.slice('#/$defs/'.length);
-      return inlineLocalRefs(defs[defName], defs);
-    }
-    const out: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(obj)) out[key] = inlineLocalRefs(value, defs);
-    return out;
-  }
-  return node;
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-inline
-}
-
 // `family` and `extension_points` are optional in the overlay - most
 // components set neither. A trait property still has to resolve when
 // nothing in the chain provides it: GtsStore.validateSchemaTraits demands
@@ -884,34 +1018,42 @@ function inlineLocalRefs(node: unknown, defs: Record<string, unknown>): unknown 
 // them only to data of the matching type) and are vacuously satisfied by a
 // `null` instance, so `family`'s `if`/`then` and `extension_points`'
 // `minItems: 1` still apply exactly as authored to real object/array data.
+//
+// A property that is nothing but a reference (`family`) has no `type` of its
+// own to widen, and it must not gain one BEFORE the reference: gts-ts merges
+// a resolved reference in at the position of the `$ref` key, so a `type`
+// written first is overwritten by the referenced type's own `object` and the
+// null alternative silently disappears. Spreading the source first and
+// assigning `type`/`default` after is what keeps `$ref` in front of them.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-nullable
 function nullableTraitProperty(schema: Record<string, unknown>): Record<string, unknown> {
   const type = schema.type;
-  const nullableType = Array.isArray(type) ? [...type, 'null'] : [type, 'null'];
-  return { ...schema, type: nullableType, default: null };
+  const widened = Array.isArray(type) ? [...type, 'null'] : type === undefined ? ['object', 'null'] : [type, 'null'];
+  return { ...schema, type: widened, default: null };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-nullable
 }
 
 // The trait half of the metamodel: the SAME field definitions buildMetamodel
 // authors for `dont_use_when`/`composition`/`deprecations`/`coverage`/
 // `family`/`extension_points` (fieldsTargeting('x-gts-traits'), the single
-// switch SEMANTIC_FIELD_TARGETS controls), copied rather than re-typed by
+// switch SEMANTIC_FIELD_TARGETS controls), taken rather than re-typed by
 // hand so the trait schema and the overlay-authoring schema can never
-// silently disagree about what one of these fields looks like. Two
-// mechanical adjustments on top of that copy, both forced by gts-ts's own
-// trait machinery rather than a choice made here: local $defs refs are
-// inlined (inlineLocalRefs) because gts-ts's ref resolver cannot follow
-// them, and the two fields the overlay does not require are wrapped nullable
+// silently disagree about what one of these fields looks like. Since each of
+// those definitions is now a reference to a vocabulary type (buildTraitTypes
+// above), taking it is a copy of the reference, not of the shape - the two
+// schemas resolve the same type through the same id. One mechanical
+// adjustment on top, forced by gts-ts's trait machinery rather than chosen
+// here: the two fields the overlay does not require are wrapped nullable
 // (nullableTraitProperty) so a component that has nothing to say there still
 // resolves. base.component.json's x-gts-traits-schema is a generated copy of
-// this function's output - see button.contract.test.ts's freshness
-// assertion, the same pattern ui-component.meta.json uses for buildMetamodel.
+// this function's output, checked against a fresh build by the freshness
+// comparison, the same way ui-component.meta.json and the vocabulary types
+// themselves are.
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2
 // @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-trait-schema:p1
 export function buildGtsTraitsSchema(): Record<string, unknown> {
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-fields
   const metamodel = buildMetamodel();
-  const defs = metamodel.$defs as Record<string, unknown>;
   const metamodelProperties = metamodel.properties as Record<string, Record<string, unknown>>;
   const metamodelRequired = new Set(metamodel.required as string[]);
   const traitFields = fieldsTargeting('x-gts-traits');
@@ -922,15 +1064,15 @@ export function buildGtsTraitsSchema(): Record<string, unknown> {
   const required: string[] = [];
   for (const field of traitFields) {
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-fields
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-inline
-    const inlined = inlineLocalRefs(metamodelProperties[field], defs) as Record<string, unknown>;
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-inline
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-ref
+    const definition = metamodelProperties[field];
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-ref
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-nullable
     if (metamodelRequired.has(field)) {
-      properties[field] = inlined;
+      properties[field] = definition;
       required.push(field);
     } else {
-      properties[field] = nullableTraitProperty(inlined);
+      properties[field] = nullableTraitProperty(definition);
     }
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-nullable
   }
@@ -939,7 +1081,7 @@ export function buildGtsTraitsSchema(): Record<string, unknown> {
   return {
     type: 'object',
     description:
-      "Validator-read half of the overlay: what GTS.validateEntity checks a component contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from base.component down to the component's own contract). Everything here is a fact a validator or lint actually reads - dont_use_when's typed alternative, composition, deprecations, coverage (including its assumptions), family and extension_points; a purely documentary field (intent, typical_uses, invariants, anti_patterns, examples) lives in x-uikit instead, which no validator reads. additionalProperties: false so an unknown trait key fails GTS.validateEntity by name instead of vanishing silently - the exact gap the demo review flagged against the OLD, undifferentiated x-uikit block.",
+      "Validator-read half of the overlay: what GTS.validateEntity checks a component contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from base.component down to the component's own contract). Everything here is a fact a validator or lint actually reads - dont_use_when's typed alternative, composition, deprecations, coverage (including its assumptions), family and extension_points; a purely documentary field (intent, typical_uses, invariants, anti_patterns, examples) lives in x-uikit instead, which no validator reads. Each field is a REFERENCE to the vocabulary type that owns its shape (gts.frontx.uikit.trait.*), so this schema states which concepts a contract carries and each concept is defined once, in one place, for both this schema and the metamodel. additionalProperties: false so an unknown trait key fails GTS.validateEntity by name instead of vanishing silently.",
     properties,
     // Only the fields the overlay itself always requires (buildMetamodel's
     // own `required` list) are required here too - `family`/`extension_points`
@@ -964,7 +1106,7 @@ export function buildBaseSchema(): Record<string, unknown> {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: 'UiKit base component',
     description:
-      "Abstract base type every kit component's props schema derives from. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which belongs to the per-origin passthrough type, because a base shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, the validator-read half of the overlay vocabulary (see buildGtsTraitsSchema) that GTS.validateEntity checks a component's own x-gts-traits against.",
+      "Abstract base type every kit component's props schema derives from. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which belongs to the per-origin passthrough type, because a base shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, the validator-read half of the overlay vocabulary that GTS.validateEntity checks a component's own x-gts-traits against. That vocabulary is six references to the types that own each concept (gts.frontx.uikit.trait.*), not six inline definitions - see the domain model in the package DESIGN for how they relate.",
     type: 'object',
     $comment:
       "No additionalProperties/unevaluatedProperties here on purpose. gts-ts's validateSchemaAgainstParent rejects a derived schema that adds properties when the base sets additionalProperties: false, and closing the base would mean every component had to restate it. Closure is the DERIVED type's job (unevaluatedProperties: false), where the full property set is finally known.",
@@ -981,7 +1123,7 @@ export function buildBaseSchema(): Record<string, unknown> {
 // instead of the field silently not making it into the compiled artifact.
 export function buildOverlaySchema(): Record<string, unknown> {
   const metamodel = buildMetamodel();
-  const machineOwned = ['id', 'metamodel', 'props_schema'];
+  const machineOwned = ['id', 'gts_type', 'metamodel', 'props_schema'];
   const properties = { ...(metamodel.properties as Record<string, unknown>) };
   for (const key of machineOwned) delete properties[key];
   const required = (metamodel.required as string[]).filter((key) => !machineOwned.includes(key));
@@ -990,7 +1132,7 @@ export function buildOverlaySchema(): Record<string, unknown> {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: 'UiKit component contract overlay',
     description:
-      "Shape of the hand-written overlay a contract compiles from - the metamodel's authored fields only. `id`, `metamodel` and `props_schema` are the compiler's own; an overlay may not write them.",
+      "Shape of the hand-written overlay a contract compiles from - the metamodel's authored fields only. `id`, `gts_type`, `metamodel` and `props_schema` are the compiler's own; an overlay may not write them.",
     type: 'object',
     $defs: metamodel.$defs,
     properties,
@@ -1002,6 +1144,9 @@ export function buildOverlaySchema(): Record<string, unknown> {
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-unknown-field
 function compileOverlayValidator(): ValidateFunction<Overlay> {
   const ajv = new Ajv2020({ allErrors: true });
+  // The overlay schema reaches most of its shape through references to the
+  // vocabulary types, which Ajv can only follow once they are added.
+  addContractTypes(ajv);
   return ajv.compile<Overlay>(buildOverlaySchema());
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-unknown-field
 }
@@ -1042,6 +1187,7 @@ function formatSchemaErrors(component: string, what: string, errors: ErrorObject
 // schema (and every real consumer of the committed JSON) expects.
 export function assertValidatesAgainst(component: string, what: string, schema: Record<string, unknown>, value: unknown): void {
   const ajv = new Ajv2020({ allErrors: true });
+  addContractTypes(ajv);
   const validate = ajv.compile(schema);
   const roundTripped = JSON.parse(JSON.stringify(value)) as unknown;
   if (!validate(roundTripped)) {
@@ -1125,6 +1271,7 @@ export function compileInstance(directory: string, exportStem: string = director
   const overlay = loadOverlay(directory, exportStem);
   const instance: ContractInstance = {
     id: instanceId(exportStem, CONTRACT_MAJOR),
+    gts_type: `${METAMODEL_TYPE_ID}~`,
     metamodel: METAMODEL_VERSION,
     component: exportStem,
     intent: overlay.intent,
@@ -1138,7 +1285,10 @@ export function compileInstance(directory: string, exportStem: string = director
     examples: overlay.examples,
     family: overlay.family,
     extension_points: overlay.extension_points,
-    props_schema: propsSchemaId(exportStem, CONTRACT_MAJOR),
+    // The bare id, not the `gts://` URI form the contract's own $id carries:
+    // an id-VALUED field holds an id, and gts-ts's reference validator
+    // rejects the URI form outright (Gts.isValidGtsID).
+    props_schema: componentTypeRef(exportStem, CONTRACT_MAJOR),
   };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-instance:p2:inst-mi-assemble
   // M3: validated against the metamodel here, not only inside whichever
@@ -1515,8 +1665,8 @@ function compileOne(directory: string, exportStem: string): void {
       exportStem,
       extraction.passthroughOrigin,
       passthroughOut,
-      existing && { generatedFrom: existingGeneratedFrom, properties: existing.properties },
-      passthroughSchema.properties,
+      existing && { generatedFrom: existingGeneratedFrom, surface: { properties: existing.properties, required: existing.required } },
+      { properties: passthroughSchema.properties, required: passthroughSchema.required },
     );
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision
     mkdirSync(GENERATED_DIR, { recursive: true });
@@ -1530,24 +1680,44 @@ function compileOne(directory: string, exportStem: string): void {
 // resolve the SAME origin key (Omit's own excluded-keys argument is not
 // part of the key - see extract.ts's resolvePassthroughOrigin) while
 // genuinely inheriting DIFFERENT prop sets from it. Whichever compiled last
-// used to win silently; this compares the incoming properties against
-// whatever is already committed, and a real mismatch - as opposed to this
-// same component simply recompiling after a source change - fails the
-// build naming every component on record for this file instead of
-// overwriting them. Pure (no I/O) so it is unit-testable without touching
-// the real generated/ directory - compileOne above is the only real caller.
+// used to win silently; this compares the incoming surface against whatever
+// is already committed, and a real mismatch - as opposed to this same
+// component simply recompiling after a source change - fails the build
+// naming every component on record for this file instead of overwriting
+// them. Pure (no I/O) so it is unit-testable without touching the real
+// generated/ directory - compileOne above is the only real caller.
+//
+// The compared surface is everything buildPassthroughSchema derives from the
+// component's inherited props: `properties` AND `required`. Everything else
+// in the file is fixed by the origin (title, description, patternProperties,
+// $id) or is the ownership list itself. Comparing properties alone would let
+// two components disagree about which forwarded props are MANDATORY - one
+// primitive turning `value` required where the other has it optional - and
+// the later compile would overwrite the earlier component's answer in
+// silence, which is the exact failure this refusal exists to prevent.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision
+export interface PassthroughOwnedSurface {
+  properties: unknown;
+  required: unknown;
+}
+
+function sameOwnedSurface(committed: PassthroughOwnedSurface, fresh: PassthroughOwnedSurface): boolean {
+  const normalize = (surface: PassthroughOwnedSurface): string =>
+    JSON.stringify({ properties: surface.properties ?? {}, required: surface.required ?? [] });
+  return normalize(committed) === normalize(fresh);
+}
+
 export function assertNoPassthroughCollision(
   exportStem: string,
   originKey: string,
   passthroughPath: string,
-  existing: { generatedFrom: string[]; properties: unknown } | undefined,
-  freshProperties: unknown,
+  existing: { generatedFrom: string[]; surface: PassthroughOwnedSurface } | undefined,
+  freshSurface: PassthroughOwnedSurface,
 ): void {
   if (!existing) return;
   const otherOwners = existing.generatedFrom.filter((stem) => stem !== exportStem);
   if (otherOwners.length === 0) return;
-  if (JSON.stringify(existing.properties ?? {}) === JSON.stringify(freshProperties)) return;
+  if (sameOwnedSurface(existing.surface, freshSurface)) return;
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision-refuse
   throw new Error(
     `${exportStem}: shared passthrough origin "${originKey}" is already committed by ${otherOwners.join(', ')} ` +
@@ -1561,6 +1731,29 @@ export function assertNoPassthroughCollision(
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-collision
 }
 
+// The three schemas that belong to no single component - the abstract base
+// type, the metamodel, and the vocabulary types the two of them reference.
+// Written from their builders rather than hand-maintained: the grammar of a
+// component reference lives in ids.ts, and a hand-typed copy of it in JSON
+// is exactly the drift ids.ts exists to prevent. A stale committed copy is
+// caught by the freshness comparison, which diffs every one of these files
+// against a fresh build on every component's own test run.
+// @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-write-shared
+function writeSharedSchemas(): void {
+  const write = (path: string, content: unknown): void => {
+    writeFileSync(path, `${JSON.stringify(content, null, 2)}\n`);
+    console.log(`wrote ${path}`);
+  };
+  mkdirSync(TYPES_DIR, { recursive: true });
+  for (const type of buildTraitTypes()) write(join(TYPES_DIR, traitTypeFileName(type)), type);
+  // After the vocabulary types, never before: both of these reference them,
+  // and the Ajv validation each build runs can only resolve a type that is
+  // already on disk.
+  write(join(SCHEMA_DIR, 'base.component.json'), buildBaseSchema());
+  write(join(SCHEMA_DIR, 'ui-component.meta.json'), buildMetamodel());
+}
+// @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-write-shared
+
 // CLI entry - skipped when the module is imported (e.g. by the conformance
 // test). Takes a DIRECTORY, not one component: `npm run contracts:compile
 // -- accordion` compiles every `*.contract.yaml` overlay directly under
@@ -1573,10 +1766,16 @@ if (invokedDirectly()) {
   // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-invoke-compile
   const [directory] = process.argv.slice(2);
   // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-invoke-compile
+  // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-write-shared
+  if (directory === '--schemas') {
+    writeSharedSchemas();
+    process.exit(0);
+  }
+  // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-write-shared
   // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-missing-argument
   if (!directory) {
     // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-usage-exit
-    console.error('Usage: npm run contracts:compile -- <directory>');
+    console.error('Usage: npm run contracts:compile -- <directory> | --schemas');
     process.exit(1);
     // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-usage-exit
   }

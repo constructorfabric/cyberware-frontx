@@ -14,7 +14,7 @@ typical_uses:
 
 dont_use_when:
   - rule: A standalone action button with no column to sort
-    instead: gts.frontx.uikit.component.button.v1~ # Button
+    instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~ # Button
 
 composition:
   children:

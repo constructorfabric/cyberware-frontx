@@ -9,13 +9,13 @@ typical_uses:
 
 dont_use_when:
   - rule: A standalone button with no AccordionItem to expand or collapse
-    instead: gts.frontx.uikit.component.button.v1~ # Button
+    instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~ # Button
 
 composition:
   children:
     kinds: [text]
   parent:
-    kinds: [gts.frontx.uikit.component.accordion_item.v1~] # AccordionItem
+    kinds: [gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~] # AccordionItem
 
 invariants:
   - id: always-renders-a-chevron
@@ -55,5 +55,5 @@ examples:
         state through Base UI context; outside one, clicking it does nothing.
 
 family:
-  root: gts.frontx.uikit.component.accordion.v1~ # Accordion
+  root: gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~ # Accordion
   role: part

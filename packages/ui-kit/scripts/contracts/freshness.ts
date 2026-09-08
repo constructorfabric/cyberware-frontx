@@ -11,10 +11,22 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { jsonDiff } from './check-lib';
-import { buildBaseSchema, buildPassthroughSchema, compileContract, compileInstance, loadBaseSchema, resolveTargetExtraction } from './compile';
+import {
+  buildBaseSchema,
+  buildMetamodel,
+  buildPassthroughSchema,
+  buildTraitTypes,
+  compileContract,
+  compileInstance,
+  loadBaseSchema,
+  resolveTargetExtraction,
+  traitTypeFileName,
+} from './compile';
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const GENERATED_DIR = join(kitRoot, 'scripts', 'contracts', 'generated');
+const CONTRACTS_DIR = join(kitRoot, 'scripts', 'contracts');
+const GENERATED_DIR = join(CONTRACTS_DIR, 'generated');
+const TYPES_DIR = join(CONTRACTS_DIR, 'types');
 
 export interface FreshnessReport {
   component: string;
@@ -32,18 +44,15 @@ export interface FreshnessReport {
   // buildPropsAndRequired from the same loop, so they cannot drift on their
   // own - this catches the day something edits one without the other.
   slotSchemaMismatches: string[];
-  // base.component.json is shared by every component, not per-directory
-  // like the other three diffs above - computed on every call regardless of
-  // which component is being checked (cheap: buildBaseSchema is pure string
-  // construction, no I/O beyond the one file read loadBaseSchema already
-  // does) so that a stale x-gts-traits-schema is caught by whichever
-  // component's contract test happens to run assertContractFreshness first,
-  // rather than depending on one file remembering to check it - the same
-  // "committed copy equals a fresh build" pattern button.contract.test.ts
-  // already applies to ui-component.meta.json/buildMetamodel, generalized
-  // here so every family gets it through the shared helper instead of only
-  // whichever file happens to assert it.
-  baseSchemaDiff: string[];
+  // The schemas that belong to no single component - the abstract base type,
+  // the metamodel, and each vocabulary type the two of them reference -
+  // keyed by file name. Computed on every call regardless of which component
+  // is being checked (cheap: the builders are pure construction, and the
+  // committed copies are small JSON reads) so that a stale shared schema is
+  // caught by whichever component's contract test happens to run
+  // assertContractFreshness first, rather than depending on one file
+  // remembering to check it.
+  sharedSchemaDiffs: Record<string, string[]>;
   fresh: boolean;
 }
 
@@ -73,7 +82,14 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
   const instanceDiff = jsonDiff(committedInstance, freshInstance);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-artifacts
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-base
-  const baseSchemaDiff = jsonDiff(loadBaseSchema(), buildBaseSchema());
+  const sharedSchemaDiffs: Record<string, string[]> = {
+    'base.component.json': jsonDiff(loadBaseSchema(), buildBaseSchema()),
+    'ui-component.meta.json': jsonDiff(readJsonIfExists(join(CONTRACTS_DIR, 'ui-component.meta.json')), buildMetamodel()),
+  };
+  for (const type of buildTraitTypes()) {
+    const fileName = traitTypeFileName(type);
+    sharedSchemaDiffs[`types/${fileName}`] = jsonDiff(readJsonIfExists(join(TYPES_DIR, fileName)), type);
+  }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-base
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-passthrough
@@ -123,8 +139,8 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
     instanceDiff.length === 0 &&
     (passthroughDiff === 'not-applicable' || passthroughDiff.length === 0) &&
     slotSchemaMismatches.length === 0 &&
-    baseSchemaDiff.length === 0;
+    Object.values(sharedSchemaDiffs).every((diff) => diff.length === 0);
 
-  return { component: exportStem, contractDiff, instanceDiff, passthroughDiff, slotSchemaMismatches, baseSchemaDiff, fresh };
+  return { component: exportStem, contractDiff, instanceDiff, passthroughDiff, slotSchemaMismatches, sharedSchemaDiffs, fresh };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-return
 }

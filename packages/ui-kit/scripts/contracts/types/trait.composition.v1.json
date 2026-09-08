@@ -1,0 +1,19 @@
+{
+  "$id": "gts://gts.frontx.uikit.trait.composition.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit composition",
+  "description": "How this component nests: what may go inside it, and - for a part of a compound component - what it may be mounted under. The two are separate facts and separate types; only the first is required, because every component has an answer for what it contains and most have none for where they belong.",
+  "type": "object",
+  "properties": {
+    "children": {
+      "$ref": "gts://gts.frontx.uikit.trait.child_composition.v1~"
+    },
+    "parent": {
+      "$ref": "gts://gts.frontx.uikit.trait.parent_composition.v1~"
+    }
+  },
+  "required": [
+    "children"
+  ],
+  "additionalProperties": false
+}
