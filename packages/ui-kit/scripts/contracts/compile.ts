@@ -77,7 +77,7 @@ import {
   COMPONENT_REF_TARGET,
   componentTypeRef,
   componentTypeRefPattern,
-  CONTRACT_MAJOR,
+  DEFAULT_CONTRACT_MAJOR,
   domPassthroughToken,
   instanceId,
   instanceIdPattern,
@@ -203,6 +203,12 @@ export function isExternalAlternative(instead: Alternative): instead is External
 
 export interface Overlay {
   component: string;
+  // The contract major this component's identifiers carry. Authored, and
+  // per-component: moving it is the one acknowledgement the compatibility
+  // gate accepts for a narrowing, and read off a kit-wide constant that
+  // acknowledgement cost a rewrite of every identifier in the kit. Absent
+  // means 1, which is what every component carries today.
+  major?: number;
   intent: string;
   // A handful of archetypal scenarios, not an exhaustive selection rule -
   // capped at 3 by the metamodel so the field stays a quick read rather than
@@ -280,7 +286,11 @@ export interface ContractProperty {
   // Its real type stays in x-uikit.slots, where the lint and tsc read it.
   type?: string;
   enum?: string[];
-  default?: string;
+  // A string for a string axis, a boolean for a boolean one - the JSON
+  // Schema default has to be a value of the property's own type, and a cva
+  // boolean variant's default really is `false`, not the string "false" its
+  // variant map is keyed by.
+  default?: string | boolean;
   description?: string;
 }
 
@@ -414,25 +424,58 @@ const TYPES_DIR = join(SCHEMA_DIR, 'types');
 // is an error, an unrecognized name is merely unchecked - is made by whoever
 // reads the props (check-lib.ts's classifyProps) rather than by Ajv, which
 // cannot tell the two apart.
+// Every schema builder and loader below is pure - the builders construct
+// strings, the loaders read files nothing in this process writes - and each
+// was being re-run on every validation: a single covered component's compile
+// rebuilt the metamodel several times and re-read the whole vocabulary
+// directory with it, and a widened guard multiplies that by the covered set.
+//
+// Memoized through a JSON round-trip rather than by handing the same object
+// back, because two of the readers MUTATE what they are given: a GTS store
+// normalizes a registered schema in place, and Ajv keeps its own state
+// against one. A structured copy of a small document is far cheaper than the
+// construction and the file reads it replaces, and it keeps the guarantee
+// every existing caller already relies on - what it gets is its own.
+function memoizeSchema<T>(build: () => T): () => T {
+  let cached: string | undefined;
+  return () => {
+    cached ??= JSON.stringify(build());
+    return JSON.parse(cached) as T;
+  };
+}
+
+// The same, keyed by an argument - one entry per element kind.
+function memoizeSchemaBy<T>(build: (key: string) => T): (key: string) => T {
+  const cache = new Map<string, string>();
+  return (key) => {
+    let serialized = cache.get(key);
+    if (serialized === undefined) {
+      serialized = JSON.stringify(build(key));
+      cache.set(key, serialized);
+    }
+    return JSON.parse(serialized) as T;
+  };
+}
+
 export const UNCHECKED_VERDICT_KEY = 'x-uikit-verdict';
 export type OpenUnevaluated = { readonly [UNCHECKED_VERDICT_KEY]: 'unchecked' };
 export const OPEN_UNEVALUATED: OpenUnevaluated = { [UNCHECKED_VERDICT_KEY]: 'unchecked' };
 
-export function loadBaseSchema(): Record<string, unknown> {
-  return JSON.parse(readFileSync(join(SCHEMA_DIR, 'base.component.json'), 'utf8')) as Record<string, unknown>;
-}
+export const loadBaseSchema = memoizeSchema(
+  (): Record<string, unknown> => JSON.parse(readFileSync(join(SCHEMA_DIR, 'base.component.json'), 'utf8')) as Record<string, unknown>,
+);
 
 // The committed copies of the vocabulary types the base type's trait schema
 // and the metamodel both reference. Read from disk for the same reason
 // loadBaseSchema does: whoever registers them in a GTS store or an Ajv
 // instance must see the shipped file, not a fresh build that might differ
 // from it - the freshness check is what makes those two the same thing.
-export function loadTraitTypes(): Record<string, unknown>[] {
-  return readdirSync(TYPES_DIR)
+export const loadTraitTypes = memoizeSchema((): Record<string, unknown>[] =>
+  readdirSync(TYPES_DIR)
     .filter((name) => name.endsWith('.json'))
     .sort()
-    .map((name) => JSON.parse(readFileSync(join(TYPES_DIR, name), 'utf8')) as Record<string, unknown>);
-}
+    .map((name) => JSON.parse(readFileSync(join(TYPES_DIR, name), 'utf8')) as Record<string, unknown>),
+);
 
 // A vocabulary type resolves through TWO resolvers with different rules, so
 // both have to be given the types explicitly:
@@ -462,7 +505,10 @@ export function addContractTypes(ajv: Ajv2020): void {
 }
 
 export function registerContractTypes(register: (entity: Record<string, unknown>) => void): void {
-  for (const type of loadTraitTypes()) register(JSON.parse(JSON.stringify(type)) as Record<string, unknown>);
+  // No copy of its own: loadTraitTypes already hands back a fresh one, which
+  // is exactly why it is memoized through a serialization rather than by
+  // sharing the object - a GTS store normalizes what it registers in place.
+  for (const type of loadTraitTypes()) register(type);
 }
 
 // The hand-written passthrough type for one host element - what a component
@@ -478,7 +524,7 @@ export function registerContractTypes(register: (entity: Record<string, unknown>
 // decides what that element actually accepts.
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-load
-export function loadPassthroughSchema(elementKind: string): Record<string, unknown> {
+export const loadPassthroughSchema = memoizeSchemaBy((elementKind: string): Record<string, unknown> => {
   const token = domPassthroughToken(elementKind);
   const path = join(PASSTHROUGH_DIR, `${token}.json`);
   if (!existsSync(path)) {
@@ -489,18 +535,18 @@ export function loadPassthroughSchema(elementKind: string): Record<string, unkno
     );
   }
   return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
-}
+});
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-load
 
 // Every committed element-kind type, for a reader that needs the whole set: a
 // GTS store registering what contracts compose, and the conformance suite's
 // identifier-grammar check.
-export function loadPassthroughSchemas(): Record<string, unknown>[] {
-  return readdirSync(PASSTHROUGH_DIR)
+export const loadPassthroughSchemas = memoizeSchema((): Record<string, unknown>[] =>
+  readdirSync(PASSTHROUGH_DIR)
     .filter((name) => name.endsWith('.json'))
     .sort()
-    .map((name) => JSON.parse(readFileSync(join(PASSTHROUGH_DIR, name), 'utf8')) as Record<string, unknown>);
-}
+    .map((name) => JSON.parse(readFileSync(join(PASSTHROUGH_DIR, name), 'utf8')) as Record<string, unknown>),
+);
 
 // name -> declared JSON Schema `type`, for every prop the passthrough type
 // owns. `undefined` for an annotation-only entry (onClick, children, style):
@@ -643,8 +689,7 @@ function traitType(token: string, title: string, description: string, body: Reco
 // registered fails loudly ("Unresolvable trait schema reference") instead
 // of a component's `composition` quietly validating against nothing.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-vocabulary
-export function buildTraitTypes(): Record<string, unknown>[] {
-  return [
+export const buildTraitTypes = memoizeSchema((): Record<string, unknown>[] => [
     traitType(
       'external_alternative',
       'UiKit external alternative',
@@ -846,8 +891,7 @@ export function buildTraitTypes(): Record<string, unknown>[] {
         additionalProperties: false,
       },
     ),
-  ];
-}
+]);
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-vocabulary
 
 // The file name a vocabulary type is committed under: its own id token, so
@@ -864,8 +908,7 @@ export function traitTypeFileName(type: Record<string, unknown>): string {
 // buildOverlaySchema below able to derive the overlay's vocabulary from the
 // metamodel's authored fields instead of keeping a second, hand-maintained
 // list.
-export function buildMetamodel(): Record<string, unknown> {
-  return {
+export const buildMetamodel = memoizeSchema((): Record<string, unknown> => ({
     $id: `gts://${METAMODEL_TYPE_ID}~`,
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: 'UiKit component contract metamodel',
@@ -1054,8 +1097,7 @@ export function buildMetamodel(): Record<string, unknown> {
       'props_schema',
     ],
     additionalProperties: false,
-  };
-}
+  }));
 
 // `family` and `extension_points` are optional in the overlay - most
 // components set neither. A trait property still has to resolve when
@@ -1105,7 +1147,7 @@ function nullableTraitProperty(schema: Record<string, unknown>): Record<string, 
 // themselves are.
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2
 // @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-trait-schema:p1
-export function buildGtsTraitsSchema(): Record<string, unknown> {
+export const buildGtsTraitsSchema = memoizeSchema((): Record<string, unknown> => {
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-fields
   const metamodel = buildMetamodel();
   const metamodelProperties = metamodel.properties as Record<string, Record<string, unknown>>;
@@ -1145,7 +1187,7 @@ export function buildGtsTraitsSchema(): Record<string, unknown> {
     additionalProperties: false,
   };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-return
-}
+});
 
 // base.component.json's full content: the abstract structural anchor
 // (unchanged since T1) plus x-gts-traits-schema, generated rather than
@@ -1154,8 +1196,7 @@ export function buildGtsTraitsSchema(): Record<string, unknown> {
 // registering it in a GTS store) - this function exists so the committed
 // file can be checked against a fresh build the same way ui-component.meta.json
 // is checked against buildMetamodel().
-export function buildBaseSchema(): Record<string, unknown> {
-  return {
+export const buildBaseSchema = memoizeSchema((): Record<string, unknown> => ({
     $id: BASE_TYPE_ID,
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: 'UiKit base component',
@@ -1165,8 +1206,7 @@ export function buildBaseSchema(): Record<string, unknown> {
     $comment:
       "No additionalProperties/unevaluatedProperties here on purpose. gts-ts's validateSchemaAgainstParent rejects a derived schema that adds properties when the base sets additionalProperties: false, and closing the base would mean every component had to restate it. A derived component type does not close itself either: its unevaluatedProperties carries an annotated open schema ({ \"x-uikit-verdict\": \"unchecked\" }), so a prop nothing evaluates is admitted and reported as UNCHECKED by whoever reads the props rather than rejected by Ajv, which cannot tell a typo'd kit prop from an attribute this harness has not classified yet.",
     'x-gts-traits-schema': buildGtsTraitsSchema(),
-  };
-}
+  }));
 
 // The overlay's own schema: the metamodel's authored fields (everything
 // except id/metamodel/props_schema, which the compiler writes) with
@@ -1181,12 +1221,23 @@ export function buildOverlaySchema(): Record<string, unknown> {
   const properties = { ...(metamodel.properties as Record<string, unknown>) };
   for (const key of machineOwned) delete properties[key];
   const required = (metamodel.required as string[]).filter((key) => !machineOwned.includes(key));
+  // Authored here and nowhere else in the compiled output: the major is not a
+  // FIELD of a contract instance, it is part of every identifier the instance
+  // carries (`id`, `props_schema`, and the contract's own `$id`), so
+  // declaring it on the metamodel as well would be the same fact written
+  // twice with nothing keeping the two in step.
+  properties.major = {
+    type: 'integer',
+    minimum: 1,
+    description:
+      "Contract major of this component's identifiers. Per-component and authored, because moving it is the one acknowledgement the compatibility check accepts for a narrowing - read off a kit-wide constant, that acknowledgement cost a rewrite of every identifier in the kit at once. Absent means 1. A reference to this component from another contract carries the same number, so moving it moves every reference to it.",
+  };
 
   return {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: 'UiKit component contract overlay',
     description:
-      "Shape of the hand-written overlay a contract compiles from - the metamodel's authored fields only. `id`, `gts_type`, `metamodel` and `props_schema` are the compiler's own; an overlay may not write them.",
+      "Shape of the hand-written overlay a contract compiles from - the metamodel's authored fields, plus the contract major its identifiers carry. `id`, `gts_type`, `metamodel` and `props_schema` are the compiler's own; an overlay may not write them.",
     type: 'object',
     $defs: metamodel.$defs,
     properties,
@@ -1195,13 +1246,22 @@ export function buildOverlaySchema(): Record<string, unknown> {
   };
 }
 
+// Compiled once for the life of the process: the schema is built from pure
+// construction, and compiling it means an Ajv instance plus every vocabulary
+// type added to it - real work that was being repeated per overlay, which on
+// a widened guard is once per described component. A ValidateFunction holds
+// no state between calls except `.errors`, which every caller reads
+// immediately after its own synchronous call.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-unknown-field
+let cachedOverlayValidator: ValidateFunction<Overlay> | undefined;
 function compileOverlayValidator(): ValidateFunction<Overlay> {
+  if (cachedOverlayValidator) return cachedOverlayValidator;
   const ajv = new Ajv2020({ allErrors: true });
   // The overlay schema reaches most of its shape through references to the
   // vocabulary types, which Ajv can only follow once they are added.
   addContractTypes(ajv);
-  return ajv.compile<Overlay>(buildOverlaySchema());
+  cachedOverlayValidator = ajv.compile<Overlay>(buildOverlaySchema());
+  return cachedOverlayValidator;
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-unknown-field
 }
 
@@ -1242,12 +1302,36 @@ function formatSchemaErrors(component: string, what: string, errors: ErrorObject
 export function assertValidatesAgainst(component: string, what: string, schema: Record<string, unknown>, value: unknown): void {
   const ajv = new Ajv2020({ allErrors: true });
   addContractTypes(ajv);
-  const validate = ajv.compile(schema);
+  assertAgainstValidator(component, what, ajv.compile(schema), value);
+}
+
+// The validation half, over an already-compiled validator. Split out so the
+// two schemas EVERY compile validates against - the metamodel for an
+// instance, the trait schema for a contract's validator-read block - can be
+// compiled once per process instead of once per artifact. Both are built by
+// pure construction, so a cached validator can never be checking against a
+// stale schema.
+function assertAgainstValidator(component: string, what: string, validate: ValidateFunction, value: unknown): void {
   const roundTripped = JSON.parse(JSON.stringify(value)) as unknown;
   if (!validate(roundTripped)) {
     throw new Error(formatSchemaErrors(component, what, validate.errors));
   }
 }
+
+function memoizeValidator(schema: () => Record<string, unknown>): () => ValidateFunction {
+  let cached: ValidateFunction | undefined;
+  return () => {
+    if (!cached) {
+      const ajv = new Ajv2020({ allErrors: true });
+      addContractTypes(ajv);
+      cached = ajv.compile(schema());
+    }
+    return cached;
+  };
+}
+
+const metamodelValidator = memoizeValidator(() => buildMetamodel());
+const traitsValidator = memoizeValidator(() => buildGtsTraitsSchema());
 
 // The overlay-validation half, split out from loadOverlay's file read so it
 // can be exercised directly with an in-memory object: a malformed overlay is
@@ -1337,19 +1421,36 @@ function loadOverlay(directory: string, exportStem: string = directory): Overlay
   // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-author-overlay
 }
 
+// The contract major one artifact carries: its overlay's own `major`, or the
+// default. Read from the overlay rather than from a constant, and read for
+// the TARGET wherever an identifier names one - a reference to another
+// component has to carry that component's major, which is a fact about that
+// component's overlay and not about the referrer's.
+//
+// A missing overlay is not an error here: `deriveParentKinds` asks about
+// every described component in the kit, and a directory whose overlay cannot
+// be read is answered by loadOverlay's own failure at the point it is
+// actually compiled.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-major
+export function contractMajor(directory: string, exportStem: string = directory): number {
+  return loadOverlay(directory, exportStem).major ?? DEFAULT_CONTRACT_MAJOR;
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-major
+
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-instance:p2
 export function compileInstance(directory: string, exportStem: string = directory): ContractInstance {
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-instance:p2:inst-mi-assemble
   const overlay = loadOverlay(directory, exportStem);
+  const major = overlay.major ?? DEFAULT_CONTRACT_MAJOR;
   const instance: ContractInstance = {
-    id: instanceId(exportStem, CONTRACT_MAJOR),
+    id: instanceId(exportStem, major),
     gts_type: `${METAMODEL_TYPE_ID}~`,
     metamodel: METAMODEL_VERSION,
     component: exportStem,
     intent: overlay.intent,
     typical_uses: overlay.typical_uses,
     dont_use_when: overlay.dont_use_when,
-    composition: compileComposition(exportStem, overlay),
+    composition: compileComposition(directory, exportStem, overlay),
     invariants: overlay.invariants,
     anti_patterns: overlay.anti_patterns,
     deprecations: overlay.deprecations,
@@ -1361,7 +1462,7 @@ export function compileInstance(directory: string, exportStem: string = director
     // The bare id, not the `gts://` URI form the contract's own $id carries:
     // an id-VALUED field holds an id, and gts-ts's reference validator
     // rejects the URI form outright (Gts.isValidGtsID).
-    props_schema: componentTypeRef(exportStem, CONTRACT_MAJOR),
+    props_schema: componentTypeRef(exportStem, major),
   };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-instance:p2:inst-mi-assemble
   // M3: validated against the metamodel here, not only inside whichever
@@ -1369,7 +1470,7 @@ export function compileInstance(directory: string, exportStem: string = director
   // between this assembly and buildMetamodel()'s own required-field list
   // now fails every compile, not just the ones with test coverage for it.
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-instance:p2:inst-mi-validate
-  assertValidatesAgainst(exportStem, 'instance', buildMetamodel(), instance);
+  assertAgainstValidator(exportStem, 'instance', metamodelValidator(), instance);
   return instance;
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-instance:p2:inst-mi-validate
 }
@@ -1415,9 +1516,19 @@ export function buildPropsAndRequired(
   const hiddenNames = new Set(hidden);
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-axes
+  const booleanAxes = new Set(extraction.booleanAxes);
   for (const [axis, values] of Object.entries(extraction.axes)) {
-    properties[axis] = { type: 'string', enum: values };
-    if (extraction.defaults[axis] !== undefined) properties[axis].default = extraction.defaults[axis];
+    // A cva axis keyed by `true`/`false` is a boolean prop - that is what
+    // VariantProps types it as - so it is emitted as one. Compiled as the
+    // string enum its keys look like, the contract stated a prop accepting
+    // only the strings "true" and "false", which no caller can satisfy.
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-boolean-axis
+    properties[axis] = booleanAxes.has(axis) ? { type: 'boolean' } : { type: 'string', enum: values };
+    const declaredDefault = extraction.defaults[axis];
+    if (declaredDefault !== undefined) {
+      properties[axis].default = booleanAxes.has(axis) ? declaredDefault === 'true' : declaredDefault;
+    }
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-boolean-axis
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-axes
 
@@ -1699,8 +1810,8 @@ export function assertOverlayReferencesRealProps(component: string, overlay: Ove
 // component.
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-composition:p1
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-composition:p1:inst-co-derive
-export function deriveParentKinds(exportStem: string): string[] {
-  const self = componentTypeRef(exportStem, CONTRACT_MAJOR);
+export function deriveParentKinds(directory: string, exportStem: string): string[] {
+  const self = componentTypeRef(exportStem, contractMajor(directory, exportStem));
   const parents: string[] = [];
   const componentsDir = join(kitRoot, 'src', 'components');
   for (const entry of readdirSync(componentsDir, { withFileTypes: true })) {
@@ -1709,7 +1820,10 @@ export function deriveParentKinds(exportStem: string): string[] {
       if (stem === exportStem) continue;
       const overlay = loadOverlay(entry.name, stem);
       if ((overlay.composition.children?.kinds ?? []).includes(self)) {
-        parents.push(componentTypeRef(stem, CONTRACT_MAJOR));
+        // The PARENT's own major, from the parent's own overlay: a reference
+        // names the major the target ships, so a component that moves its
+        // major moves every reference to it - including the derived ones.
+        parents.push(componentTypeRef(stem, overlay.major ?? DEFAULT_CONTRACT_MAJOR));
       }
     }
   }
@@ -1721,8 +1835,8 @@ export function deriveParentKinds(exportStem: string): string[] {
 // outside the kit the overlay stated. Absent entirely when there is neither -
 // most of the kit is mounted anywhere, and an empty list would read as a
 // constraint rather than as its absence.
-export function compileComposition(exportStem: string, overlay: Overlay): CompiledComposition {
-  const kinds: Alternative[] = [...deriveParentKinds(exportStem), ...(overlay.composition.mounts_in ?? [])];
+export function compileComposition(directory: string, exportStem: string, overlay: Overlay): CompiledComposition {
+  const kinds: Alternative[] = [...deriveParentKinds(directory, exportStem), ...(overlay.composition.mounts_in ?? [])];
   const composition: CompiledComposition = {};
   if (overlay.composition.children !== undefined) composition.children = overlay.composition.children;
   if (kinds.length > 0) composition.parent = { kinds };
@@ -1815,7 +1929,7 @@ export function compileContract(directory: string, exportStem: string = director
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
   const contract: CompiledContract = {
-    $id: propsSchemaId(exportStem, CONTRACT_MAJOR),
+    $id: propsSchemaId(exportStem, overlay.major ?? DEFAULT_CONTRACT_MAJOR),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: `UiKit ${exportStem} contract`,
     type: 'object',
@@ -1840,7 +1954,7 @@ export function compileContract(directory: string, exportStem: string = director
       cannot_extract: extraction.cannotExtract,
     },
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
-    'x-gts-traits': { ...pickFields(overlay, gtsTraitsFields), composition: compileComposition(exportStem, overlay) },
+    'x-gts-traits': { ...pickFields(overlay, gtsTraitsFields), composition: compileComposition(directory, exportStem, overlay) },
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
   };
   // M3: validated against buildGtsTraitsSchema() here, not only inside
@@ -1848,7 +1962,7 @@ export function compileContract(directory: string, exportStem: string = director
   // store - a future mismatch between this assembly and
   // buildGtsTraitsSchema()'s own field routing now fails every compile.
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-return
-  assertValidatesAgainst(exportStem, 'x-gts-traits', buildGtsTraitsSchema(), contract['x-gts-traits']);
+  assertAgainstValidator(exportStem, 'x-gts-traits', traitsValidator(), contract['x-gts-traits']);
   return contract;
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-return
 }

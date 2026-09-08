@@ -41,6 +41,7 @@ import {
   synthesizeVersionedId,
   touchesAnyOverlay,
   touchesCoverageAllowlist,
+  touchesDependencyManifest,
   touchesSharedContractTooling,
   type BaseRefContractEntry,
   type CompatVerdict,
@@ -63,6 +64,10 @@ const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export interface CheckContext {
   kitRoot: string;
   overlayStems: (directory: string) => string[];
+  // Whether the directory ships a conformance suite of its own. Injected for
+  // the same reason the overlay listing is: it resolves a path against a kit
+  // root, so bound to this package it could only answer about this package.
+  contractTestExists: (directory: string) => boolean;
   isComponentFresh: (directory: string, exportStem: string) => boolean;
   // The exported names extraction recognizes as React components, and every
   // exported name in the file, for the coverage report's "n of m exports".
@@ -89,6 +94,13 @@ export function defaultCheckContext(): CheckContext {
   return {
     kitRoot: packageRoot,
     overlayStems,
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-suite
+    contractTestExists: (directory) => {
+      const dir = join(packageRoot, 'src', 'components', directory);
+      if (!existsSync(dir)) return false;
+      return readdirSync(dir).some((name) => name.endsWith('.contract.test.ts'));
+    },
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-suite
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
     // The same freshness check testing.ts asserts per-component, run here for
     // whichever component the guard is currently evaluating rather than every
@@ -319,6 +331,20 @@ function changedFilesSince(ctx: CheckContext, base: string): string[] {
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
 
+// The same change set WITHOUT `--relative`, so paths are repository-root
+// relative and the listing is not limited to this package. Every other lookup
+// here is deliberately package-scoped; this one exists because the lockfile
+// that decides which version of the primitive library is installed lives at
+// the repository root, and a package-relative diff cannot see it at all - the
+// one input that reshapes every committed contract from outside the package.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-deps
+function repoChangedFilesSince(ctx: CheckContext, base: string): string[] {
+  const committed = gitLines(ctx, ['diff', '--name-only', `${base}...HEAD`], 'listing changed files across the repository');
+  const workingTree = gitLines(ctx, ['diff', '--name-only', 'HEAD'], 'listing working-tree changes across the repository');
+  return [...new Set([...committed, ...workingTree])];
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-deps
+
 // The host element a contract's own allOf carries, read off its passthrough
 // $ref rather than re-derived through extraction - `compat` compares two
 // POINTS IN TIME of the same contract, and the ref each one actually shipped
@@ -485,14 +511,18 @@ function checkCompatForUnit(
   const result = gts.checkCompatibility(bareGtsId(oldSynthetic.$id), bareGtsId(newSynthetic.$id), 'backward');
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register
 
-  // gts-ts's own backward check misses a newly required own prop and a
-  // vanished own prop that was never required (a rename looks exactly like
-  // one of these) - see check-lib.ts's diffOwnPropsSchema comment (M9) for
-  // why `is_backward_compatible` alone understates a real breaking change
-  // here, confirmed empirically against the real library rather than
-  // assumed from reading it.
+  // gts-ts's own backward check misses a newly required own prop, a vanished
+  // own prop that was never required (a rename looks exactly like one of
+  // these), and an enum appearing on a prop that already carried its type -
+  // see check-lib.ts's diffOwnPropsSchema comment for why
+  // `is_backward_compatible` alone understates a real breaking change here,
+  // measured against the real library rather than assumed from reading it.
+  // The current revision's forwarded surface is handed in so a prop that left
+  // `properties` can be reconciled against what the host element still
+  // accepts - a component dropping its own `className` declaration forwards
+  // `className` all the same, and a consumer notices nothing.
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
-  const ownPropsDiff = diffOwnPropsSchema(oldContract, newContract);
+  const ownPropsDiff = diffOwnPropsSchema(oldContract, newContract, newPassthrough);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-decide
@@ -595,6 +625,14 @@ export function runGuard(base: string, options: { json: boolean }, ctx: CheckCon
   const changedFiles = changedFilesSince(ctx, base);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-changed
   const covered = loadCovered(ctx);
+  // The allowlist as it was at the base reference. Read so that a component
+  // DROPPED from it is still in scope for the change that drops it: the new
+  // list alone takes it out of scope with no line in any output, and that
+  // same edit is the acknowledgement the removal sweep accepts, so it must
+  // not also be the edit nothing looks at.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
+  const baseCovered = (readJsonAt(ctx, base, 'scripts/contracts/covered.json') as unknown as string[] | undefined) ?? covered;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-map
   const touchedDirectly = mapChangedFilesToComponents(changedFiles);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-map
@@ -619,16 +657,36 @@ export function runGuard(base: string, options: { json: boolean }, ctx: CheckCon
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-overlay
   const overlayChanged = touchesAnyOverlay(changedFiles);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-overlay
+  // A dependency bump changes what the checker prints into every committed
+  // contract, from outside this package entirely.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-deps
+  const dependenciesChanged = touchesDependencyManifest(changedFiles, repoChangedFilesSince(ctx, base));
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-deps
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-scope
+  // The union of both allowlists, not just the current one: a widened scope
+  // has to include what coverage NAMED as well as what it names.
   const touched =
-    toolingChanged || allowlistChanged || overlayChanged ? new Set([...touchedDirectly, ...covered]) : touchedDirectly;
+    toolingChanged || allowlistChanged || overlayChanged || dependenciesChanged
+      ? new Set([...touchedDirectly, ...covered, ...baseCovered])
+      : touchedDirectly;
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-scope
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-empty
   if (touched.size === 0) {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-empty-return
     if (options.json) {
-      ctx.log(JSON.stringify({ command: 'guard', base, violated: false, toolingChanged, allowlistChanged, overlayChanged, results: [] }));
+      ctx.log(
+        JSON.stringify({
+          command: 'guard',
+          base,
+          violated: false,
+          toolingChanged,
+          allowlistChanged,
+          overlayChanged,
+          dependenciesChanged,
+          results: [],
+        }),
+      );
     } else {
       ctx.log('guard: no component files changed - nothing to check.');
     }
@@ -652,11 +710,20 @@ export function runGuard(base: string, options: { json: boolean }, ctx: CheckCon
       ctx.log('guard: an overlay changed - re-checking every covered component, because a children list decides another component\'s derived parent.');
     }
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-overlay
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-deps
+    if (dependenciesChanged) {
+      ctx.log(
+        'guard: a dependency manifest changed - re-checking every covered component, because a committed contract ' +
+          "carries the checker's printed type text for the packages it depends on.",
+      );
+    }
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-deps
   }
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-each
   ctx.prepareExtraction([...touched]);
   const coveredSet = new Set(covered);
+  const baseCoveredSet = new Set(baseCovered);
   let violated = false;
   const results: GuardResult[] = [];
   for (const component of [...touched].sort()) {
@@ -670,7 +737,11 @@ export function runGuard(base: string, options: { json: boolean }, ctx: CheckCon
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
     let overlayExists = false;
     let artifactsFresh = false;
+    let contractTestExists = false;
     if (componentExists) {
+      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-suite
+      contractTestExists = ctx.contractTestExists(component);
+      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-suite
       const stems = ctx.overlayStems(component);
       const { totalExports } = componentExportCoverage(ctx, component);
       // A covered compound directory must have every export described, not
@@ -686,7 +757,15 @@ export function runGuard(base: string, options: { json: boolean }, ctx: CheckCon
       artifactsFresh = isCovered && overlayExists ? stems.every((stem) => ctx.isComponentFresh(component, stem)) : false;
     }
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
-    const result = evaluateGuard({ component, covered: coveredSet.has(component), overlayExists, artifactsFresh, componentExists });
+    const result = evaluateGuard({
+      component,
+      covered: coveredSet.has(component),
+      overlayExists,
+      artifactsFresh,
+      componentExists,
+      contractTestExists,
+      wasCovered: baseCoveredSet.has(component),
+    });
     results.push(result);
     if (result.status === 'covered-violation' || result.status === 'component-removed') violated = true;
   }
@@ -694,7 +773,9 @@ export function runGuard(base: string, options: { json: boolean }, ctx: CheckCon
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-return
   if (options.json) {
-    ctx.log(JSON.stringify({ command: 'guard', base, violated, toolingChanged, allowlistChanged, overlayChanged, results }));
+    ctx.log(
+      JSON.stringify({ command: 'guard', base, violated, toolingChanged, allowlistChanged, overlayChanged, dependenciesChanged, results }),
+    );
   } else {
     for (const result of results) {
       const label =

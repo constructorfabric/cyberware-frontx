@@ -15,7 +15,13 @@ const config = {
   defaultVariants: {
     weight: 'light',
   },
-};
+  // `as const` for cva's own sake, not the extractor's: without it the
+  // separately declared config widens `defaultVariants.weight` to `string`,
+  // which cva's ConfigVariants rejects against the axis's own keys. The
+  // extractor follows the identifier to this initializer either way - it
+  // unwraps an `as` expression on the way (see traceToObjectLiteral) - so
+  // what this fixture reproduces is unchanged.
+} as const;
 
 const badgeVariants = cva('badge', config);
 

@@ -66,6 +66,12 @@ export interface ComponentExtraction {
   // a file that may export several components.
   name: string;
   axes: Record<string, string[]>;
+  // The subset of `axes` whose variant map is keyed by `true`/`false`, which
+  // class-variance-authority types as a boolean prop rather than as the
+  // string union its keys look like. Named alongside `axes` rather than
+  // encoded into the values, so the values stay what the cva config actually
+  // wrote and the compiler decides how to express them.
+  booleanAxes: string[];
   defaults: Record<string, string>;
   // Declared in the component's own source file.
   ownProps: ExtractedProp[];
@@ -266,6 +272,24 @@ function traceToObjectLiteral(
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 }
 
+// A cva axis whose variant map is keyed by `true`/`false` is a BOOLEAN
+// variant: class-variance-authority indexes it by those two keys and
+// `VariantProps` types the resulting prop as `boolean`, not as the string
+// union the keys look like. Compiled as a string enum, the contract stated a
+// prop that only accepts the strings "true" and "false" - a shape no caller
+// can satisfy, since `fullWidth` takes a boolean.
+//
+// The `true`-only form is the common one in real cva configs (a variant with
+// no styling for the false branch), so it counts too; anything else is an
+// ordinary string axis, including a map that merely happens to contain
+// `true` alongside other keys.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-boolean-axis
+export function isBooleanAxis(values: string[]): boolean {
+  if (values.length === 0 || values.length > 2) return false;
+  return values.every((value) => value === 'true' || value === 'false') && values.includes('true');
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-boolean-axis
+
 // Resolves every `VariantProps<typeof X>` heritage entry found on a
 // component's props type into the cva axes/defaults it names. A heritage
 // entry that cannot be traced to a real cva(...) call - the defect F16
@@ -277,9 +301,10 @@ function extractVariants(
   variantSources: ts.EntityName[],
   checker: ts.TypeChecker,
   cannotExtract: string[],
-): { axes: Record<string, string[]>; defaults: Record<string, string> } {
+): { axes: Record<string, string[]>; booleanAxes: string[]; defaults: Record<string, string> } {
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
   const axes: Record<string, string[]> = {};
+  const booleanAxes = new Set<string>();
   const defaults: Record<string, string> = {};
   // Which VariantProps<typeof X> heritage entry (by label) an axis/default
   // name first came from - N1: two heritage entries declaring the same axis
@@ -327,16 +352,42 @@ function extractVariants(
             continue;
           }
           // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axis-conflict
-          axes[axis.name] = literalKeys(axis.initializer, `axis "${axis.name}"`, cannotExtract).map((v) => v.name);
+          const values = literalKeys(axis.initializer, `axis "${axis.name}"`, cannotExtract).map((v) => v.name);
+          axes[axis.name] = values;
+          // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-boolean-axis
+          if (isBooleanAxis(values)) booleanAxes.add(axis.name);
+          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-boolean-axis
           axisSourceLabel[axis.name] = label;
         }
       }
       if (name === 'defaultVariants' && ts.isObjectLiteralExpression(initializer)) {
         for (const def of literalKeys(initializer, 'defaultVariants', cannotExtract)) {
-          if (!ts.isStringLiteral(def.initializer)) {
-            cannotExtract.push(`default for "${def.name}" is not a string literal`);
+          // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-boolean-axis
+          // A boolean axis's default is written as a boolean, not as the
+          // string key it indexes the variant map by (`fullWidth: false`, not
+          // `fullWidth: 'false'`), so the two literal kinds are read as one
+          // default and the boolean is stored in the text form the axis's own
+          // keys already use.
+          const defaultText = ts.isStringLiteral(def.initializer)
+            ? def.initializer.text
+            : def.initializer.kind === ts.SyntaxKind.TrueKeyword
+              ? 'true'
+              : def.initializer.kind === ts.SyntaxKind.FalseKeyword
+                ? 'false'
+                : undefined;
+          if (defaultText === undefined) {
+            // Prefixed `cva:` so the compiler REFUSES the contract: a default
+            // this walk cannot read is a default the contract would ship
+            // without, and a variant whose documented default silently
+            // vanished is the same class of silent loss as an axis that
+            // vanished - which the same prefix already fails the build on.
+            cannotExtract.push(
+              `cva: default for "${def.name}" is neither a string nor a boolean literal - the axis's own default ` +
+                `would be lost from the compiled contract`,
+            );
             continue;
           }
+          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-boolean-axis
           // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-default-conflict
           if (def.name in defaults) {
             // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-default-conflict-note
@@ -348,7 +399,7 @@ function extractVariants(
             continue;
           }
           // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-default-conflict
-          defaults[def.name] = def.initializer.text;
+          defaults[def.name] = defaultText;
           defaultSourceLabel[def.name] = label;
         }
       }
@@ -357,7 +408,7 @@ function extractVariants(
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
-  return { axes, defaults };
+  return { axes, booleanAxes: [...booleanAxes].sort(), defaults };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
 }
 
@@ -932,6 +983,7 @@ function extractFromSource(source: ts.SourceFile, checker: ts.TypeChecker): Comp
       let passthroughSources: string[] = [];
       let variantSourceLabels: string[] = [];
       let axes: Record<string, string[]> = {};
+      let booleanAxes: string[] = [];
       let defaults: Record<string, string> = {};
 
       if (param) {
@@ -955,6 +1007,7 @@ function extractFromSource(source: ts.SourceFile, checker: ts.TypeChecker): Comp
         // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
         const variantsResult = extractVariants(walk.variantSources, checker, cannotExtract);
         axes = variantsResult.axes;
+        booleanAxes = variantsResult.booleanAxes;
         defaults = variantsResult.defaults;
         // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-axes
         // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-props
@@ -1031,6 +1084,7 @@ function extractFromSource(source: ts.SourceFile, checker: ts.TypeChecker): Comp
       extractions.push({
         name,
         axes,
+        booleanAxes,
         defaults,
         ownProps,
         apiProps,

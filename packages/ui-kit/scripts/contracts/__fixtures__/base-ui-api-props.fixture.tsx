@@ -20,7 +20,12 @@ export interface WrapsButtonPrimitiveProps extends Omit<ButtonPrimitive.Props, '
 }
 
 export function WrapsButtonPrimitive(props: WrapsButtonPrimitiveProps) {
-  return <button {...props} />;
+  // The primitive, not a raw <button>: everything the extractor reads here is
+  // the TYPE, and spreading Base UI's own props onto a bare element is a type
+  // error - its `style` accepts a function of the part's state, which React's
+  // does not. That difference is one of the facts this fixture exists to
+  // exercise, so the render body has to be the shape a real wrapper uses.
+  return <ButtonPrimitive {...props} />;
 }
 
 export interface WrapsAccordionRootPrimitiveProps extends Omit<AccordionPrimitive.Root.Props, 'className'> {

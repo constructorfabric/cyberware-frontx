@@ -57,6 +57,11 @@ export interface PassthroughPropertyLike {
 export interface PassthroughSchemaLike {
   properties?: Record<string, PassthroughPropertyLike>;
   required?: string[];
+  // The pattern families a surface admits by shape rather than by name
+  // (`^aria-`, `^data-`, `^on[A-Z]`). Read only by the reconciliation in
+  // diffOwnPropsSchema, which has to answer "does this surface accept the
+  // name at all" and not just "does it declare it".
+  patternProperties?: Record<string, unknown>;
 }
 
 export interface PassthroughDiff {
@@ -104,6 +109,39 @@ function comparePassthroughNames(
 
 const NEWLY_REQUIRED_REASON = 'became required where it was optional (or absent) before';
 
+// Whether one property's shape got stricter between two revisions. The rule
+// is the same wherever a property lives - a component's own properties or the
+// surface it forwards - so it is one function rather than two that have to be
+// kept in step.
+//
+// A type constraint that changes, OR that appears where none existed, both
+// reject a value the old (unconstrained, or differently typed) prop used to
+// accept. Same reasoning for an enum: a dropped value out of an existing
+// enum, or a whole enum appearing where the prop previously accepted any
+// value of its type. The reverse of each - a constraint lifted entirely -
+// accepts a strict superset and is not checked here at all.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-shape
+function shapeNarrowings(name: string, oldProp: PassthroughPropertyLike, newProp: PassthroughPropertyLike): { prop: string; reason: string }[] {
+  const narrowed: { prop: string; reason: string }[] = [];
+  if (oldProp.type !== undefined && newProp.type !== undefined && oldProp.type !== newProp.type) {
+    narrowed.push({ prop: name, reason: `type changed from "${oldProp.type}" to "${newProp.type}"` });
+  } else if (oldProp.type === undefined && newProp.type !== undefined) {
+    narrowed.push({ prop: name, reason: `type constraint added: "${newProp.type}" where none existed before` });
+  }
+
+  if (oldProp.enum !== undefined && newProp.enum !== undefined) {
+    const newEnumValues = new Set(newProp.enum);
+    const droppedValues = oldProp.enum.filter((value) => !newEnumValues.has(value));
+    if (droppedValues.length > 0) {
+      narrowed.push({ prop: name, reason: `enum value(s) removed: ${droppedValues.join(', ')}` });
+    }
+  } else if (oldProp.enum === undefined && newProp.enum !== undefined) {
+    narrowed.push({ prop: name, reason: `enum constraint added: ${newProp.enum.join(', ')} where none existed before` });
+  }
+  return narrowed;
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-shape
+
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
 export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchema: PassthroughSchemaLike): PassthroughDiff {
   const oldProps = oldSchema.properties ?? {};
@@ -115,34 +153,7 @@ export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchem
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
   for (const name of Object.keys(oldProps)) {
     if (!(name in newProps)) continue;
-    const oldProp = oldProps[name];
-    const newProp = newProps[name];
-
-    // A type constraint that changes, OR that appears where none existed,
-    // both reject a value the old (unconstrained, or differently typed)
-    // prop used to accept - narrowing either way. The reverse - a type
-    // constraint lifted entirely - accepts a strict superset, so it is not
-    // checked here at all.
-    if (oldProp.type !== undefined && newProp.type !== undefined && oldProp.type !== newProp.type) {
-      narrowed.push({ prop: name, reason: `type changed from "${oldProp.type}" to "${newProp.type}"` });
-    } else if (oldProp.type === undefined && newProp.type !== undefined) {
-      narrowed.push({ prop: name, reason: `type constraint added: "${newProp.type}" where none existed before` });
-    }
-
-    // Same reasoning for enum: a dropped value out of an existing enum, or
-    // a whole enum appearing where the prop previously accepted any value
-    // of its type, both narrow independently of whatever the type check
-    // above found. An enum lifted entirely (the prop keeps its type, just
-    // no enum) is the widening direction and is not flagged.
-    if (oldProp.enum !== undefined && newProp.enum !== undefined) {
-      const newEnumValues = new Set(newProp.enum);
-      const droppedValues = oldProp.enum.filter((value) => !newEnumValues.has(value));
-      if (droppedValues.length > 0) {
-        narrowed.push({ prop: name, reason: `enum value(s) removed: ${droppedValues.join(', ')}` });
-      }
-    } else if (oldProp.enum === undefined && newProp.enum !== undefined) {
-      narrowed.push({ prop: name, reason: `enum constraint added: ${newProp.enum.join(', ')} where none existed before` });
-    }
+    narrowed.push(...shapeNarrowings(name, oldProps[name], newProps[name]));
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
 
@@ -157,32 +168,74 @@ export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchem
 
 // gts-ts's own `checkCompatibility(..., 'backward')` diffs a component's OWN
 // properties/required the same shallow way `diffPassthroughSchema` diffs the
-// passthrough surface - but empirically (see check-lib.compat-e2e.test.ts,
-// M9) its BACKWARD direction only ever flags a prop that both (a) existed in
-// the old schema and (b) was already required there, then disappeared; it
-// never inspects whether a prop gained `required` status (new prop, or an
-// existing optional one tightened), because that shape only shows up in the
-// FORWARD direction's `forward_errors`, which this tool's `compat` command
-// never reads. For a component's PROPS SCHEMA - the shape a consumer's call
-// site must satisfy - "does an old caller's props object still validate"
-// is exactly what `is_backward_compatible` claims to answer, so a newly
-// required prop (or an old prop simply vanishing, required or not - a rename
-// looks exactly like this) is a real backward break the library's own
-// implementation misses. This closes that gap locally, the same way
-// `diffPassthroughSchema` above closes the analogous gap for forwarded props.
+// forwarded surface - but it does not see everything a consumer would feel.
+// Measured against the real library rather than read off its source (see
+// check-lib.compat-e2e.test.ts, which pins each of these):
+//
+//  - a prop that gains `required` status, and a prop that simply vanishes
+//    without having been required, are both invisible to its BACKWARD
+//    direction; they only show up in the FORWARD direction's
+//    `forward_errors`, which this tool never reads. For a component's PROPS
+//    SCHEMA - the shape a consumer's call site must satisfy - "does an old
+//    caller's props object still validate" is exactly what
+//    `is_backward_compatible` claims to answer, so a newly required prop (or
+//    a rename, which looks exactly like a vanished one) is a real backward
+//    break the library misses.
+//  - an ENUM appearing on a prop that already carried its type is compatible
+//    to it. `{type: 'string'}` -> `{type: 'string', enum: [...]}` is the
+//    shape this compiler produces the day a plain `string` prop becomes a
+//    literal union, and it rejects every value outside the union. (The
+//    neighbouring case - a constraint appearing where the prop asserted
+//    nothing at all - IS caught, as "type changed from any to string", so
+//    the gap is narrower than "narrowing is unchecked" and is closed here
+//    with the same rule the forwarded surface already used.)
+//
+// A prop that leaves `properties` is not always gone, either: a component
+// whose own declaration of `className` is dropped still forwards `className`
+// through the surface its host element declares, and a consumer passing it
+// notices nothing. `movedToForwardedSurface` is that reconciliation - a
+// removal the surface still accepts, with a compatible shape, is not a
+// removal. gts-ts's own verdict is computed over the flat schema and cannot
+// make that distinction either, but it also does not flag an optional prop
+// vanishing, so the two answers do not fight.
 export interface OwnPropsSchemaLike {
-  properties?: Record<string, unknown>;
+  properties?: Record<string, PassthroughPropertyLike>;
   required?: string[];
 }
 
 export interface OwnPropsDiff {
   removedProps: string[];
   newlyRequiredProps: string[];
+  narrowedProps: { prop: string; reason: string }[];
+  // Props that left `properties` and are still accepted by the forwarded
+  // surface the current revision composes. Reported so the move is visible,
+  // and left out of `removedProps` so it does not force a major bump.
+  movedToForwardedSurface: string[];
   compatible: boolean;
 }
 
+// Whether the forwarded surface accounts for a name at all: declared
+// outright, or matched by one of its pattern families (`aria-*`, `data-*`,
+// `on*`).
+function forwardedEntry(
+  surface: PassthroughSchemaLike | undefined,
+  name: string,
+): { accepted: boolean; shape: PassthroughPropertyLike | undefined } {
+  if (surface === undefined) return { accepted: false, shape: undefined };
+  const declared = (surface.properties ?? {})[name];
+  if (declared !== undefined) return { accepted: true, shape: declared };
+  const patterns = Object.keys(surface.patternProperties ?? {});
+  // A pattern family asserts nothing about a value, so a name it matches is
+  // accepted with no shape to compare.
+  return { accepted: patterns.some((source) => new RegExp(source).test(name)), shape: undefined };
+}
+
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
-export function diffOwnPropsSchema(oldSchema: OwnPropsSchemaLike, newSchema: OwnPropsSchemaLike): OwnPropsDiff {
+export function diffOwnPropsSchema(
+  oldSchema: OwnPropsSchemaLike,
+  newSchema: OwnPropsSchemaLike,
+  forwardedSurface?: PassthroughSchemaLike,
+): OwnPropsDiff {
   const oldProps = oldSchema.properties ?? {};
   const newProps = newSchema.properties ?? {};
   const oldRequired = new Set(oldSchema.required ?? []);
@@ -190,10 +243,37 @@ export function diffOwnPropsSchema(oldSchema: OwnPropsSchemaLike, newSchema: Own
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
-  const removedProps = Object.keys(oldProps).filter((name) => !(name in newProps));
+  const removedProps: string[] = [];
+  const movedToForwardedSurface: string[] = [];
+  const narrowedProps: { prop: string; reason: string }[] = [];
+
+  for (const name of Object.keys(oldProps)) {
+    if (name in newProps) {
+      narrowedProps.push(...shapeNarrowings(name, oldProps[name], newProps[name]));
+      continue;
+    }
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own-forwarded
+    const { accepted, shape } = forwardedEntry(forwardedSurface, name);
+    if (!accepted) {
+      removedProps.push(name);
+      continue;
+    }
+    movedToForwardedSurface.push(name);
+    // The surface accepts the name; whether it accepts the same VALUES is a
+    // separate question, and the same rule answers it.
+    if (shape !== undefined) narrowedProps.push(...shapeNarrowings(name, oldProps[name], shape));
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own-forwarded
+  }
+
   const newlyRequiredProps = [...newRequired].filter((name) => !oldRequired.has(name));
 
-  return { removedProps, newlyRequiredProps, compatible: removedProps.length === 0 && newlyRequiredProps.length === 0 };
+  return {
+    removedProps,
+    newlyRequiredProps,
+    narrowedProps,
+    movedToForwardedSurface,
+    compatible: removedProps.length === 0 && newlyRequiredProps.length === 0 && narrowedProps.length === 0,
+  };
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
 
@@ -298,10 +378,20 @@ export function decideCompat(input: CompatDecisionInput): CompatVerdict {
   const incompatible = !gtsBackwardCompatible || passthroughIncompatible || ownPropsIncompatible;
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-combine
 
+  // A prop that moved from the contract's own properties to the surface it
+  // forwards is reported whichever way the verdict goes: nothing a consumer
+  // passes stops validating, so it is not a reason to fail, but it IS the
+  // component's own declaration disappearing and a reviewer should see it.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own-forwarded
+  const moved = (ownPropsDiff?.movedToForwardedSurface ?? []).map(
+    (prop) => `${component}: own prop "${prop}" is no longer declared here but is still accepted by the forwarded surface`,
+  );
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own-forwarded
+
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass
   if (!incompatible) {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass-return
-    return { status: 'pass', notes: [`${component}: backward compatible`] };
+    return { status: 'pass', notes: [`${component}: backward compatible`, ...moved] };
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass-return
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass
@@ -311,6 +401,7 @@ export function decideCompat(input: CompatDecisionInput): CompatVerdict {
     ...gtsBackwardErrors,
     ...(ownPropsDiff?.removedProps.map((prop) => `own prop "${prop}" removed`) ?? []),
     ...(ownPropsDiff?.newlyRequiredProps.map((prop) => `own prop "${prop}" became required`) ?? []),
+    ...(ownPropsDiff?.narrowedProps.map((entry) => `own prop "${entry.prop}" ${entry.reason}`) ?? []),
     ...(passthroughDiff?.removed.map((prop) => `passthrough: prop "${prop}" removed`) ?? []),
     ...(passthroughDiff?.narrowed.map((entry) => `passthrough: prop "${entry.prop}" ${entry.reason}`) ?? []),
   ];
@@ -321,7 +412,7 @@ export function decideCompat(input: CompatDecisionInput): CompatVerdict {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-major-return
     return {
       status: 'pass',
-      notes: [`${component}: backward-incompatible, but the contract major moved v${oldMajor} -> v${newMajor}: ${reasons.join('; ')}`],
+      notes: [`${component}: backward-incompatible, but the contract major moved v${oldMajor} -> v${newMajor}: ${reasons.join('; ')}`, ...moved],
     };
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-major-return
   }
@@ -330,7 +421,7 @@ export function decideCompat(input: CompatDecisionInput): CompatVerdict {
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-fail
   return {
     status: 'fail',
-    notes: [`${component}: backward-incompatible at contract major v${oldMajor} (unchanged) - ${reasons.join('; ')}`],
+    notes: [`${component}: backward-incompatible at contract major v${oldMajor} (unchanged) - ${reasons.join('; ')}`, ...moved],
   };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-fail
 }
@@ -407,8 +498,14 @@ const CONTRACTS_TOOLING_PREFIX = 'scripts/contracts/';
 // while touching no component directory - exactly the blind spot the widening
 // exists to close. The circularity argument covers check.ts alone, which
 // nothing in the comparison path imports.
+//
+// Only three entries, and every one of them is REACHABLE: a `.test.ts` suffix
+// is already excluded above, so naming one here said nothing. An unreachable
+// entry in a set like this is worse than no entry - it reads as a decision
+// somebody took about that file, and the next person to add a test file has
+// to work out whether the omission was deliberate.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
-const NON_TOOLING_CONTRACTS_FILES = new Set(['check.ts', 'check-lib.test.ts', 'covered.json', 'PILOT-NOTES.md']);
+const NON_TOOLING_CONTRACTS_FILES = new Set(['check.ts', 'covered.json', 'PILOT-NOTES.md']);
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
 
 // Whether any changed file is shared contract-compiling machinery (see
@@ -464,6 +561,28 @@ export function touchesAnyOverlay(changedFiles: string[]): boolean {
   return changedFiles.some((file) => /^src\/components\/[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*\.contract\.yaml$/.test(file));
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-overlay
+
+// A fourth widening signal, and the one that is not about this repository's
+// own code at all. A committed contract embeds the CHECKER's printed type
+// text for every property the provider-safe subset cannot express - the
+// primitive library's `AccordionValue<Value>`, React's `CSSProperties` - so a
+// dependency bump reshapes every described component's artifacts while no
+// file under src/components or scripts/contracts changes. Nothing in the
+// guard's scope would have noticed, and the lockfile is not even visible to
+// the package-relative diff the change set is otherwise collected from, which
+// is why this signal takes both listings.
+//
+// Two paths, and they answer two different questions: the package's own
+// `package.json` says which version range is asked for, and the repository's
+// lockfile says which version is installed. A bump can move either one
+// alone - a range widened without reinstalling, a lockfile refreshed inside
+// an unchanged range - and both change what the checker prints.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-deps
+export function touchesDependencyManifest(packageRelativeFiles: string[], repoRelativeFiles: string[]): boolean {
+  if (packageRelativeFiles.includes('package.json')) return true;
+  return repoRelativeFiles.some((file) => file === 'package-lock.json' || file.endsWith('/package-lock.json'));
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-deps
 
 // A base-ref contract file `resolveRenameSource` can compare a "not found at
 // this path" unit against - `path` is package-relative (matches
@@ -578,11 +697,23 @@ export interface GuardEvaluationInput {
   // Optional and defaulted true so every pre-existing call site (and test)
   // keeps meaning exactly what it meant before this field existed.
   componentExists?: boolean;
+  // Whether the directory ships a `*.contract.test.ts`. The freshness
+  // comparison a covered component is held to is asserted in TWO runs on
+  // purpose - the guard's, and the component's own unit run - and the second
+  // one only happens if the suite exists. Without it, staleness reaches the
+  // developer who caused it only when continuous integration says so, which
+  // is the slower half of the pair the design is built on.
+  contractTestExists?: boolean;
+  // Whether the coverage allowlist named this component at the base
+  // reference. A component dropped from the list is out of scope from the
+  // next change onward, so the change that drops it is the last one that can
+  // say anything about it.
+  wasCovered?: boolean;
 }
 
 export interface GuardResult {
   component: string;
-  status: 'covered-ok' | 'covered-violation' | 'uncovered-info' | 'component-removed';
+  status: 'covered-ok' | 'covered-violation' | 'uncovered-info' | 'component-removed' | 'coverage-dropped';
   message: string;
 }
 
@@ -595,7 +726,15 @@ export interface GuardResult {
 // @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-guard-scope:p1
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-guard:p1
 export function evaluateGuard(input: GuardEvaluationInput): GuardResult {
-  const { component, covered, overlayExists, artifactsFresh, componentExists = true } = input;
+  const {
+    component,
+    covered,
+    overlayExists,
+    artifactsFresh,
+    componentExists = true,
+    contractTestExists = true,
+    wasCovered = covered,
+  } = input;
   // A deleted directory is a designed outcome (M10), not a crash: only a
   // problem when covered.json still names a component that no longer
   // exists - an untouched-by-coverage deletion is exactly as uninteresting
@@ -613,6 +752,23 @@ export function evaluateGuard(input: GuardEvaluationInput): GuardResult {
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-removed
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-uncovered
   if (!covered) {
+    // Dropped from the allowlist by THIS change: reported rather than
+    // failed, because de-listing is a legitimate act (it is the one
+    // acknowledgement the harness records for a removed contract), but it is
+    // also the last moment anything says the component's artifacts stop
+    // being guarded. Silence here is how a component left coverage with no
+    // line in any run's output.
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-delisted
+    if (wasCovered) {
+      return {
+        component,
+        status: 'coverage-dropped',
+        message:
+          `${component}: dropped from covered.json by this change - its committed contract artifacts are no longer ` +
+          `guarded for freshness or compatibility from here on`,
+      };
+    }
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-delisted
     return {
       component,
       status: 'uncovered-info',
@@ -629,6 +785,17 @@ export function evaluateGuard(input: GuardEvaluationInput): GuardResult {
     };
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-suite
+  if (!contractTestExists) {
+    return {
+      component,
+      status: 'covered-violation',
+      message:
+        `${component}: covered by covered.json but ships no ${component}.contract.test.ts - the freshness ` +
+        `comparison would then only ever run in continuous integration, never in the unit run of whoever changed it`,
+    };
+  }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-suite
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
   if (!artifactsFresh) {
     return {

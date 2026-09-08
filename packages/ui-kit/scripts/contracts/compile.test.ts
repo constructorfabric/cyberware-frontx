@@ -156,3 +156,20 @@ describe('the vocabulary the base type and the metamodel reference', () => {
     expect(family.default).toBeNull();
   });
 });
+
+describe('a boolean cva axis', () => {
+  const [panel] = extractComponent(fixture('boolean-axis.fixture.tsx'));
+  const { properties } = buildPropsAndRequired('panel', panel, { properties: {} });
+
+  it('compiles to a boolean property, not to the string enum its keys look like', () => {
+    // What VariantProps types the prop as, and therefore the only shape a
+    // caller can satisfy: `<Panel fullWidth />` passes a boolean, and a
+    // contract stating `enum: ['true','false']` on a string rejected it.
+    expect(properties.fullWidth).toEqual({ type: 'boolean', default: false });
+    expect(properties.raised).toEqual({ type: 'boolean' });
+  });
+
+  it('leaves a string axis a string enum with its own default', () => {
+    expect(properties.emphasis).toEqual({ type: 'string', enum: ['low', 'high'], default: 'low' });
+  });
+});

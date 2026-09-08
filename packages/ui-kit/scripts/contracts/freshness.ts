@@ -9,7 +9,7 @@
 // comparison - one to fail a test with a diff, the other to fail a CI check
 // with the same diff - so the comparison lives here once; each caller only
 // decides how to report it.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -85,9 +85,18 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
     'base.component.json': jsonDiff(loadBaseSchema(), buildBaseSchema()),
     'ui-component.meta.json': jsonDiff(readJsonIfExists(join(CONTRACTS_DIR, 'ui-component.meta.json')), buildMetamodel()),
   };
-  for (const type of buildTraitTypes()) {
-    const fileName = traitTypeFileName(type);
-    sharedSchemaDiffs[`types/${fileName}`] = jsonDiff(readJsonIfExists(join(TYPES_DIR, fileName)), type);
+  // The union of what the builder produces and what the directory holds, not
+  // just the builder's own list: a type file the builder no longer produces
+  // was diffed by nobody while `loadTraitTypes` went on registering it in
+  // every GTS store and every Ajv instance - a definition the harness applies
+  // and no comparison covers. An orphan reads as "missing from the fresh
+  // compile", which is exactly what it is.
+  const freshTypes = new Map(buildTraitTypes().map((type) => [traitTypeFileName(type), type]));
+  const committedTypeFiles = existsSync(TYPES_DIR)
+    ? readdirSync(TYPES_DIR).filter((name) => name.endsWith('.json'))
+    : [];
+  for (const fileName of [...new Set([...freshTypes.keys(), ...committedTypeFiles])].sort()) {
+    sharedSchemaDiffs[`types/${fileName}`] = jsonDiff(readJsonIfExists(join(TYPES_DIR, fileName)), freshTypes.get(fileName));
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-base
 

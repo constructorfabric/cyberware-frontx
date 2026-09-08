@@ -12,13 +12,20 @@
 // Fixed vendor.package prefix every kit-owned GTS type shares.
 export const VENDOR_PACKAGE = 'frontx.uikit';
 
-// Contract major of a component's derived props schema and its instance -
-// the number a compatibility check bumps when a component's props schema
-// stops being backward compatible with what shipped before. Deliberately a
-// parameter of propsSchemaId/instanceId below rather than baked into their
-// bodies, so a future per-component major bump is a call-site change, not a
-// rewrite of the id grammar.
-export const CONTRACT_MAJOR = 1;
+// The contract major a component carries when its overlay states none - the
+// number a compatibility check requires a component to move when its props
+// schema stops being backward compatible with what shipped before.
+//
+// A DEFAULT, not a kit-wide setting, and that distinction is the whole point
+// of the constant's name. It used to be read directly by every call site, so
+// the one escape hatch the compatibility gate offers - "move the major and
+// the narrowing is accepted" - could only be taken by rewriting the
+// identifier of every contract, every instance and every reference in the
+// kit at once. A gate whose escape hatch costs that much is a gate people
+// route around. The major now comes from the component's own overlay
+// (`major:`), threaded through the three id builders below, so moving one
+// component's major moves that component's identifiers and nothing else.
+export const DEFAULT_CONTRACT_MAJOR = 1;
 
 // Semver of the overlay vocabulary itself (the fields an author may write),
 // independent of any component's contract major - typical_uses/dont_use_when

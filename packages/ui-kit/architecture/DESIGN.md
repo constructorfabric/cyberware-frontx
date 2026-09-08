@@ -386,13 +386,13 @@ Prose describing a component can only be reviewed. This component produces a des
 - Reads a component's TypeScript for its exported components, variant axes and defaults, the host element each renders, and every prop filed by where its declaration lives - the component's own source, the primitive library's props for the part it wraps, or React's attributes for that element.
 - Validates the hand-authored overlay against the overlay vocabulary and refuses one that reaches into the machine's half (UIKIT-1).
 - Compiles the two into a props schema and a metamodel instance, composing the hand-written surface for the element the component renders and deriving the component's allowed mount points from every other contract's allowed children.
-- Constructs the identifiers the contracts are named in, following the type-definition specification's segment grammar.
+- Constructs the identifiers the contracts are named in, following the type-definition specification's segment grammar, taking each component's contract major from that component's own overlay so the compatibility gate's acknowledgement costs one component rather than the kit.
 - Routes each meaning field either to the block a validator reads or to the block that is prose, and derives the validator-read half's schema from the same definitions the metamodel uses, by reference to the vocabulary type that owns each concept (see 3.1).
 - Writes the schemas that belong to no single component - the abstract base type, the metamodel, the vocabulary types - from their builders, so the identifier grammar has one source and a stale committed copy is a comparison failure rather than a silent divergence.
 - Supplies the per-component conformance suite that fails when a committed artifact no longer equals a fresh compile.
 - Decides compatibility against a base reference and requires a contract major move for an incompatible difference.
 - Reports the verdict on a prop nothing in a contract evaluates - known, unchecked, or a near miss of a prop the contract declares - because the contract is left open rather than closed and a schema cannot make that distinction.
-- Decides which components a change must be held to, and reports kit-wide coverage without failing on it.
+- Decides which components a change must be held to - the directories it touches, widened to every described component when anything that reshapes a compiled contract changes, including a dependency the checker's printed type text comes from - and reports kit-wide coverage without failing on it.
 
 ##### Responsibility boundaries
 

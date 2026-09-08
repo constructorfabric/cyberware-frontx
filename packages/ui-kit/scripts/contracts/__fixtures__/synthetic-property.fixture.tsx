@@ -10,5 +10,8 @@
 export type SyntheticProps = Record<'a' | 'b', string> & { own: string };
 
 export function SyntheticWidget(props: SyntheticProps) {
-  return <div {...props} />;
+  // Read, not spread: the mapped half of this props type is not assignable to
+  // a <div>'s attributes, and the extraction reads the TYPE rather than the
+  // render body, so the body only has to be real JSX over the props.
+  return <div className={props.own} data-a={props.a} data-b={props.b} />;
 }

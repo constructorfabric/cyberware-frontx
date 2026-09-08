@@ -19,6 +19,7 @@ import {
   resolveRenameSource,
   synthesizeVersionedId,
   touchesAnyOverlay,
+  touchesDependencyManifest,
   touchesSharedContractTooling,
 } from './check-lib';
 import { applyContractTestTimeout } from './testing';
@@ -164,7 +165,7 @@ describe('diffPassthroughSchema', () => {
 describe('diffOwnPropsSchema', () => {
   it('is compatible when nothing was removed and nothing newly became required', () => {
     const diff = diffOwnPropsSchema({ properties: { label: {} }, required: [] }, { properties: { label: {}, icon: {} }, required: [] });
-    expect(diff).toEqual({ removedProps: [], newlyRequiredProps: [], compatible: true });
+    expect(diff).toEqual({ removedProps: [], newlyRequiredProps: [], narrowedProps: [], movedToForwardedSurface: [], compatible: true });
   });
 
   it('reports a removed own prop regardless of whether it was required', () => {
@@ -184,7 +185,7 @@ describe('diffOwnPropsSchema', () => {
 
   it('is unaffected by a prop that was already required and stays required', () => {
     const diff = diffOwnPropsSchema({ properties: { label: {} }, required: ['label'] }, { properties: { label: {} }, required: ['label'] });
-    expect(diff).toEqual({ removedProps: [], newlyRequiredProps: [], compatible: true });
+    expect(diff).toEqual({ removedProps: [], newlyRequiredProps: [], narrowedProps: [], movedToForwardedSurface: [], compatible: true });
   });
 
   it('is unaffected by a slot prop that only gains prose naming its TypeScript type', () => {
@@ -192,7 +193,7 @@ describe('diffOwnPropsSchema', () => {
       { properties: { icon: {} }, required: [] },
       { properties: { icon: { description: 'TS: ReactNode. Not expressible in JSON Schema, checked by tsc.' } }, required: [] },
     );
-    expect(diff).toEqual({ removedProps: [], newlyRequiredProps: [], compatible: true });
+    expect(diff).toEqual({ removedProps: [], newlyRequiredProps: [], narrowedProps: [], movedToForwardedSurface: [], compatible: true });
   });
 });
 
@@ -227,7 +228,7 @@ describe('decideCompat', () => {
   it('fails on an incompatible own-props diff alone, even when gts-ts reports backward compatible', () => {
     const verdict = decideCompat({
       ...base,
-      ownPropsDiff: { removedProps: [], newlyRequiredProps: ['id'], compatible: false },
+      ownPropsDiff: { removedProps: [], newlyRequiredProps: ['id'], narrowedProps: [], movedToForwardedSurface: [], compatible: false },
     });
     expect(verdict.status).toBe('fail');
     expect(verdict.notes[0]).toContain('own prop "id" became required');
@@ -360,7 +361,10 @@ describe('touchesSharedContractTooling', () => {
     expect(touchesSharedContractTooling(['scripts/contracts/check-lib.ts'])).toBe(true);
   });
 
-  it('is false for the guard/compat entry point, its own tests, fixtures, covered.json and pilot notes', () => {
+  it('is false for the guard/compat entry point, any test file, fixtures, covered.json and pilot notes', () => {
+    // The entry point is named in the exclusion set; a test file is excluded
+    // by its suffix, which is why naming one in that set as well said
+    // nothing and it no longer does.
     for (const file of [
       'scripts/contracts/check.ts',
       'scripts/contracts/check-lib.test.ts',
@@ -550,5 +554,134 @@ describe('classifyProps', () => {
     const report = classifyProps({ variant: 'ghost', className: 'x' }, contract);
     expect(report.known).toEqual(['variant']);
     expect(report.unchecked).toEqual(['className']);
+  });
+});
+
+describe('diffOwnPropsSchema: narrowing and the forwarded surface', () => {
+  const surface = {
+    properties: { className: { type: 'string' }, style: {} },
+    patternProperties: { '^aria-': {}, '^data-': {}, '^on[A-Z]': {} },
+  };
+
+  it('reports an enum appearing on a prop that already carried its type', () => {
+    // The one narrowing gts-ts's own backward check calls compatible
+    // (measured, see check-lib.compat-e2e.test.ts): every value outside the
+    // new union stops validating, and this is the shape the compiler emits
+    // the day a plain `string` prop becomes a literal union.
+    const diff = diffOwnPropsSchema(
+      { properties: { tone: { type: 'string' } } },
+      { properties: { tone: { type: 'string', enum: ['info', 'warning'] } } },
+    );
+    expect(diff.compatible).toBe(false);
+    expect(diff.narrowedProps).toEqual([
+      { prop: 'tone', reason: 'enum constraint added: info, warning where none existed before' },
+    ]);
+  });
+
+  it('reports a dropped enum value and a changed type on an own prop', () => {
+    const dropped = diffOwnPropsSchema(
+      { properties: { variant: { type: 'string', enum: ['a', 'b'] } } },
+      { properties: { variant: { type: 'string', enum: ['a'] } } },
+    );
+    expect(dropped.narrowedProps).toEqual([{ prop: 'variant', reason: 'enum value(s) removed: b' }]);
+    const retyped = diffOwnPropsSchema(
+      { properties: { pageSize: { type: 'number' } } },
+      { properties: { pageSize: { type: 'string' } } },
+    );
+    expect(retyped.narrowedProps).toEqual([{ prop: 'pageSize', reason: 'type changed from "number" to "string"' }]);
+  });
+
+  it('does not report a constraint lifted entirely - that accepts a superset', () => {
+    const diff = diffOwnPropsSchema(
+      { properties: { tone: { type: 'string', enum: ['a'] } } },
+      { properties: { tone: { type: 'string' } } },
+    );
+    expect(diff.compatible).toBe(true);
+    expect(diff.narrowedProps).toEqual([]);
+  });
+
+  it('reconciles a prop that left properties but is still accepted by the forwarded surface', () => {
+    // A component dropping its own `className` declaration still forwards
+    // `className` to its host element, so nothing a consumer passes stops
+    // validating. Reported, because the declaration really did disappear,
+    // but not a reason to move the major.
+    const diff = diffOwnPropsSchema({ properties: { className: { type: 'string' } } }, { properties: {} }, surface);
+    expect(diff.removedProps).toEqual([]);
+    expect(diff.movedToForwardedSurface).toEqual(['className']);
+    expect(diff.compatible).toBe(true);
+  });
+
+  it('reconciles a prop the surface accepts only by pattern', () => {
+    const diff = diffOwnPropsSchema({ properties: { 'data-state': {} } }, { properties: {} }, surface);
+    expect(diff.movedToForwardedSurface).toEqual(['data-state']);
+    expect(diff.compatible).toBe(true);
+  });
+
+  it('still reports a narrowing when the surface accepts the name with a stricter shape', () => {
+    // Accepted is not the same as accepted unchanged: an own `tone` typed as
+    // anything, moved onto a surface entry typed `string`, rejects a number
+    // the old contract took.
+    const diff = diffOwnPropsSchema({ properties: { className: {} } }, { properties: {} }, surface);
+    expect(diff.movedToForwardedSurface).toEqual(['className']);
+    expect(diff.narrowedProps).toEqual([
+      { prop: 'className', reason: 'type constraint added: "string" where none existed before' },
+    ]);
+    expect(diff.compatible).toBe(false);
+  });
+
+  it('still reports a removal the surface does not account for', () => {
+    const diff = diffOwnPropsSchema({ properties: { loading: { type: 'boolean' } } }, { properties: {} }, surface);
+    expect(diff.removedProps).toEqual(['loading']);
+    expect(diff.movedToForwardedSurface).toEqual([]);
+    expect(diff.compatible).toBe(false);
+  });
+
+  it('reports a removal as a removal when there is no forwarded surface at all', () => {
+    const diff = diffOwnPropsSchema({ properties: { className: { type: 'string' } } }, { properties: {} });
+    expect(diff.removedProps).toEqual(['className']);
+  });
+});
+
+describe('touchesDependencyManifest', () => {
+  // The one widening signal that is not about this repository's own code: a
+  // committed contract carries the checker's printed type text for the
+  // packages it depends on.
+  it("is true for the package's own package.json", () => {
+    expect(touchesDependencyManifest(['package.json'], [])).toBe(true);
+  });
+
+  it('is true for the repository lockfile, which the package-relative listing never shows', () => {
+    expect(touchesDependencyManifest([], ['package-lock.json'])).toBe(true);
+    expect(touchesDependencyManifest([], ['packages/ui-kit/package-lock.json'])).toBe(true);
+  });
+
+  it('is false for anything else, including a package.json somewhere else in the repository', () => {
+    expect(touchesDependencyManifest(['src/components/button/button.tsx'], ['packages/api/package.json'])).toBe(false);
+  });
+});
+
+describe('evaluateGuard: the conformance suite and a de-listing', () => {
+  const covered = { component: 'button', covered: true, overlayExists: true, artifactsFresh: true };
+
+  it('fails a covered component that ships no conformance suite', () => {
+    const result = evaluateGuard({ ...covered, contractTestExists: false });
+    expect(result.status).toBe('covered-violation');
+    expect(result.message).toContain('ships no button.contract.test.ts');
+  });
+
+  it('reports a component dropped from the allowlist by this change, without failing', () => {
+    const result = evaluateGuard({ ...covered, covered: false, wasCovered: true });
+    expect(result.status).toBe('coverage-dropped');
+    expect(result.message).toContain('dropped from covered.json by this change');
+  });
+
+  it('reports an ordinarily uncovered component as information, as before', () => {
+    const result = evaluateGuard({ ...covered, covered: false, wasCovered: false });
+    expect(result.status).toBe('uncovered-info');
+  });
+
+  it('defaults both fields so a caller that states neither means what it always meant', () => {
+    expect(evaluateGuard(covered).status).toBe('covered-ok');
+    expect(evaluateGuard({ ...covered, covered: false }).status).toBe('uncovered-info');
   });
 });

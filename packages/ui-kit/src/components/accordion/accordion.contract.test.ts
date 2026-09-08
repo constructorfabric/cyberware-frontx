@@ -13,6 +13,7 @@ import {
   BASE_TYPE_ID,
   buildMetamodel,
   compileContract,
+  contractMajor,
   compileInstance,
   loadBaseSchema,
   loadPassthroughSchema,
@@ -21,7 +22,7 @@ import {
   type CompiledContract,
   type ContractInstance,
 } from '../../../scripts/contracts/compile';
-import { bareGtsId, componentTypeRef, CONTRACT_MAJOR } from '../../../scripts/contracts/ids';
+import { bareGtsId, componentTypeRef } from '../../../scripts/contracts/ids';
 import {
   applyContractTestTimeout,
   assertContractFreshness,
@@ -70,7 +71,7 @@ const metaSchema = buildMetamodel();
 // The ref every part's own `family.root` and every dont_use_when/composition
 // pointer at Accordion itself should agree on - built once so a typo in one
 // overlay shows up as a mismatch against this, not just against itself.
-const ROOT_REF = componentTypeRef(DIRECTORY, CONTRACT_MAJOR);
+const ROOT_REF = componentTypeRef(DIRECTORY, contractMajor(DIRECTORY, DIRECTORY));
 
 describe('accordion family: metamodel validity', () => {
   it('every instance validates against the component metamodel', () => {
@@ -95,7 +96,7 @@ describe('accordion family: family references resolve', () => {
     expect(root.family?.role).toBe('root');
     expect(root.family?.root).toBe(ROOT_REF);
     expect(root.family?.parts?.sort()).toEqual(
-      PART_STEMS.map((stem) => componentTypeRef(stem, CONTRACT_MAJOR)).sort(),
+      PART_STEMS.map((stem) => componentTypeRef(stem, contractMajor(DIRECTORY, stem))).sort(),
     );
   });
 
@@ -136,7 +137,7 @@ describe('accordion family: composition references resolve', () => {
 
   it("the root's only allowed child is AccordionItem", () => {
     expect(units[DIRECTORY].contract['x-gts-traits'].composition.children?.kinds).toEqual([
-      componentTypeRef('accordion-item', CONTRACT_MAJOR),
+      componentTypeRef('accordion-item', contractMajor(DIRECTORY, 'accordion-item')),
     ]);
   });
 
@@ -148,11 +149,11 @@ describe('accordion family: composition references resolve', () => {
     // so the two directions cannot disagree - what is asserted here is that
     // the derivation produces the family the overlays describe.
     expect(units['accordion-item'].contract['x-gts-traits'].composition.parent?.kinds).toEqual([
-      componentTypeRef(DIRECTORY, CONTRACT_MAJOR),
+      componentTypeRef(DIRECTORY, contractMajor(DIRECTORY, DIRECTORY)),
     ]);
     for (const stem of ['accordion-trigger', 'accordion-content'] as const) {
       expect(units[stem].contract['x-gts-traits'].composition.parent?.kinds, stem).toEqual([
-        componentTypeRef('accordion-item', CONTRACT_MAJOR),
+        componentTypeRef('accordion-item', contractMajor(DIRECTORY, 'accordion-item')),
       ]);
     }
   });

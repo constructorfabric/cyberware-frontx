@@ -624,10 +624,16 @@ stays the one place props/axes are declared, the extractor reads them, the
 overlay only carries what code cannot express - was hardened instead:
 `check.ts`'s `compat` subcommand diffs a component's committed props
 schema against the same component at a base ref via gts-ts's
-`GTS.checkCompatibility` and fails the build on an incompatible verdict
-unless `CONTRACT_MAJOR` also moved. That is Option A's own answer to the
-concern Option B was raised to solve - "a removed variant breaks consumers
-silently" - without inverting which side is generated. B is declined for a
+`GTS.checkCompatibility`, and fails the build on an incompatible verdict
+unless the component's own contract major also moved. That is Option A's own
+answer to the concern Option B was raised to solve - "a removed variant
+breaks consumers silently" - without inverting which side is generated. The
+answer only holds because the major is PER COMPONENT, authored in that
+component's overlay: read off a kit-wide constant, as it was at first, the
+one acknowledgement the gate offers could only be given by rewriting the
+identifier of every contract, every instance and every reference in the kit
+at once, and a gate whose escape hatch costs that much is a gate people route
+around rather than a gate that catches anything. B is declined for a
 narrower reason than "A already works": the compiled JSON, not YAML-derived
 TypeScript, is the one artifact this contract format claims is normative -
 `gtsPlugin.registerSchema`, a projection into a structured-output schema, or
@@ -1061,3 +1067,150 @@ union's member order out of it. Putting the extractor's own suite on a program
 shape no real run uses would point the one test that could catch a `typeText`
 regression at the wrong compilation. The file is unchanged and still builds a
 program per fixture.
+
+## The compatibility gate had an escape hatch nobody could take
+
+**Observed.** A second review of the harness found the gate's own arithmetic
+wrong in two directions at once.
+
+The escape hatch was kit-wide. Every identifier builder read one constant, so
+"move the major and the narrowing is accepted" meant rewriting the identifier
+of every contract, every instance and every reference in the kit - for one
+component's narrowing. A gate whose only acknowledgement costs that much is
+one people route around.
+
+And the gate under-reported and over-reported at the same time. The declared
+props diff read removals and newly-required props and nothing else, so a plain
+`string` prop becoming a literal union passed - measured against the installed
+type system, its own backward check does not report an enum appearing over an
+existing type either, though it does report one appearing where the property
+asserted nothing at all. Meanwhile a prop that left `properties` and was still
+accepted by the element surface the contract forwards to - a component dropping
+its own narrower `className` declaration - was reported as a breaking removal
+and demanded a major move for a change no consumer can feel.
+
+**Changed.** The major comes from the component's own overlay (`major:`,
+default 1) and is threaded through the three identifier builders; a reference
+carries the TARGET's major, read from the target's overlay, so moving one
+component's major moves that component's identifiers and the references to it,
+and nothing else. The shape rule that the forwarded surface already had is now
+one function over both halves of a contract. And a declared prop that left
+`properties` is reconciled against the forwarded surface: accepted there, by
+declaration or by pattern, it is reported as moved rather than removed, with
+the shapes compared where the surface declares one.
+
+**Decisions taken along the way.**
+
+- **The major is declared on the overlay schema, not on the metamodel.** It is
+  not a field of a contract instance - it is part of every identifier the
+  instance carries - so declaring it in both places would be one fact written
+  twice with nothing keeping the two in step. Nothing in the compiled output
+  changed when it moved: every overlay omits it, and every contract still
+  carries major 1.
+- **What the type system does and does not catch is pinned, not assumed.** Five
+  cases in `check-lib.compat-e2e.test.ts` measure its backward verdict
+  directly, including the two it reports and the three it does not. Each is a
+  reason `diffOwnPropsSchema` exists, and a version that starts or stops
+  reporting one fails that suite instead of quietly changing how much the gate
+  catches.
+
+## Four ways the guard's scope was narrower than the thing it guards
+
+**Observed.** The same review found the guard in scope for less than it
+protects, and one of the gaps was outside the package entirely.
+
+- A committed contract carries the checker's printed type text for every
+  property no schema shape can express - the primitive library's
+  `AccordionValue<Value>`, React's `CSSProperties`. A dependency bump reshapes
+  every described component's artifacts with no file under `src/components` or
+  `scripts/contracts` touched, and the lockfile that decides which version is
+  installed is not even visible to the package-relative change set the guard
+  collects.
+- Dropping a component from the coverage allowlist took it out of scope with no
+  line in any output - and that same edit is the acknowledgement the removal
+  sweep accepts, so the one edit that ends a component's coverage was the one
+  edit nothing looked at.
+- A covered component with no `*.contract.test.ts` was held to the freshness
+  comparison in continuous integration only. The comparison is asserted twice
+  on purpose, and the second assertion - the unit run of whoever changed the
+  component - simply did not exist for such a directory.
+- The exclusion set naming files that do NOT widen the scope named
+  `check-lib.test.ts`, which the `.test.ts` rule already excluded. An
+  unreachable entry there reads as a decision somebody took about that file.
+
+**Changed.** Two more widening reasons, each with its own signal in the
+guard's output so a reader knows which applied: a dependency manifest (the
+package's own `package.json` and the repository's lockfile, read from a
+repository-scoped change set added for exactly this), and the union of the
+allowlist as it is with the allowlist as it was at the base reference. A
+component the allowlist has dropped gets its own verdict - reported, not
+failed, because de-listing is legitimate - and a covered component without a
+conformance suite fails. The unreachable exclusion entry is gone.
+
+**Decisions taken along the way.**
+
+- **Both dependency files, not one.** The package's manifest says which version
+  range is asked for and the lockfile says which version is installed; a bump
+  can move either alone - a range widened without reinstalling, a lockfile
+  refreshed inside an unchanged range - and both change what the checker
+  prints.
+- **De-listing reports rather than fails.** It has to stay possible: it is the
+  only acknowledgement this harness records for a removed contract. What it
+  must not be is silent.
+
+## Two more places a fact was read from the wrong side
+
+**Observed.** Two smaller findings from the same review, both the same shape -
+a lookup that answered from one side of a set when it needed both.
+
+The freshness comparison iterated the vocabulary BUILDER's output, so a
+committed `types/*.json` the builder no longer produces was diffed by nobody
+while `loadTraitTypes` went on registering it in every GTS store and every Ajv
+instance: a definition the harness applies and no comparison covers.
+
+And component-reference resolution took the FIRST component directory whose
+name the identifier's stem extends. A part's stem extends its directory's name
+by construction, so more than one directory can be a candidate -
+`data-table-sort-button` is extended from `data-table` and would be from a
+`data` alongside it - and the first one the directory listing happened to yield
+would resolve a part into the wrong component in silence.
+
+**Changed.** The freshness comparison is driven from the union of both sides,
+and an orphaned type file reads as missing from the fresh compile, which is
+what it is. Reference resolution takes the longest directory the stem extends
+and fails by name when two of the same length could claim it.
+
+## The builders were pure and re-run anyway
+
+**Observed.** The metamodel, the base type and the vocabulary types are built
+by pure string construction, and the vocabulary is read from thirteen files -
+and all of it happened again on every validation. One covered component's
+compile rebuilt the metamodel several times and re-read the whole vocabulary
+directory with it; a widened guard multiplies that by the covered set. The Ajv
+instance that validates an overlay was compiled per overlay for the same
+reason.
+
+**Changed.** Every builder and loader is memoized for the life of the process,
+and the two validators every compile runs - the metamodel against an instance,
+the trait schema against a contract's validator-read block - are compiled once.
+
+**Decisions taken along the way.**
+
+- **Memoized through a serialization, not by sharing the object.** Two of the
+  readers mutate what they are given: a GTS store normalizes a registered
+  schema in place, and Ajv keeps state against one. A structured copy of a
+  small document is far cheaper than the construction and the file reads it
+  replaces, and it keeps the guarantee every caller already relied on - what it
+  gets is its own. `registerContractTypes` dropped its own defensive copy
+  because of it.
+
+**Numbers**, local, warm, best of two:
+
+| Command | Before | After |
+|---|---|---|
+| `contracts:check -- guard --base HEAD` | 3.91s | 3.14s |
+| `npm run policy:contracts` (guard + compat + coverage vs `HEAD`) | 12.31s | 11.54s |
+
+The guard is where the saving is. The policy wrapper's remaining time is
+almost entirely the coverage report's single TypeScript program over all 63
+component entry files, which no amount of schema caching touches.

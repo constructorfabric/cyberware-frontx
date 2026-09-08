@@ -25,6 +25,7 @@ import {
   assertValidatesAgainst,
   BASE_TYPE_ID,
   buildMetamodel,
+  buildOverlaySchema,
   buildPropsAndRequired,
   compileContract,
   compileInstance,
@@ -42,10 +43,10 @@ import {
 } from '../../../scripts/contracts/compile';
 import type { ComponentExtraction } from '../../../scripts/contracts/extract';
 import { classifyProps } from '../../../scripts/contracts/check-lib';
+import { contractMajor } from '../../../scripts/contracts/compile';
 import {
   bareGtsId,
   componentTypeRef,
-  CONTRACT_MAJOR,
   domPassthroughToken,
   instanceIdPattern,
   METAMODEL_VERSION,
@@ -467,6 +468,7 @@ describe('overlay and extraction safety', () => {
     return {
       name: 'Button',
       axes: {},
+      booleanAxes: [],
       defaults: {},
       ownProps,
       apiProps,
@@ -551,6 +553,27 @@ describe('overlay and extraction safety', () => {
     expect(() => assertOverlayReferencesRealProps('button', staleOverlay, extraction)).toThrow(
       /composition\.children\.icons_via references "ghostIcon"/,
     );
+  });
+
+  it('accepts an authored contract major, and rejects one that is not a version', () => {
+    // Per-component, because moving it is the one acknowledgement the
+    // compatibility check accepts for a narrowing: read off a kit-wide
+    // constant, taking that escape hatch meant rewriting every identifier in
+    // the kit at once. Absent means 1, which is what every described
+    // component carries today.
+    expect(parseOverlay('button', { ...validOverlay, major: 2 })).toEqual({ ...validOverlay, major: 2 });
+    expect(parseOverlay('button', validOverlay).major).toBeUndefined();
+    for (const major of [0, -1, 1.5, '2']) {
+      expect(() => parseOverlay('button', { ...validOverlay, major }), String(major)).toThrow(/major/);
+    }
+  });
+
+  it('declares the major on the overlay schema and not on the metamodel', () => {
+    // The major is not a FIELD of a contract instance - it is part of every
+    // identifier the instance carries - so declaring it in both places would
+    // be one fact written twice with nothing keeping the two in step.
+    expect(buildOverlaySchema().properties).toHaveProperty('major');
+    expect(buildMetamodel().properties).not.toHaveProperty('major');
   });
 
   it('rejects an overlay that writes composition.parent, pointing at mounts_in', () => {
@@ -712,13 +735,13 @@ describe('a component reference names one contract major', () => {
   // behind names a type the kit no longer ships, and the resolver is what
   // makes that visible rather than the name alone matching.
   it('resolves a reference to the contract that ships at exactly that id', () => {
-    const target = resolveComponentRef(componentTypeRef('button', CONTRACT_MAJOR));
+    const target = resolveComponentRef(componentTypeRef('button', contractMajor('button')));
     expect(target.directory).toBe('button');
     expect(target.contractId).toBe(bareGtsId(contract.$id));
   });
 
   it('does not accept a reference at a major the component does not ship', () => {
-    const stale = componentTypeRef('button', CONTRACT_MAJOR + 1);
+    const stale = componentTypeRef('button', contractMajor('button') + 1);
     const target = resolveComponentRef(stale);
     expect(target.contractId).not.toBe(stale);
   });
@@ -726,7 +749,9 @@ describe('a component reference names one contract major', () => {
   it('resolves a component that ships no contract to its directory alone', () => {
     // Most components a `don't` rule points at are undescribed; the kit
     // shipping the component is a directory, not a registration.
-    const target = resolveComponentRef(componentTypeRef('switch', CONTRACT_MAJOR));
+    // A component that ships no contract has no overlay to state a major, so
+    // a reference to one may only name major 1 - see testing.ts's own check.
+    const target = resolveComponentRef(componentTypeRef('switch', 1));
     expect(target.directory).toBe('switch');
     expect(target.contractId).toBeUndefined();
   });

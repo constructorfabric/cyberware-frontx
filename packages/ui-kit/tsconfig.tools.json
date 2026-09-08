@@ -14,6 +14,14 @@
 // and it is the code that decides what ships, so it gets checked.
 // vitest.config.ts is listed alongside vite.config.ts because it was the one
 // remaining config file no project covered.
+//
+// `scripts/**/*.tsx` is listed for the same reason one step further in: the
+// extractor's own fixtures are .tsx (they have to be - they are components),
+// they are outside src/ so tsconfig.src.json never sees them, and a `*.ts`
+// include left them checked by no project at all. A fixture that stops
+// compiling is a fixture that no longer reproduces the shape it was written
+// for, which is exactly the kind of silent decay the extractor tests exist
+// to prevent.
 {
   "extends": "./tsconfig.src.json",
   "compilerOptions": {
@@ -24,6 +32,6 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "vitest.config.ts", "scripts/**/*.ts"],
+  "include": ["vite.config.ts", "vitest.config.ts", "scripts/**/*.ts", "scripts/**/*.tsx"],
   "exclude": ["node_modules", "dist"]
 }

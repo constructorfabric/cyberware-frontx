@@ -249,7 +249,7 @@ The system **MUST** hold a described component's committed contract to a fresh c
 
 The system **MUST** compare a described component's contract against the same contract at the change's base reference, and **MUST** refuse a backward-incompatible difference unless the contract's own major version moved.
 
-**Threshold**: Removing a prop, making an optional prop required, dropping a value from a variant axis, or narrowing the forwarded surface is refused at an unchanged major and accepted with the major moved, in both cases naming every reason.
+**Threshold**: Removing a prop, making an optional prop required, dropping a value from a variant axis, constraining a property that accepted more before, or narrowing the forwarded surface is refused at an unchanged major and accepted with the major moved, in both cases naming every reason. The major is the described component's own, so giving that acknowledgement costs one component's identifiers rather than the kit's.
 
 **Rationale**: Consumers depend on a described surface. The point of describing it is that a break becomes a decision rather than an accident.
 

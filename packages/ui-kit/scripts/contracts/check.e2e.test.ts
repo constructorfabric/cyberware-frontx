@@ -105,6 +105,9 @@ interface Fixture {
   // Components whose committed artifacts the injected freshness comparison
   // reports as stale.
   stale: Set<string>;
+  // Components the injected suite listing reports as shipping no
+  // `*.contract.test.ts`.
+  missingSuite: Set<string>;
   write: (relativePath: string, contents: unknown) => void;
   remove: (relativePath: string) => void;
   git: (...args: string[]) => void;
@@ -118,6 +121,7 @@ function createFixture(): Fixture {
 
   const lines: string[] = [];
   const stale = new Set<string>();
+  const missingSuite = new Set<string>();
 
   const overlayStems = (directory: string): string[] => {
     const dir = join(root, 'src', 'components', directory);
@@ -132,6 +136,7 @@ function createFixture(): Fixture {
     root,
     lines,
     stale,
+    missingSuite,
     write(relativePath, contents) {
       const path = join(root, relativePath);
       mkdirSync(dirname(path), { recursive: true });
@@ -147,6 +152,10 @@ function createFixture(): Fixture {
     context: {
       kitRoot: root,
       overlayStems,
+      // A covered directory in these fixtures ships a conformance suite
+      // unless a case says otherwise, so the shape every other case wants is
+      // the ordinary one; `missingSuite` is how a case opts out.
+      contractTestExists: (directory) => !missingSuite.has(directory),
       isComponentFresh: (directory) => !stale.has(directory),
       // One exported component per overlay, so a covered directory with all
       // its overlays present reads as complete - the shape every fixture here
@@ -407,5 +416,67 @@ describe('guard: an overlay elsewhere in the kit', () => {
 
     expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(0);
     expect(fixture.output()).not.toContain('guard: an overlay changed');
+  });
+});
+
+describe('guard: a dependency bump', () => {
+  it("re-checks every covered component when the package's own package.json changes", () => {
+    // A committed contract carries the checker's printed type text for every
+    // property the provider-safe subset cannot express, so a dependency bump
+    // reshapes artifacts with no file under src/components or
+    // scripts/contracts touched at all.
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.stale.add('button');
+    fixture.write('package.json', { name: 'fixture', dependencies: { '@base-ui/react': '^1.1.0' } });
+
+    expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(1);
+    expect(fixture.output()).toContain('guard: a dependency manifest changed');
+    expect(fixture.output()).toContain('button: covered by covered.json but its committed contract artifacts are stale');
+  });
+
+  it('re-checks every covered component when the lockfile changes, which a package-relative diff cannot see', () => {
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.stale.add('button');
+    fixture.write('package-lock.json', { lockfileVersion: 3 });
+    fixture.git('add', '-A');
+    fixture.git('commit', '-m', 'refresh the lockfile');
+
+    expect(runGuard('HEAD~1', { json: false }, fixture.context)).toBe(1);
+    expect(fixture.output()).toContain('guard: a dependency manifest changed');
+  });
+});
+
+describe('guard: a covered component with no conformance suite', () => {
+  it('fails, because the freshness comparison would then only ever run in continuous integration', () => {
+    // The comparison is asserted twice on purpose - here, and in the unit run
+    // of whoever changed the component. A covered directory shipping no
+    // suite silently halves that.
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.missingSuite.add('button');
+    // An edit inside the directory, so the component is in scope the
+    // ordinary way rather than through one of the widening signals.
+    fixture.write('src/components/button/button.module.css', '.root {}\n');
+
+    expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(1);
+    expect(fixture.output()).toContain('ships no button.contract.test.ts');
+  });
+});
+
+describe('guard: a component dropped from the coverage allowlist', () => {
+  it('reports the de-listing instead of letting it leave scope in silence', () => {
+    // The new list alone takes the component out of scope with no line in
+    // any output, and the same edit is what the removal sweep accepts as an
+    // acknowledgement - so the edit that drops coverage must not also be the
+    // edit nothing looks at. Reported, not failed: de-listing is allowed.
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.write('scripts/contracts/covered.json', []);
+
+    expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(0);
+    expect(fixture.output()).toContain('button: dropped from covered.json by this change');
+    expect(fixture.output()).toContain('no longer guarded');
   });
 });

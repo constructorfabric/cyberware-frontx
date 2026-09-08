@@ -96,11 +96,28 @@ export function resolveComponentRef(ref: string): ResolvedComponentRef {
   const match = new RegExp(componentTypeRefPattern(true)).exec(ref);
   if (!match) throw new Error(`"${ref}" is not a grammatical component reference`);
   const stem = match[1].replace(/_/g, '-');
-  const directory = existsSync(join(COMPONENTS_DIR, stem))
-    ? stem
-    : readdirSync(COMPONENTS_DIR, { withFileTypes: true }).find(
-        (entry) => entry.isDirectory() && stem.startsWith(`${entry.name}-`),
-      )?.name;
+  // A part's stem is its directory name plus a suffix, so a directory whose
+  // name is a PREFIX of the stem is a candidate. More than one can be:
+  // `data-table-sort-button` is prefixed by both `data-table` and a
+  // hypothetical `data`, and taking whichever the directory listing happened
+  // to yield first would silently resolve the part into the wrong component.
+  // The longest match is the right one - the deepest directory whose name the
+  // stem still extends - and two candidates of the SAME length would be two
+  // directories with one name, which cannot happen; anything else ambiguous
+  // fails by name.
+  const candidates = existsSync(join(COMPONENTS_DIR, stem))
+    ? [stem]
+    : readdirSync(COMPONENTS_DIR, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && stem.startsWith(`${entry.name}-`))
+        .map((entry) => entry.name)
+        .sort((a, b) => b.length - a.length);
+  const directory = candidates[0];
+  if (candidates.length > 1 && candidates[1].length === candidates[0].length) {
+    throw new Error(
+      `"${ref}" (stem "${stem}") is prefixed by more than one component directory of the same length ` +
+        `(${candidates.join(', ')}) - the reference does not name one component`,
+    );
+  }
   if (directory === undefined) throw new Error(`no component directory ships "${ref}" (stem "${stem}")`);
   const contractPath = join(COMPONENTS_DIR, directory, `${stem}.contract.json`);
   const contractId = existsSync(contractPath)
