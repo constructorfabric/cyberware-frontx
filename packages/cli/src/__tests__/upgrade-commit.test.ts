@@ -90,7 +90,9 @@ function makeHarness(initialDisk: Record<string, string> = {}) {
   // content could never distinguish from an actual write.
   let projectStateWriteCount = 0;
   const readProjectStateFn: ReadProjectStateFn = async () => projectStateContent;
+  let projectStateWriteFailure: string | null = null;
   const writeProjectStateFn: WriteProjectStateFn = async (_absolutePath, content) => {
+    if (projectStateWriteFailure !== null) throw new Error(projectStateWriteFailure);
     projectStateContent = content;
     projectStateWriteCount += 1;
   };
@@ -131,6 +133,9 @@ function makeHarness(initialDisk: Record<string, string> = {}) {
     wasProjectStateWritten: () => projectStateWriteCount > 0,
     failNextCall: (op: 'read' | 'write' | 'rename' | 'unlink' | 'list', path: string) => {
       throwOn = { op, path };
+    },
+    failProjectStateWrite: (message: string) => {
+      projectStateWriteFailure = message;
     },
   };
 }
@@ -202,6 +207,53 @@ describe('commitUpgrade (cpt-frontx-algo-upgrade-changeset-commit)', () => {
 
     expect(harness.promoteInventory).toHaveBeenCalledWith('acme-tool');
     expect(harness.refreshAiBundle).toHaveBeenCalledWith('acme-tool');
+  });
+
+  // Issue #506, carried onto this engine's own commit point: the retired
+  // region-merge engine let its `.frontx/provenance.json` write throw past
+  // `ApplyResult`'s `{ok:false}` contract AFTER project files had been
+  // rewritten. This engine has one store write instead of two, landing last
+  // - and it must report a failure of that write as a typed outcome, never
+  // as a throw, and must NOT roll the landed destinations back: the entry
+  // still names the baseline, which is what lets an identical re-run
+  // converge.
+  it('reports a failing commit-point state write as INTERNAL and leaves every landed destination in place', async () => {
+    const harness = makeHarness({
+      '/repo/app/keep-replace.ts': 'old content',
+    });
+    harness.seedProjectState({
+      formatVersion: 1,
+      templates: { 'acme-tool': { origin: 'github:acme/tool@v1', version: '1.0.0', targets: ['app'] } },
+      projectOwnedRoots: [],
+    });
+    harness.failProjectStateWrite('ENOSPC: no space left on device');
+
+    const plan = makePlan({
+      operations: [
+        op({
+          target: 'app',
+          path: 'app/keep-replace.ts',
+          op: 'REPLACE',
+          expectedDisk: 'old content',
+          baselineContent: 'old content',
+          newContent: 'replaced content',
+        }),
+      ],
+    });
+
+    const result = await commitUpgrade(plan, harness.deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.code).toBe('INTERNAL');
+    expect(result.message).toContain('ENOSPC');
+    // The landed destination stays landed - rolling it back would undo
+    // approved work to recover a document that was never written.
+    expect(harness.disk.get('/repo/app/keep-replace.ts')).toBe('replaced content');
+    expect(harness.wasProjectStateWritten()).toBe(false);
+    // Neither later step runs: the transition never committed.
+    expect(harness.promoteInventory).not.toHaveBeenCalled();
+    expect(harness.refreshAiBundle).not.toHaveBeenCalled();
   });
 
   it('touches no destination before the verify step: a drift refusal leaves every destination byte-identical', async () => {

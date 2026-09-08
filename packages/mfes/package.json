@@ -1,6 +1,6 @@
 {
   "name": "@gears-frontx/mfes",
-  "version": "0.3.0-alpha.3",
+  "version": "0.3.0-alpha.4",
   "description": "MFE runtime substrate for FrontX — registration, loading, extension-domain governance, mediation, and isolation",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -33,10 +33,11 @@
     "test:unit:watch": "vitest --watch"
   },
   "devDependencies": {
+    "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "4.1.4",
     "jsdom": "26.1.0",
-    "tsup": "^8.0.0",
-    "typescript": "^5.4.2",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
     "vitest": "4.1.4"
   },
   "publishConfig": {

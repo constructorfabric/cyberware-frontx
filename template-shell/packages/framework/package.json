@@ -1,6 +1,6 @@
 {
   "name": "@gears-frontx/framework",
-  "version": "0.2.0-alpha.4",
+  "version": "0.2.0-alpha.5",
   "description": "FrontX framework integrating all SDK packages with plugin architecture",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -37,17 +37,19 @@
     "test:unit:watch": "vitest --watch"
   },
   "dependencies": {
-    "path-to-regexp": "^8.2.0"
+    "path-to-regexp": "8.4.2"
   },
   "devDependencies": {
     "@gears-frontx/auth": "*",
     "@gears-frontx/frontx-template-shell": "file:../..",
-    "@gears-frontx/mfes": "0.3.0-alpha.3",
-    "@gears-frontx/gts-plugin": "0.3.0-alpha.3",
+    "@gears-frontx/mfes": "0.3.0-alpha.4",
+    "@gears-frontx/gts-plugin": "0.3.0-alpha.4",
+    "@reduxjs/toolkit": "2.12.0",
+    "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "4.1.4",
-    "@tanstack/query-core": "^5.0.0",
-    "tsup": "8.0.0",
-    "typescript": "5.4.2",
+    "@tanstack/query-core": "5.101.4",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
     "vitest": "4.1.4"
   },
   "peerDependencies": {
@@ -57,7 +59,8 @@
     "@gears-frontx/gts-plugin": "*",
     "@gears-frontx/api": "*",
     "@gears-frontx/i18n": "*",
-    "@tanstack/query-core": "^5.0.0",
+    "@reduxjs/toolkit": "2.12.0",
+    "@tanstack/query-core": "5.101.4",
     "vitest": "4.1.4"
   },
   "peerDependenciesMeta": {
@@ -77,6 +80,9 @@
       "optional": false
     },
     "@gears-frontx/i18n": {
+      "optional": false
+    },
+    "@reduxjs/toolkit": {
       "optional": false
     },
     "@tanstack/query-core": {

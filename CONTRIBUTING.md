@@ -82,6 +82,14 @@ The project is **pre-1.0** — backward compatibility is not guaranteed.
 
 A PR that changes non-documentation source under `src/`, or the dependency fields of `package.json`, for a governed package (non-private `@gears-frontx`-scoped packages: `packages/*`, `template-shell`, and `template-shell/packages/*`) must bump that package's own `version` in the same PR — and update every exact pin on it (see `policy:template-pin-drift`). CI (`policy:version-bump-on-change`, pull requests only) compares the version at the PR's merge base against the version at its head, so a bump that is later reverted within the same PR does not count. Packages the PR itself adds or removes are exempt, as are private packages (e.g. the `template-mfe` fixture apps), which are pinned consumers rather than published sources.
 
+### Dependency Pinning
+
+Third-party dependencies are pinned to exact versions so installs are deterministic.
+
+- **Exact pins everywhere** — every non-`@gears-frontx` dependency in `packages/*`, `template-shell`, and `template-shell/packages/*` declares an exact version, never a range.
+- **21-day eligibility** — a version may only be pinned once it has been published for at least 21 days, so a just-released version is never pulled in before it has been vetted.
+- **One exception** — the `@gears-frontx/mfes` → `@gears-frontx/gts-plugin` edge stays a semver range, per the ecosystem-distribution rule, to avoid forcing two copies of the MFE runtime into one tree.
+
 ## Publishing
 
 Publishing is automated via CI/CD. On push to a publishing branch, CI detects version changes and publishes affected packages.
@@ -98,7 +106,7 @@ Publishing is automated via CI/CD. On push to a publishing branch, CI detects ve
 ### Publish Order
 
 Packages are published in dependency order:
-1. L1 SDK: `@gears-frontx/state`, `@gears-frontx/mfes`, `@gears-frontx/api`, `@gears-frontx/i18n`
+1. L1 SDK: `@gears-frontx/state`, `@gears-frontx/mfes`, `@gears-frontx/api`, `@gears-frontx/i18n`, `@gears-frontx/gts-plugin`
 2. L2 Framework: `@gears-frontx/framework`
 3. L3 React: `@gears-frontx/react`
 4. Standalone: `@gears-frontx/studio`, `@gears-frontx/cli`

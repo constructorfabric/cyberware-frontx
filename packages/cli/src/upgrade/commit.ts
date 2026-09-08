@@ -560,27 +560,51 @@ export async function commitUpgrade(plan: UpgradePlan, deps: CommitDeps): Promis
     targets: plan.targets,
     previous: { origin: plan.from.origin, version: plan.from.version },
   };
+  // `mutateProjectState` reports a malformed existing document as
+  // `{ ok: false }` but lets the WRITE itself throw (`project-state/io.ts`
+  // awaits `writeProjectStateFn` with no handler of its own) - so both
+  // shapes are collected here into the ONE outcome
+  // `inst-com-if-commit-state-fails` describes. Issue #506 was exactly a
+  // store write escaping its function's declared `{ok:false}` contract
+  // after project files had already been rewritten; letting a throw from
+  // this line past `CommitOutcome` would be that same defect on this
+  // engine's own commit point.
   const stateWrite = await mutateProjectState(
     deps.repoRoot,
     { kind: 'set-template', name: plan.name, entry },
     deps.readProjectStateFn,
     deps.writeProjectStateFn,
-  );
+  ).catch((caught: unknown) => ({
+    ok: false as const,
+    error: 'INTERNAL' as const,
+    message: caught instanceof Error ? caught.message : String(caught),
+  }));
   if (!stateWrite.ok) {
-    // Not one of this algorithm's own numbered failure branches - the CDSL
-    // trusts this write as atomic (`project-state/io.ts`'s own header:
-    // "trusted to write-through-temp-then-rename") and does not describe a
-    // malformed-document outcome for it. Surfaced as INTERNAL defensively
-    // rather than left to throw an unhandled shape past this function's
-    // declared return type; every destination write has already landed by
-    // this point, so - unlike every INTERNAL above - this is NOT a
-    // recovered-to-baseline outcome.
+    // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-if-commit-state-fails
+    // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-return-commit-state-failure
+    // Every destination write has already landed by this point, so - unlike
+    // every INTERNAL above - this is NOT a recovered-to-baseline outcome,
+    // and nothing is rolled back. The recorded entry still names the
+    // baseline, which is precisely what lets a re-run of the identical
+    // upgrade converge (`inst-cls-if-unchanged`'s disk-equals-candidate
+    // precedence) rather than refuse - the same convergence a hard crash at
+    // this exact point already relies on. This is the whole-file model's
+    // answer to issue #506, which the retired region-merge engine answered
+    // by moving its separate `.frontx/provenance.json` write inside the
+    // rollback boundary: that engine had TWO stores to keep consistent and
+    // a snapshot to restore from, while this one has a single commit point
+    // that lands last and a baseline payload that is re-resolvable rather
+    // than stored, so the failure is reported truthfully instead of
+    // triggering a rollback that would undo approved work to recover a
+    // document that was never written.
     return {
       ok: false,
       code: 'INTERNAL',
       message: `${plan.name}'s destination writes landed, but the project state store could not be updated: ${stateWrite.message}`,
       details: { projectStateError: stateWrite.message },
     };
+    // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-return-commit-state-failure
+    // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-if-commit-state-fails
   }
   // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-commit-state
   // @cpt-end:cpt-frontx-state-composed-provenance-registration-lifecycle:p1:inst-rl-applied-to-applied
