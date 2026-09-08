@@ -13,8 +13,8 @@ reason = "CLI template sources are code-gen templates, not implementable source"
 patterns = ["*/template-sources/*"]
 
 [[ignore]]
-reason = "Build/bundler configuration files have no CDSL backing"
-patterns = ["*/tsup.config.*", "*/vite.config.*", "*/vitest.config.*", "*/postcss.config.*", "*/tailwind.config.*"]
+reason = "Build/bundler configuration files have no CDSL backing. packages/ui-kit/scripts/buildPlugin.ts is the same category though not name-matched by the other globs here: a Vite plugin factory (externals, per-entry CSS injection, the client-directive passthrough, declaration emission) consumed only by the package's own vite.config, implementing no ecosystem behaviour a numbered instruction specifies. It reaches the scan through packages/ui-kit's own registered scripts codebase entry (and would anyway through the root packages/ + .ts catch-all), unlike scripts/contracts/*.ts beside it, which carry @cpt- markers into the FEATURE's numbered instructions and stay scanned."
+patterns = ["*/tsup.config.*", "*/vite.config.*", "*/vitest.config.*", "*/postcss.config.*", "*/tailwind.config.*", "packages/ui-kit/scripts/buildPlugin.ts"]
 
 [[ignore]]
 reason = "In-package demos exercise a package's public surface rather than implementing a requirement, so no instruction exists for a marker to point at. Structural and permanent — this is not a placeholder for missing artifacts and must never be given an expiry."
@@ -29,12 +29,16 @@ reason = "These globs cover template territory — top-level directories carryin
 patterns = ["template-shell/**", "template-mfe/**", "template-design-guardrails/**"]
 
 [[ignore]]
-reason = "Unmarked build/test tooling has no CDSL backing. Four CI guards added after this entry was last enumerated belong to the same category and are registered here: scripts/version-bump-on-change-check.mjs (#575) diffs a PR against its merge base and fails any governed package whose substantive changes came without a version bump; scripts/mfes-import-boundary-check.mjs (#540) reads the mfes barrel and its consumers to fail concrete-implementation exports and deep imports across the ADR-0003 boundary; packages/mfes/scripts/verify-dist-import-pragmas.mjs (#504) greps the two built dist formats to fail a build that dropped the webpackIgnore / @vite-ignore comments off the blob-module dynamic import; scripts/pin-unpublished-ecosystem-to-local-pack.mjs (#613) asks the registry whether each composed ecosystem pin resolves and, for a version this checkout itself declares, installs an npm pack tarball of it so a correctly-bumped pull request is not red before its packages publish. Three read the tree, the build output or the registry and exit non-zero; the fourth (pin-unpublished-ecosystem-to-local-pack.mjs) also writes pack tarballs to .frontx-local-packs/ and temporarily rewrites manifests until its own --restore call puts them back. None of the four implements ecosystem behaviour a numbered instruction specifies, so no marker has an instruction to point at. verify-dist-import-pragmas is listed as its own pattern rather than under scripts/ because it lives beside the package it guards and reaches the scan through the root system's packages/ + .mjs catch-all, not through the scripts/ codebase entry. NOTE: scripts/ecosystem-version-policy.mjs (ecosystem-distribution), scripts/package-edge-tests.ts and scripts/verify-guard-configs.ts (ecosystem-governance), and scripts/test-architecture.ts carry @cpt markers and MUST stay scanned — they are deliberately NOT ignored here. STILL UNREGISTERED, and deliberately left for their own decision rather than folded in here: scripts/link-template-ecosystem.mjs, scripts/pin-template-ecosystem-to-local.mjs, scripts/template-pin-drift-check.mjs, scripts/template-lockfile-selflink-check.mjs, scripts/template-ecosystem-packages.mjs, scripts/template-discovery.mjs, scripts/validate-templates.mjs, scripts/token-format-check.mjs, scripts/generate-guideline-index.mjs and scripts/fs-types.mjs are the same unmarked-tooling category and together carry ~1200 scanned lines against the coverage ratio - registering them would move the measured number far more than any one change should."
-patterns = ["scripts/test-runner/*", "scripts/manual-auth-tests/*", "scripts/check-test-dependency-versions.mjs", "scripts/run-monorepo-unit-tests.mjs", "scripts/version-bump-on-change-check.mjs", "scripts/mfes-import-boundary-check.mjs", "scripts/pin-unpublished-ecosystem-to-local-pack.mjs", "packages/mfes/scripts/verify-dist-import-pragmas.mjs"]
+reason = "Unmarked build/test tooling has no CDSL backing. Four CI guards added after this entry was last enumerated belong to the same category and are registered here: scripts/version-bump-on-change-check.mjs (#575) diffs a PR against its merge base and fails any governed package whose substantive changes came without a version bump; scripts/mfes-import-boundary-check.mjs (#540) reads the mfes barrel and its consumers to fail concrete-implementation exports and deep imports across the ADR-0003 boundary; packages/mfes/scripts/verify-dist-import-pragmas.mjs (#504) greps the two built dist formats to fail a build that dropped the webpackIgnore / @vite-ignore comments off the blob-module dynamic import; scripts/pin-unpublished-ecosystem-to-local-pack.mjs (#613) asks the registry whether each composed ecosystem pin resolves and, for a version this checkout itself declares, installs an npm pack tarball of it so a correctly-bumped pull request is not red before its packages publish. Three read the tree, the build output or the registry and exit non-zero; the fourth (pin-unpublished-ecosystem-to-local-pack.mjs) also writes pack tarballs to .frontx-local-packs/ and temporarily rewrites manifests until its own --restore call puts them back. None of the four implements ecosystem behaviour a numbered instruction specifies, so no marker has an instruction to point at. verify-dist-import-pragmas is listed as its own pattern rather than under scripts/ because it lives beside the package it guards and reaches the scan through the root system's packages/ + .mjs catch-all, not through the scripts/ codebase entry. scripts/contracts-policy.mjs is the same category, added here rather than left unregistered: it reads the PR diff's base ref and dispatches the ui-kit contract guard and compatibility check (and, informationally, the coverage report), implements no ecosystem behaviour a numbered instruction specifies, and lives at the root rather than under packages/ui-kit because the CI workflow step calls a root script. NOTE: scripts/ecosystem-version-policy.mjs (ecosystem-distribution), scripts/package-edge-tests.ts and scripts/verify-guard-configs.ts (ecosystem-governance), and scripts/test-architecture.ts carry @cpt markers and MUST stay scanned — they are deliberately NOT ignored here. STILL UNREGISTERED, and deliberately left for their own decision rather than folded in here: scripts/link-template-ecosystem.mjs, scripts/pin-template-ecosystem-to-local.mjs, scripts/template-pin-drift-check.mjs, scripts/template-lockfile-selflink-check.mjs, scripts/template-ecosystem-packages.mjs, scripts/template-discovery.mjs, scripts/validate-templates.mjs, scripts/token-format-check.mjs, scripts/generate-guideline-index.mjs and scripts/fs-types.mjs are the same unmarked-tooling category and together carry ~1200 scanned lines against the coverage ratio - registering them would move the measured number far more than any one change should."
+patterns = ["scripts/test-runner/*", "scripts/manual-auth-tests/*", "scripts/check-test-dependency-versions.mjs", "scripts/run-monorepo-unit-tests.mjs", "scripts/version-bump-on-change-check.mjs", "scripts/mfes-import-boundary-check.mjs", "scripts/pin-unpublished-ecosystem-to-local-pack.mjs", "packages/mfes/scripts/verify-dist-import-pragmas.mjs", "scripts/contracts-policy.mjs"]
 
 [[ignore]]
 reason = "A kit skill's helper script is tooling the kit installs for an agent to run, not ecosystem behaviour a numbered instruction specifies, so no marker has an instruction to point at. The registry already says as much: the kit's own registered codebase is packages/cyber-pilot-kit-frontx/src with .ts only (see its [[systems.children.codebase]] below), and these .mjs helpers reach the scan solely through the root system's packages/ + .mjs catch-all. Removal criterion: this entry is lifted once the kit registers a skills/ path in its own [[systems.children.codebase]] and a kit FEATURE gives the script numbered instructions to carry. NOT satisfied by adding skills/ to the root system's codebase - that is the catch-all this entry corrects. Scoped to skills/*/scripts/* rather than the package or all of skills/, so the kit's src/ stays scanned and its SKILL.md and checklist assets keep their current treatment."
 patterns = ["packages/cyber-pilot-kit-frontx/skills/*/scripts/*"]
+
+[[ignore]]
+reason = "The component sources under packages/ui-kit/src carry no @cpt- marker because no FEATURE yet gives the component surface numbered instructions to point a marker at, so no artifact backs one there. The package's own artifact chain exists (PRD, DESIGN, FEATURE component-contracts) and the member is registered above with PRD/DESIGN/FEATURE required, so this is narrower than the former package-wide packages/ui-kit/** ignore it replaces - only src is recorded as debt, scripts stays scanned. Removal criterion: a ui-kit FEATURE lands with numbered instructions for the component surface and packages/ui-kit/src is registered as the child's own [[systems.children.codebase]] entry. NOT satisfied by marking a handful of components - the FEATURE must give instructions for the surface as a whole before the path is registered."
+patterns = ["packages/ui-kit/src/**"]
 
 [[systems]]
 name = "FrontX Dev Kit"
@@ -307,17 +311,18 @@ extensions = [".ts"]
 # FEATURE required, because `required` flags do not inherit and the explicit-artifact-list form
 # validates while enforcing nothing. DECOMPOSITION and ADR are omitted rather than declared
 # optional: a member never owns a DECOMPOSITION, and this member owns no decision of its own yet.
-# Two codebase paths. `scripts` holds the contract harness, which carries the markers today. `src`
-# holds the components those contracts describe: nothing under it is marked - the kit-wide guards
-# beside the components are `*.test.ts` and are excluded by the test ignore above - and it is
-# registered anyway because it is the subject the harness reads and the DESIGN's component-surface
-# component, so markers belong there as soon as component-level instructions exist to carry. A
-# scanned file with no marker is not a defect; an unscanned tree that later needs one is.
-# Both paths would also be reached by the root system's packages/ + .ts/.tsx/.mjs catch-all now
-# that the package-wide ignore is gone; they are declared here anyway so this member's scanned
-# surface is stated by the member's own registration rather than inherited from a catch-all that
-# could change. The `.tsx` fixtures under scripts/contracts/__fixtures__ are reached by that same
-# catch-all and are excluded by their own [[ignore]] entry above.
+# One codebase path: `scripts` holds the contract harness, which carries the markers today. `src`
+# holds the components those contracts describe and is deliberately NOT registered here - nothing
+# under it is marked, and no FEATURE yet gives the component surface numbered instructions for a
+# marker to point at. Registering it anyway would put ~200 unmarked component-source files under
+# scan with no instruction to satisfy, which is exactly the debt the former package-wide ignore
+# recorded, only narrower now that the package's own PRD/DESIGN/FEATURE chain exists and the member
+# is registered. That debt is recorded instead by its own path-anchored [[ignore]] for
+# packages/ui-kit/src/** below (with its removal criterion), rather than by registering the path
+# and leaving every file in it an unmarked, uncounted gap. `scripts` is declared here anyway so this
+# member's scanned surface is stated by its own registration rather than inherited from the root
+# system's packages/ + .ts/.tsx/.mjs catch-all, which would also reach it now that the package-wide
+# ignore is gone.
 [[systems.children]]
 name = "UI Kit"
 slug = "ui-kit"
@@ -343,10 +348,6 @@ required = true
 pattern = "features/*/FEATURE.md"
 traceability = "FULL"
 required = true
-
-[[systems.children.codebase]]
-path = "packages/ui-kit/src"
-extensions = [".ts", ".tsx"]
 
 [[systems.children.codebase]]
 path = "packages/ui-kit/scripts"
