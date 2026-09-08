@@ -117,14 +117,19 @@ export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchem
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
-  // A prop that was optional and turns required rejects a value that used
-  // to validate (the prop simply absent) - the same "changed shape" the
-  // type/enum checks above already treat as narrowing, just on the
-  // required list rather than on one property's own constraints.
+  // A prop the new schema requires and the old one did not rejects a props
+  // object that used to validate (the prop simply absent) - the same
+  // "changed shape" the type/enum checks above already treat as narrowing,
+  // just on the required list rather than on one property's own
+  // constraints. Whether the prop already existed as optional or arrives
+  // with the schema makes no difference to the caller: both reject the same
+  // old call site, and `added` alone never fails the check because adding an
+  // OPTIONAL forwarded prop is the widening direction. A name listed in
+  // `required` that the new schema does not declare at all is a different
+  // defect (a malformed schema, not an incompatible one) and is left to
+  // whoever validates the schema itself.
   const oldRequired = new Set(oldSchema.required ?? []);
-  const newlyRequired = (newSchema.required ?? []).filter(
-    (name) => name in oldProps && name in newProps && !oldRequired.has(name),
-  );
+  const newlyRequired = (newSchema.required ?? []).filter((name) => name in newProps && !oldRequired.has(name));
   for (const name of newlyRequired) {
     narrowed.push({ prop: name, reason: 'became required where it was optional (or absent) before' });
   }

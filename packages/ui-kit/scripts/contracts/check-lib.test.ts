@@ -135,13 +135,21 @@ describe('diffPassthroughSchema', () => {
     expect(enumLifted).toEqual({ added: [], removed: [], narrowed: [], compatible: true });
   });
 
-  it('is incompatible when an existing forwarded prop becomes required, but not when required is only added for a brand-new prop', () => {
+  it('is incompatible when a forwarded prop becomes required, whether it existed as optional before or arrives required', () => {
     const becameRequired = diffPassthroughSchema(
       { properties: { autoFocus: { type: 'boolean' } } },
       { properties: { autoFocus: { type: 'boolean' } }, required: ['autoFocus'] },
     );
     expect(becameRequired.narrowed).toEqual([{ prop: 'autoFocus', reason: 'became required where it was optional (or absent) before' }]);
     expect(becameRequired.compatible).toBe(false);
+
+    // A prop that is new AND required in the same step rejects every old
+    // call site just as hard as a tightened optional one, so it must not
+    // ride in on `added` (which alone never fails the check).
+    const addedRequired = diffPassthroughSchema({ properties: {}, required: [] }, { properties: { id: { type: 'string' } }, required: ['id'] });
+    expect(addedRequired.added).toEqual(['id']);
+    expect(addedRequired.narrowed).toEqual([{ prop: 'id', reason: 'became required where it was optional (or absent) before' }]);
+    expect(addedRequired.compatible).toBe(false);
 
     const stayedRequired = diffPassthroughSchema(
       { properties: { autoFocus: { type: 'boolean' } }, required: ['autoFocus'] },

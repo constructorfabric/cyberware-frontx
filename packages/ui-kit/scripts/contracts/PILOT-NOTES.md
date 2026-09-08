@@ -213,11 +213,13 @@ reasons unrelated to Accordion's own facts:
   `buildMetamodel()` after the `family`, `coverage.assumptions` and
   `composition.parent` additions (all additive/optional; Button's own
   compiled contract properties are unaffected).
-- `scripts/contracts/generated/passthrough.button.json` - only its
-  `description` string changed (rewritten to describe the general,
+- `scripts/contracts/generated/passthrough.base_ui_button.json` - Accordion
+  changed only its `description` string (rewritten to describe the general,
   per-directory-or-per-export passthrough mechanism rather than the old
   "one file per kind, no exceptions" wording that Accordion falsified); its
-  `$id`, `title` and `properties` are byte-identical to before.
+  `properties` are byte-identical to before, and its filename, `$id` and
+  `title` carry the separate origin-key rename described at the top of this
+  file.
 
 Both are required by the harness's own freshness invariant (a committed
 artifact must equal a fresh compile) - not scope creep, the direct

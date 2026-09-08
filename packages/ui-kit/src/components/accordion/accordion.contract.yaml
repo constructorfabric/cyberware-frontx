@@ -62,10 +62,15 @@ coverage:
   assumptions:
     - claim: value, defaultValue and onValueChange are typed in terms of a generic Value parameter
       reason: >-
-        JSON Schema has no notion of a generic type parameter, so these stay
-        annotation-only (slots) in the compiled contract rather than typed
-        properties. accordion.md's own example uses string values
-        (value="item-1"), which is the documented usage.
+        JSON Schema has no notion of a generic type parameter, so none of
+        the three gets a typed property. They are inherited from Base UI's
+        Accordion.Root props, so they are carried by the generated
+        passthrough type this contract composes
+        (scripts/contracts/generated/passthrough.base_ui_accordion_root.json)
+        as description-only entries reading "TS: ...", not by this
+        contract's own x-uikit.slots, which is empty. accordion.md's own
+        example uses string values (value="item-1"), which is the
+        documented usage.
 
 examples:
   good:
