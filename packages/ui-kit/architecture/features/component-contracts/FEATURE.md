@@ -199,7 +199,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 3. [x] - `p1` - Fail when the component inherits props and no origin was resolved for them, naming the props no type could have declared - `inst-cc-orphan-inherited`
 4. [x] - `p1` - Turn each variant axis into an enumerated property carrying its default - `inst-cc-axes`
 5. [x] - `p1` - Leave a prop the inherited surface already declares to that surface, failing when the two declare conflicting shapes - `inst-cc-owner-conflict`
-6. [x] - `p1` - Represent a declared prop that has no schema equivalent as an annotated property recorded as a slot - `inst-cc-slots`
+6. [x] - `p1` - Represent a declared prop that has no schema equivalent as an annotated property recorded as a slot, letting no property leave the compiler asserting nothing and saying nothing - `inst-cc-slots`
 7. [x] - `p1` - Route each meaning field to the block a validator reads or to the block that is prose, exactly once - `inst-cc-route`
 8. [x] - `p1` - Close the derived type so an undeclared prop is refused while the inherited surface still resolves - `inst-cc-close`
 9. [x] - `p1` - **RETURN** the contract after validating its validator-read block against the base type's trait schema - `inst-cc-return`
@@ -225,7 +225,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 **Output**: The shared type for that origin, or a refusal.
 
 **Steps**:
-1. [x] - `p1` - Declare each inherited prop under the origin's own type, giving a schema shape where one exists and leaving the rest unconstrained, and list it in the type's own `required` when the extraction reported it as non-optional; the props that carry no consumer-visible shape at all - the element key and the forwarded ref - are left out entirely - `inst-ps-props`
+1. [x] - `p1` - Declare each inherited prop under the origin's own type, giving a schema shape where one exists and, where none does, stating the prop's TypeScript type and that nothing asserts it rather than leaving the property blank, and list it in the type's own `required` when the extraction reported it as non-optional; the props that carry no consumer-visible shape at all - the element key and the forwarded ref - are left out entirely - `inst-ps-props`
 2. [x] - `p1` - Admit the accessibility and data attribute families by pattern rather than by name - `inst-ps-patterns`
 3. [x] - `p1` - Record which components the type was generated from, and leave the type open so a component's own contract can close its surface instead - `inst-ps-open`
 4. [x] - `p1` - **IF** compiling one component would change the shape another component on the same origin already relies on - `inst-ps-collision`
@@ -402,7 +402,7 @@ The system **MUST** read a component's exported components, variant axes and def
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-compilation`
 
-The system **MUST** compile an admitted overlay and an extraction into a closed props schema whose properties carry the variant axes with their defaults and the component's declared props, whose inherited surface is referenced rather than copied, and whose meaning fields are split between the block a validator reads and the block that is prose. It **MUST** fail rather than emit a contract whose axes could not be resolved or whose inherited props no type could declare.
+The system **MUST** compile an admitted overlay and an extraction into a closed props schema whose properties carry the variant axes with their defaults and the component's declared props, whose inherited surface is referenced rather than copied, and whose meaning fields are split between the block a validator reads and the block that is prose. Every property it emits, in the contract and in the inherited-surface type alike, **MUST** either assert something about the value or state the TypeScript type behind it and that the type system, not the schema, is what checks it - a property that asserts nothing and says nothing reads to its intended reader as a property that accepts anything. It **MUST** fail rather than emit a contract whose axes could not be resolved or whose inherited props no type could declare.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-compilation`
@@ -510,6 +510,7 @@ The system **MUST** report the described set against the component set, with a p
 - [x] A component's variant axes, their values and their defaults appear in its contract as read from the code, and an axis declared twice by two heritage entries is reported naming both rather than silently resolved.
 - [x] A wrapper import renamed at its import site, and a locally shadowed utility type of the same name as a real one, are both classified by what they resolve to rather than by what they are called.
 - [x] A prop the component declares appears in its contract; a prop it inherits appears in the shared type for its origin and not in the contract's own properties; a prop with no schema equivalent appears as an annotated property with a matching slot record.
+- [x] No property of a compiled contract or an inherited-surface type is empty: one that asserts nothing names its TypeScript type and says the type system checks it, so a generic, a function or a union of non-literal members is never readable as an unconstrained value.
 - [x] A component whose props inherit from an origin the compiler cannot place is refused naming those props, rather than compiled with them missing.
 - [x] A contract's identifier is a type derived from the abstract base type and parses into the expected segments; a metamodel instance's identifier is not a type.
 - [x] The trait schema carried by the abstract base type equals a fresh derivation from the metamodel, and an unknown key in a contract's validator-read block is rejected by name.

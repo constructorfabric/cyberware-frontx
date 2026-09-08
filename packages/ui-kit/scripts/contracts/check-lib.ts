@@ -46,6 +46,12 @@ export function jsonDiff(committed: unknown, fresh: unknown, path = '$'): string
 export interface PassthroughPropertyLike {
   type?: string;
   enum?: string[];
+  // Declared so the diff below can be seen NOT to read it. A property that
+  // asserts nothing carries prose naming its TypeScript type (compile.ts's
+  // describeUntypeableProperty), and prose is documentation: adding,
+  // rewording or dropping it rejects nothing a consumer used to pass, so it
+  // is not a compatibility signal in either direction.
+  description?: string;
 }
 
 export interface PassthroughSchemaLike {

@@ -105,6 +105,25 @@ describe('diffPassthroughSchema', () => {
     expect(diff.compatible).toBe(false);
   });
 
+  it('is compatible when an unconstrained prop only gains prose naming its TypeScript type', () => {
+    // The pairing of this case with the one above is the whole point: the
+    // difference between "this prop now only accepts a string" and "this
+    // prop still accepts anything, and here is what tsc checks instead" is
+    // a real difference to a consumer, and only the first rejects something
+    // that used to validate.
+    const described = diffPassthroughSchema(
+      { properties: { render: {} } },
+      { properties: { render: { description: 'TS: ReactNode. Not expressible in JSON Schema, checked by tsc.' } } },
+    );
+    expect(described).toEqual({ added: [], removed: [], narrowed: [], compatible: true });
+
+    const reworded = diffPassthroughSchema(
+      { properties: { render: { description: 'TS: ReactNode. Not expressible in JSON Schema, checked by tsc.' } } },
+      { properties: { render: { description: 'TS: ReactElement. Not expressible in JSON Schema, checked by tsc.' } } },
+    );
+    expect(reworded.compatible).toBe(true);
+  });
+
   it('is compatible when a type or enum constraint is removed entirely, not merely widened', () => {
     const typeLifted = diffPassthroughSchema({ properties: { render: { type: 'string' } } }, { properties: { render: {} } });
     expect(typeLifted).toEqual({ added: [], removed: [], narrowed: [], compatible: true });
@@ -155,6 +174,14 @@ describe('diffOwnPropsSchema', () => {
 
   it('is unaffected by a prop that was already required and stays required', () => {
     const diff = diffOwnPropsSchema({ properties: { label: {} }, required: ['label'] }, { properties: { label: {} }, required: ['label'] });
+    expect(diff).toEqual({ removedProps: [], newlyRequiredProps: [], compatible: true });
+  });
+
+  it('is unaffected by a slot prop that only gains prose naming its TypeScript type', () => {
+    const diff = diffOwnPropsSchema(
+      { properties: { icon: {} }, required: [] },
+      { properties: { icon: { description: 'TS: ReactNode. Not expressible in JSON Schema, checked by tsc.' } }, required: [] },
+    );
     expect(diff).toEqual({ removedProps: [], newlyRequiredProps: [], compatible: true });
   });
 });

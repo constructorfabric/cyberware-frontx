@@ -598,6 +598,70 @@ composite work next; no code in this branch defines, ships or tests a
 block - Accordion and DataTable are both ordinary (if compound, in
 Accordion's case) kit components, not blocks.
 
+## An empty property schema is not a neutral statement
+
+**Observed.** An agent-facing evaluation pointed an agent at
+`generated/passthrough.base_ui_accordion_root.json` and asked what
+`Accordion`'s `value` and `defaultValue` accept. It answered "plain
+strings." The real type is `AccordionValue<Value>` - an array of the root's
+own generic parameter. Nothing in the file said otherwise: `value`,
+`defaultValue` and `onValueChange` were each the literal `{}`, because
+`classifyProviderSafeType` returned `undefined` for them and the compiler
+had nowhere to put the fact it had already read. `{}` in JSON Schema means
+"no assertion", and a reader with no other source of truth reads that as
+"anything, so probably the obvious thing."
+
+The gap was only ever in the WRITING. The extractor had the checker's
+printed type text for every prop, own and inherited, and had had it since
+the harness was built - `ExtractedProp.typeText`, already normalized by
+`normalizeImportPathsInTypeText` (DataTable's forced change 4) so it carries
+no machine-specific path. The own-props side had also already solved the
+same problem: a slot property gets `Slot: <type>. No JSON Schema type exists
+for it; ...`. That wording simply never covered the inherited side, where
+the untypeable props are far more numerous - 182 of the accordion
+root's forwarded props (every event handler, `style`, `children`,
+`contentEditable`, `role`) were `{}`.
+
+**Changed.** `describeUntypeableProperty` (compile.ts): a property schema
+carrying none of `type`, `enum`, `const`, `$ref`, `anyOf`, `oneOf` and no
+description of its own gets
+`TS: <type text>. Not expressible in JSON Schema, checked by tsc.` Applied
+in `buildPassthroughSchema` for inherited props and as a post-condition in
+`buildPropsAndRequired` for own props, where it is deliberately a no-op
+today - the slot branch already writes a more specific description and a
+typed property already asserts something - so that the rule holds for
+whatever branch is added next rather than being restated per branch. The
+slot wording is untouched.
+
+**Decisions taken along the way.**
+
+- **The type text keeps its `import("...")` qualifier.** The checker prints
+  `import("@base-ui/react/accordion/index").AccordionValue<Value> | undefined`
+  rather than the bare `AccordionValue<Value>`. Stripping the qualifier
+  would read better, but it names WHERE the type lives, which is the next
+  question a reader has after "what is it", and the path is already
+  node_modules-relative and therefore machine-independent. Stripping it
+  would also have to change `x-uikit.slots`' committed type texts to keep
+  one spelling of one fact, which is a change to every described component's
+  contract for a cosmetic gain.
+- **A description is not a compatibility signal.** `diffPassthroughSchema`
+  and `diffOwnPropsSchema` read `type`, `enum`, `required` and property
+  presence, and never `description`; gts-ts's own `checkCompatibility` was
+  asserted to agree rather than assumed to (see check-lib.compat-e2e.test.ts).
+  This matters in both directions: adding prose to a property must not
+  refuse a recompile, and the neighbouring case - an unconstrained property
+  gaining a real `type` - must stay incompatible, which it does.
+- **A new fixture rather than a reused one.** No existing fixture had an
+  untypeable OWN prop; `untypeable-props.fixture.tsx` carries a generic
+  `Value[]`, a function prop and a plain `string` in one props type, so the
+  test can tell "describe what cannot be asserted" apart from "describe
+  everything".
+
+**Cost.** Under an hour. The fix is small because the fact was already
+extracted; what took the time was confirming the compatibility path treats
+prose as prose, since a wrong answer there would have made every existing
+contract refuse its own recompile.
+
 ## Compiler coupling: Base UI and DOM only, for now
 
 `extract.ts`'s origin resolver (`resolvePassthroughOrigin`,

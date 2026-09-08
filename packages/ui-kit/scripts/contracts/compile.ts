@@ -368,6 +368,40 @@ function classifyProviderSafeType(typeText: string): ContractProperty | undefine
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
 }
 
+// The JSON Schema keywords that make a property schema assert something
+// about a value. A schema carrying none of them - and no prose either - is
+// the bare `{}` this compiler used to emit for every inherited prop the
+// provider-safe subset could not express.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
+const ASSERTING_KEYWORDS = ['type', 'enum', 'const', '$ref', 'anyOf', 'oneOf'] as const;
+
+// A property schema this compiler may emit, plus the assertion keywords the
+// emptiness check below consults. `const`/`$ref`/`anyOf`/`oneOf` are not
+// emitted today; naming them here is what makes the check keep holding the
+// day a branch starts emitting one, instead of silently annotating a
+// property that already constrains something.
+type PropertySchema = ContractProperty & Partial<Record<(typeof ASSERTING_KEYWORDS)[number], unknown>>;
+
+// An empty property schema is not neutral to a reader: `{}` in a props
+// contract reads as "anything goes", and an agent that read the accordion
+// root's `value`/`defaultValue` that way concluded they were plain strings
+// when their real type is `AccordionValue<Value>`. A prop whose TypeScript
+// type has no JSON Schema representation - a generic type parameter, a
+// function, a union with non-literal members - therefore says so in prose:
+// the checker's own printed type text, and the reason nothing asserts it.
+// The type text is the extractor's, already normalized to node_modules- or
+// kit-relative import paths, so this stays machine-independent.
+//
+// A schema that already asserts something, or that already carries its own
+// description (the own-prop slot branch writes a more specific one), is
+// returned untouched - one property, one description.
+export function describeUntypeableProperty(schema: PropertySchema, typeText: string): ContractProperty {
+  if (schema.description !== undefined) return schema;
+  if (ASSERTING_KEYWORDS.some((keyword) => schema[keyword] !== undefined)) return schema;
+  return { ...schema, description: `TS: ${typeText}. Not expressible in JSON Schema, checked by tsc.` };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-props
+}
+
 // Generates a passthrough type from a component's inherited (non-own) props.
 // `key`/`ref` are React/JSX machinery, not props a consumer sets, so neither
 // belongs in a props contract. Individual `aria-*` names are excluded the
@@ -412,7 +446,7 @@ export function buildPassthroughSchema(
   for (const prop of inheritedProps) {
     if (prop.name === 'key' || prop.name === 'ref') continue;
     if (prop.name.startsWith('aria-') || prop.name.startsWith('data-')) continue;
-    properties[prop.name] = classifyProviderSafeType(prop.typeText) ?? {};
+    properties[prop.name] = describeUntypeableProperty(classifyProviderSafeType(prop.typeText) ?? {}, prop.typeText);
     if (!prop.optional) required.push(prop.name);
   }
   required.sort();
@@ -1139,6 +1173,15 @@ export function buildPropsAndRequired(
       };
       // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
     }
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
+    // The same "never emit a property that asserts nothing and says
+    // nothing" rule the passthrough type applies, held here as a
+    // post-condition rather than duplicated per branch: the slot branch
+    // above already writes its own, more specific description and a typed
+    // property already asserts something, so this changes nothing today -
+    // it is what keeps the rule true for whatever branch is added next.
+    properties[prop.name] = describeUntypeableProperty(properties[prop.name], prop.typeText);
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
     if (!prop.optional) required.push(prop.name);
   }
 

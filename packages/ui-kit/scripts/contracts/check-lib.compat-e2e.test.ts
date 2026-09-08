@@ -119,4 +119,17 @@ describe('decideCompat against a real GTS instance and real gts-ts compatibility
     const fresh = schema(1, { label: { type: 'string' } }, []);
     expect(checkRealCompat(old, fresh).status).toBe('pass');
   });
+
+  it('passes when a property that asserts nothing only gains prose naming its TypeScript type', () => {
+    // A property with no type/enum accepts anything either way; the prose
+    // added to it (compile.ts's describeUntypeableProperty) tells a reader
+    // what tsc checks instead. gts-ts's own backward check is asserted here
+    // rather than assumed, because this project reads its verdict as one of
+    // three compatibility signals - if the library ever started treating an
+    // annotation as a schema change, every recompile of an existing
+    // contract would start refusing itself.
+    const old = schema(1, { icon: {} }, []);
+    const fresh = schema(1, { icon: { description: 'TS: ReactNode. Not expressible in JSON Schema, checked by tsc.' } }, []);
+    expect(checkRealCompat(old, fresh).status).toBe('pass');
+  });
 });
