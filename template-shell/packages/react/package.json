@@ -1,6 +1,6 @@
 {
   "name": "@gears-frontx/react",
-  "version": "0.2.0-alpha.6",
+  "version": "0.2.0-alpha.7",
   "description": "React bindings and hooks for FrontX framework",
   "type": "module",
   "main": "./dist/index.cjs",

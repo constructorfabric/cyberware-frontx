@@ -76,6 +76,7 @@ export type {
   MfeContextValue,
   MfeProviderProps,
   ExtensionDomainSlotProps,
+  UseSharedPropertyOptions,
 } from './mfe';
 
 // ============================================================================
@@ -539,8 +540,6 @@ export type {
 import type { EventPayloadMap as FrameworkEventPayloadMap, EventBus } from '@gears-frontx/framework';
 import { eventBus as frameworkEventBus } from '@gears-frontx/framework';
 
-// @cpt-dod:cpt-frontx-dod-react-bindings-event-payload-map:p2
-// @cpt-begin:cpt-frontx-dod-react-bindings-event-payload-map:p2:inst-event-payload-map
 export interface EventPayloadMap extends FrameworkEventPayloadMap { }
 
 /**
@@ -549,4 +548,3 @@ export interface EventPayloadMap extends FrameworkEventPayloadMap { }
  * type-safe access to both framework events and app-layer augmented events.
  */
 export const eventBus: EventBus<EventPayloadMap> = frameworkEventBus as EventBus<EventPayloadMap>;
-// @cpt-end:cpt-frontx-dod-react-bindings-event-payload-map:p2:inst-event-payload-map
