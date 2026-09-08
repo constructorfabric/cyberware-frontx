@@ -193,7 +193,7 @@ describe('commitUpgrade (cpt-frontx-algo-upgrade-changeset-commit)', () => {
 
     const result = await commitUpgrade(plan, harness.deps);
 
-    expect(result).toEqual({ ok: true, plan });
+    expect(result).toEqual({ ok: true, plan, reclaimedTempPaths: [] });
     expect(harness.disk.get('/repo/app/new-file.ts')).toBe('new content');
     expect(harness.disk.get('/repo/app/keep-replace.ts')).toBe('replaced content');
     expect(harness.disk.has('/repo/app/remove-me.ts')).toBe(false);

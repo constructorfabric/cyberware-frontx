@@ -28,7 +28,7 @@
 //     ORDINARY lifecycle of that folder, not an exotic failure.
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile, readFile, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile, symlink, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { deleteTarget } from '../commands/delete';
@@ -145,6 +145,11 @@ describe('deleteTarget — owning template manifest unreadable (real filesystem)
       neverConfirm,
     );
     expect(yesResult).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
+    if (!yesResult.ok) {
+      // The refusal names WHICH failure it hit — a FIFO — not just that the
+      // manifest "could not be read".
+      expect(yesResult.message).toContain('is a FIFO, not a regular file');
+    }
 
     // The developer's own file, protected by the template's declared
     // `excludedSubtrees`, survives with its exact original content — nothing
@@ -158,6 +163,65 @@ describe('deleteTarget — owning template manifest unreadable (real filesystem)
       await readFile(path.join(root, '.frontx', 'project.json'), 'utf-8'),
     ) as ProjectStateDocument;
     expect(stateAfter.templates.appTemplate.targets).toEqual(['t']);
+  });
+
+  // The companion cause: the manifest exists in the right shape but the OS
+  // refuses to open it (`chmod 000`). Same `CONTENT_CONFLICT` code as the
+  // FIFO case above, but the CAUSE — and the remedy — differs: a permission
+  // fix, not "replace the FIFO with a file". Both causes must be present and
+  // DISTINCT, which a message asserting only the code could never catch.
+  it('refuses CONTENT_CONFLICT naming a permission refusal, distinct from the FIFO case, when the manifest is unreadable (chmod 000)', async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'frontx-delete-manifest-eacces-'));
+
+    await mkdir(path.join(root, 'vendor', 'app-template'), { recursive: true });
+    await mkdir(path.join(root, 't', 'userland'), { recursive: true });
+    await writeFile(path.join(root, 't', 'src.txt'), 'template-owned', 'utf-8');
+    await writeFile(path.join(root, 't', 'userland', 'mine.txt'), 'DEVELOPER-OWNED — must survive', 'utf-8');
+
+    const document: ProjectStateDocument = {
+      formatVersion: 1,
+      templates: { appTemplate: { origin: 'path:vendor/app-template', version: '1.0.0', targets: ['t'] } },
+      projectOwnedRoots: [],
+    };
+    await writeProjectState(root, document);
+
+    const manifestPath = path.join(root, 'vendor', 'app-template', 'frontx-template.json');
+    await writeFile(manifestPath, JSON.stringify({ excludedSubtrees: [] }), 'utf-8');
+    await chmod(manifestPath, 0o000);
+
+    const deps = realDeps(root);
+    try {
+      const dryRunResult = await deleteTarget(
+        't',
+        root,
+        { jsonMode: true, dryRun: true, yes: false },
+        noInventory,
+        deps.canonicalizeFn,
+        deps.listTargetFilesFn,
+        deps.listUnenumerableTargetEntriesFn,
+        deps.readFileFn,
+        deps.removeFileFn,
+        deps.assertPathWithinRootFn,
+        deps.readProjectStateFn,
+        deps.writeProjectStateFn,
+        async () => {
+          throw new Error('confirmDeletionFn must not be called in --json mode');
+        },
+      );
+
+      expect(dryRunResult).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
+      if (!dryRunResult.ok) {
+        expect(dryRunResult.message).toContain('permission was refused');
+        expect(dryRunResult.message).not.toContain('is a FIFO, not a regular file');
+      }
+
+      const survived = await readFile(path.join(root, 't', 'userland', 'mine.txt'), 'utf-8');
+      expect(survived).toBe('DEVELOPER-OWNED — must survive');
+    } finally {
+      // Restored so the `afterEach` cleanup's own recursive removal can
+      // actually reach this path.
+      await chmod(manifestPath, 0o644);
+    }
   });
 
   // The companion case: the manifest is genuinely ABSENT (the whole origin

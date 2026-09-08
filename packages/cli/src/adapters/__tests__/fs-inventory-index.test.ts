@@ -8,9 +8,9 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { joinWithinRoot } from '@gears-frontx/test-support/path-guard';
-import { FsInventoryIndex } from '../fs-inventory-index';
+import { FsInventoryIndex, InvalidInventoryIndexError } from '../fs-inventory-index';
 import { InventoryState } from '../../inventory/types';
-import { NotRegularFileError } from '../fs-project-io';
+import { NotRegularFileError, PathContainmentError } from '../fs-project-io';
 
 describe('FsInventoryIndex', () => {
   let root: string;
@@ -131,5 +131,102 @@ describe('FsInventoryIndex', () => {
       expect(error).toBeInstanceOf(NotRegularFileError);
       expect((error as NotRegularFileError).kind).toBe('fifo');
     }
+  });
+
+  // inst-bupd-lookup-guard — a hand-edited or corrupted `index.json` that is
+  // not valid JSON must not reach a caller as a raw `JSON.parse` `SyntaxError`
+  // (which used to escape all the way to the CLI's top-level catch as an
+  // unstructured internal error, exit 2, no `--json` envelope).
+  it('lookup() refuses with InvalidInventoryIndexError instead of a raw SyntaxError when index.json is not valid JSON', () => {
+    const indexPath = joinWithinRoot(root, 'index.json');
+    fs.writeFileSync(indexPath, 'DEVFILE-PRECIOUS\n', 'utf-8');
+    const index = new FsInventoryIndex(root);
+
+    expect(() => index.lookup('anything')).toThrow(InvalidInventoryIndexError);
+  });
+
+  // inst-bupd-lookup-guard — valid JSON of the wrong SHAPE (not a
+  // `Record<string, InventoryEntry>`) used to reach `install`'s own nesting
+  // check as `entry.name` silently `undefined`, crashing with a raw
+  // `TypeError` rather than a structured refusal.
+  it('lookup() refuses with InvalidInventoryIndexError instead of a downstream crash when index.json is valid JSON of the wrong shape', () => {
+    const indexPath = joinWithinRoot(root, 'index.json');
+    fs.writeFileSync(indexPath, JSON.stringify({ precious: 'not-an-entry-map' }), 'utf-8');
+    const index = new FsInventoryIndex(root);
+
+    expect(() => index.lookup('anything')).toThrow(InvalidInventoryIndexError);
+  });
+
+  // inst-resolve-index-guard / inst-bupd-index-guard — DEFECT: the writer
+  // used to reach a bare `fs.writeFileSync(this.indexPath, ...)` unconditionally,
+  // which FOLLOWS a symlink at its final component exactly like an ordinary
+  // path — a symlink at `index.json` pointing OUTSIDE the store made
+  // `record()` silently overwrite a developer's unrelated file with the
+  // freshly-serialized inventory index, under a reported success. The real
+  // symlink (not a fake seam) is what proves the fix actually resolves it
+  // via the filesystem rather than by lexical string comparison.
+  it('record() refuses with PathContainmentError instead of writing through a symlink escaping the store root, and the outside file survives byte-for-byte', () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'frontx-fs-inventory-index-outside-'));
+    try {
+      const outsideFile = joinWithinRoot(outside, 'devfile.json');
+      fs.writeFileSync(outsideFile, '{}', 'utf-8');
+      fs.symlinkSync(outsideFile, joinWithinRoot(root, 'index.json'));
+
+      const index = new FsInventoryIndex(root);
+      expect(() =>
+        index.record({
+          name: 'my-template',
+          source: 'v1',
+          ref: 'v1.0.0',
+          status: InventoryState.INSTALLED,
+          content: 'v1',
+        }),
+      ).toThrow(PathContainmentError);
+
+      expect(fs.readFileSync(outsideFile, 'utf-8')).toBe('{}');
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  // inst-resolve-index-guard / inst-bupd-index-guard — the local inventory
+  // store IS ground this CLI owns, but a directory standing where `index.json`
+  // belongs is still refused rather than silently deleted: a read seam
+  // already refuses to open this exact shape (`NotRegularFileError` above),
+  // and the write side refuses it for the identical reason.
+  it('record() refuses with NotRegularFileError instead of writing over a directory standing at index.json', () => {
+    const indexPath = joinWithinRoot(root, 'index.json');
+    fs.mkdirSync(indexPath);
+
+    const index = new FsInventoryIndex(root);
+    expect(() =>
+      index.record({
+        name: 'my-template',
+        source: 'v1',
+        ref: 'v1.0.0',
+        status: InventoryState.INSTALLED,
+        content: 'v1',
+      }),
+    ).toThrow(NotRegularFileError);
+    expect(fs.statSync(indexPath).isDirectory()).toBe(true);
+  });
+
+  // inst-resolve-index-guard / inst-bupd-index-guard — a FIFO at `index.json`
+  // must not hang the WRITE side either: `fs.writeFileSync` opening for write
+  // on a FIFO with no reader attached blocks exactly as a read would.
+  it('record() refuses with NotRegularFileError instead of hanging when index.json is a FIFO', () => {
+    const indexPath = joinWithinRoot(root, 'index.json');
+    execFileSync('mkfifo', [indexPath]);
+    const index = new FsInventoryIndex(root);
+
+    expect(() =>
+      index.record({
+        name: 'my-template',
+        source: 'v1',
+        ref: 'v1.0.0',
+        status: InventoryState.INSTALLED,
+        content: 'v1',
+      }),
+    ).toThrow(NotRegularFileError);
   });
 });

@@ -10,6 +10,7 @@ import { joinWithinRoot } from '@gears-frontx/test-support/path-guard';
 import { FsContentStore } from '../fs-content-store';
 import { resolveInstalledContentPath } from '../fs-installed-content-path';
 import { MANIFEST_FILENAME } from '../../manifest/types';
+import { UnreachablePathError } from '../fs-project-io';
 
 describe('FsContentStore', () => {
   let root: string;
@@ -85,5 +86,88 @@ describe('FsContentStore', () => {
     // Only pre-existing sibling temp-dir entries may exist; none were created
     // by this write (the assertion is that no NEW sibling appeared).
     expect(entriesOutsideRoot.every((entry) => !entry.includes('my-template'))).toBe(true);
+  });
+
+  // DEFECT: `assertWithinRoot` (`../fs-installed-content-path.ts`) used to
+  // prove containment with pure `path.relative` string arithmetic — no
+  // filesystem call at all — so a symlink INSIDE the store pointing OUTSIDE
+  // it escaped the check entirely: the lexical path was inside the store, so
+  // the check passed, and the template's payload landed at whatever the
+  // symlink actually resolved to. A REAL symlink (not a fake seam) is what
+  // proves the fix resolves the link via the filesystem rather than by
+  // string comparison alone.
+  describe('a symlink at the installed content path escaping the store root', () => {
+    let outside: string;
+
+    beforeEach(() => {
+      outside = fs.mkdtempSync(path.join(os.tmpdir(), 'frontx-fs-content-store-outside-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(outside, { recursive: true, force: true });
+    });
+
+    it('write() refuses instead of writing through the symlink, and the outside directory survives untouched', () => {
+      fs.writeFileSync(joinWithinRoot(outside, 'keep.txt'), 'DEVELOPER-OWNED — must survive', 'utf-8');
+      fs.mkdirSync(resolveInstalledContentPath(root, '@x'), { recursive: true });
+      fs.symlinkSync(outside, resolveInstalledContentPath(root, '@x/inv'), 'dir');
+
+      const store = new FsContentStore(root);
+      expect(() => store.write('@x/inv', 'content')).toThrow();
+
+      expect(fs.readFileSync(joinWithinRoot(outside, 'keep.txt'), 'utf-8')).toBe(
+        'DEVELOPER-OWNED — must survive',
+      );
+      expect(fs.readdirSync(outside)).toEqual(['keep.txt']);
+    });
+
+    it('replace() refuses instead of writing through the symlink or removing what it points at, and the outside directory survives untouched', () => {
+      fs.writeFileSync(joinWithinRoot(outside, 'keep.txt'), 'DEVELOPER-OWNED — must survive', 'utf-8');
+      fs.mkdirSync(resolveInstalledContentPath(root, '@x'), { recursive: true });
+      fs.symlinkSync(outside, resolveInstalledContentPath(root, '@x/inv'), 'dir');
+
+      const store = new FsContentStore(root);
+      expect(() => store.replace('@x/inv', 'content')).toThrow();
+
+      expect(fs.existsSync(outside)).toBe(true);
+      expect(fs.readFileSync(joinWithinRoot(outside, 'keep.txt'), 'utf-8')).toBe(
+        'DEVELOPER-OWNED — must survive',
+      );
+      expect(fs.readdirSync(outside)).toEqual(['keep.txt']);
+    });
+  });
+
+  // inst-resolve-write-guard / inst-bupd-replace-guard — DEFECT 3c: a
+  // non-directory entry standing where an installed content path's own
+  // ancestor directory belongs (a scoped identity's own leading segment,
+  // e.g. `@x` in `@x/inv`, replaced by a plain file) used to reach
+  // `fs.mkdirSync(installedPath, { recursive: true })` unguarded, failing
+  // with a bare `ENOTDIR` no caller here catches — an unstructured
+  // internal-error exit with no `--json` envelope.
+  describe('a non-directory entry blocking an ancestor of the installed content path', () => {
+    it('write() refuses with UnreachablePathError naming the blocking file instead of a raw ENOTDIR', () => {
+      const scopeSegment = resolveInstalledContentPath(root, '@x');
+      fs.mkdirSync(path.dirname(scopeSegment), { recursive: true });
+      fs.writeFileSync(scopeSegment, 'not-a-directory', 'utf-8');
+
+      const store = new FsContentStore(root);
+      let thrown: unknown;
+      try {
+        store.write('@x/inv', 'content');
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(UnreachablePathError);
+      expect((thrown as UnreachablePathError).blockingAncestor).toBe(scopeSegment);
+    });
+
+    it('replace() refuses with UnreachablePathError naming the blocking file instead of a raw ENOTDIR', () => {
+      const scopeSegment = resolveInstalledContentPath(root, '@x');
+      fs.mkdirSync(path.dirname(scopeSegment), { recursive: true });
+      fs.writeFileSync(scopeSegment, 'not-a-directory', 'utf-8');
+
+      const store = new FsContentStore(root);
+      expect(() => store.replace('@x/inv', 'content')).toThrow(UnreachablePathError);
+    });
   });
 });

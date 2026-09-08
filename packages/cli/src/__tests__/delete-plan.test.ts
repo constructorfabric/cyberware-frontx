@@ -116,6 +116,34 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
     expect(result).toMatchObject({ ok: false, code: 'TARGET_NOT_APPLIED', details: { target: 'packages/app' } });
   });
 
+  // The same directory reaches `toPreserve` twice — once as another
+  // template's nested target, once as this owner's declared exclusion — and
+  // the two spellings differ only by the directory-marking trailing slash.
+  // Listed twice, the confirmation gate reads as if two different things
+  // survive.
+  it('lists ground preserved for two reasons once, keeping the directory spelling', async () => {
+    const document = doc({
+      appTemplate: entry(['packages/app']),
+      nestedTemplate: entry(['packages/app/admin']),
+    });
+    const result = await computeDeletionPlan(
+      'packages/app',
+      '/repo',
+      document,
+      fakeInventory({ appTemplate: { excludedSubtrees: ['admin/'] } }),
+      identityCanonicalize,
+      fakeListTargetFiles({ '/repo/packages/app': ['src/index.ts', 'admin/kept.ts'] }),
+      neverCalledReadFileFn,
+      noUnenumerableEntries,
+    );
+
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.toPreserve.filter((preserved) => preserved.replace(/\/$/, '') === 'packages/app/admin')).toEqual([
+      'packages/app/admin/',
+    ]);
+    expect(result.toDelete).not.toContain('packages/app/admin/kept.ts');
+  });
+
   it('excludes a declared excludedSubtrees entry from toDelete and surfaces it in toPreserve', async () => {
     const document = doc({ appTemplate: entry(['packages/app']) });
     const result = await computeDeletionPlan(

@@ -52,6 +52,7 @@
 // it possible to report one as the other.
 import path from 'node:path';
 import { PathContainmentError } from '../adapters/fs-project-io';
+import { ReservedTempPathOccupiedError } from '../adapters/fs-upgrade-io';
 import { RESERVED_TEMP_SUFFIX, isReservedTempName } from '../paths/reserved-temp-name';
 import { joinUnderTarget } from '../paths/relative-path';
 import { isWithinEffectiveOwnership } from '../scaffold/effective-ownership';
@@ -69,12 +70,22 @@ import type {
 } from './types';
 
 export type CommitOutcome =
-  | { ok: true; plan: UpgradePlan }
+  // `reclaimedTempPaths` names every stale reserved-suffix path
+  // `inst-com-reclaim-stale-temp` removed for THIS attempt, project-relative
+  // - `[]` on the ordinary run that finds none. Surfaced here, on the one
+  // success shape this algorithm returns, rather than through a parallel
+  // reporting channel: a developer whose prior run crashed and left real
+  // litter on disk is otherwise never told it was cleared.
+  | { ok: true; plan: UpgradePlan; reclaimedTempPaths: string[] }
   | {
       ok: false;
       code: Extract<UpgradeRefusalCode, 'CONTENT_CONFLICT'>;
       message: string;
-      details: { drifted: { target: string; path: string }[] };
+      // `tempPath` is present only for a temp-occupancy refusal (pre-flight
+      // or the exclusive-create backstop below) - a drift refusal
+      // (`inst-com-return-drift-conflict`) names a destination with nothing
+      // reserved-suffixed to report alongside it.
+      details: { drifted: { target: string; path: string; tempPath?: string }[] };
     }
   | { ok: false; code: Extract<UpgradeRefusalCode, 'INTERNAL'>; message: string; details?: Record<string, unknown> };
 
@@ -187,10 +198,15 @@ function tempPath(destAbsolutePath: string): string {
  * which would be a second formulation of a boundary this algorithm is not
  * handed the manifests to derive.
  */
+// Returns every path this call actually reclaimed, project-relative — the
+// developer's crashed prior run left real litter on disk, and `inst-com-
+// return-success` reports this list back so a re-run is not the only way to
+// learn it was cleared.
 async function reclaimStaleTempFiles(
   plan: UpgradePlan,
   deps: Pick<CommitDeps, 'repoRoot' | 'listDiskFiles' | 'unlinkDiskFile'>,
-): Promise<void> {
+): Promise<string[]> {
+  const reclaimed: string[] = [];
   for (const target of plan.targets) {
     const exclusionRoots = plan.exclusionRootsByTarget[target] ?? [];
     const absoluteTargetDir = path.join(deps.repoRoot, target);
@@ -200,8 +216,10 @@ async function reclaimStaleTempFiles(
       const projectRelative = joinUnderTarget(target, relativeFile);
       if (!isWithinEffectiveOwnership(projectRelative, target, exclusionRoots)) continue;
       await deps.unlinkDiskFile(path.join(absoluteTargetDir, relativeFile));
+      reclaimed.push(projectRelative);
     }
   }
+  return reclaimed;
 }
 
 /**
@@ -257,8 +275,8 @@ async function reclaimStaleTempFiles(
 async function verifyTempOccupancy(
   addOrReplaceOps: readonly UpgradeOperation[],
   deps: Pick<CommitDeps, 'repoRoot' | 'readDiskEntry'>,
-): Promise<{ target: string; path: string }[]> {
-  const occupied: { target: string; path: string }[] = [];
+): Promise<{ target: string; path: string; tempPath: string }[]> {
+  const occupied: { target: string; path: string; tempPath: string }[] = [];
   for (const op of addOrReplaceOps) {
     const temp = tempPath(destinationPath(deps.repoRoot, op));
     const entry = await deps.readDiskEntry(temp);
@@ -267,7 +285,15 @@ async function verifyTempOccupancy(
     // own convention ever produces or expects here - both are safe for
     // `inst-com-materialize-temp` to overwrite unconditionally next.
     if (entry.kind === 'directory' || entry.kind === 'symlink' || entry.kind === 'special') {
-      occupied.push({ target: op.target, path: op.path });
+      // `tempPath(destinationPath(...))` re-derived project-relative rather
+      // than carried as the absolute `temp` above: `op.path` is already the
+      // full project-relative path, and appending the reserved suffix to it
+      // is byte-identical to appending it to the absolute form (`tempPath`'s
+      // own doc comment) - so this needs no second join through `repoRoot`.
+      // Naming THIS path, not only `op.path` (the destination), is the whole
+      // point: the destination is what the developer approved, but it is the
+      // reserved temp path where the offending shape actually stands.
+      occupied.push({ target: op.target, path: op.path, tempPath: op.path + RESERVED_TEMP_SUFFIX });
     }
   }
   return occupied;
@@ -300,10 +326,17 @@ export async function commitUpgrade(plan: UpgradePlan, deps: CommitDeps): Promis
   // leave behind for a "fully recovered" report to be true.
   const tempPathByOp = new Map<UpgradeOperation, string>();
 
+  // Declared here, OUTSIDE the `TRY`, for the identical reason `landedOps`/
+  // `tempPathByOp` above are: `inst-com-return-success` reads it after the
+  // `TRY` has completed, past the block scope its own assignment lives in.
+  // No initializer: every `CATCH` branch below returns or rethrows, so this
+  // is definitely assigned by the time the success path reads it.
+  let reclaimedTempPaths: string[];
+
   // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-try
   try {
     // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-reclaim-stale-temp
-    await reclaimStaleTempFiles(plan, deps);
+    reclaimedTempPaths = await reclaimStaleTempFiles(plan, deps);
     // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-reclaim-stale-temp
 
     // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-verify-temp-occupancy
@@ -342,7 +375,40 @@ export async function commitUpgrade(plan: UpgradePlan, deps: CommitDeps): Promis
     for (const op of addOrReplaceOps) {
       const dest = destinationPath(deps.repoRoot, op);
       const temp = tempPath(dest);
-      await deps.writeDiskFile(temp, requireNewContent(op));
+      try {
+        await deps.writeDiskFile(temp, requireNewContent(op));
+      } catch (writeError) {
+        // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-if-temp-occupied-at-write
+        if (writeError instanceof ReservedTempPathOccupiedError) {
+          // The residual window `inst-com-verify-temp-occupancy` cannot
+          // close by itself: something occupied THIS op's own reserved temp
+          // path between that check and this write. The real write seam's
+          // own exclusive-create call is the backstop that turns the window
+          // into an EEXIST rather than a silent write-through or a moved
+          // symlink; reported here through the identical refusal shape
+          // `inst-com-return-temp-occupied` already uses, never as an
+          // internal failure — nothing has been renamed yet, so there is
+          // still nothing to restore, only this attempt's own already-
+          // materialized temp files (for earlier operations in this same
+          // loop) left to sweep before returning.
+          for (const priorTemp of tempPathByOp.values()) {
+            await deps.unlinkDiskFile(priorTemp).catch(() => undefined);
+          }
+          // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-return-temp-occupied-at-write
+          return {
+            ok: false,
+            code: 'CONTENT_CONFLICT',
+            message:
+              `${plan.name}'s upgrade was refused: the destination "${op.path}" cannot be staged because something ` +
+              'other than a regular file now occupies its reserved temporary path, which this engine never creates ' +
+              'there itself. Nothing was written; remove the offending path and re-run the upgrade.',
+            details: { drifted: [{ target: op.target, path: op.path, tempPath: op.path + RESERVED_TEMP_SUFFIX }] },
+          };
+          // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-return-temp-occupied-at-write
+        }
+        // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-if-temp-occupied-at-write
+        throw writeError;
+      }
       tempPathByOp.set(op, temp);
     }
     // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-materialize-temp
@@ -668,6 +734,8 @@ export async function commitUpgrade(plan: UpgradePlan, deps: CommitDeps): Promis
   // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-refresh-bundle
 
   // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-return-success
-  return { ok: true, plan };
+  // @cpt-begin:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-report-reclaimed-temp
+  return { ok: true, plan, reclaimedTempPaths };
+  // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-report-reclaimed-temp
   // @cpt-end:cpt-frontx-algo-upgrade-changeset-commit:p1:inst-com-return-success
 }

@@ -165,7 +165,13 @@ describe('commitUpgrade against a real filesystem — a foreign entry already oc
       expect(result.ok).toBe(false);
       if (result.ok) throw new Error('unreachable');
       expect(result.code).toBe('CONTENT_CONFLICT');
-      expect(result.details).toMatchObject({ drifted: [{ target: 'app', path: 'app/new.txt' }] });
+      // Names BOTH the destination the developer approved AND the reserved
+      // temporary path where the offending shape actually stands — naming
+      // only the former leaves nothing for a developer to find anything
+      // wrong at.
+      expect(result.details).toMatchObject({
+        drifted: [{ target: 'app', path: 'app/new.txt', tempPath: `app/new.txt${RESERVED_TEMP_SUFFIX}` }],
+      });
 
       // The destination this ADD would have created never came into being —
       // an ADD's own "nothing was there before" state survives the refusal.
@@ -259,9 +265,58 @@ describe('commitUpgrade against a real filesystem — a foreign entry already oc
     const result = await commitUpgrade(plan, deps);
 
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
     const destStat = await lstat(dest);
     expect(destStat.isFile()).toBe(true);
     expect(await readFile(dest, 'utf-8')).toBe('v2');
     await expect(lstat(temp)).rejects.toThrow();
+    // The reclamation is reported back, not silent — a developer whose prior
+    // run crashed and left this litter can see it was cleared.
+    expect(result.reclaimedTempPaths).toEqual([`app/new.txt${RESERVED_TEMP_SUFFIX}`]);
+  });
+
+  it('the exclusive-create backstop refuses CONTENT_CONFLICT, naming the temp path, when a symlink appears at the reserved temp path in the window between the pre-flight check and the write', async () => {
+    repoRoot = await mkdtemp(path.join(tmpdir(), 'frontx-upgrade-occupied-'));
+    await mkdir(path.join(repoRoot, 'app'), { recursive: true });
+    const dest = path.join(repoRoot, 'app', 'new.txt');
+    const temp = dest + RESERVED_TEMP_SUFFIX;
+    const victim = path.join(repoRoot, 'victim.txt');
+    await writeFile(victim, 'PRECIOUS', 'utf-8');
+    // Nothing stands at `temp` yet, so `verifyTempOccupancy`'s own pre-flight
+    // read sees `'absent'` and passes cleanly — the race window this test
+    // exercises opens only after that check, immediately before the write.
+
+    const realWriteDiskFile = createFsWriteDiskFileFn(repoRoot);
+    const writeDiskFile: CommitDeps['writeDiskFile'] = async (absolutePath, content) => {
+      if (absolutePath === temp) {
+        // Injected through this seam rather than raced against a real
+        // concurrent process: a symlink appears exactly where the pre-flight
+        // check just found nothing.
+        await symlink(victim, temp);
+      }
+      return realWriteDiskFile(absolutePath, content);
+    };
+
+    const deps: CommitDeps = { ...makeRealDeps(repoRoot), writeDiskFile };
+    const plan = makePlan([
+      op({ target: 'app', path: 'app/new.txt', op: 'ADD', expectedDisk: null, baselineContent: null, newContent: 'v2' }),
+    ]);
+
+    const result = await commitUpgrade(plan, deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    // Surfaces as the ordinary CONTENT_CONFLICT refusal, never an internal
+    // failure, and names the reserved temp path itself.
+    expect(result.code).toBe('CONTENT_CONFLICT');
+    expect(result.details).toMatchObject({
+      drifted: [{ target: 'app', path: 'app/new.txt', tempPath: `app/new.txt${RESERVED_TEMP_SUFFIX}` }],
+    });
+
+    // The backstop refused before ever writing through the symlink — the
+    // victim file's content is untouched, and the destination was never
+    // created.
+    expect(await readFile(victim, 'utf-8')).toBe('PRECIOUS');
+    await expect(lstat(dest)).rejects.toThrow();
   });
 });

@@ -11,10 +11,16 @@
 // is never read.
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile, symlink, lstat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createFsReadDiskEntryFn, createFsListDiskFilesFn } from '../adapters/fs-upgrade-io';
+import {
+  createFsReadDiskEntryFn,
+  createFsListDiskFilesFn,
+  createFsWriteDiskFileFn,
+  ReservedTempPathOccupiedError,
+} from '../adapters/fs-upgrade-io';
+import { RESERVED_TEMP_SUFFIX } from '../paths/reserved-temp-name';
 
 let root: string | undefined;
 
@@ -69,6 +75,45 @@ describe('createFsReadDiskEntryFn — a real special file (FIFO)', () => {
     expect(await readDiskEntry(path.join(root, 'dir'))).toEqual({ kind: 'directory' });
     expect(await readDiskEntry(path.join(root, 'file.txt'))).toEqual({ kind: 'file', content: 'content' });
     expect(await readDiskEntry(path.join(root, 'does-not-exist.txt'))).toEqual({ kind: 'absent' });
+  });
+});
+
+describe('createFsWriteDiskFileFn — exclusive-create backstop on a reserved temp path', () => {
+  it('creates a reserved temp path that does not yet exist, writing exactly the given content', async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'frontx-upgrade-write-'));
+    const temp = path.join(root, `new.txt${RESERVED_TEMP_SUFFIX}`);
+
+    const writeDiskFile = createFsWriteDiskFileFn(root);
+    await writeDiskFile(temp, 'v2');
+
+    expect(await readFile(temp, 'utf-8')).toBe('v2');
+  });
+
+  it('refuses with ReservedTempPathOccupiedError, never following it or writing through it, when a symlink already occupies the reserved temp path', async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'frontx-upgrade-write-'));
+    const temp = path.join(root, `new.txt${RESERVED_TEMP_SUFFIX}`);
+    const victim = path.join(root, 'victim.txt');
+    await writeFile(victim, 'PRECIOUS', 'utf-8');
+    await symlink(victim, temp);
+
+    const writeDiskFile = createFsWriteDiskFileFn(root);
+
+    await expect(writeDiskFile(temp, 'v2')).rejects.toBeInstanceOf(ReservedTempPathOccupiedError);
+    // Never followed the symlink to write through it...
+    expect(await readFile(victim, 'utf-8')).toBe('PRECIOUS');
+    // ...and never replaced the symlink itself with a regular file either.
+    expect((await lstat(temp)).isSymbolicLink()).toBe(true);
+  });
+
+  it('still overwrites an ordinary (non-reserved) destination unconditionally, as a REPLACE requires', async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'frontx-upgrade-write-'));
+    const dest = path.join(root, 'existing.txt');
+    await writeFile(dest, 'BASELINE', 'utf-8');
+
+    const writeDiskFile = createFsWriteDiskFileFn(root);
+    await writeDiskFile(dest, 'REPLACED');
+
+    expect(await readFile(dest, 'utf-8')).toBe('REPLACED');
   });
 });
 

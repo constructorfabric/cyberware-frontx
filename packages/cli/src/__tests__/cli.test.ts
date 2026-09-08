@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import path from 'node:path';
 import { Writable } from 'node:stream';
 import {
   parseInvocation,
@@ -368,6 +369,33 @@ describe('usage/help (cpt-frontx-flow-cli-invocation-help)', () => {
     expect(deps.fetchFn).not.toHaveBeenCalled();
   });
 
+  // `--yes` is the `--json` protocol's second call, never a prompt
+  // suppressor: without `--json` it changed nothing, and with no terminal
+  // attached — every script — the prompt read end-of-input, took its `No`
+  // default and exited 0 having done nothing.
+  it.each([
+    ['delete', ['delete', 'app', '--yes']],
+    ['upgrade', ['upgrade', 'acme-tool', 'path:vendor', '--yes']],
+    ['upgrade --restore', ['upgrade', 'acme-tool', '--restore', '--yes']],
+  ])('run() refuses --yes without --json for %s instead of prompting and reporting a no-op as success', async (_label, argv) => {
+    const { deps } = makeDeps();
+    const outcome = await run(argv, deps);
+    expect(outcome.exitCode).toBe(EXIT_USER_ERROR);
+    expect(outcome.stdout).toBeUndefined();
+    expect(outcome.stderr).toContain('--yes only together with --json');
+  });
+
+  it('run() still accepts --json --yes, the form the confirmation gate defines', async () => {
+    const { deps } = makeDeps();
+    const outcome = await run(['delete', 'app', '--json', '--yes'], deps);
+    expect(outcome.stderr).toBeUndefined();
+    const envelope = JSON.parse(outcome.stdout ?? '') as { ok: boolean; error?: { code: string } };
+    // The target is not applied in this fixture, so the gate is reached and
+    // answers on its own terms rather than being refused at the arg layer.
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error?.code).toBe('TARGET_NOT_APPLIED');
+  });
+
   it('run() defers to help for an unrecognized command with user-error exit', async () => {
     const { deps } = makeDeps();
     const outcome = await run(['bogus-command'], deps);
@@ -582,6 +610,71 @@ describe('dispatch: list (cpt-frontx-flow-template-resolution-list)', () => {
     const envelope = JSON.parse(outcome.stdout ?? '') as { ok: boolean; error: { code: string; message: string } };
     expect(envelope.ok).toBe(false);
     expect(envelope.error.code).toBe('CONTENT_CONFLICT');
+  });
+
+  // The document's path must be named EXACTLY ONCE, project-relative — not
+  // the wrapper's own relative naming alongside the wrapped typed error's
+  // OWN absolute one restating the same file (and, for `UnreachablePathError`,
+  // a THIRD absolute path for the blocking ancestor). All three underlying
+  // causes are exercised with a `filePath` that genuinely sits under
+  // `process.cwd()` (`run()`'s own `repoRoot`), so relativization is actually
+  // observable rather than trivially falling back to the absolute form.
+  it.each([
+    ['a non-regular file (FIFO)', (filePath: string) => new NotRegularFileError(filePath, 'fifo'), 'is a FIFO'],
+    ['a permission refusal', (filePath: string) => new PathUnreadableError(filePath, 'EACCES'), 'permission was refused'],
+  ])('names the project state path exactly once, project-relative, for %s', async (_name, makeUnderlying, expectedCauseFragment) => {
+    const relativeFilePath = path.join('.frontx', 'project.json');
+    const absoluteFilePath = path.join(process.cwd(), relativeFilePath);
+    const posixRelativeFilePath = relativeFilePath.split(path.sep).join('/');
+
+    const { deps } = makeDeps({
+      readProjectStateFn: vi.fn(async () => {
+        throw new ProjectStateUnreadableError(absoluteFilePath, makeUnderlying(absoluteFilePath));
+      }),
+    });
+
+    const outcome = await run(['list', '--json'], deps);
+    const envelope = JSON.parse(outcome.stdout ?? '') as { error: { code: string; message: string } };
+
+    expect(envelope.error.code).toBe('PROJECT_INVALID');
+    expect(envelope.error.message).toContain(expectedCauseFragment);
+    // The absolute host path never leaks into the message at all...
+    expect(envelope.error.message).not.toContain(absoluteFilePath);
+    // ...and the project-relative form appears exactly once — never twice,
+    // spelled the same way each time, for one document.
+    const occurrences = envelope.error.message.split(posixRelativeFilePath).length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  // `UnreachablePathError` additionally names a SECOND path — the blocking
+  // ancestor — which must ALSO be project-relative rather than absolute (the
+  // third path this defect used to leak). A blocker name that shares no
+  // substring with the leaf's own relative path keeps the two counts from
+  // being confused with one another.
+  it('names both the project state path and its blocking ancestor exactly once, project-relative', async () => {
+    const relativeFilePath = path.join('.frontx', 'project.json');
+    const absoluteFilePath = path.join(process.cwd(), relativeFilePath);
+    const posixRelativeFilePath = relativeFilePath.split(path.sep).join('/');
+    const relativeBlockingAncestor = 'unrelated-blocker-name';
+    const absoluteBlockingAncestor = path.join(process.cwd(), relativeBlockingAncestor);
+
+    const { deps } = makeDeps({
+      readProjectStateFn: vi.fn(async () => {
+        throw new ProjectStateUnreadableError(
+          absoluteFilePath,
+          new UnreachablePathError(absoluteFilePath, absoluteBlockingAncestor),
+        );
+      }),
+    });
+
+    const outcome = await run(['list', '--json'], deps);
+    const envelope = JSON.parse(outcome.stdout ?? '') as { error: { code: string; message: string } };
+
+    expect(envelope.error.code).toBe('PROJECT_INVALID');
+    expect(envelope.error.message).not.toContain(absoluteFilePath);
+    expect(envelope.error.message).not.toContain(absoluteBlockingAncestor);
+    expect(envelope.error.message.split(posixRelativeFilePath).length - 1).toBe(1);
+    expect(envelope.error.message.split(relativeBlockingAncestor).length - 1).toBe(1);
   });
 
   // Absence is not invalidity: `readProjectState` answers a missing document

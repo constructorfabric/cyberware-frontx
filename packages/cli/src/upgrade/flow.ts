@@ -65,7 +65,7 @@ import type {
 export type UpgradeFlowOutcome =
   | { ok: true; outcome: 'noop'; at: OriginVersion }
   | { ok: true; outcome: 'declined'; plan: UpgradePlan }
-  | { ok: true; outcome: 'success'; plan: UpgradePlan }
+  | { ok: true; outcome: 'success'; plan: UpgradePlan; reclaimedTempPaths: string[] }
   | UpgradeRefusal;
 
 // Every seam both `commitUpgrade` and `validateUpgrade` need, gathered in one
@@ -391,7 +391,7 @@ async function driveUpgrade(name: string, deriveCandidate: DeriveCandidateFn, de
 
   // @cpt-begin:cpt-frontx-flow-upgrade-changeset-review-approval:p1:inst-return-success
   // @cpt-begin:cpt-frontx-flow-upgrade-changeset-restore:p1:inst-rst-return-success
-  return { ok: true, outcome: 'success', plan: commitOutcome.plan };
+  return { ok: true, outcome: 'success', plan: commitOutcome.plan, reclaimedTempPaths: commitOutcome.reclaimedTempPaths };
   // @cpt-end:cpt-frontx-flow-upgrade-changeset-restore:p1:inst-rst-return-success
   // @cpt-end:cpt-frontx-flow-upgrade-changeset-review-approval:p1:inst-return-success
   // @cpt-end:cpt-frontx-flow-upgrade-changeset-restore:p1:inst-rst-if-approved

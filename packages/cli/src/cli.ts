@@ -104,7 +104,31 @@ import {
   UnreachablePathError,
   PathUnreadableError,
   ProjectStateUnreadableError,
+  describeUnreadableCause,
+  describeNonRegularKind,
 } from './adapters/fs-project-io';
+import { InvalidInventoryIndexError } from './adapters/fs-inventory-index';
+
+// @cpt-begin:cpt-frontx-algo-cli-invocation-parse-dispatch:p1:inst-pd-if-yes-without-json
+// @cpt-begin:cpt-frontx-algo-cli-invocation-parse-dispatch:p1:inst-pd-return-yes-without-json
+/**
+ * `--yes` is the `--json` protocol's second call, not a prompt suppressor:
+ * both confirmation gates spell it `--json --yes`, and interactive mode asks
+ * the developer instead (`cpt-frontx-flow-cli-scaffolding-delete-target`'s
+ * own `inst-del-if-json-no-yes`/`inst-del-else-json-yes`). Passing it without
+ * `--json` therefore did nothing at all, and — with no terminal attached, the
+ * shape every script has — the prompt read end-of-input, took its declared
+ * `No` default, and exited 0 having done nothing: a caller that asked for a
+ * non-interactive run got a silent no-op reported as success. Refused here
+ * instead, naming the form that works.
+ */
+function rejectYesWithoutJson(command: string, jsonMode: boolean, yes: boolean): CommandOutcome | undefined {
+  if (!yes || jsonMode) return undefined;
+  const message = `${command} accepts --yes only together with --json; without --json it asks for confirmation interactively.`;
+  return { exitCode: EXIT_USER_ERROR, stderr: message };
+}
+// @cpt-end:cpt-frontx-algo-cli-invocation-parse-dispatch:p1:inst-pd-return-yes-without-json
+// @cpt-end:cpt-frontx-algo-cli-invocation-parse-dispatch:p1:inst-pd-if-yes-without-json
 
 // --- exit-code state machine (cpt-frontx-state-cli-invocation-run) ---
 
@@ -188,14 +212,14 @@ export function usageText(): string {
     '                                           Seed a new or empty repository from a batch',
     '  apply --input <batch-json> [--adopt-existing] [--json]',
     '                                           Apply a batch into an already-assembled repository',
-    '  upgrade <templateName> <new-origin> [--yes] [--json]   Upgrade a registered template to a new origin',
-    '  upgrade <templateName> --restore [--yes] [--json]      Restore a template to its immediately preceding origin',
+    '  upgrade <templateName> <new-origin> [--json [--yes]]   Upgrade a registered template to a new origin',
+    '  upgrade <templateName> --restore [--json [--yes]]      Restore a template to its immediately preceding origin',
     '  register <origin> [--replace] [--json]  Register a template origin under the current project',
     '  unregister <name> [--json]              Unregister a template with no applied targets',
     '  ownership add <path> [--json]           Mark an existing path as project-owned',
     '  ownership remove <path> [--json]        Un-mark a project-owned path',
     '  ownership list [--json]                 List the project-owned root paths',
-    '  delete <target> [--json] [--yes] [--dry-run]  Delete an applied template target',
+    '  delete <target> [--dry-run] [--json [--yes]]  Delete an applied template target',
     '  help                                    Show this usage summary',
     '',
     'A source-spec is host:owner/repo[//subtree]@ref — the optional //subtree',
@@ -992,12 +1016,16 @@ function renderUpgradeOutcome(result: UpgradeCommandOutcome, jsonMode: boolean):
       ? { exitCode: EXIT_SUCCESS, stdout: JSON.stringify(ok(data)) }
       : { exitCode: EXIT_SUCCESS, stdout: `Upgrade of "${result.plan.name}" declined; nothing was written.` };
   }
-  const data = { outcome: result.outcome, plan: renderReviewablePlan(result.plan) };
+  const data = { outcome: result.outcome, plan: renderReviewablePlan(result.plan), reclaimedTempPaths: result.reclaimedTempPaths };
+  const reclaimedNote =
+    result.reclaimedTempPaths.length > 0
+      ? ` Reclaimed ${result.reclaimedTempPaths.length} stale scratch file(s) left by a prior interrupted attempt.`
+      : '';
   return jsonMode
     ? { exitCode: EXIT_SUCCESS, stdout: JSON.stringify(ok(data)) }
     : {
         exitCode: EXIT_SUCCESS,
-        stdout: `Upgraded "${result.plan.name}" to "${result.plan.to.origin}" (version ${result.plan.to.version}).`,
+        stdout: `Upgraded "${result.plan.name}" to "${result.plan.to.origin}" (version ${result.plan.to.version}).${reclaimedNote}`,
       };
 }
 // @cpt-end:cpt-frontx-algo-cli-invocation-parse-dispatch:p1:inst-pd-render
@@ -1615,9 +1643,11 @@ export async function runCommand(command: KnownCommand, args: string[], deps: Cl
         'delete',
         extra,
         jsonMode,
-        'frontx delete <target> [--json] [--yes] [--dry-run]',
+        'frontx delete <target> [--dry-run] [--json [--yes]]',
       );
       if (extraArgsOutcome) return extraArgsOutcome;
+      const deleteYesOutcome = rejectYesWithoutJson('delete', jsonMode, yes);
+      if (deleteYesOutcome) return deleteYesOutcome;
       // No explicit project-root argument on this command's own FEATURE
       // flow signature (`delete <target>`) — operates on the project the
       // developer is standing in, exactly as `register`/`unregister`/
@@ -1682,9 +1712,11 @@ export async function runCommand(command: KnownCommand, args: string[], deps: Cl
         'upgrade',
         extra,
         jsonMode,
-        'frontx upgrade <templateName> <new-origin>|--restore [--yes] [--json]',
+        'frontx upgrade <templateName> <new-origin>|--restore [--json [--yes]]',
       );
       if (extraArgsOutcome) return extraArgsOutcome;
+      const upgradeYesOutcome = rejectYesWithoutJson('upgrade', jsonMode, yes);
+      if (upgradeYesOutcome) return upgradeYesOutcome;
       // Argument shape CHANGED from the retired engine's own `<projectRoot>
       // <targetVersion>`: this is `<templateName> <new-origin>` XOR
       // `<templateName> --restore`, with NO origin argument for restore
@@ -2072,7 +2104,11 @@ export async function run(argv: string[], deps: CliDeps): Promise<CommandOutcome
     // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-if-project-state-unreadable
     if (error instanceof ProjectStateUnreadableError) {
       const reported = describePathForReport(error.filePath);
-      const message = `Project state document at "${reported}" could not be read: ${error.underlying.message}`;
+      // `error.underlying.message` restates `error.filePath` itself (and, for
+      // an `UnreachablePathError`, a second absolute path besides) — using it
+      // verbatim here would name this one document three ways in one
+      // sentence. `describeUnreadableCause` contributes only the CAUSE.
+      const message = `Project state document at "${reported}" could not be read: ${describeUnreadableCause(error.underlying, describePathForReport)}`;
       const envelope = err('PROJECT_INVALID', message, { path: reported });
       // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-project-state-unreadable
       return parseJsonMode(parsed.args)
@@ -2100,7 +2136,7 @@ export async function run(argv: string[], deps: CliDeps): Promise<CommandOutcome
       // outside the project cannot be spelled relative to it without lying
       // about where it is.
       const reported = describePathForReport(error.filePath);
-      const message = `"${reported}" is ${describeNonRegularKindForReport(error.kind)}, not a regular file — refusing to read it.`;
+      const message = `"${reported}" is ${describeNonRegularKind(error.kind)}, not a regular file — refusing to read it.`;
       const envelope = err('CONTENT_CONFLICT', message, { path: reported, kind: error.kind });
       // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-content-unreadable
       return parseJsonMode(parsed.args)
@@ -2144,6 +2180,24 @@ export async function run(argv: string[], deps: CliDeps): Promise<CommandOutcome
         : { exitCode: EXIT_USER_ERROR, stderr: message };
       // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-content-unreadable
     }
+    // The local inventory index (`index.json`) was read as a regular file,
+    // but its content is not usable — not valid JSON, or not the shape every
+    // caller assumes (`adapters/fs-inventory-index.ts`'s own
+    // `InvalidInventoryIndexError` doc comment). Reported through the
+    // identical `CONTENT_CONFLICT` code as the three refusals above, for the
+    // same reason: the disk holds something this operation cannot work
+    // with, and a caller cannot act on an internal-error exit for what is an
+    // ordinary, actionable problem with the tree it pointed the CLI at.
+    if (error instanceof InvalidInventoryIndexError) {
+      const reported = describePathForReport(error.filePath);
+      const message = error.message;
+      const envelope = err('CONTENT_CONFLICT', message, { path: reported });
+      // @cpt-begin:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-content-unreadable
+      return parseJsonMode(parsed.args)
+        ? { exitCode: EXIT_USER_ERROR, stdout: JSON.stringify(envelope) }
+        : { exitCode: EXIT_USER_ERROR, stderr: message };
+      // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-return-content-unreadable
+    }
     // @cpt-end:cpt-frontx-flow-cli-invocation-run-command:p1:inst-run-if-content-unreadable
     // @cpt-end:cpt-frontx-state-cli-invocation-run:p1:inst-st-dispatched-user-error
 
@@ -2169,21 +2223,6 @@ function describePathForReport(absolutePath: string): string {
   return relative.split(path.sep).join('/');
 }
 
-// The one wording for each non-regular shape a read can refuse, kept beside
-// the reporting helper above so the entrypoint's message and the adapter's
-// own stay recognisably the same sentence.
-function describeNonRegularKindForReport(kind: string): string {
-  switch (kind) {
-    case 'directory':
-      return 'a directory';
-    case 'dangling-symlink':
-      return 'a symlink whose target does not exist';
-    case 'symlink':
-      return 'a symlink';
-    default:
-      return 'a special file (a FIFO, socket, or device)';
-  }
-}
 
 // --- process entrypoint ---
 

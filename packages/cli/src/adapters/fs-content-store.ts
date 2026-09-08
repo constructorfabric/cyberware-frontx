@@ -6,6 +6,7 @@ import { BUNDLE_MARKER } from '../bundle/envelope';
 import { MANIFEST_FILENAME } from '../manifest/types';
 import type { ContentStorePort } from '../inventory/types';
 import { assertWithinRoot, resolveInstalledContentPath } from './fs-installed-content-path';
+import { firstNonDirectoryComponentOf, UnreachablePathError } from './fs-project-io';
 
 // Real filesystem CONTENT store — satisfies the `ContentStorePort` seam the
 // in-memory `InventoryStore` also satisfies (packages/cli/src/inventory/InventoryStore.ts),
@@ -32,6 +33,11 @@ export class FsContentStore implements ContentStorePort {
   write(name: string, content: string): void {
     const installedPath = resolveInstalledContentPath(this.root, name);
     assertWithinRoot(this.root, installedPath);
+    // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-write-guard
+    // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-write-guard-fail
+    assertPathReachableAsDirectory(installedPath);
+    // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-write-guard-fail
+    // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-write-guard
     fs.mkdirSync(installedPath, { recursive: true });
     writeBundle(this.root, installedPath, content);
   }
@@ -41,9 +47,22 @@ export class FsContentStore implements ContentStorePort {
   replace(name: string, content: string): void {
     const installedPath = resolveInstalledContentPath(this.root, name);
     assertWithinRoot(this.root, installedPath);
+    // @cpt-begin:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-replace-guard
+    // @cpt-begin:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-replace-guard-fail
+    assertPathReachableAsDirectory(installedPath);
+    // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-replace-guard-fail
+    // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-replace-guard
     // Replace is a full materialization: remove any previously materialized
     // files for this template before writing the newly fetched content, so
     // a file dropped from the new content does not linger on disk.
+    //
+    // `installedPath` has already been proven, by `assertWithinRoot` above,
+    // to resolve inside `this.root` even when it is itself a symlink — so
+    // when it IS a symlink, `fs.rmSync` here removes only that symlink's own
+    // directory entry (`rm -rf` semantics: a symlink is never dereferenced
+    // for removal, only `unlink`ed), never the directory it points at. The
+    // outside-the-root case that would matter is exactly what `assertWithinRoot`
+    // already refused above, before this line is ever reached.
     if (fs.existsSync(installedPath)) {
       fs.rmSync(installedPath, { recursive: true, force: true });
     }
@@ -61,6 +80,28 @@ export class FsContentStore implements ContentStorePort {
   has(name: string): boolean {
     const installedPath = resolveInstalledContentPath(this.root, name);
     return fs.existsSync(installedPath) && fs.readdirSync(installedPath).length > 0;
+  }
+}
+
+// A regular file (or any other non-directory entry) standing where an
+// installed content path's own ancestor directory belongs — e.g. a scoped
+// name `@x/inv` whose `@x` segment is a plain file rather than a directory —
+// used to reach `fs.mkdirSync(installedPath, { recursive: true })` unguarded,
+// which fails with a bare `ENOTDIR` no caller here catches: the CLI's
+// top-level catch has nothing typed to match, so it falls through to a raw
+// internal-error exit with no `--json` envelope at all. `firstNonDirectoryComponentOf`
+// (`./fs-project-io.ts`) is the SAME primitive `createFsListTargetFilesFn`
+// already uses to name this exact shape for an applied project target,
+// reused here rather than a second, independently written ancestor walk.
+// `UnreachablePathError` is likewise reused — it is already mapped to
+// `CONTENT_CONFLICT` at the CLI's top-level catch — rather than inventing a
+// bespoke type for a fact that is, from a caller's vantage, identical: a
+// path could not be reached because something other than a directory blocks
+// the way.
+function assertPathReachableAsDirectory(installedPath: string): void {
+  const blocking = firstNonDirectoryComponentOf(installedPath);
+  if (blocking !== null) {
+    throw new UnreachablePathError(installedPath, blocking);
   }
 }
 

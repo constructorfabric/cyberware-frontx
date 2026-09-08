@@ -54,7 +54,7 @@ export type UpgradeDirection = { kind: 'forward'; newOrigin: string } | { kind: 
 export type UpgradeCommandOutcome =
   | { ok: true; outcome: 'noop'; at: { origin: string; version: string } }
   | { ok: true; outcome: 'declined'; plan: UpgradePlan }
-  | { ok: true; outcome: 'success'; plan: UpgradePlan }
+  | { ok: true; outcome: 'success'; plan: UpgradePlan; reclaimedTempPaths: string[] }
   | { ok: false; code: ErrorCode; message: string; details?: Record<string, unknown> };
 
 /**

@@ -53,6 +53,7 @@ import {
   NotRegularFileError,
   UnreachablePathError,
   PathUnreadableError,
+  describeUnreadableCause,
 } from '../adapters/fs-project-io';
 
 // Symmetric to `upgrade/types.ts`'s `RemoveProjectFileFn` — removes one
@@ -140,6 +141,7 @@ type PlanOutcome =
 function toProjectRelativePath(repoRoot: string, absolutePath: string): string {
   return path.relative(repoRoot, absolutePath).split(path.sep).join('/');
 }
+
 
 // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-resolve-recorded-name
 // A leading "./" and a trailing "/" stripped, never resolving ".." and never
@@ -357,10 +359,13 @@ export async function deleteTarget(
           code: 'CONTENT_CONFLICT',
           // The path is spelled project-relative, like every other path this
           // package reports; the typed error carries the absolute one it
-          // actually inspected.
+          // actually inspected. The CAUSE — which of the three refusals this
+          // was — is named too: a `chmod 000` manifest and a FIFO in its
+          // place both land here, and the remedy differs between them.
           message:
             `Aborted — the owning template's manifest at "${toProjectRelativePath(repoRoot, error.filePath)}" ` +
-            'could not be read. A deletion plan cannot be computed without it; nothing deleted.',
+            `could not be read: ${describeUnreadableCause(error, (absolutePath) => toProjectRelativePath(repoRoot, absolutePath))} A deletion plan cannot be ` +
+            'computed without it; nothing deleted.',
           details: { target: recordedTarget, path: toProjectRelativePath(repoRoot, error.filePath) },
         };
         // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-manifest-unreadable

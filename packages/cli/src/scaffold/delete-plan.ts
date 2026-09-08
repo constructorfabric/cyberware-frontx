@@ -23,7 +23,7 @@ import path from 'node:path';
 import { RESERVED_ENVIRONMENT_ENTRIES, readManifestFromContent } from '../manifest/validate-contract';
 import { computeExclusionRoots, isWithinEffectiveOwnership } from './effective-ownership';
 import { resolveRegisteredManifestContent } from './registered-manifest';
-import { pathWithinSubtree, pathWithinTarget, joinUnderTarget } from '../paths/relative-path';
+import { pathWithinSubtree, pathWithinTarget, joinUnderTarget, withoutTrailingSlash } from '../paths/relative-path';
 import { parseLocalOrigin } from '../resolver/types';
 import type { CanonicalizeTargetFn } from './conflict-check';
 import type { ProjectStateDocument } from '../project-state/types';
@@ -340,17 +340,15 @@ export async function computeDeletionPlan(
   const reservedEntriesBeneath = RESERVED_ENVIRONMENT_ENTRIES.filter((envEntry) => pathWithinTarget(envEntry, target));
   const ownerLocalOriginFolderBeneath =
     localOriginFolder !== undefined && pathWithinTarget(localOriginFolder, target) ? [localOriginFolder] : [];
-  const toPreserve = Array.from(
-    new Set([
-      ...excludedSubtreeRoots,
-      ...nestedTargets,
-      ...projectOwnedRootsBeneath,
-      ...reservedEntriesBeneath,
-      ...otherLocalOriginFolders,
-      ...ownerLocalOriginFolderBeneath,
-      ...unenumerableWithinOwnership,
-    ]),
-  ).sort();
+  const toPreserve = dedupeByGround([
+    ...excludedSubtreeRoots,
+    ...nestedTargets,
+    ...projectOwnedRootsBeneath,
+    ...reservedEntriesBeneath,
+    ...otherLocalOriginFolders,
+    ...ownerLocalOriginFolderBeneath,
+    ...unenumerableWithinOwnership,
+  ]);
   // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-set-preserve
 
   // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-set-delete
@@ -365,4 +363,23 @@ export async function computeDeletionPlan(
   // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-return-plan
   return { ok: true, toDelete, toPreserve, templateName: ownerName };
   // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-return-plan
+}
+
+// One entry per preserved GROUND, not per reason it survives. The same
+// directory reaches this set under two spellings — a nested target names it
+// without a trailing separator, a manifest's `excludedSubtrees` declaration
+// with one — and a plain string `Set` keeps both, so the confirmation gate
+// listed `src-app/mfe_packages` and `src-app/mfe_packages/` as if they were
+// two different things. Collapsed on the same normalization
+// `pathWithinSubtree` already applies before comparing, keeping the
+// trailing-separator spelling when one exists, since that one says the
+// ground is a directory.
+function dedupeByGround(entries: readonly string[]): string[] {
+  const byGround = new Map<string, string>();
+  for (const entry of entries) {
+    const ground = withoutTrailingSlash(entry);
+    const kept = byGround.get(ground);
+    if (kept === undefined || (!kept.endsWith('/') && entry.endsWith('/'))) byGround.set(ground, entry);
+  }
+  return Array.from(byGround.values()).sort();
 }

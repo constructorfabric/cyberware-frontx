@@ -39,7 +39,7 @@ function hasUnsafePathChar(value: string): boolean {
 // subtree, so every comparison below strips it first — otherwise the two
 // spellings would disagree about the same ground and one of them would slip past
 // the check the other is refused by.
-function withoutTrailingSlash(value: string): string {
+export function withoutTrailingSlash(value: string): string {
   return value.endsWith('/') ? value.slice(0, -1) : value;
 }
 

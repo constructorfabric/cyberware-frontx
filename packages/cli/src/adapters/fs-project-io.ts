@@ -180,9 +180,9 @@ export function createFsWriteFileFn(): WriteFileFn {
 // `'dangling-symlink'` is not a `fs.Stats` kind at all (there is no `Stats`
 // object for a target that does not exist), so it is named separately from
 // the four kinds `fs.Stats` itself can report.
-type NonRegularKind = 'directory' | 'fifo' | 'socket' | 'device' | 'dangling-symlink';
+export type NonRegularKind = 'directory' | 'fifo' | 'socket' | 'device' | 'dangling-symlink';
 
-function describeNonRegularKind(kind: NonRegularKind): string {
+export function describeNonRegularKind(kind: NonRegularKind): string {
   switch (kind) {
     case 'directory':
       return 'a directory';
@@ -343,7 +343,13 @@ function throwForLstatFailure(filePath: string, error: unknown): never {
   throw new PathUnreadableError(filePath, errnoCodeOf(error));
 }
 
-function resolvePathKind(filePath: string): 'absent' | 'file' | NonRegularKind {
+// Exported (in addition to `readFileIfRegular`'s own use of it below) so a
+// write-side seam outside this module — the local inventory store's own
+// writers (`adapters/fs-inventory-index.ts`) — can run the identical
+// FIFO-safe shape probe before ITS OWN write, rather than restating this
+// exact `lstat`/`statSync` sequence a second time. See that module's own
+// call site for why a write needs the same probe a read already has.
+export function resolvePathKind(filePath: string): 'absent' | 'file' | NonRegularKind {
   let lst: fs.Stats;
   try {
     lst = fs.lstatSync(filePath);
@@ -560,6 +566,14 @@ export function createFsReadProjectStateFn(): ReadProjectStateFn {
  * temporary file is, and the rename that publishes it is a single atomic
  * filesystem operation.
  *
+ * "The destination" here means the RESOLVED destination
+ * (`inst-psio-resolve-write-destination` below) — `absolutePath` itself when
+ * it names a regular file or nothing yet, or the target a symlink standing
+ * there points at when it names one. The temporary file sits beside THAT
+ * path, never beside a symlink found at `absolutePath`, so the rename that
+ * publishes it lands on the real document a symlink names rather than
+ * replacing the link.
+ *
  * Unlike every other adapter that writes into or removes from a project —
  * where `assertPathWithinProjectRoot` is called by the CALLER
  * (`commands/apply.ts`/`commands/delete.ts` for `WriteFileFn`/
@@ -589,17 +603,36 @@ export function createFsWriteProjectStateFn(): WriteProjectStateFn {
   return async function writeProjectState(absolutePath: string, content: string): Promise<void> {
     const projectRoot = path.dirname(path.dirname(absolutePath));
     assertPathWithinProjectRoot(projectRoot, absolutePath);
-    const dir = path.dirname(absolutePath);
+    // @cpt-begin:cpt-frontx-algo-composed-provenance-project-state-io:p1:inst-psio-resolve-write-destination
+    // `absolutePath` (`.frontx/project.json`) may itself be a symlink — the
+    // containment check just above already proved that wherever it points
+    // resolves inside `projectRoot`, using this SAME `resolveNearestExistingAncestor`
+    // walk, so reusing it here (rather than a second, independently
+    // formulated resolution) costs nothing new to trust. What it answers
+    // here is different: not WHETHER the write may land, but WHERE it
+    // actually must. `fs.renameSync` does not follow a symlink standing at
+    // its destination — replacing `absolutePath` with the newly-written
+    // temp file destroys the link itself and leaves whatever real document
+    // it named untouched, silently orphaned with the stale content it
+    // already held (the developer's own document, still holding the OLD
+    // state, with nothing in the report saying so). Resolving here and
+    // writing onto the RESOLVED destination instead keeps the link intact
+    // and updates the real document it names — an ordinary, non-symlinked
+    // `absolutePath` resolves to itself, so this changes nothing for the
+    // common case.
+    const writeDestination = resolveNearestExistingAncestor(path.resolve(absolutePath)) ?? absolutePath;
+    // @cpt-end:cpt-frontx-algo-composed-provenance-project-state-io:p1:inst-psio-resolve-write-destination
+    const dir = path.dirname(writeDestination);
     // `resolveWriteParentDir`, not a literal `fs.mkdirSync(dir, ...)`: `dir`
     // may itself BE (or sit beneath) an ALLOWED dangling symlink — e.g. a
     // `.frontx` symlink whose target lands inside the project but whose own
     // parent does not exist yet — and a literal mkdir on `dir` creates
     // nothing such a link's target needs (see this file's own doc comment
     // about dangling symlinks above `resolveWriteParentDir`).
-    fs.mkdirSync(resolveWriteParentDir(absolutePath), { recursive: true });
-    const tempPath = path.join(dir, `.${path.basename(absolutePath)}.${crypto.randomUUID()}.tmp`);
+    fs.mkdirSync(resolveWriteParentDir(writeDestination), { recursive: true });
+    const tempPath = path.join(dir, `.${path.basename(writeDestination)}.${crypto.randomUUID()}.tmp`);
     fs.writeFileSync(tempPath, content, 'utf-8');
-    fs.renameSync(tempPath, absolutePath);
+    fs.renameSync(tempPath, writeDestination);
   };
 }
 // @cpt-end:cpt-frontx-algo-composed-provenance-project-state-io:p1:inst-psio-write-atomic
@@ -788,7 +821,13 @@ function realPathOrNull(absolutePath: string): string | null {
   }
 }
 
-function isInside(root: string, candidate: string): boolean {
+// Exported so a containment check OUTSIDE this module — the local inventory
+// store's own boundary confirmation (`adapters/fs-installed-content-path.ts`,
+// `adapters/fs-inventory-index.ts`) — can reuse this exact prefix test rather
+// than restating it, once it has resolved a candidate through
+// `resolveNearestExistingAncestor` below the same way this module's own
+// callers do.
+export function isInside(root: string, candidate: string): boolean {
   if (candidate === root) return true;
   return candidate.startsWith(root + path.sep);
 }
@@ -891,7 +930,12 @@ export function createFsCanonicalizeTargetFn(projectRoot: string): CanonicalizeT
 // what this guard exists to catch.
 /**
  * A path the CLI was asked to write, remove or claim could not be proven to
- * stay inside the project root once symlinks were resolved.
+ * stay inside the root that owns it once symlinks were resolved. That root is
+ * the project root for every project-side write, and the local inventory
+ * store root for the two inventory adapters that reuse this same refusal
+ * (`fs-inventory-index.ts`, `fs-installed-content-path.ts`) — `rootLabel`
+ * names which, so the message never tells a developer their inventory store
+ * is "the project root".
  *
  * Typed rather than a bare `Error` so the command boundary can tell it apart
  * from a genuine internal failure and report it accordingly: a bare `Error`
@@ -904,11 +948,32 @@ export function createFsCanonicalizeTargetFn(projectRoot: string): CanonicalizeT
 export class PathContainmentError extends Error {
   readonly offendingPath: string;
 
-  constructor(offendingPath: string, root: string) {
-    super(`Refusing to write outside the project root: "${offendingPath}" is not within "${root}".`);
+  constructor(offendingPath: string, root: string, rootLabel = 'the project root') {
+    super(`Refusing to write outside ${rootLabel}: "${offendingPath}" is not within "${root}".`);
     this.name = 'PathContainmentError';
     this.offendingPath = offendingPath;
   }
+}
+
+/**
+ * The ONE wording for WHY a read refused, given the typed error that refused
+ * it — the cause alone, never the path, so a caller that has already named
+ * the path does not name it a second time in the same sentence. `describePath`
+ * spells whatever SECOND path a cause genuinely needs (only
+ * `UnreachablePathError`'s blocking ancestor) the way that caller spells
+ * paths; both entrypoints pass their own.
+ */
+export function describeUnreadableCause(
+  underlying: NotRegularFileError | UnreachablePathError | PathUnreadableError,
+  describePath: (absolutePath: string) => string,
+): string {
+  if (underlying instanceof UnreachablePathError) {
+    return `cannot be reached: "${describePath(underlying.blockingAncestor)}" exists and is not a directory.`;
+  }
+  if (underlying instanceof PathUnreadableError) {
+    return `permission was refused, or the path could not be opened (${underlying.errnoCode}).`;
+  }
+  return `is ${describeNonRegularKind(underlying.kind)}, not a regular file — refusing to read it.`;
 }
 
 export function assertPathWithinProjectRoot(root: string, absolutePath: string): void {
@@ -1023,7 +1088,16 @@ export function createFsAssertPathWithinRootFn(projectRoot: string): AssertPathW
 // produces — rather than looping forever.
 const MAX_SYMLINK_RESOLUTIONS = 40;
 
-function resolveNearestExistingAncestor(lexicalCandidate: string): string | null {
+// Exported so the local inventory store's own boundary confirmation
+// (`adapters/fs-installed-content-path.ts`, `adapters/fs-inventory-index.ts`)
+// can reuse this exact symlink-resolving walk for ITS OWN root — the
+// inventory store root, not a project root — rather than a second,
+// independently formulated resolution. Unlike `assertPathWithinProjectRoot`
+// below, this walk alone tolerates a ROOT that does not exist yet (the
+// ordinary shape of the inventory store before its first write), which is
+// exactly why the inventory store's own checks call this directly instead of
+// that assertion.
+export function resolveNearestExistingAncestor(lexicalCandidate: string): string | null {
   const parsed = path.parse(lexicalCandidate);
   const relative = lexicalCandidate.slice(parsed.root.length);
   let queue = relative.length > 0 ? relative.split(path.sep).filter((segment) => segment.length > 0) : [];
@@ -1208,7 +1282,12 @@ function descendDirectory(
  * The walk terminates at the filesystem root, whose own components are
  * ordinary directories, so no project root has to be threaded in for it.
  */
-function firstNonDirectoryComponentOf(absolutePath: string): string | null {
+// Exported so the local inventory store's own content writer
+// (`adapters/fs-content-store.ts`) can name the exact blocking component when
+// a non-directory entry stands where an installed content path's own
+// ancestor directory belongs, rather than letting `fs.mkdirSync` fail with a
+// bare, unstructured `ENOTDIR`.
+export function firstNonDirectoryComponentOf(absolutePath: string): string | null {
   let candidate = path.resolve(absolutePath);
   for (;;) {
     let stat: fs.Stats;

@@ -34,6 +34,7 @@ import type {
   WriteDiskFileFn,
 } from '../upgrade/types';
 import { assertPathWithinProjectRoot, resolveWriteParentDir } from './fs-project-io';
+import { isReservedTempName } from '../paths/reserved-temp-name';
 
 // Install-time output, never committed template content
 // (`cpt-frontx-algo-template-manifest-validate-content-self-containment`'s own
@@ -217,6 +218,23 @@ function walkRegularFiles(root: string, relativeDir: string): string[] {
  * and a containment escape was never one of upgrade's own decisions to
  * classify, exactly like it is not `register`'s or `apply`'s.
  */
+/**
+ * Thrown by `createFsWriteDiskFileFn` below when its exclusive-create
+ * backstop finds the reserved temporary path already occupied — the write's
+ * own `EEXIST`, translated to a typed fact `../upgrade/commit.ts` recognizes
+ * and reports as its ordinary `CONTENT_CONFLICT` temp-occupancy refusal,
+ * never as an internal failure.
+ */
+export class ReservedTempPathOccupiedError extends Error {
+  readonly filePath: string;
+
+  constructor(filePath: string) {
+    super(`"${filePath}" is already occupied and cannot be exclusively created.`);
+    this.name = 'ReservedTempPathOccupiedError';
+    this.filePath = filePath;
+  }
+}
+
 export function createFsWriteDiskFileFn(repoRoot: string): WriteDiskFileFn {
   return async function writeDiskFile(absolutePath: string, content: string): Promise<void> {
     assertPathWithinProjectRoot(repoRoot, absolutePath);
@@ -226,6 +244,33 @@ export function createFsWriteDiskFileFn(repoRoot: string): WriteDiskFileFn {
     // resolved target's directory created, not the directory literally
     // containing the link — which already exists.
     fs.mkdirSync(resolveWriteParentDir(absolutePath), { recursive: true });
+    // EXCLUSIVE-CREATE BACKSTOP: a reserved-suffix path is written ONLY here,
+    // through `'wx'` (`O_CREAT|O_EXCL`) rather than the plain truncate-or-
+    // create `writeFileSync` an ordinary destination write below still uses —
+    // a `REPLACE` legitimately overwrites its destination, but nothing may
+    // ever legitimately already occupy this engine's own scratch path.
+    // `commitUpgrade`'s own `verifyTempOccupancy` already checked this exact
+    // path moments earlier; this is the backstop for the residual window
+    // between that check and this write, closing it by failing with `EEXIST`
+    // on anything already there — a symlink included, and never followed —
+    // instead of writing through it or silently overwriting it.
+    if (isReservedTempName(absolutePath)) {
+      let fd: number;
+      try {
+        fd = fs.openSync(absolutePath, 'wx');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+          throw new ReservedTempPathOccupiedError(absolutePath);
+        }
+        throw error;
+      }
+      try {
+        fs.writeSync(fd, content, null, 'utf-8');
+      } finally {
+        fs.closeSync(fd);
+      }
+      return;
+    }
     fs.writeFileSync(absolutePath, content, 'utf-8');
   };
 }

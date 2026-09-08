@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { BundleExistsFn, CopyBundleFn, RemoveBundleFn } from '../scaffold/ai-bundle';
-import { assertPathWithinProjectRoot, resolveWriteParentDir } from './fs-project-io';
+import { assertPathWithinProjectRoot, firstNonDirectoryComponentOf, isInside, resolveWriteParentDir } from './fs-project-io';
 import { FRONTX_NAMESPACE_ROOT } from '../manifest/types';
 
 // The one place `.frontx/ai/<manifestName>/` is spelled, from either a
@@ -28,6 +28,62 @@ import { FRONTX_NAMESPACE_ROOT } from '../manifest/types';
 function bundlePath(root: string, manifestName: string): string {
   return path.join(root, FRONTX_NAMESPACE_ROOT, 'ai', manifestName);
 }
+
+// The root of the CLI-owned `.frontx/ai/` namespace itself — the boundary
+// `reclaimNonDirectoryAiAncestor` below checks a blocking ancestor against
+// before ever removing it, and the SAME `.frontx/ai/` join `bundlePath`
+// above performs one level deeper (down to `<manifestName>`), never a second
+// independently-spelled join.
+function aiNamespaceRoot(root: string): string {
+  return path.join(root, FRONTX_NAMESPACE_ROOT, 'ai');
+}
+
+// @cpt-begin:cpt-frontx-algo-cli-scaffolding-ai-bundle:p1:inst-aib-reclaim-ancestor-blocker
+/**
+ * A scoped manifest name (`@scope/pkg`) nests its bundle one path component
+ * below `.frontx/ai/` — `.frontx/ai/@scope/pkg/` — so `dest`'s own parent
+ * chain can itself run through an ancestor component (`@scope`) that does
+ * not exist yet as a directory at all. `fs.mkdirSync(..., { recursive: true
+ * })` on such a chain throws `EEXIST`/`ENOTDIR` the moment it reaches a
+ * component that already exists as something else, uncaught by anything
+ * `createFsCopyBundleFn` itself does, and reported to a caller as an
+ * internal failure (exit 2) for what is really an ordinary, actionable
+ * state of the tree.
+ *
+ * `.frontx/ai/` is ground this CLI owns outright — sole writer and sole
+ * remover (`architecture/ADR/0031-template-ownership-boundary-declaration.md`).
+ * A regular file, FIFO, socket, or device standing at a component STRICTLY
+ * BETWEEN `.frontx/ai/` and `dest` therefore cannot be anything the CLI
+ * itself put there (the CLI only ever creates directories and the bundle's
+ * own final leaf there) and cannot be holding another template's bundle
+ * content (a bundle's own content lives AT a scoped name's leaf, never on
+ * the path down to one) — so it is RECLAIMED, the identical treatment
+ * `clearBundleDestination` already gives `dest` itself, rather than refused.
+ *
+ * A DIRECTORY found at that same component is never touched: it legitimately
+ * holds other scoped names under the same `@scope` (e.g. `.frontx/ai/@x/
+ * other/`), and removing it would take a sibling name's already-materialized
+ * bundle down with it — exactly the STALE-MERGE class `clearBundleDestination`'s
+ * own doc comment above already reasons about for `dest`'s own ground, one
+ * level up the same tree.
+ *
+ * `dest` itself is deliberately excluded from what this function reclaims —
+ * a symlink or any other entry standing exactly AT `dest` is
+ * `clearBundleDestination`'s own ground to clear, once `dest`'s parent chain
+ * is confirmed buildable. And a blocker resolving OUTSIDE `.frontx/ai/`
+ * entirely (an ancestor of `.frontx/ai/` itself, such as `.frontx` blocked
+ * by a stray file) is left alone: that ground is not this namespace's own,
+ * and `assertPathWithinProjectRoot` — already run by every caller before
+ * this — is what continues to refuse an escaping symlink found anywhere
+ * along the way, unchanged.
+ */
+function reclaimNonDirectoryAiAncestor(destRoot: string, dest: string): void {
+  const blocker = firstNonDirectoryComponentOf(dest);
+  if (blocker === null || blocker === dest) return; // no blocker, or the destination's own ground — `clearBundleDestination` reclaims that
+  if (!isInside(aiNamespaceRoot(destRoot), blocker)) return; // outside `.frontx/ai/`: not this namespace's ground to reclaim
+  fs.rmSync(blocker, { force: true }); // a regular file, FIFO, socket, or device — `firstNonDirectoryComponentOf` never returns a directory
+}
+// @cpt-end:cpt-frontx-algo-cli-scaffolding-ai-bundle:p1:inst-aib-reclaim-ancestor-blocker
 
 function isEnoent(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as NodeJS.ErrnoException).code === 'ENOENT';
@@ -154,6 +210,12 @@ export function createFsCopyBundleFn(): CopyBundleFn {
     const source = bundlePath(sourceRoot, manifestName);
     const dest = bundlePath(destRoot, manifestName);
     assertPathWithinProjectRoot(destRoot, dest);
+    // A non-directory standing at a scope component strictly between
+    // `.frontx/ai/` and `dest` (`@scope` for a `@scope/pkg` manifest name)
+    // must be cleared BEFORE `resolveWriteParentDir`/`mkdirSync` below ever
+    // run against it — see `reclaimNonDirectoryAiAncestor`'s own doc comment
+    // for why this is a reclaim, not a refusal.
+    reclaimNonDirectoryAiAncestor(destRoot, dest);
     fs.mkdirSync(resolveWriteParentDir(dest), { recursive: true });
     clearBundleDestination(dest);
     fs.cpSync(source, dest, { recursive: true });

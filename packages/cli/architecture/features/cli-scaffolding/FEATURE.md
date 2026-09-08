@@ -365,7 +365,8 @@ Realizes resolution B1: a template's AI-extension bundle at `.frontx/ai/<manifes
 **Steps**:
 1. [x] - `p1` - **IF** this operation just gave `name` its first target - `inst-aib-if-first-target`
    1. [x] - `p1` - **IF** the name's installed content path contains a `.frontx/ai/<manifest-name>/` folder - `inst-aib-if-bundle-present`
-      1. [x] - `p1` - Copy it verbatim into the project's `.frontx/ai/<manifest-name>/`, as a CLI-owned write attributed to no template's ownership - `inst-aib-copy`
+      1. [x] - `p1` - **IF** a component strictly between `.frontx/ai/` and the bundle's own destination already exists as something other than a directory — a regular file, a FIFO, a socket, or a device — remove that entry before it is ever needed as a directory: `.frontx/ai/` is ground the CLI alone writes and removes (`cpt-frontx-adr-template-ownership-boundary-declaration`), so nothing else could have legitimately placed content there. A DIRECTORY found at that same component is never removed by this step — it legitimately holds another scoped name's own bundle - `inst-aib-reclaim-ancestor-blocker`
+      2. [x] - `p1` - Copy it verbatim into the project's `.frontx/ai/<manifest-name>/`, as a CLI-owned write attributed to no template's ownership - `inst-aib-copy`
    2. [x] - `p1` - **ELSE** - `inst-aib-else-no-bundle`
       1. [x] - `p1` - No-op — the payload carries no bundle for this name - `inst-aib-noop-no-bundle`
 2. [x] - `p1` - **IF** this operation just removed `name`'s last remaining target - `inst-aib-if-last-target`

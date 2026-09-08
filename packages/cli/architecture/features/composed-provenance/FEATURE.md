@@ -245,8 +245,9 @@ Applying a registered template to a target (`apply`), computing and checking own
    1. [x] - `p1` - **RETURN** the parsed (or initial empty) document - `inst-psio-return-read`
 5. [x] - `p1` - **IF** the caller requested a mutation - `inst-psio-if-mutate`
    1. [x] - `p1` - Construct the fully modified copy of the document in memory, reflecting exactly the described change and nothing else - `inst-psio-construct-copy`
-   2. [x] - `p1` - Write the modified copy to a temporary file alongside `.frontx/project.json` and rename it into place as the atomic step: the original document is never truncated, edited in place, or removed before the replacement is fully written and the rename completes, so an interruption at any point before the rename leaves the repository holding the prior valid document, and an interruption after the rename leaves it holding the fully written new document — never a partially-written or partially-merged one, and never neither - `inst-psio-write-atomic`
-   3. [x] - `p1` - **RETURN** the written document - `inst-psio-return-written`
+   2. [x] - `p1` - Determine the write's actual destination: when `.frontx/project.json` already exists as a symlink whose target resolves inside the repository root, that RESOLVED target — never the link itself — so the link survives the write and the developer's own real document, wherever it actually lives, is the one updated; a symlink resolving outside the repository root is refused by containment before this step is ever reached, unchanged - `inst-psio-resolve-write-destination`
+   3. [x] - `p1` - Write the modified copy to a temporary file alongside the write's destination and rename it onto that same destination as the atomic step: the original document is never truncated, edited in place, or removed before the replacement is fully written and the rename completes, so an interruption at any point before the rename leaves the repository holding the prior valid document, and an interruption after the rename leaves it holding the fully written new document — never a partially-written or partially-merged one, and never neither - `inst-psio-write-atomic`
+   4. [x] - `p1` - **RETURN** the written document - `inst-psio-return-written`
 
 ### Validate the Project State Document Against Reality
 
