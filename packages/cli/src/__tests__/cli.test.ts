@@ -1738,6 +1738,7 @@ describe('dispatch: register (cpt-frontx-flow-composed-provenance-register-templ
       origin: 'github:acme/foo@v1.0.0',
       version: '1.0.0',
       targets: [],
+      excludedSubtrees: [],
     });
   });
 
@@ -1750,7 +1751,11 @@ describe('dispatch: register (cpt-frontx-flow-composed-provenance-register-templ
     expect(outcome.exitCode).toBe(EXIT_SUCCESS);
     expect(JSON.parse(outcome.stdout ?? '')).toEqual({
       ok: true,
-      data: { outcome: 'created', name: 'foo', entry: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [] } },
+      data: {
+        outcome: 'created',
+        name: 'foo',
+        entry: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [], excludedSubtrees: [] },
+      },
     });
   });
 
@@ -1928,7 +1933,7 @@ describe('dispatch: delete (cpt-frontx-flow-cli-scaffolding-delete-target)', () 
   it('--json --yes deletes an applied target\'s ground and removes it from targets[]', async () => {
     const { readProjectStateFn, writeProjectStateFn, written } = seededProjectState({
       formatVersion: 1,
-      templates: { foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: ['packages/app'] } },
+      templates: { foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: ['packages/app'], excludedSubtrees: [] } },
       projectOwnedRoots: [],
     });
     const { deps } = makeDeps({
@@ -1957,7 +1962,7 @@ describe('dispatch: delete (cpt-frontx-flow-cli-scaffolding-delete-target)', () 
   it('reports a containment violation as an INVALID_PATH envelope with the user-error exit, not an internal error', async () => {
     const { readProjectStateFn } = seededProjectState({
       formatVersion: 1,
-      templates: { foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: ['packages/app'] } },
+      templates: { foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: ['packages/app'], excludedSubtrees: [] } },
       projectOwnedRoots: [],
     });
     // The writer is where containment is enforced for project state, so this is
@@ -1986,7 +1991,7 @@ describe('dispatch: delete (cpt-frontx-flow-cli-scaffolding-delete-target)', () 
   it('--json without --yes returns CONFIRMATION_REQUIRED and deletes nothing', async () => {
     const { readProjectStateFn, writeProjectStateFn, written } = seededProjectState({
       formatVersion: 1,
-      templates: { foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: ['packages/app'] } },
+      templates: { foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: ['packages/app'], excludedSubtrees: [] } },
       projectOwnedRoots: [],
     });
     const { deps } = makeDeps({ readProjectStateFn, writeProjectStateFn, listTargetFilesFn: vi.fn(async () => ['src/index.ts']) });
@@ -2002,7 +2007,7 @@ describe('dispatch: delete (cpt-frontx-flow-cli-scaffolding-delete-target)', () 
   it('--dry-run reports the plan without deleting or requiring confirmation', async () => {
     const { readProjectStateFn, writeProjectStateFn } = seededProjectState({
       formatVersion: 1,
-      templates: { foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: ['packages/app'] } },
+      templates: { foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: ['packages/app'], excludedSubtrees: [] } },
       projectOwnedRoots: [],
     });
     const { deps } = makeDeps({ readProjectStateFn, writeProjectStateFn, listTargetFilesFn: vi.fn(async () => ['src/index.ts']) });
@@ -2034,7 +2039,7 @@ describe('dispatch: delete (cpt-frontx-flow-cli-scaffolding-delete-target)', () 
   it('interactive mode deletes on confirmation, defaulting the fixture\'s own confirm to declined otherwise', async () => {
     const { readProjectStateFn, writeProjectStateFn, written } = seededProjectState({
       formatVersion: 1,
-      templates: { foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: ['packages/app'] } },
+      templates: { foo: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: ['packages/app'], excludedSubtrees: [] } },
       projectOwnedRoots: [],
     });
     const { deps } = makeDeps({

@@ -6,8 +6,12 @@
 // indirect, through `delete-plan.test.ts`/`ownership.test.ts`'s own fixtures,
 // and NONE of them ever exercised an unreadable manifest (only a genuinely
 // absent one, or a fully-populated one). This file pins the one distinction
-// this module exists to draw: a genuinely ABSENT manifest resolves to `[]`,
-// but an UNREADABLE one — present, but not a regular file — must not.
+// this module exists to draw: a genuinely ABSENT manifest resolves to
+// `{ known: true, excludedSubtrees: [] }`, but an UNREADABLE one — present,
+// but not a regular file — resolves to `{ known: false, cause }` instead of
+// either swallowing to `[]` OR throwing itself: every caller decides for
+// itself what an unresolved declaration means for it (see the type's own
+// doc comment).
 import { describe, expect, it } from 'vitest';
 import { resolveRegisteredExcludedSubtrees } from '../scaffold/registered-manifest';
 import type { RegisteredManifestInventoryPort } from '../scaffold/registered-manifest';
@@ -68,7 +72,7 @@ describe('resolveRegisteredExcludedSubtrees (cpt-frontx-algo-cli-scaffolding-del
       readFileFn,
       canonicalizeFn: identityCanonicalize,
     });
-    expect(result).toEqual(['docs/']);
+    expect(result).toEqual({ known: true, excludedSubtrees: ['docs/'] });
   });
 
   it('resolves to [] when a remote name has no inventory entry — genuinely ABSENT', async () => {
@@ -81,7 +85,7 @@ describe('resolveRegisteredExcludedSubtrees (cpt-frontx-algo-cli-scaffolding-del
       readFileFn,
       canonicalizeFn: identityCanonicalize,
     });
-    expect(result).toEqual([]);
+    expect(result).toEqual({ known: true, excludedSubtrees: [] });
   });
 
   it('resolves a local path: origin\'s declared excludedSubtrees, read directly off disk, never through the inventory', async () => {
@@ -97,7 +101,7 @@ describe('resolveRegisteredExcludedSubtrees (cpt-frontx-algo-cli-scaffolding-del
       readFileFn,
       canonicalizeFn: identityCanonicalize,
     });
-    expect(result).toEqual(['nested/']);
+    expect(result).toEqual({ known: true, excludedSubtrees: ['nested/'] });
   });
 
   it('resolves to [] when a local path: origin\'s manifest is genuinely ABSENT (ENOENT)', async () => {
@@ -110,7 +114,7 @@ describe('resolveRegisteredExcludedSubtrees (cpt-frontx-algo-cli-scaffolding-del
       readFileFn,
       canonicalizeFn: identityCanonicalize,
     });
-    expect(result).toEqual([]);
+    expect(result).toEqual({ known: true, excludedSubtrees: [] });
   });
 
   it('resolves to [] when a local path: origin folder can no longer be proven to stay inside the project root', async () => {
@@ -124,29 +128,28 @@ describe('resolveRegisteredExcludedSubtrees (cpt-frontx-algo-cli-scaffolding-del
       readFileFn,
       canonicalizeFn: escapingCanonicalize,
     });
-    expect(result).toEqual([]);
+    expect(result).toEqual({ known: true, excludedSubtrees: [] });
   });
 
   // THE DEFECT this file exists to pin: a manifest that IS there but is not
   // a regular file — a FIFO, a directory, a dangling symlink — is a
-  // DIFFERENT fact from absence, and must not be swallowed into `[]`. Doing
-  // so would let a caller (`scaffold/delete-plan.ts`'s own `inst-dp-compute-
-  // ownership`) compute a target's effective ownership from an emptied-out
-  // exclusion set, widening what it believes is safe to delete instead of
-  // refusing outright.
-  it('propagates (never swallows to []) when a local path: origin\'s manifest exists but is not a regular file', async () => {
+  // DIFFERENT fact from absence, and must not be swallowed into `[]`. Nor
+  // does this function throw it itself (a regression introduced and closed
+  // in a later round: throwing here blocked every OTHER caller's unrelated
+  // template too) — it hands the failure back as `{ known: false, cause }`
+  // so each caller decides for itself.
+  it('resolves to { known: false } (never swallows to [], never throws) when a local path: origin\'s manifest exists but is not a regular file', async () => {
     const unreadable = new FakeNotRegularFileError('/repo/vendor/tmpl/frontx-template.json');
     const readFileFn: ReadFileFn = async () => {
       throw unreadable;
     };
-    await expect(
-      resolveRegisteredExcludedSubtrees('tmpl', 'path:vendor/tmpl', {
-        repoRoot: '/repo',
-        inventory: emptyInventory(),
-        readFileFn,
-        canonicalizeFn: identityCanonicalize,
-      }),
-    ).rejects.toBe(unreadable);
+    const result = await resolveRegisteredExcludedSubtrees('tmpl', 'path:vendor/tmpl', {
+      repoRoot: '/repo',
+      inventory: emptyInventory(),
+      readFileFn,
+      canonicalizeFn: identityCanonicalize,
+    });
+    expect(result).toEqual({ known: false, cause: unreadable });
   });
 
   it('resolves to [] when a local path: origin\'s manifest content fails contract validation', async () => {
@@ -158,6 +161,6 @@ describe('resolveRegisteredExcludedSubtrees (cpt-frontx-algo-cli-scaffolding-del
       readFileFn,
       canonicalizeFn: identityCanonicalize,
     });
-    expect(result).toEqual([]);
+    expect(result).toEqual({ known: true, excludedSubtrees: [] });
   });
 });

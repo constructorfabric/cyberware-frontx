@@ -1732,13 +1732,20 @@ export async function runCommand(command: KnownCommand, args: string[], deps: Cl
       // `resolvePayload`, which would resolve that other template's ENTIRE
       // payload for every target of THIS upgrade, defeating
       // `cpt-frontx-cli-nfr-template-scale`'s per-template independence.
-      const resolveRegisteredExclusions = (name: string, origin: string): Promise<string[]> =>
-        resolveRegisteredExcludedSubtrees(name, origin, {
+      // `name`/`origin` here name an OTHER registered template than the one
+      // being upgraded — its manifest failing to read (`{ known: false }`)
+      // must never block THIS upgrade (`cpt-frontx-cli-nfr-template-scale`'s
+      // per-template independence); joining `[]` can only make that other
+      // template's nesting claim WIDER, never silently permit a conflict.
+      const resolveRegisteredExclusions = async (name: string, origin: string): Promise<string[]> => {
+        const resolution = await resolveRegisteredExcludedSubtrees(name, origin, {
           repoRoot,
           inventory: deps.inventory,
           readFileFn: deps.readFileFn,
           canonicalizeFn,
         });
+        return resolution.known ? resolution.excludedSubtrees : [];
+      };
 
       // `inst-com-replace-inventory` — promotes the committed transition's
       // candidate content into `name`'s own local-inventory slot, through

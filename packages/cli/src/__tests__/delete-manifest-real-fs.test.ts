@@ -1,20 +1,34 @@
 // @cpt-flow:cpt-frontx-flow-cli-scaffolding-delete-target:p1
 // @cpt-algo:cpt-frontx-algo-cli-scaffolding-delete-plan:p1
 //
-// Real-filesystem coverage for the owning-template-manifest-unreadable
-// defect (`scaffold/registered-manifest.ts`'s absent-vs-unreadable
-// discrimination, consumed by `scaffold/delete-plan.ts`'s `inst-dp-compute-
-// ownership`) — the one disk shape no fake `ReadFileFn` can fully stand in
-// for, since the defect this suite pins was a real adapter (`createFsRead
-// FileFn`) throwing a real `NotRegularFileError` that a shared module used
-// to swallow, not anything a test double could get wrong on its own.
-// `mkfifo` (a POSIX utility on every platform this suite runs on) creates
-// the node without ever opening it — `createFsReadFileFn` itself never
-// opens a FIFO for reading either (it classifies via `lstat`/`stat` first),
-// so this suite never hangs.
+// Real-filesystem coverage for `scaffold/delete-plan.ts`'s owning-template
+// exclusion join (`inst-dp-compute-ownership`) — the one disk shape no fake
+// `ReadFileFn` can fully stand in for, since a real adapter (`createFsRead
+// FileFn`) throwing a real `NotRegularFileError` for a FIFO, or a manifest
+// genuinely absent because its origin folder was removed by hand, are both
+// facts about the actual filesystem, not something a test double could get
+// wrong on its own. `mkfifo` (a POSIX utility on every platform this suite
+// runs on) creates the node without ever opening it — `createFsReadFileFn`
+// itself never opens a FIFO for reading either (it classifies via
+// `lstat`/`stat` first), so this suite never hangs.
+//
+// Two distinct fixes are pinned here:
+//   - The manifest-unreadable refusal must survive regardless of anything
+//     else this suite changes (a real regression introduced and closed in
+//     the same round: `resolveRegisteredExcludedSubtrees` briefly widened
+//     this case to `[]` for its OTHER three callers, and `delete-plan.ts`
+//     must still refuse for its own owning-template join).
+//   - A genuinely ABSENT manifest, or an origin that can no longer be
+//     proven to stay inside the project root, must now ALSO refuse when the
+//     owning template's project-state entry carries no RECORDED
+//     `excludedSubtrees` — the disproved shape this suite used to assert
+//     (`inst-dp-if-manifest-absent`, now retired) let a developer's own
+//     `excludedSubtrees`-protected file land in `toDelete` under `ok:true`
+//     the moment a vendored `path:` origin folder was removed, which is the
+//     ORDINARY lifecycle of that folder, not an exotic failure.
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { deleteTarget } from '../commands/delete';
@@ -147,17 +161,23 @@ describe('deleteTarget — owning template manifest unreadable (real filesystem)
   });
 
   // The companion case: the manifest is genuinely ABSENT (the whole origin
-  // folder was removed by hand), not merely unreadable. This is the
-  // documented, accepted trade-off (`inst-dp-if-manifest-absent`) — the
-  // deletion PROCEEDS, since there is no exclusion declaration left to
-  // enforce, unlike the FIFO case above where a real declaration exists but
-  // could not be read.
-  it('proceeds (does not refuse) when the manifest is genuinely absent rather than unreadable', async () => {
+  // folder was removed by hand), not merely unreadable, AND the owning
+  // template's project-state entry carries no RECORDED `excludedSubtrees`
+  // (a legacy entry from before that field existed). This USED to proceed,
+  // treating the missing declaration as `[]` — the disproved shape: a
+  // vendored `path:` origin folder is transient by design and its removal
+  // is the ORDINARY lifecycle, not an exotic failure, so folding it to `[]`
+  // silently widened `toDelete` to include the developer's own
+  // `excludedSubtrees`-protected file. It now REFUSES instead, exactly like
+  // the unreadable case above, naming the remedy (re-register the origin).
+  it('refuses when the manifest is genuinely absent and no excludedSubtrees is recorded, leaving the developer\'s excluded file untouched', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'frontx-delete-manifest-absent-'));
 
-    await mkdir(path.join(root, 't'), { recursive: true });
+    await mkdir(path.join(root, 't', 'userland'), { recursive: true });
     await writeFile(path.join(root, 't', 'src.txt'), 'template-owned', 'utf-8');
-    // Deliberately no `vendor/app-template/` folder at all on disk.
+    await writeFile(path.join(root, 't', 'userland', 'mine.txt'), 'DEVELOPER-OWNED — must survive', 'utf-8');
+    // Deliberately no `vendor/app-template/` folder at all on disk, and no
+    // `excludedSubtrees` recorded on the entry below.
 
     const document: ProjectStateDocument = {
       formatVersion: 1,
@@ -185,8 +205,114 @@ describe('deleteTarget — owning template manifest unreadable (real filesystem)
       },
     );
 
+    expect(dryRunResult).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
+
+    const survived = await readFile(path.join(root, 't', 'userland', 'mine.txt'), 'utf-8');
+    expect(survived).toBe('DEVELOPER-OWNED — must survive');
+  });
+
+  // The recorded declaration is honoured even once the origin folder is
+  // gone entirely — the fix's primary case: deletion no longer depends on a
+  // vendored `path:` origin folder still being on disk once its declaration
+  // was recorded at registration.
+  it('honours a RECORDED excludedSubtrees after the origin folder has been removed entirely, preserving the developer\'s excluded file', async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'frontx-delete-recorded-exclusions-'));
+
+    await mkdir(path.join(root, 't', 'userland'), { recursive: true });
+    await writeFile(path.join(root, 't', 'src.txt'), 'template-owned', 'utf-8');
+    await writeFile(path.join(root, 't', 'userland', 'mine.txt'), 'DEVELOPER-OWNED — must survive', 'utf-8');
+    // No `vendor/app-template/` folder at all on disk — removed after apply,
+    // same as the repro. The declaration below is what stands in for it.
+
+    const document: ProjectStateDocument = {
+      formatVersion: 1,
+      templates: {
+        appTemplate: {
+          origin: 'path:vendor/app-template',
+          version: '1.0.0',
+          targets: ['t'],
+          excludedSubtrees: ['userland/'],
+        },
+      },
+      projectOwnedRoots: [],
+    };
+    await writeProjectState(root, document);
+
+    const deps = realDeps(root);
+    const dryRunResult = await deleteTarget(
+      't',
+      root,
+      { jsonMode: true, dryRun: true, yes: false },
+      noInventory,
+      deps.canonicalizeFn,
+      deps.listTargetFilesFn,
+      deps.listUnenumerableTargetEntriesFn,
+      deps.readFileFn,
+      deps.removeFileFn,
+      deps.assertPathWithinRootFn,
+      deps.readProjectStateFn,
+      deps.writeProjectStateFn,
+      async () => {
+        throw new Error('confirmDeletionFn must not be called in --json mode');
+      },
+    );
+
     expect(dryRunResult).toMatchObject({ ok: true, outcome: 'dry-run' });
     if (!dryRunResult.ok) return;
-    expect(dryRunResult.toDelete).toContain('t/src.txt');
+    expect(dryRunResult.toDelete).toEqual(['t/src.txt']);
+    expect(dryRunResult.toPreserve).toContain('t/userland/');
+
+    const survived = await readFile(path.join(root, 't', 'userland', 'mine.txt'), 'utf-8');
+    expect(survived).toBe('DEVELOPER-OWNED — must survive');
+  });
+
+  // No recorded declaration AND the origin cannot be resolved at all — an
+  // escaping symlink standing where the origin folder is expected, so
+  // `canonicalizeFn` returns `null` for it. Must refuse exactly like a
+  // genuinely absent manifest, never widen.
+  it('refuses when no excludedSubtrees is recorded and the origin folder is an escaping symlink', async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'frontx-delete-escaping-origin-'));
+    const outside = await mkdtemp(path.join(tmpdir(), 'frontx-delete-escaping-origin-outside-'));
+
+    try {
+      await mkdir(path.join(root, 't', 'userland'), { recursive: true });
+      await mkdir(path.join(root, 'vendor'), { recursive: true });
+      await writeFile(path.join(root, 't', 'src.txt'), 'template-owned', 'utf-8');
+      await writeFile(path.join(root, 't', 'userland', 'mine.txt'), 'DEVELOPER-OWNED — must survive', 'utf-8');
+      await symlink(outside, path.join(root, 'vendor', 'app-template'));
+
+      const document: ProjectStateDocument = {
+        formatVersion: 1,
+        templates: { appTemplate: { origin: 'path:vendor/app-template', version: '1.0.0', targets: ['t'] } },
+        projectOwnedRoots: [],
+      };
+      await writeProjectState(root, document);
+
+      const deps = realDeps(root);
+      const dryRunResult = await deleteTarget(
+        't',
+        root,
+        { jsonMode: true, dryRun: true, yes: false },
+        noInventory,
+        deps.canonicalizeFn,
+        deps.listTargetFilesFn,
+        deps.listUnenumerableTargetEntriesFn,
+        deps.readFileFn,
+        deps.removeFileFn,
+        deps.assertPathWithinRootFn,
+        deps.readProjectStateFn,
+        deps.writeProjectStateFn,
+        async () => {
+          throw new Error('confirmDeletionFn must not be called in --json mode');
+        },
+      );
+
+      expect(dryRunResult).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
+
+      const survived = await readFile(path.join(root, 't', 'userland', 'mine.txt'), 'utf-8');
+      expect(survived).toBe('DEVELOPER-OWNED — must survive');
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });

@@ -86,9 +86,9 @@ describe('registerTemplate (cpt-frontx-algo-composed-provenance-register)', () =
       ok: true,
       outcome: 'created',
       name: 'foo',
-      entry: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [] },
+      entry: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [], excludedSubtrees: [] },
     });
-    expect(written()?.templates.foo).toEqual({ origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [] });
+    expect(written()?.templates.foo).toEqual({ origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [], excludedSubtrees: [] });
   });
 
   it('is a no-op when the resolved origin is the same as the already-recorded one', async () => {
@@ -138,7 +138,7 @@ describe('registerTemplate (cpt-frontx-algo-composed-provenance-register)', () =
       ok: true,
       outcome: 'replaced',
       name: 'foo',
-      entry: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [] },
+      entry: { origin: 'github:acme/foo@v1.0.0', version: '1.0.0', targets: [], excludedSubtrees: [] },
     });
     expect(written()?.templates.foo).not.toHaveProperty('previous');
   });
@@ -256,7 +256,7 @@ describe('registerTemplate (cpt-frontx-algo-composed-provenance-register)', () =
       ok: true,
       outcome: 'created',
       name: 'local-foo',
-      entry: { origin: 'path:templates/local-foo', version: '1.0.0', targets: [] },
+      entry: { origin: 'path:templates/local-foo', version: '1.0.0', targets: [], excludedSubtrees: [] },
     });
     expect(written()?.templates['local-foo']?.origin).toBe('path:templates/local-foo');
   });

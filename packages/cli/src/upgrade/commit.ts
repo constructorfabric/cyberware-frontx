@@ -559,6 +559,12 @@ export async function commitUpgrade(plan: UpgradePlan, deps: CommitDeps): Promis
     version: plan.to.version,
     targets: plan.targets,
     previous: { origin: plan.from.origin, version: plan.from.version },
+    // The NEW (candidate) payload's own declared `excludedSubtrees`, not the
+    // baseline's — an upgrade can narrow or widen what a name excludes, and
+    // `scaffold/delete-plan.ts`'s own recorded-value join
+    // (`inst-dp-if-recorded-exclusions`) must see whichever declaration is
+    // now actually registered.
+    excludedSubtrees: plan.toExcludedSubtrees,
   };
   // `mutateProjectState` reports a malformed existing document as
   // `{ ok: false }` but lets the WRITE itself throw (`project-state/io.ts`

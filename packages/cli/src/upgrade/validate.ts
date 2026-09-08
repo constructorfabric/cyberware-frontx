@@ -374,17 +374,18 @@ export async function validateUpgrade(input: ValidateInput): Promise<ValidateOut
   // (`checkTargetConflicts`'s nesting check compares a `TargetClaim`'s
   // `excludedSubtrees` against a full project-relative path, so each
   // declared entry must already be re-rooted under the target it was
-  // declared for). Resolved through the SAME shared `resolvePayload` seam
-  // Resolved through `resolveRegisteredExclusions` — the MANIFEST-only seam,
-  // never `resolvePayload` (see `ValidateInput`'s own doc comment for why
-  // routing it through the payload resolver would defeat
-  // `cpt-frontx-cli-nfr-template-scale`) — and, mirroring
-  // `resolveRegisteredExcludedSubtrees`'s own convention, fails closed to
-  // `[]` for a template whose origin cannot currently be resolved: an
-  // unrelated template's broken origin must never block validating THIS
-  // name's upgrade (`cpt-frontx-cli-nfr-template-scale`'s own independence
-  // requirement), and `[]` is the SAFE direction for a nesting check — it
-  // can only ADMIT more conflicts, never silently permit one.
+  // declared for). Resolved through `resolveRegisteredExclusions` — the
+  // MANIFEST-only seam, never `resolvePayload` (see `ValidateInput`'s own
+  // doc comment for why routing it through the payload resolver would
+  // defeat `cpt-frontx-cli-nfr-template-scale`). The wiring behind that seam
+  // (`cli.ts`) joins `resolveRegisteredExcludedSubtrees`'s own `{ known:
+  // false }` to `[]` itself — this function receives only the already-joined
+  // `string[]`, never the discriminated resolution — because a template
+  // whose origin cannot currently be resolved must fail closed to `[]`
+  // here: an unrelated template's broken origin must never block validating
+  // THIS name's upgrade (`cpt-frontx-cli-nfr-template-scale`'s own
+  // independence requirement), and `[]` is the SAFE direction for a nesting
+  // check — it can only ADMIT more conflicts, never silently permit one.
   const otherTemplateTargets: { target: string; templateName: string; excludedSubtrees: string[] }[] = [];
   for (const [otherName, otherEntry] of Object.entries(document.templates)) {
     if (otherName === name) continue;
@@ -581,6 +582,7 @@ export async function validateUpgrade(input: ValidateInput): Promise<ValidateOut
     operations,
     skipped,
     exclusionRootsByTarget,
+    toExcludedSubtrees: candidate.excludedSubtrees,
   };
   return { ok: true, kind: 'plan', plan };
   // @cpt-end:cpt-frontx-state-upgrade-changeset-lifecycle:p1:inst-st-read-to-validated

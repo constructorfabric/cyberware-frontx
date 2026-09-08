@@ -42,7 +42,40 @@ export interface ResolveRegisteredManifestDeps {
   canonicalizeFn: CanonicalizeTargetFn;
 }
 
-// Returns a registered name's declared `excludedSubtrees`. Two distinct
+// This function's ONE caller-facing decision: whether a registered name's
+// declared `excludedSubtrees` could be established at all (`known: true`,
+// carrying the array — possibly empty, either because the manifest
+// genuinely declares no exclusions or because it is genuinely ABSENT, see
+// below) or could not (`known: false`, carrying whatever this function's
+// own read attempt threw).
+//
+// This function does NOT throw for an unreadable manifest — a caller who
+// treats an unrelated template's broken origin as this template's own
+// problem is exactly the regression this shape exists to close (confirmed
+// live: `chmod 000` on one `path:`-registered template's manifest blocked
+// `apply`/`assemble` for a COMPLETELY DIFFERENT, unrelated template,
+// `cpt-frontx-cli-nfr-template-scale`'s per-template independence). Every
+// caller of THIS function resolves some OTHER registered template than the
+// one it is acting on — `commands/apply.ts`'s `buildRecordedTargetClaims`,
+// `commands/ownership.ts`'s `buildRecordedTargets`, and `cli.ts`'s upgrade
+// wiring (`resolveRegisteredExclusions`) — and each joins `known: false` to
+// `[]`: dropping a template's declared exclusions can only make ITS OWN
+// claim WIDER, which can only ADMIT more conflicts, never silently permit
+// one, and an unrelated template's broken origin must never block the one
+// actually being checked.
+//
+// `scaffold/delete-plan.ts` — the one caller that needs the OWNING
+// template's OWN declared exclusions to decide what is safe to delete —
+// does NOT call this function for that join at all: it prefers a RECORDED
+// declaration (`project-state/types.ts`'s `TemplateEntry.excludedSubtrees`)
+// over resolving the manifest, and its fallback (only reached for an entry
+// with no recorded value) must refuse rather than fold an inconclusive
+// answer to `[]` — see its own `inst-dp-else-resolve-manifest`, which calls
+// `resolveRegisteredManifestContent` below directly for exactly this
+// reason.
+export type RegisteredExclusionsResolution = { known: true; excludedSubtrees: string[] } | { known: false; cause: unknown };
+
+// Resolves a registered name's declared `excludedSubtrees`. Two distinct
 // facts about a manifest this function could not turn into content are
 // deliberately given DIFFERENT answers, not folded into one:
 //
@@ -50,44 +83,55 @@ export interface ResolveRegisteredManifestDeps {
 //   a local `path:` origin, nothing exists yet at its manifest path (or its
 //   folder can no longer be proven to stay inside the project root, which
 //   read a manifest from would hit the identical absence one step later
-//   anyway) — resolves to `[]`. There is no exclusion FACT recorded
-//   anywhere for this function to disagree with an empty answer about, and
-//   this is the ordinary shape of a name whose local origin folder a
-//   developer has since removed by hand.
+//   anyway) — resolves to `{ known: true, excludedSubtrees: [] }`. There is
+//   no exclusion FACT recorded anywhere for this function to disagree with
+//   an empty answer about, and this is the ordinary shape of a name whose
+//   local origin folder a developer has since removed by hand.
 // - UNREADABLE — something real stands at the local origin's manifest path
 //   but is not a regular file (`deps.readFileFn`'s thrown `NotRegularFile
 //   Error`: a FIFO, a directory, a dangling symlink, ...) — is a DIFFERENT
 //   fact: a real declaration exists there and this function simply could
-//   not read it. Returning `[]` for this case would report "nothing
-//   excluded" over a manifest that may in fact exclude real ground,
-//   silently WIDENING whichever caller trusts this answer to decide what it
-//   is safe to remove (`cpt-frontx-algo-cli-scaffolding-delete-plan`'s own
-//   `inst-dp-if-manifest-unreadable`) — the identical "refuse, don't guess"
-//   discipline every other read seam in this package already gives a FIFO,
-//   never a hang or a silent default. This function does not swallow that
-//   failure: it lets it propagate, so the caller can convert it into its
-//   own structured refusal, exactly as `commands/delete.ts`'s own catch for
-//   this same error already does for the TARGET's own on-disk shape
-//   (`inst-del-if-target-shape-drifted`).
+//   not read it. Resolving to `{ known: true, excludedSubtrees: [] }` for
+//   this case would report "nothing excluded" over a manifest that may in
+//   fact exclude real ground — this function neither swallows that failure
+//   into an empty answer NOR throws it itself; it hands the failure back as
+//   `{ known: false, cause }` so each caller can decide, for ITSELF, whether
+//   an unresolved declaration is safe to treat as empty, which every actual
+//   caller of this function currently does (see this type's own doc comment
+//   for why: each resolves some OTHER template than the one it acts on).
 //
 // A manifest that IS read but fails contract validation (`readManifestFrom
 // Content`'s own `{ ok: false }`) is a THIRD, pre-existing case, unchanged
-// here: it still resolves to `[]` — a manifest that has drifted out of
-// contract is not this function's failure to raise, and every caller
-// already treats an invalid declaration as no declaration at all.
-// @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-manifest-absent
-// @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-manifest-unreadable
+// here: it still resolves to `{ known: true, excludedSubtrees: [] }` — a
+// manifest that has drifted out of contract is not this function's failure
+// to raise, and every caller already treats an invalid declaration as no
+// declaration at all.
+//
+// No FEATURE instruction markers on the branches below: `scaffold/
+// delete-plan.ts` — the one caller whose FEATURE (`cpt-frontx-algo-
+// cli-scaffolding-delete-plan`) once specified this "absent versus
+// unreadable" distinction — no longer resolves the OWNING template's own
+// exclusions through this function at all (its own `inst-dp-else-resolve-
+// manifest` fallback calls `resolveRegisteredManifestContent` below
+// directly, since it must refuse rather than fold absence into `[]`). This
+// function's remaining callers (`commands/apply.ts`, `commands/
+// ownership.ts`, `cli.ts`'s upgrade wiring) all resolve an OTHER template's
+// exclusions, a plain implementation join none of their own FEATUREs
+// specify at this granularity.
 export async function resolveRegisteredExcludedSubtrees(
   name: string,
   origin: string,
   deps: ResolveRegisteredManifestDeps,
-): Promise<string[]> {
-  const content = await resolveRegisteredManifestContent(name, origin, deps);
-  // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-else-manifest-absent-empty
-  if (content === undefined) return [];
-  // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-else-manifest-absent-empty
+): Promise<RegisteredExclusionsResolution> {
+  let content: string | undefined;
+  try {
+    content = await resolveRegisteredManifestContent(name, origin, deps);
+  } catch (cause) {
+    return { known: false, cause };
+  }
+  if (content === undefined) return { known: true, excludedSubtrees: [] };
   const manifestResult = readManifestFromContent(content);
-  return manifestResult.ok ? manifestResult.manifest.excludedSubtrees : [];
+  return { known: true, excludedSubtrees: manifestResult.ok ? manifestResult.manifest.excludedSubtrees : [] };
 }
 
 // `error.code === 'ENOENT'` is the one shape every read seam in this package
@@ -105,7 +149,23 @@ function isAbsentError(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === 'ENOENT';
 }
 
-async function resolveRegisteredManifestContent(
+// Exported for `scaffold/delete-plan.ts`'s own fallback join alone (used
+// only for an entry with no RECORDED `excludedSubtrees` —
+// `project-state/types.ts`'s `TemplateEntry.excludedSubtrees`, populated at
+// registration/upgrade going forward): that fallback must tell a
+// genuinely-declared-empty manifest (`content` present, `excludedSubtrees:
+// []` by choice) apart from a genuinely ABSENT one (`content === undefined`)
+// — a distinction `resolveRegisteredExcludedSubtrees` above deliberately
+// does NOT expose, since every OTHER caller treats the two identically
+// (`[]` either way is the safe, widen-never direction for them). Delete's
+// fallback cannot: an absent manifest there must REFUSE, never silently
+// compute `toDelete` as if nothing were ever excluded
+// (`cpt-frontx-algo-cli-scaffolding-delete-plan`'s own
+// `inst-dp-if-declaration-unestablished`). This is the SAME primitive
+// `resolveRegisteredExcludedSubtrees` itself calls, not a second
+// formulation of it — one read, two callers each making their own decision
+// about what an inconclusive answer means for them.
+export async function resolveRegisteredManifestContent(
   name: string,
   origin: string,
   deps: ResolveRegisteredManifestDeps,
@@ -118,13 +178,9 @@ async function resolveRegisteredManifestContent(
       return await deps.readFileFn(path.join(deps.repoRoot, canonical, MANIFEST_FILENAME));
     } catch (error) {
       if (isAbsentError(error)) return undefined;
-      // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-return-manifest-unreadable
       throw error;
-      // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-return-manifest-unreadable
     }
   }
   const installed = deps.inventory.lookup(name);
   return installed?.content;
 }
-// @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-manifest-unreadable
-// @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-manifest-absent

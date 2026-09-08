@@ -95,6 +95,17 @@ export interface UpgradePlan {
   // rather than the manifests the boundary is derived from. Internal: stripped
   // by `renderReviewablePlan` (`./plan.ts`) before any plan reaches a reviewer.
   exclusionRootsByTarget: Record<string, string[]>;
+  // The CANDIDATE payload's own declared `excludedSubtrees`
+  // (`ResolvedPayload.excludedSubtrees`, read once during validation) —
+  // carried onto the plan so the commit algorithm can record it onto the
+  // name's new `TemplateEntry.excludedSubtrees` at the SAME atomic write
+  // that lands the rest of the transition, rather than re-resolving the
+  // candidate's manifest a second time. An upgrade can narrow (or widen)
+  // what a name excludes, so the recorded value must track whichever origin
+  // this upgrade is landing, never the baseline's. Internal, like
+  // `exclusionRootsByTarget`: stripped by `renderReviewablePlan` before any
+  // plan reaches a reviewer.
+  toExcludedSubtrees: string[];
 }
 
 // A resolved payload: the manifest text plus every regular file the payload

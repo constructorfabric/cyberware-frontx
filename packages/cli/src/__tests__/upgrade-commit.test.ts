@@ -157,6 +157,7 @@ function makePlan(overrides: Partial<UpgradePlan> = {}): UpgradePlan {
     // No exclusions by default: the reclaim step's boundary filter admits
     // everything under the target unless a test narrows it deliberately.
     exclusionRootsByTarget: { app: [] },
+    toExcludedSubtrees: [],
     operations: [],
     skipped: [],
     ...overrides,
@@ -203,6 +204,7 @@ describe('commitUpgrade (cpt-frontx-algo-upgrade-changeset-commit)', () => {
       version: '2.0.0',
       targets: ['app'],
       previous: { origin: 'github:acme/tool@v1', version: '1.0.0' },
+      excludedSubtrees: [],
     });
 
     expect(harness.promoteInventory).toHaveBeenCalledWith('acme-tool');
@@ -742,6 +744,7 @@ describe('commitUpgrade (cpt-frontx-algo-upgrade-changeset-commit)', () => {
       version: '2.0.0',
       targets: ['app'],
       previous: { origin: 'github:acme/tool@v1', version: '1.0.0' },
+      excludedSubtrees: [],
     });
     expect(harness.refreshAiBundle).not.toHaveBeenCalled();
   });

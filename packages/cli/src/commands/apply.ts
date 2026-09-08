@@ -155,12 +155,22 @@ async function buildRecordedTargetClaims(
   const claims: TargetClaim[] = [];
   for (const [name, entry] of Object.entries(templates)) {
     if (entry.targets.length === 0) continue;
-    const declaredExclusions = await resolveRegisteredExcludedSubtrees(name, entry.origin, {
+    const resolution = await resolveRegisteredExcludedSubtrees(name, entry.origin, {
       repoRoot,
       inventory,
       readFileFn,
       canonicalizeFn,
     });
+    // `name` here is an OTHER registered template than whichever this batch
+    // is staging — its manifest cannot currently be read (`resolution.known
+    // === false`, a FIFO, a permission error, ...) is not this claim-set's
+    // failure to raise (`cpt-frontx-cli-nfr-template-scale`'s per-template
+    // independence: confirmed live, a `chmod 000` on ONE registered
+    // template's manifest must never block `apply`/`assemble` for a
+    // completely different one). Joining `[]` here can only make `name`'s
+    // own claim WIDER, which can only ADMIT more conflicts, never silently
+    // permit one.
+    const declaredExclusions = resolution.known ? resolution.excludedSubtrees : [];
     for (const target of entry.targets) {
       const excludedSubtrees = declaredExclusions.map((declared) => joinUnderTarget(target, declared));
       claims.push({ target, templateName: name, excludedSubtrees });

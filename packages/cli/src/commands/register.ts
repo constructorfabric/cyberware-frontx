@@ -235,6 +235,21 @@ export async function registerTemplate(
 
   const { name, version } = fields;
 
+  // The declared `excludedSubtrees` recorded onto the entry — read from the
+  // SAME `manifestResult` `inst-cpreg-read-manifest` already produced above,
+  // never a second parse. `manifestResult.ok` is guaranteed true here in
+  // every real path (`readManifestFields`'s own doc comment: its raw-JSON
+  // fallback branch is dead through the real resolver, which already runs
+  // the identical four-field contract check before `resolveOrigin` can ever
+  // return success); `[]` covers that unreachable-in-practice branch rather
+  // than adding a third read. Recorded so `scaffold/delete-plan.ts` never
+  // has to re-resolve this name's origin to learn what it excludes
+  // (`cpt-frontx-algo-cli-scaffolding-delete-plan`'s own
+  // `inst-dp-if-recorded-exclusions`) — a vendored `path:` origin folder is
+  // transient by design and may no longer exist by the time a target under
+  // it is deleted.
+  const excludedSubtrees = manifestResult.ok ? manifestResult.manifest.excludedSubtrees : [];
+
   // @cpt-begin:cpt-frontx-algo-composed-provenance-register:p1:inst-cpreg-read-state
   const stateResult = await readProjectState(repoRoot, readProjectStateFn);
   // @cpt-end:cpt-frontx-algo-composed-provenance-register:p1:inst-cpreg-read-state
@@ -246,7 +261,7 @@ export async function registerTemplate(
 
   // @cpt-begin:cpt-frontx-algo-composed-provenance-register:p1:inst-cpreg-if-new
   if (existing === undefined) {
-    const entry: TemplateEntry = { origin: resolved.value.storedOrigin, version, targets: [] };
+    const entry: TemplateEntry = { origin: resolved.value.storedOrigin, version, targets: [], excludedSubtrees };
     // @cpt-begin:cpt-frontx-algo-composed-provenance-register:p1:inst-cpreg-write-new
     const written = await mutateProjectState(
       repoRoot,
@@ -310,7 +325,7 @@ export async function registerTemplate(
   // the whole point of `--replace`: it starts a new lineage for the name, so
   // any `previous: {origin, version}` pair the entry carried from an
   // earlier upgrade/restore must not survive it.
-  const replacedEntry: TemplateEntry = { origin: resolved.value.storedOrigin, version, targets: existing.targets };
+  const replacedEntry: TemplateEntry = { origin: resolved.value.storedOrigin, version, targets: existing.targets, excludedSubtrees };
   // @cpt-begin:cpt-frontx-algo-composed-provenance-register:p1:inst-cpreg-write-replace
   const writtenReplace = await mutateProjectState(
     repoRoot,

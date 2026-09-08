@@ -55,8 +55,13 @@ export type OwnershipListOutcome =
  * alone (which silently returns `[]` for a local origin — the bug this
  * checkpoint's live check surfaced; `commands/apply.ts`'s own
  * `buildRecordedTargetClaims` calls the identical shared function for the
- * identical join). A genuinely absent or unreadable manifest still joins as
- * `[]`: this join cannot do better than the manifest it can read, and
+ * identical join). A genuinely absent manifest joins as `[]`; a manifest
+ * that could not currently be READ (`resolveRegisteredExcludedSubtrees`'s
+ * own `{ known: false }`) joins as `[]` here too — `name` here is some
+ * OTHER registered template than the one `ownership add`/`remove` is acting
+ * on, and its broken origin is not this join's failure to raise
+ * (`cpt-frontx-cli-nfr-template-scale`'s per-template independence). Either
+ * way this join cannot do better than the manifest it can read, and
  * defaulting to NO exclusion is the fail-closed direction — it can only
  * under-exempt nested ground, never wrongly exempt it.
  */
@@ -81,12 +86,18 @@ async function buildRecordedTargets(
     // this name is applied to before it becomes a `TargetClaim` — a name
     // applied at two targets carves out the same relative exclusion under
     // each one independently.
-    const declaredExclusions = await resolveRegisteredExcludedSubtrees(name, entry.origin, {
+    const resolution = await resolveRegisteredExcludedSubtrees(name, entry.origin, {
       repoRoot,
       inventory,
       readFileFn,
       canonicalizeFn,
     });
+    // `resolution.known === false` (the manifest could not currently be
+    // read) joins as `[]`, exactly like a genuinely absent one — dropping
+    // `name`'s declared exclusions can only make its own claim WIDER, never
+    // silently permit a conflict, and an unrelated template's broken origin
+    // must never block the ownership change actually being made.
+    const declaredExclusions = resolution.known ? resolution.excludedSubtrees : [];
     for (const target of entry.targets) {
       const excludedSubtrees = declaredExclusions.map((declared) => joinUnderTarget(target, declared));
       claims.push({ target, templateName: name, excludedSubtrees });

@@ -197,7 +197,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
     // back in `toPreserve` when it sits beneath the target being deleted,
     // in addition to already being excluded from effective ownership
     // (and therefore from `toDelete`) by `computeExclusionRoots`.
-    const document = doc({ appTemplate: entry(['.'], { origin: 'path:vendor/app-template' }) });
+    const document = doc({ appTemplate: entry(['.'], { origin: 'path:vendor/app-template', excludedSubtrees: [] }) });
     const result = await computeDeletionPlan(
       '.',
       '/repo',
@@ -229,7 +229,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
     // an origin folder that is not beneath the target being deleted is not
     // part of this deletion's blast radius at all, so it has no reason to
     // appear in the report.
-    const document = doc({ appTemplate: entry(['packages/app'], { origin: 'path:vendor/app' }) });
+    const document = doc({ appTemplate: entry(['packages/app'], { origin: 'path:vendor/app', excludedSubtrees: [] }) });
     const result = await computeDeletionPlan(
       'packages/app',
       '/repo',
@@ -275,7 +275,7 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
   });
 
   it('never lists `.frontx` in toPreserve, even at the project root — that half of the rule is unchanged', async () => {
-    const document = doc({ appTemplate: entry(['.'], { origin: 'path:vendor/app-template' }) });
+    const document = doc({ appTemplate: entry(['.'], { origin: 'path:vendor/app-template', excludedSubtrees: [] }) });
     const result = await computeDeletionPlan(
       '.',
       '/repo',
@@ -305,8 +305,8 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
   // deleting target.
   it('preserves a DIFFERENT registered template\'s local origin folder, never listing it in toDelete', async () => {
     const document = doc({
-      appTemplate: entry(['.'], { origin: 'path:vendor/app-template' }),
-      nestedTemplate: entry(['nested'], { origin: 'path:vendor/nested-template' }),
+      appTemplate: entry(['.'], { origin: 'path:vendor/app-template', excludedSubtrees: ['nested/'] }),
+      nestedTemplate: entry(['nested'], { origin: 'path:vendor/nested-template', excludedSubtrees: [] }),
     });
     const result = await computeDeletionPlan(
       '.',
@@ -433,13 +433,16 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
   });
 
   // The same scenario, but with the manifest genuinely ABSENT rather than
-  // unreadable — proves the two facts really do get different answers, not
-  // that this algorithm now refuses every manifest read failure uniformly.
-  // (There is no `userland/` exclusion to enforce here, since nothing
-  // declares one when the manifest cannot be found at all — this is the
-  // accepted, documented trade-off `inst-dp-if-manifest-absent` describes,
-  // not a second regression.)
-  it('does NOT reject, and joins [] instead, when the owning template\'s manifest is genuinely absent rather than unreadable', async () => {
+  // unreadable, AND no `excludedSubtrees` recorded on the entry (a legacy
+  // entry from before that field existed) — this USED to join `[]` and
+  // proceed (`inst-dp-if-manifest-absent`, now retired): the disproved
+  // shape a live repro found, since an origin folder removed from disk is
+  // the ORDINARY lifecycle of a vendored `path:` origin, not an exotic
+  // failure. It now refuses exactly like the unreadable case above, naming
+  // the template and the remedy (re-register the origin) rather than a
+  // thrown error, since `resolveRegisteredManifestContent` itself resolves
+  // ABSENCE without throwing.
+  it('refuses (never joins []) when the owning template\'s manifest is genuinely absent and no excludedSubtrees is recorded', async () => {
     const document = doc({ appTemplate: entry(['t'], { origin: 'path:vendor/app-template' }) });
     const result = await computeDeletionPlan(
       't',
@@ -454,9 +457,35 @@ describe('computeDeletionPlan (cpt-frontx-algo-cli-scaffolding-delete-plan)', ()
       noUnenumerableEntries,
     );
 
+    expect(result).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
+  });
+
+  // The recorded declaration (`TemplateEntry.excludedSubtrees`) takes
+  // precedence over resolving the manifest at all — the fix's primary case:
+  // the manifest is absent (as above), but the entry itself carries the
+  // declaration, so this proceeds using it rather than refusing.
+  it('uses a RECORDED excludedSubtrees instead of resolving the (absent) manifest', async () => {
+    const document = doc({
+      appTemplate: entry(['t'], { origin: 'path:vendor/app-template', excludedSubtrees: ['userland/'] }),
+    });
+    const result = await computeDeletionPlan(
+      't',
+      '/repo',
+      document,
+      fakeInventory(),
+      identityCanonicalize,
+      fakeListTargetFiles({
+        '/repo/t': ['src/index.ts', 'userland/mine.txt'],
+      }),
+      fakeReadFileFn({}), // the manifest path is never populated — ENOENT, and must never be consulted
+      noUnenumerableEntries,
+    );
+
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.toDelete).toContain('t/src/index.ts');
+    expect(result.toDelete).not.toContain('t/userland/mine.txt');
+    expect(result.toPreserve).toContain('t/userland/');
   });
 
   it('resolves an absent target directory to an empty candidate set rather than throwing', async () => {

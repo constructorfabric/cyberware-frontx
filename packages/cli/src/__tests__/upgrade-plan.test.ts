@@ -27,6 +27,7 @@ function internalPlan(): UpgradePlan {
     // Internal boundary bookkeeping the projection must also strip — asserted
     // below, since it is not part of the review vocabulary either.
     exclusionRootsByTarget: { app: ['app/vendor'], admin: [] },
+    toExcludedSubtrees: [],
     operations: [
       { target: 'app', path: 'app/a.ts', op: 'REPLACE', expectedDisk: SECRET, newContent: SECRET, baselineContent: SECRET },
       { target: 'app', path: 'app/b.ts', op: 'ADD', expectedDisk: null, newContent: SECRET, baselineContent: null },

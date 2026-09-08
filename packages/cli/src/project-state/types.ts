@@ -34,6 +34,22 @@ export interface TemplateEntry {
   version: string;
   targets: string[];
   previous?: PreviousOrigin;
+  /** The name's declared `excludedSubtrees`, recorded at register/upgrade
+   * time so `scaffold/delete-plan.ts` never depends on the origin still
+   * being resolvable to compute what is safe to delete — a vendored `path:`
+   * origin folder is transient by design (`QUICK_START` §4 vendors it into
+   * the project, and a developer may remove it once applied). OPTIONAL so
+   * an existing document written before this field existed still parses;
+   * an entry without it falls back to resolving the manifest live
+   * (`cpt-frontx-algo-cli-scaffolding-delete-plan`'s own
+   * `inst-dp-else-resolve-manifest`). Written by every path that creates or
+   * replaces an entry (`commands/register.ts`), carried forward unchanged by
+   * every path that only extends `targets[]` (`commands/apply.ts`'s own
+   * spread of the existing entry), and re-recorded from the NEW payload's
+   * own declaration by `upgrade/commit.ts` — an upgrade can narrow or widen
+   * what a name excludes, and the recorded value must track whichever
+   * origin is now actually registered. */
+  excludedSubtrees?: string[];
 }
 
 export interface ProjectStateDocument {

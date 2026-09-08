@@ -102,6 +102,7 @@ function makePlan(operations: UpgradeOperation[]): UpgradePlan {
     to: { origin: 'path:v2', version: '2.0.0' },
     targets: ['app'],
     exclusionRootsByTarget: { app: [] },
+    toExcludedSubtrees: [],
     operations,
     skipped: [],
   };
