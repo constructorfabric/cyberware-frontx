@@ -11,19 +11,42 @@ import { GTS, type ValidationResult } from '@globaltypesystem/gts-ts';
 import { describe, expect, it } from 'vitest';
 
 import { loadBaseSchema, type CompiledContract } from './compile';
-import { checkComponentFreshness } from './freshness';
+import { checkComponentFreshness, type FreshnessReport } from './freshness';
+
+// checkComponentFreshness builds a TypeScript program (via extractComponent -
+// see extract.ts) several seconds per call on a CI-class runner; the three
+// `it`s below each called it independently, so one describe block paid for
+// that build three times over and blew past vitest's default 5s test
+// timeout. Memoized per (directory, exportStem) so the three `it`s share the
+// one report - safe because nothing in this process edits the component
+// source between them.
+const freshnessReportCache = new Map<string, FreshnessReport>();
+function memoizedFreshnessReport(directory: string, exportStem: string): FreshnessReport {
+  const key = `${directory}::${exportStem}`;
+  const cached = freshnessReportCache.get(key);
+  if (cached) return cached;
+  const report = checkComponentFreshness(directory, exportStem);
+  freshnessReportCache.set(key, report);
+  return report;
+}
 
 // `exportStem` defaults to `directory` for the ordinary one-overlay case
 // (assertContractFreshness('button')); a compound component's part passes
 // both (assertContractFreshness('accordion', 'accordion-item')) - see
 // accordion.contract.test.ts.
+//
+// The describe gets an explicit 120s timeout (inherited by every `it` below
+// it) rather than raising vitest's global testTimeout - the TS program build
+// this suite exercises is genuinely slow on CI, but that is not true of the
+// rest of the test run, and a global bump would hide a real hang anywhere
+// else in the package.
 // @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-conformance:p1
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1
 export function assertContractFreshness(directory: string, exportStem: string = directory): void {
-  describe(`${exportStem} contract freshness`, () => {
+  describe(`${exportStem} contract freshness`, { timeout: 120_000 }, () => {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-freshness
     it('committed contract.json, contract.instance.json and generated passthrough match a fresh compile', () => {
-      const report = checkComponentFreshness(directory, exportStem);
+      const report = memoizedFreshnessReport(directory, exportStem);
       expect(report.contractDiff, `${exportStem}.contract.json is stale:\n${report.contractDiff.join('\n')}`).toEqual([]);
       expect(
         report.instanceDiff,
@@ -37,14 +60,14 @@ export function assertContractFreshness(directory: string, exportStem: string = 
 
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-slots
     it('every annotation-only slot property has a matching x-uikit.slots entry', () => {
-      const report = checkComponentFreshness(directory, exportStem);
+      const report = memoizedFreshnessReport(directory, exportStem);
       expect(report.slotSchemaMismatches).toEqual([]);
     });
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-slots
 
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-base
     it("committed base.component.json equals a fresh build (buildBaseSchema)", () => {
-      const report = checkComponentFreshness(directory, exportStem);
+      const report = memoizedFreshnessReport(directory, exportStem);
       expect(report.baseSchemaDiff, `base.component.json is stale:\n${report.baseSchemaDiff.join('\n')}`).toEqual([]);
     });
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-base

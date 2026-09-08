@@ -828,9 +828,25 @@ function loadCompilerOptions(): ts.CompilerOptions {
   return cachedCompilerOptions;
 }
 
+// One extraction per tsxPath for the life of the process - resolveTargetExtraction,
+// compileContract and compileInstance each resolve a directory's extraction
+// independently (compileInstance calls compileContract, which calls
+// resolveTargetExtraction, and callers routinely call resolveTargetExtraction
+// again directly), so a single freshness check for one component builds this
+// same ts.createProgram several times over for the same source file. That
+// program build is several seconds on a CI-class runner, so the redundant
+// builds are what pushed the contract test suites past vitest's default
+// timeout. Caching by tsxPath is safe here because nothing in this process
+// edits the component source between calls - a fresh process (a fresh test
+// run, or `contracts:compile` invoked again) starts with an empty cache.
+const extractionCache = new Map<string, ComponentExtraction[]>();
+
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1
 // @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-extraction:p1
 export function extractComponent(tsxPath: string): ComponentExtraction[] {
+  const cached = extractionCache.get(tsxPath);
+  if (cached) return cached;
+
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-program
   const options = loadCompilerOptions();
   const program = ts.createProgram({ rootNames: [tsxPath], options });
@@ -961,6 +977,7 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
     }
   }
 
+  extractionCache.set(tsxPath, extractions);
   return extractions;
 }
 
