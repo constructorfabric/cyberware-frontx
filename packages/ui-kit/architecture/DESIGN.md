@@ -168,17 +168,26 @@ Contracts, metamodel instances, overlays and the harness that produces them stay
 | Extraction | The machine-owned half: the exported components of a file with their variant axes, defaults, declared props, inherited props and resolved passthrough origin. | An in-memory result of reading the component's TypeScript through the compiler API |
 | Contract | The compiled join of an overlay and an extraction: a closed props schema carrying the component's meaning in two extension blocks. | A JSON Schema 2020-12 document committed beside the component |
 | Metamodel instance | The same meaning as a standalone typed record, naming the contract as its props schema. | A JSON document committed beside the component |
+| Abstract base type | The root every component contract derives from: it declares no props and states which concepts a contract's validator-read block carries. | A JSON Schema 2020-12 document under the harness, with its own type identifier |
+| Metamodel type | The type every metamodel instance is an instance of: the shape of a contract as a standalone record. | A JSON Schema 2020-12 document under the harness, with its own type identifier |
 | Passthrough type | The surface a component inherits from the primitive it wraps, shared by every component that inherits from the same origin. | A generated JSON Schema document under the harness, keyed by origin |
-| Vocabulary type | One concept the overlay states - a rule against a use, a composition, a deprecation, a coverage claim, a family membership, an extension point - defined once and referenced by everything that carries it. | A JSON Schema 2020-12 document under the harness, one per concept, each with its own type identifier |
+| Vocabulary type | One concept the overlay states, defined once and referenced by everything that carries it - one type per concept the metamodel references, currently twelve. | A JSON Schema 2020-12 document under the harness, one per concept, each with its own type identifier |
 | Coverage allowlist | The set of components opted into contract enforcement. | A committed list of component directory names |
 
 #### Contract type relationships
 
-The abstract base type states which concepts a contract's validator-read block carries; each concept is a type of its own, and the metamodel reaches the same concepts through the same identifiers. A reference to another component is that component's own derived contract identifier: a component IS the type derived from the base, so nothing else stands in for it.
+The abstract base type states which concepts a contract's validator-read block carries; each concept is a type of its own, and the metamodel type reaches the same concepts through the same identifiers. A reference to another component is that component's own derived contract identifier: a component IS the type derived from the base, so nothing else stands in for it.
+
+Two kinds of edge, and the diagram distinguishes them: a **solid** arrow means the source embeds an instance of the target, by reference to its identifier from inside the schema; a **dashed** arrow means the source holds the target's identifier as a value, annotated with what that identifier must resolve to. Inheritance keeps its own arrow.
+
+An identifier held as a value names a SPECIFIC contract major. When a component's contract major moves, every reference to it moves with it: a reference to a component that ships a contract must equal that contract's current props-schema identifier exactly, and a reference to a component that ships none may only name major 1. Those identifiers are resolved by each component's conformance suite - against the component directory, and against the contract identifier where a contract exists - not by the type registry: the type system's own reference validator does not follow a reference into another type, and most referenced components ship no contract yet, so the directory is what says the kit ships that component at all.
+
+Three overlay fields are not vocabulary types and stay inline in the metamodel: `invariants`, `anti_patterns` and `examples` are documentation no validator reads, so there is nothing for another type to enforce or for anything else to reference.
 
 ```mermaid
 classDiagram
     class BaseType["Abstract base type"]
+    class MetaType["Metamodel type"]
     class Contract["Component contract"]
     class Instance["Metamodel instance"]
     class Passthrough["Passthrough type"]
@@ -196,14 +205,21 @@ classDiagram
     class ExtensionPoint["extension_point"]
 
     Contract --|> BaseType : derives from
-    Contract ..> Passthrough : composes
+    Contract --> Passthrough : composes
+    Instance ..> MetaType : typed by
     Instance ..> Contract : props schema
-    BaseType ..> Rule : trait vocabulary
-    BaseType ..> Composition : trait vocabulary
-    BaseType ..> Deprecations : trait vocabulary
-    BaseType ..> Coverage : trait vocabulary
-    BaseType ..> Family : trait vocabulary
-    BaseType ..> ExtensionPoint : trait vocabulary
+    BaseType --> Rule : trait vocabulary
+    BaseType --> Composition : trait vocabulary
+    BaseType --> Deprecations : trait vocabulary
+    BaseType --> Coverage : trait vocabulary
+    BaseType --> Family : trait vocabulary
+    BaseType --> ExtensionPoint : trait vocabulary
+    MetaType --> Rule : field
+    MetaType --> Composition : field
+    MetaType --> Deprecations : field
+    MetaType --> Coverage : field
+    MetaType --> Family : field
+    MetaType --> ExtensionPoint : field
     Rule --> External : alternative outside the kit
     Rule ..> Contract : alternative inside the kit
     Composition --> Children : children
@@ -218,19 +234,23 @@ classDiagram
 
 | Type | References | Cardinality | Owner of the fact |
 |------|------------|-------------|-------------------|
-| Component contract | the abstract base type, the passthrough type for its origin | one base, zero or one passthrough | the compiler |
-| Metamodel instance | the component contract | exactly one | the compiler |
-| Abstract base type | each of the six trait vocabulary types | one each | the trait schema builder |
+| Component contract | the abstract base type, the passthrough type for its origin | one base, zero or one passthrough | the compiler builds it; the extraction owns the prop facts, the overlay author the meaning |
+| Metamodel instance | the metamodel type, the component contract | exactly one of each | the compiler |
+| Abstract base type | each of the six field-level vocabulary types | one each | the trait schema builder |
+| Metamodel type | the same six vocabulary types | one each | the metamodel builder |
+| Passthrough type | nothing; component contracts reference it | one type referenced by one or more contracts | the compiler builds it; the extractor owns which props are inherited and which are mandatory |
 | dont_use_when_rule | a component contract, or an external alternative | exactly one of the two per rule | the overlay author |
 | external_alternative | nothing | zero or one per rule | the overlay author |
 | composition | a child composition, a parent composition | one child, zero or one parent | the overlay author |
-| child_composition | component contracts | one or more kinds, each a reference or a content kind | the overlay author |
+| child_composition | component contracts | one or more kinds, each a reference or a content kind; `icons_via` names one of the component's own props | the overlay author, prop name checked against the extraction |
 | parent_composition | component contracts | one or more | the overlay author |
-| deprecations | prop deprecations | zero or more, keyed by prop name | the overlay author, prop name checked against the extraction |
-| coverage | coverage assumptions, coverage verdicts | zero or more of each | the overlay author |
-| family | component contracts | one root, zero or more parts | the overlay author, resolved by the conformance suite |
+| deprecations | prop deprecations | zero or more, keyed by prop name | the overlay author |
+| prop_deprecation | nothing; `replacement` names one of the component's own props | exactly one per deprecated prop | the overlay author, prop name checked against the extraction |
+| coverage | coverage assumptions, coverage verdicts | zero or more of each; the one open type, so a claim name the kit adds validates without a schema change | the overlay author |
+| coverage_assumption | nothing | zero or more per contract | the overlay author |
+| coverage_verdict | nothing | one per coverage claim | the overlay author |
+| family | component contracts | one root; a root names one or more parts, a part names none | the overlay author, resolved by the conformance suite |
 | extension_point | nothing | zero or more per contract | the overlay author |
-| Passthrough type | component contracts | one type shared by one or more contracts | the extractor |
 
 ### 3.2 Component Model
 

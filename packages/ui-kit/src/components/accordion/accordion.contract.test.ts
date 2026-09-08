@@ -4,9 +4,6 @@
 // them in isolation. See button.contract.test.ts for the per-component
 // conformance shape this reuses via testing.ts's assertContractFreshness;
 // this file adds what a single, non-compound component has no need for.
-import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { GTS } from '@globaltypesystem/gts-ts';
 import Ajv2020 from 'ajv/dist/2020';
 import { describe, expect, it } from 'vitest';
@@ -17,7 +14,6 @@ import {
   buildMetamodel,
   compileContract,
   compileInstance,
-  isExternalAlternative,
   loadBaseSchema,
   loadPassthroughSchema,
   registerContractTypes,
@@ -25,8 +21,13 @@ import {
   type CompiledContract,
   type ContractInstance,
 } from '../../../scripts/contracts/compile';
-import { bareGtsId, componentTypeRef, componentTypeRefPattern, CONTRACT_MAJOR } from '../../../scripts/contracts/ids';
-import { applyContractTestTimeout, assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
+import { bareGtsId, componentTypeRef, CONTRACT_MAJOR } from '../../../scripts/contracts/ids';
+import {
+  applyContractTestTimeout,
+  assertContractFreshness,
+  resolveComponentRef,
+  validateContractTraits,
+} from '../../../scripts/contracts/testing';
 
 // assertContractFreshness below builds a real TypeScript program - several
 // seconds on a CI-class runner, comfortably under 5s locally - so only CI
@@ -41,8 +42,6 @@ const PART_STEMS = ['accordion-item', 'accordion-trigger', 'accordion-content'] 
 const ALL_STEMS = [DIRECTORY, ...PART_STEMS] as const;
 
 for (const stem of ALL_STEMS) assertContractFreshness(DIRECTORY, stem);
-
-const componentsDir = join(process.cwd(), 'src/components');
 
 interface CompiledUnit {
   stem: string;
@@ -68,30 +67,6 @@ function compileUnit(stem: string): CompiledUnit {
 const units: Record<string, CompiledUnit> = Object.fromEntries(ALL_STEMS.map((stem) => [stem, compileUnit(stem)]));
 const baseSchema = loadBaseSchema();
 const metaSchema = buildMetamodel();
-const COMPONENT_TYPE_REF = new RegExp(componentTypeRefPattern(true));
-
-// Resolves a component reference (the derived props-schema id of another
-// kit component) to the directory that ships it, following the same
-// "stem === directory, or stem starts with '<directory>-'" rule
-// compile.ts's loadOverlay enforces when it loads a part's overlay - a ref
-// this cannot resolve is exactly the defect (a typo, a moved directory)
-// these tests exist to catch.
-function resolveComponentRef(ref: string): { directory: string; stem: string } {
-  const match = COMPONENT_TYPE_REF.exec(ref);
-  if (!match) throw new Error(`"${ref}" is not a grammatical GTS component type id`);
-  const stem = match[1].replace(/_/g, '-');
-  if (existsSync(join(componentsDir, stem))) return { directory: stem, stem };
-  for (const entry of readdirSync(componentsDir, { withFileTypes: true })) {
-    if (entry.isDirectory() && stem.startsWith(`${entry.name}-`)) {
-      return { directory: entry.name, stem };
-    }
-  }
-  throw new Error(`no directory ships component ref "${ref}" (stem "${stem}")`);
-}
-
-function hasCompiledContract(target: { directory: string; stem: string }): boolean {
-  return existsSync(join(componentsDir, target.directory, `${target.stem}.contract.json`));
-}
 
 // The ref every part's own `family.root` and every dont_use_when/composition
 // pointer at Accordion itself should agree on - built once so a typo in one
@@ -134,14 +109,17 @@ describe('accordion family: family references resolve', () => {
     }
   });
 
-  it('every ref the root lists as a part resolves to a real, compiled contract', () => {
+  it('every part the root lists ships a compiled contract of its own', () => {
+    // That each of these references resolves at all - to a component the kit
+    // ships, at the major that component ships - is the shared suite's check
+    // (assertContractFreshness, testing.ts), which every described component
+    // runs. What is specific to a family is stronger: a part named by the
+    // root must itself be described, or the family is a set of pointers into
+    // components nobody has contracted.
     const root = units[DIRECTORY].instance;
     for (const ref of root.family?.parts ?? []) {
       const target = resolveComponentRef(ref);
-      expect(existsSync(join(componentsDir, target.directory)), ref).toBe(true);
-      expect(hasCompiledContract(target), `${ref}: no compiled contract at ${target.directory}/${target.stem}.contract.json`).toBe(
-        true,
-      );
+      expect(target.contractId, `${ref}: ${target.stem} ships no compiled contract`).toBe(ref);
     }
   });
 });
@@ -169,27 +147,16 @@ describe('accordion family: composition references resolve', () => {
     }
   });
 
-  it('every typed composition ref, across every unit, resolves to a real directory', () => {
+  it('every composition reference in the family points inside the family', () => {
+    // Resolution itself is the shared suite's check. What this asserts is
+    // the family's own shape: a part may only nest under, or contain,
+    // another member of the same family - a composition reference leaving
+    // the family would make the parts independently mountable, which is
+    // exactly what a compound component is not.
+    const familyRefs = new Set(Object.values(units).map(({ contract }) => bareGtsId(contract.$id)));
     for (const { stem, contract } of Object.values(units)) {
       for (const ref of typedCompositionRefs(contract)) {
-        const target = resolveComponentRef(ref);
-        expect(existsSync(join(componentsDir, target.directory)), `${stem}: ${ref}`).toBe(true);
-      }
-    }
-  });
-});
-
-describe('accordion family: dont_use_when resolves', () => {
-  it('every alternative names a directory the kit ships', () => {
-    for (const { stem, instance } of Object.values(units)) {
-      for (const { rule, instead } of instance.dont_use_when) {
-        // An external alternative names something outside the kit, so there
-        // is no directory to resolve; the metamodel has already checked its
-        // shape. Every accordion rule points at a kit component today - this
-        // guard is what keeps that from being an assumption of the loop.
-        if (isExternalAlternative(instead)) continue;
-        const target = resolveComponentRef(instead);
-        expect(existsSync(join(componentsDir, target.directory)), `${stem} dont_use_when "${rule}" -> "${instead}"`).toBe(true);
+        expect(familyRefs.has(ref), `${stem}: composition names "${ref}", which is not a member of this family`).toBe(true);
       }
     }
   });

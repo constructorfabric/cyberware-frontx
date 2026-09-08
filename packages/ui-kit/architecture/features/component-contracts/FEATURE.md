@@ -261,11 +261,12 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 **Output**: The vocabulary types the overlay is made of, and the trait schema the abstract base type carries, against which every contract's validator-read block is checked. How those types relate is the domain model in section 3.1 of the package DESIGN.
 
 **Steps**:
-1. [x] - `p1` - Build one type per concept the overlay states - a rule against a use, a composition and each of its two directions, a deprecation, a coverage claim and its verdict, a family membership, an extension point - each with its own identifier - `inst-ts-vocabulary`
+1. [x] - `p1` - Build one type per concept the metamodel references, currently twelve - a rule against a use and the alternative outside the kit it may name, a composition and each of its two directions, a deprecation and the per-prop deprecation it holds, a coverage claim with its verdict and its assumptions, a family membership, an extension point - each with its own identifier - `inst-ts-vocabulary`
 2. [x] - `p1` - Take the metamodel's definitions of exactly the fields a validator reads - `inst-ts-fields`
 3. [x] - `p1` - State each of those fields as a reference to the type that owns its shape, so the trait schema and the metamodel resolve one definition rather than each carrying a copy - `inst-ts-ref`
-4. [x] - `p1` - Give each field the metamodel does not require a null alternative and a null default, placed after the reference so the referenced type does not overwrite it, so the store finds a value for every declared trait - `inst-ts-nullable`
-5. [x] - `p1` - **RETURN** the trait schema - `inst-ts-return`
+4. [x] - `p1` - Declare a field that HOLDS another type's identifier with all three of what it must resolve to, the value kind and the grammar of the identifier, because the type store removes the resolution annotation before validating and drops a branch left carrying nothing else - `inst-ts-id-value`
+5. [x] - `p1` - Give each field the metamodel does not require a null alternative and a null default, placed after the reference so the referenced type does not overwrite it, so the store finds a value for every declared trait - `inst-ts-nullable`
+6. [x] - `p1` - **RETURN** the trait schema - `inst-ts-return`
 
 ### Freshness Comparison
 
@@ -383,8 +384,10 @@ A base reference answers the question a reviewer has - did this change narrow a 
 **Steps**:
 1. [x] - `p1` - Declare a suite asserting the committed contract, the committed instance and the inherited-surface type equal a fresh compile, reporting each difference - `inst-cf-freshness`
 2. [x] - `p1` - Assert every annotated property has a slot record and no property with a schema shape has one - `inst-cf-slots`
-3. [x] - `p1` - Assert the committed abstract base type equals a fresh build - `inst-cf-base`
-4. [x] - `p1` - Validate a contract's traits through the type store against the base type's trait schema - `inst-cf-traits`
+3. [x] - `p1` - Assert every committed shared schema - the abstract base type, the metamodel, each vocabulary type - equals a fresh build, and that each vocabulary identifier obeys its own grammar - `inst-cf-base`
+4. [x] - `p1` - Validate a contract's traits through the type store against the base type's trait schema, in a registry holding the vocabulary that schema references - `inst-cf-traits`
+5. [x] - `p1` - Resolve every component identifier the contract holds - a `don't` alternative, a composition kind, a family member - against the kit itself rather than against the type registry, because the type system's reference validator does not follow a reference into another type and most referenced components ship no contract yet: each must name a component the kit ships, and where that component ships a contract the identifier must equal that contract's current props-schema identifier in full, majors included, so a component moving its major moves every reference to it - `inst-cf-refs`
+6. [x] - `p1` - Resolve the instance's own props-schema identifier through the type store, which does reach a reference declared directly on an instance property, so a contract absent from the registry fails by name - `inst-cf-instance-ref`
 
 ## 4. States (CDSL)
 

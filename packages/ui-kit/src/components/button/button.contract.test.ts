@@ -6,7 +6,7 @@
 // the invariants that make the contract trustworthy: axes and defaults
 // mirror the cva() call exactly, the overlay only references props that
 // exist, and the $id obeys the GTS segment grammar.
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { GTS, parseGtsID } from '@globaltypesystem/gts-ts';
@@ -39,8 +39,13 @@ import {
   type Overlay,
 } from '../../../scripts/contracts/compile';
 import type { ComponentExtraction } from '../../../scripts/contracts/extract';
-import { bareGtsId, componentTypeRefPattern, instanceIdPattern, METAMODEL_VERSION, passthroughTypeId } from '../../../scripts/contracts/ids';
-import { applyContractTestTimeout, assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
+import { bareGtsId, componentTypeRef, CONTRACT_MAJOR, instanceIdPattern, METAMODEL_VERSION, passthroughTypeId } from '../../../scripts/contracts/ids';
+import {
+  applyContractTestTimeout,
+  assertContractFreshness,
+  resolveComponentRef,
+  validateContractTraits,
+} from '../../../scripts/contracts/testing';
 
 // assertContractFreshness below builds a real TypeScript program - several
 // seconds on a CI-class runner, comfortably under 5s locally - so only CI
@@ -103,13 +108,6 @@ const extraction = resolveTargetExtraction('button');
 const metaSchema = JSON.parse(
   readFileSync(join(process.cwd(), 'scripts/contracts/ui-component.meta.json'), 'utf8'),
 ) as SchemaObject;
-
-// Grammar of a GTS component type reference; the capture is the component
-// token, snake_case where the kit directory is kebab-case. Built from
-// ids.ts, the same module the metamodel's own patterns come from - a
-// hand-copied regex here is exactly how a previous version of this pattern
-// drifted from the metamodel's without either side noticing.
-const COMPONENT_TYPE_REF = new RegExp(componentTypeRefPattern(true));
 
 describe('button contract conformance', () => {
   it('mirrors every cva axis and value, both directions', () => {
@@ -562,29 +560,6 @@ describe('button contract instance', () => {
     expect(contract['x-gts-traits'].dont_use_when).toContainEqual(navigation);
   });
 
-  it('every dont_use_when alternative resolves to a component the kit ships', () => {
-    // Demo stand-in for the registry existence check x-gts-ref performs:
-    // grammar alone would happily accept an id nothing implements.
-    // Non-emptiness itself is the metamodel's job (dont_use_when has
-    // minItems: 1, checked by "validates against the component metamodel"
-    // above) - asserting it again here would be the same fact with two
-    // owners. An external alternative is skipped rather than resolved: it
-    // names something outside the kit, so there is no directory to look
-    // for, and the metamodel has already checked its shape.
-    for (const { rule, instead } of instance.dont_use_when) {
-      if (isExternalAlternative(instead)) continue;
-      const match = COMPONENT_TYPE_REF.exec(instead);
-      if (match === null) {
-        throw new Error(`dont_use_when "${rule}": "${instead}" is not a GTS component type id`);
-      }
-      const dir = join(process.cwd(), 'src/components', match[1].replace(/_/g, '-'));
-      expect(
-        existsSync(dir),
-        `dont_use_when "${rule}" points at "${instead}", but no such component exists (${dir})`,
-      ).toBe(true);
-    }
-  });
-
   it('every good example is syntactically valid TSX', () => {
     // Syntax only. Real CI runs these through a tsc program against the kit's
     // own declarations, which also catches a prop that does not exist or has
@@ -605,6 +580,34 @@ describe('button contract instance', () => {
     for (const { title, why } of instance.examples.bad) {
       expect(why.trim(), `bad example "${title}" has no reason`).not.toBe('');
     }
+  });
+});
+
+describe('a component reference names one contract major', () => {
+  // Negative control for the shared suite's reference check
+  // (assertContractFreshness, testing.ts), which every described component
+  // runs against its own references. A reference carries the major it was
+  // written against; when a component moves its major, a referrer left
+  // behind names a type the kit no longer ships, and the resolver is what
+  // makes that visible rather than the name alone matching.
+  it('resolves a reference to the contract that ships at exactly that id', () => {
+    const target = resolveComponentRef(componentTypeRef('button', CONTRACT_MAJOR));
+    expect(target.directory).toBe('button');
+    expect(target.contractId).toBe(bareGtsId(contract.$id));
+  });
+
+  it('does not accept a reference at a major the component does not ship', () => {
+    const stale = componentTypeRef('button', CONTRACT_MAJOR + 1);
+    const target = resolveComponentRef(stale);
+    expect(target.contractId).not.toBe(stale);
+  });
+
+  it('resolves a component that ships no contract to its directory alone', () => {
+    // Most components a `don't` rule points at are undescribed; the kit
+    // shipping the component is a directory, not a registration.
+    const target = resolveComponentRef(componentTypeRef('switch', CONTRACT_MAJOR));
+    expect(target.directory).toBe('switch');
+    expect(target.contractId).toBeUndefined();
   });
 });
 
@@ -670,22 +673,11 @@ describe('button contract in a GTS store', () => {
     expect(result.error).toContain('required property');
   });
 
-  it("resolves the instance's props_schema reference against the registry", () => {
-    // The reference gts-ts itself checks: x-gts-ref sits directly on the
-    // metamodel's props_schema property, which is as deep as
-    // XGtsRefValidator's own walk reaches, so this is a real registry
-    // lookup rather than a grammar check - the contract must BE in the
-    // store, not merely be named by a well-formed id.
-    const gts = registeredStore();
-    gts.register(buildMetamodel());
-    gts.register(JSON.parse(JSON.stringify(instance)) as Record<string, unknown>);
-    const result = gts.validateInstance(instance.id);
-    expect(result.ok, result.error).toBe(true);
-  });
-
   it("fails when the contract the instance's props_schema names is absent from the registry", () => {
-    // Negative control for the check above: without it, a passing
-    // validateInstance would prove only that the id is grammatical.
+    // Negative control for the shared suite's own props-schema resolution
+    // (assertContractFreshness, testing.ts), which every described component
+    // runs: without a failing case, a passing resolution would prove only
+    // that the id is grammatical.
     const gts = new GTS();
     gts.register(baseSchema);
     registerContractTypes((entity) => gts.register(entity));

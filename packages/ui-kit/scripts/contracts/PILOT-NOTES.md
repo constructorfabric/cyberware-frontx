@@ -423,13 +423,12 @@ such inherited floor - every one of its own props is either provider-safe
 between, because there is no underlying primitive contributing a typed
 baseline the way Base UI does for the other two.
 
-## The x-gts-traits hybrid (PR #611 demo review follow-up)
+## The x-gts-traits hybrid (demo review follow-up)
 
-PR #611's review thread (button.contract.json:47, tscbmstubp, 2026-09-03
-14:06) asked what `x-uikit` is - not a JSON Schema keyword, not a registered
-GTS trait, an undifferentiated bag every overlay field landed in regardless
-of whether anything downstream actually read it. Two follow-on proposals
-came out of that thread: move the WHOLE overlay into `x-gts-traits`
+The type-system maintainer's review of the demo asked what `x-uikit` is - not
+a JSON Schema keyword, not a registered GTS trait, an undifferentiated bag
+every overlay field landed in regardless of whether anything downstream
+actually read it. Two follow-on proposals came out of that thread: move the WHOLE overlay into `x-gts-traits`
 (validated by gts-ts itself) and drop the compiled `.instance.json`
 artifact, since the trait-typed props schema would carry everything the
 instance did. Implemented instead: a hybrid split, `SEMANTIC_FIELD_TARGETS`
@@ -512,18 +511,18 @@ traits", the DOCUMENTATION fields currently left in `x-uikit` (`intent`,
 move too, since "a runtime reads this" is exactly the bar `SEMANTIC_FIELD_TARGETS`
 already uses to decide what belongs in `x-gts-traits` - at that point
 `x-uikit` would carry nothing (or fold away entirely) and the whole overlay
-would be traits, which is the "move everything" version tscbmstubp
+would be traits, which is the "move everything" version the maintainer
 originally proposed. The map is the single edit point either way; no other
 file changes shape.
 
 ## Decisions taken from the demo review
 
-Five questions came out of PR #611's review thread. What follows is the
+Five questions came out of the demo review. What follows is the
 call on each, for whoever extends contract coverage past these three pilot
 directories - not a re-litigation, a record of what was decided and why.
 
 **1. Source of truth stays the code; YAML holds meaning, not shape.**
-tscbmstubp (2026-09-04 11:22) proposed Option B: YAML declares props/axes,
+The type-system maintainer proposed Option B: YAML declares props/axes,
 TypeScript is GENERATED from YAML (`button.contract.d.ts`), `cva()` stays in
 code but is typed against the generated union, and the extractor flips from
 "read the code" to "verify the code matches the YAML". Option A - the code
@@ -547,15 +546,15 @@ YAML diff plus JSON diffs of the same fact" on every prop change - is
 accepted as the cost of keeping the compiled artifact the single normative
 one.
 
-**2. Vendor namespace stays `frontx.uikit`.** GeraBart's first review
-comment (2026-09-03 09:57) proposed a base type id shaped
-`gts.frontx.design.uikit.component.v1~`; itechmeat's reply (14:38:30)
-explained the base type actually needed a segment `frontx.uikit.component.v1`
-could not supply either - gts-ts's own grammar requires 5-6 dot-tokens per
-segment, and that string is 4 - so the base type shipped as
+**2. Vendor namespace stays `frontx.uikit`.** The harness reviewer proposed
+a base type id shaped `gts.frontx.design.uikit.component.v1~`; the harness
+author's reply explained the base type actually needed a segment
+`frontx.uikit.component.v1` could not supply either - gts-ts's own grammar
+requires 5-6 dot-tokens per segment, and that string is 4 - so the base type
+shipped as
 `gts.frontx.uikit.base.component.v1~`, one token longer, keeping
-`frontx.uikit` rather than `frontx.design.uikit`. No reply followed on
-GeraBart's side of that thread. The question stays open, not resolved by
+`frontx.uikit` rather than `frontx.design.uikit`. No reply followed on the
+reviewer's side of that thread. The question stays open, not resolved by
 default: `ids.ts`'s `VENDOR_PACKAGE` constant is the one place a rename
 would land, and it is cheap now (three directories - button, accordion,
 data-table) and gets more expensive every additional component `covered.json`
@@ -576,9 +575,9 @@ gts-ts mechanics it had to work around. `ADR/0005-default-type-substrate-provide
 decides which component owns the default GTS-backed type-substrate provider -
 it does not answer, and was never meant to answer, whether a GTS runtime
 ever reads a component's traits to CHANGE behavior at runtime versus only
-validating and storing them. That question is still open, addressed to
-GeraBart in the same PR #611 thread (itechmeat, 2026-09-03 14:38:51) and
-still unanswered as of this pilot. Two outcomes, both already accounted for
+validating and storing them. That question is still open: it was put to the
+harness reviewer in the same review thread and is unanswered as of this
+pilot. Two outcomes, both already accounted for
 by `SEMANTIC_FIELD_TARGETS` being the single routing switch: if the answer
 is "validate-and-store" (traits are checked and carried, nothing reads them
 to change behavior), nothing here changes - that is what this hybrid already
@@ -587,11 +586,11 @@ fields currently left in `x-uikit` (`intent`, `typical_uses`, `invariants`,
 `anti_patterns`, `examples`) would need to move too, since "a runtime reads
 this" becomes the same bar `x-gts-traits` already uses for everything else -
 at that point `x-uikit` would fold away and the whole overlay would be
-traits, the "move everything" shape tscbmstubp's original comment (item 2)
-proposed.
+traits, the "move everything" shape the maintainer's original comment
+(item 2) proposed.
 
 **5. "Block", not "higher-order component", for future template-copied
-composites.** tscbmstubp's terminology note (2026-09-04 11:37) proposed
+composites.** The maintainer's terminology note proposed
 naming the future template-copied composite a kit-family root plus its parts
 compose into - not shipped anywhere in this branch - a "block" rather than a
 "higher-order component": HOC still implies an npm-consumed, versioned

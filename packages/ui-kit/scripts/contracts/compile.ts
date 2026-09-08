@@ -580,6 +580,7 @@ export function buildPassthroughSchema(
 // property carrying x-gts-ref directly - see the instance's props_schema
 // below. A reference nested inside a referenced vocabulary type is not
 // reached by that walker, so those stay resolved by the conformance suite.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-id-value
 function componentRefSchema(): Record<string, unknown> {
   return {
     type: 'string',
@@ -590,6 +591,7 @@ function componentRefSchema(): Record<string, unknown> {
     $comment: 'GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu).',
   };
 }
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-id-value
 
 function propNameSchema(): Record<string, unknown> {
   return {
