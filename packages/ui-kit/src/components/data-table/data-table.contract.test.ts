@@ -24,7 +24,7 @@ import {
   type ContractInstance,
 } from '../../../scripts/contracts/compile';
 import { listExportedDeclarationNames } from '../../../scripts/contracts/extract';
-import { bareGtsId } from '../../../scripts/contracts/ids';
+import { bareGtsId, componentTypeRef } from '../../../scripts/contracts/ids';
 import { applyContractTestTimeout, assertContractFreshness, validateContractTraits } from '../../../scripts/contracts/testing';
 
 // resolveTargetExtraction and listExportedDeclarationNames below each build a
@@ -68,6 +68,25 @@ describe('data-table: metamodel validity', () => {
     for (const { stem, instance, contract } of Object.values(units)) {
       expect(instance.props_schema, stem).toBe(bareGtsId(contract.$id));
     }
+  });
+
+  it('refuses a children list that pairs "none" with another kind', () => {
+    // DataTable is the one component that says "none": it renders its Table
+    // internally, so nothing may be placed inside it. Any other kind says
+    // something may - a list holding both states both, and the vocabulary
+    // used to accept it as an ordinary two-element array.
+    const ajv = new Ajv2020();
+    addContractTypes(ajv);
+    const validate = ajv.compile(metaSchema);
+    const { instance } = units[DIRECTORY];
+    const contradictory = {
+      ...instance,
+      composition: {
+        ...instance.composition,
+        children: { ...instance.composition.children, kinds: ['none', componentTypeRef('button', 1)] },
+      },
+    };
+    expect(validate(contradictory)).toBe(false);
   });
 
   it('neither contract sets family - two independent exports, not a compound family', () => {

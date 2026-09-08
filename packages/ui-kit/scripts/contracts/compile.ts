@@ -668,15 +668,25 @@ export function buildTraitTypes(): Record<string, unknown>[] {
     traitType(
       'child_composition',
       'UiKit child composition',
-      'What may appear inside this component. A component reference when the child IS a kit component - typed so a reader can resolve it and the conformance suite can check it exists - or the literal "text" for plain textual content, or "none" for a component that takes no children at all (DataTable renders its Table internally: "text" would claim a slot that does not exist, "none" says so honestly). Not an open string: a typo\'d reference would otherwise silently read as a content kind.',
+      'What may appear inside this component. A component reference when the child IS a kit component - typed so a reader can resolve it and the conformance suite can check it exists - or the literal "text" for plain textual content, or "none" for a component that takes no children at all (DataTable renders its Table internally: "text" would claim a slot that does not exist, "none" says so honestly). "none" stands alone - a list that pairs it with anything else says both that nothing may appear inside and that something may. Not an open string: a typo\'d reference would otherwise silently read as a content kind.',
       {
         type: 'object',
         properties: {
+          // "none" is the one kind that excludes every other: it says this
+          // component accepts no children at all, so a list pairing it with
+          // a component reference or with "text" states both that nothing
+          // may appear inside and that something may. Left as one open item
+          // union, `["none", <Button>]` validated - a contradiction the
+          // reader the contract exists for has no way to resolve, and the
+          // reason it is two branches rather than a comment.
+          // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-children-exclusive
           kinds: {
-            type: 'array',
-            items: { oneOf: [componentRefSchema(), { const: 'text' }, { const: 'none' }] },
-            minItems: 1,
+            oneOf: [
+              { type: 'array', items: { const: 'none' }, minItems: 1, maxItems: 1 },
+              { type: 'array', items: { oneOf: [componentRefSchema(), { const: 'text' }] }, minItems: 1 },
+            ],
           },
+          // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-children-exclusive
           icons_via: propNameSchema(),
         },
         required: ['kinds'],

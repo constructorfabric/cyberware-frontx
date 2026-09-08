@@ -24,6 +24,7 @@
   - [Compatibility Decision](#compatibility-decision)
   - [Comparison Source Beyond The Repository](#comparison-source-beyond-the-repository)
   - [Per-Contract Comparison Against The Base Reference](#per-contract-comparison-against-the-base-reference)
+  - [Contracts Removed Since The Base Reference](#contracts-removed-since-the-base-reference)
   - [Guard Scope And Verdicts](#guard-scope-and-verdicts)
   - [Coverage Report](#coverage-report)
   - [Conformance Suite Construction](#conformance-suite-construction)
@@ -137,11 +138,12 @@ Prose describing a component can only be reviewed by a person, one screen at a t
    1. [x] - `p1` - Print the usage line and **RETURN** a non-zero exit - `inst-usage-exit`
 3. [x] - `p1` - **IF** the subcommand is not one this command answers to - `inst-unknown-subcommand`
    1. [x] - `p1` - Print the usage line naming every subcommand and **RETURN** a non-zero exit - `inst-unknown-subcommand-exit`
-4. [x] - `p1` - **IF** the subcommand is the guard - `inst-dispatch-guard`
+4. [x] - `p1` - **IF** the base reference given does not name a commit in this repository - a typo, a branch never fetched, a clone missing the commit - name it and **RETURN** a non-zero exit without running the check, because against a reference that does not exist every contract reads as new and every removal reads as nothing - `inst-verify-base`
+5. [x] - `p1` - **IF** the subcommand is the guard - `inst-dispatch-guard`
    1. [x] - `p1` - Hold every in-scope component to a fresh contract and **RETURN** a non-zero exit on any violation - `inst-guard-exit`
-5. [x] - `p1` - **IF** the subcommand is the compatibility check - `inst-dispatch-compat`
-   1. [x] - `p1` - Compare every committed contract against the base reference and **RETURN** a non-zero exit on any refusal - `inst-compat-exit`
-6. [x] - `p1` - **IF** the subcommand is the coverage report - `inst-dispatch-coverage`
+6. [x] - `p1` - **IF** the subcommand is the compatibility check - `inst-dispatch-compat`
+   1. [x] - `p1` - Compare every committed contract against the base reference, sweep for the contracts that only exist there, and **RETURN** a non-zero exit on any refusal - `inst-compat-exit`
+7. [x] - `p1` - **IF** the subcommand is the coverage report - `inst-dispatch-coverage`
    1. [x] - `p1` - Print the report and **RETURN** success whatever the numbers are - `inst-coverage-exit`
 
 ## 3. Processes / Business Logic (CDSL)
@@ -155,7 +157,8 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 **Output**: One extraction per exported React component - its variant axes and defaults, its declared props, its inherited props, the origin of its inherited surface, and a note for each thing the walk could not read: an unresolvable variant declaration, a conflicting axis or default, an unclassifiable heritage node, a property with no declaration behind it.
 
 **Steps**:
-1. [x] - `p1` - Build a TypeScript program over the component's source using the package's own shipping-source compiler options - `inst-ex-program`
+1. [x] - `p1` - Build a TypeScript program over the component's source alone, using the package's own shipping-source compiler options, so an extraction depends on the file it reads and on nothing else that shared the run - `inst-ex-program`
+   1. [x] - `p1` - Where an answer is only counted and never written into an artifact - which of a file's exports are components, what every export is called - take it from one program shared across every file the run asks about, or from the parsed syntax with no program at all, and keep it out of the extraction an artifact is compiled from - `inst-ex-shared-program`
 2. [x] - `p1` - **FOR EACH** exported declaration, keep the ones that are React components, unwrapping a wrapper by its resolved symbol rather than by the name it was imported under - `inst-ex-candidates`
 3. [x] - `p1` - Walk the first parameter's props type, classifying each heritage reference by its resolved symbol and the file that declares it - `inst-ex-heritage`
 4. [x] - `p1` - Trace each variant-type reference to the variant declaration it derives from and read the axes and their defaults there - `inst-ex-axes`
@@ -245,7 +248,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 **Output**: The identifier for the artifact, and the patterns that recognize each identifier shape.
 
 **Steps**:
-1. [x] - `p1` - Derive the identifier token from the component's directory name - `inst-id-token`
+1. [x] - `p1` - Derive the identifier token from the name of the export being described - the directory name where a directory describes one component, the overlay stem where it describes a part of a compound one - `inst-id-token`
 2. [x] - `p1` - Build the props-schema identifier by chaining the component's segment onto the abstract base type, and make that identifier what a reference to the component holds - a component is the type derived from the base, so there is no second identifier to point at - `inst-id-props-schema`
 3. [x] - `p1` - Build the metamodel instance identifier from the same segment, without the terminator that would make it a type - `inst-id-instance`
 4. [x] - `p1` - Build the inherited-surface type identifier from the origin - `inst-id-passthrough`
@@ -262,6 +265,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 
 **Steps**:
 1. [x] - `p1` - Build one type per concept the metamodel references, currently twelve - a rule against a use and the alternative outside the kit it may name, a composition and each of its two directions, a deprecation and the per-prop deprecation it holds, a coverage claim with its verdict and its assumptions, a family membership, an extension point - each with its own identifier - `inst-ts-vocabulary`
+   1. [x] - `p1` - State the child-composition kind that means "no children at all" as the only kind a list may hold, so a list cannot say both that nothing may appear inside a component and that something may - `inst-ts-children-exclusive`
 2. [x] - `p1` - Take the metamodel's definitions of exactly the fields a validator reads - `inst-ts-fields`
 3. [x] - `p1` - State each of those fields as a reference to the type that owns its shape, so the trait schema and the metamodel resolve one definition rather than each carrying a copy - `inst-ts-ref`
 4. [x] - `p1` - Declare a field that HOLDS another type's identifier with all three of what it must resolve to, the value kind and the grammar of the identifier, because the type store removes the resolution annotation before validating and drops a branch left carrying nothing else - `inst-ts-id-value`
@@ -294,6 +298,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 
 **Steps**:
 1. [x] - `p1` - Diff the inherited surface: a removed prop, a changed shape or a dropped value is incompatible, while an added prop is not - `inst-cd-passthrough`
+   1. [x] - `p1` - Where the two revisions inherit from different origins, or the newer one inherits nothing, diff by property name and requiredness alone: a name that disappears rejects a call site whichever surface declared it, while a shape that differs between two unrelated surfaces narrows nothing, there having been no one surface to narrow - `inst-cd-passthrough-origin`
 2. [x] - `p1` - Diff the declared props: a removed prop and a newly required prop are both incompatible, whether the prop was required before or not - `inst-cd-own`
 3. [x] - `p1` - Combine those two with the type system's own backward verdict, which sees neither of them - `inst-cd-combine`
 4. [x] - `p1` - **IF** nothing is incompatible - `inst-cd-pass`
@@ -318,7 +323,7 @@ A base reference answers the question a reviewer has - did this change narrow a 
 - [ ] Keep the repository reference as the source a per-change run uses, unchanged.
 - [ ] Return the same verdict shape either way, so one decision rule serves both sources.
 
-**Depends on**: `cpt-frontx-ui-kit-fr-contract-distribution` - contracts have to be part of the published artifact before a published version can be read for them. The release job runs the published form before tagging, so the verdict that gates a release is the one a consumer experiences.
+**Depends on**: `cpt-frontx-ui-kit-fr-contract-distribution` - contracts have to be part of the published artifact before a published version can be read for them. The release job would run the published form before tagging, so that the verdict gating a release is the one a consumer experiences.
 
 ### Per-Contract Comparison Against The Base Reference
 
@@ -335,9 +340,27 @@ A base reference answers the question a reviewer has - did this change narrow a 
 3. [x] - `p1` - **IF** no earlier version resolves - `inst-cu-new`
    1. [x] - `p1` - Report the contract as new and **RETURN** a pass - `inst-cu-new-return`
 4. [x] - `p1` - Register both revisions under distinct synthesized versions, so the type system can compare two states of what is otherwise one identifier - `inst-cu-register`
-5. [x] - `p1` - Compare the inherited-surface type at both revisions, reading the origin from the contract as it shipped rather than from the source as it is now - `inst-cu-passthrough`
-   1. [x] - `p1` - **IF** the base reference carries passthrough types but none for this origin, because the origin key itself changed - report the inherited-surface signal as skipped for that origin, without refusing the change - `inst-cu-passthrough-skipped`
-6. [x] - `p1` - **RETURN** the decision for this contract - `inst-cu-decide`
+5. [x] - `p1` - Compare the inherited-surface type at both revisions, reading the origin from each revision's own contract as it shipped rather than from the source as it is now - `inst-cu-passthrough`
+   1. [x] - `p1` - Read the origin from the base revision as well as the current one, and decide the comparison from both: nothing to compare when neither inherits; nothing to report when only the current one does, because an inherited surface that arrives only widens; a comparison by forwarded property name and requiredness when the origin moved or the current revision inherits nothing at all, those being the only signals two different surfaces share; the full shape comparison when the origin is unchanged - `inst-cu-passthrough-both`
+   2. [x] - `p1` - **IF** the comparison genuinely cannot be made - the base reference carries passthrough types but none for the origin this contract shipped with, or no type is committed for the origin it names now - report the inherited-surface signal as skipped for that origin, without refusing the change - `inst-cu-passthrough-skipped`
+6. [x] - `p1` - **RETURN** the decision for this contract, and the base-reference path it was compared against, so a contract that no longer has an heir can be told from one that was never compared - `inst-cu-decide`
+
+### Contracts Removed Since The Base Reference
+
+- [x] `p1` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-compat-removal`
+
+**Input**: The contracts present at the base reference, the base-reference path each committed contract was compared against, and the coverage allowlist.
+
+**Output**: One verdict per contract that exists only at the base reference.
+
+The comparison above walks the contracts on disk and asks each one what it used to be. A contract that is only in the past is walked by nobody, so a deletion was not passed so much as never looked at - and a rename whose two halves neither the rename record nor the identifier nor the name could pair up looks the same. Removing a contract is backward-incompatible on its face: a consumer holding that identifier now resolves nothing, and unlike a narrowing there is no surviving contract whose major could move to acknowledge it. The one acknowledgement this harness records is the one the guard already demands of a removed directory - the allowlist no longer naming the component - so both rules are the same rule.
+
+**Steps**:
+1. [x] - `p1` - Subtract every base-reference path some committed contract was compared against from the contracts present at the base reference - `inst-cr-find`
+2. [x] - `p1` - **IF** the coverage allowlist still names the component the removed contract described - `inst-cr-decide`
+   1. [x] - `p1` - **RETURN** a refusal naming the removed path and the allowlist entry that still promises it - `inst-cr-decide`
+   2. [x] - `p1` - Otherwise **RETURN** a pass reporting the removal as acknowledged, naming what disappeared - `inst-cr-decide`
+3. [x] - `p1` - Report those verdicts alongside the per-contract ones, so one run states both what changed and what is gone - `inst-cr-sweep`
 
 ### Guard Scope And Verdicts
 
@@ -352,6 +375,7 @@ A base reference answers the question a reviewer has - did this change narrow a 
 2. [x] - `p1` - Map the changed paths to component directories - `inst-gd-map`
 3. [x] - `p1` - **IF** the change touches the shared contract tooling - `inst-gd-widen`
    1. [x] - `p1` - Widen the scope to every covered component, because a change there can change what any of them compiles to - `inst-gd-widen-scope`
+   2. [x] - `p1` - Widen it the same way when the change touches the coverage allowlist itself, for a different reason: the allowlist decides which components are held to the standard at all, so the one file that grants coverage must not be the one file coverage never looks at - `inst-gd-widen-allowlist`
 4. [x] - `p1` - **IF** nothing is in scope - `inst-gd-empty`
    1. [x] - `p1` - Report it and **RETURN** without failing - `inst-gd-empty-return`
 5. [x] - `p1` - **FOR EACH** directory in scope, decide its verdict - `inst-gd-each`
@@ -371,7 +395,8 @@ A base reference answers the question a reviewer has - did this change narrow a 
 **Steps**:
 1. [x] - `p1` - Count the component directories and the ones the allowlist covers - `inst-cv-count`
 2. [x] - `p1` - **FOR EACH** uncovered directory, pair its described exports with its component exports and the exports that are correctly not components - `inst-cv-uncovered`
-3. [x] - `p1` - **RETURN** the report by whichever output path was asked for, setting no exit code either way - `inst-cv-return`
+3. [x] - `p1` - Report every allowlist entry that grants coverage over nothing - one naming no component directory, one naming a directory that carries no overlay - and leave those entries out of the described count, which is meant to say how much of the kit is described - `inst-cv-allowlist`
+4. [x] - `p1` - **RETURN** the report by whichever output path was asked for, setting no exit code either way - `inst-cv-return`
 
 ### Conformance Suite Construction
 
@@ -416,7 +441,7 @@ The system **MUST** refuse a hand-authored overlay that restates a field the cod
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-extraction`
 
-The system **MUST** read a component's exported components, variant axes and defaults, declared props, inherited props and inherited-surface origin from its TypeScript through the compiler's own resolution - never from the names an identifier happens to be written under - and **MUST** record any shape it cannot classify rather than dropping it.
+The system **MUST** read a component's exported components, variant axes and defaults, declared props, inherited props and inherited-surface origin from its TypeScript through the compiler's own resolution - never from the names an identifier happens to be written under - and **MUST** record any shape it cannot classify rather than dropping it. An extraction that a contract is compiled from **MUST** depend on the component's own source and nothing else that shared the run: the compiler prints a type's module specifier and orders a union's members from what the whole compilation holds, so an extraction taken from a compilation covering several components is a different extraction, and **MUST NOT** reach an artifact. Where the answer is only counted - which of a file's exports are components, what every export is called - the system **MAY** take it from one shared compilation, or from the syntax with no compilation at all.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-extraction`
@@ -446,7 +471,7 @@ The system **MUST** compile an admitted overlay and an extraction into a closed 
 
 - [x] `p2` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-identifiers`
 
-The system **MUST** construct every contract, instance, inherited-surface and vocabulary identifier from one vendor namespace, so that a contract is a type derived from the kit's abstract base type and an instance is not a type at all, and **MUST** expose the patterns that recognize each shape rather than leaving callers to write their own. A reference to a component **MUST** be that component's own derived identifier, not a second identifier standing for the same component, and **MUST** be spelled in the form the type system parses rather than the form a schema keyword requires. A component identifier's token is derived from the component's directory name; an inherited-surface identifier takes the origin key the extractor already produced in that token form, so no second derivation applies to it.
+The system **MUST** construct every contract, instance, inherited-surface and vocabulary identifier from one vendor namespace, so that a contract is a type derived from the kit's abstract base type and an instance is not a type at all, and **MUST** expose the patterns that recognize each shape rather than leaving callers to write their own. A reference to a component **MUST** be that component's own derived identifier, not a second identifier standing for the same component, and **MUST** be spelled in the form the type system parses rather than the form a schema keyword requires. A component identifier's token is derived from the name of the export it describes - the directory name where a directory describes one component, the overlay stem where it describes one part of a compound one, so a part carries its own identifier rather than its family's; an inherited-surface identifier takes the origin key the extractor already produced in that token form, so no second derivation applies to it.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-identifiers`
@@ -458,7 +483,7 @@ The system **MUST** construct every contract, instance, inherited-surface and vo
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-trait-schema`
 
-The system **MUST** express the overlay's validator-read vocabulary as one type per concept, each with its own identifier, and **MUST** derive the trait schema the abstract base type carries from the metamodel's own field definitions rather than maintaining a second copy of them - by reference, so that a concept is defined once and the trait schema and the metamodel resolve the same definition. It **MUST** make the one mechanical adjustment the type store requires, an optional field given a null alternative and default placed so the referenced type cannot overwrite it, without changing the shape a component that sets those fields must satisfy. Where a field holds the identifier of another type, the declaration **MUST** carry both the reference and the grammar that rejects a malformed identifier, because the type store removes the reference annotation before validating and a declaration left with nothing else in it stops constraining the value at all.
+The system **MUST** express the overlay's validator-read vocabulary as one type per concept, each with its own identifier, and **MUST** derive the trait schema the abstract base type carries from the metamodel's own field definitions rather than maintaining a second copy of them - by reference, so that a concept is defined once and the trait schema and the metamodel resolve the same definition. It **MUST** make the one mechanical adjustment the type store requires, an optional field given a null alternative and default placed so the referenced type cannot overwrite it, without changing the shape a component that sets those fields must satisfy. Where a field holds the identifier of another type, the declaration **MUST** carry both the reference and the grammar that rejects a malformed identifier, because the type store removes the reference annotation before validating and a declaration left with nothing else in it stops constraining the value at all. Where one value of a field contradicts every other - the child-composition kind meaning "no children at all" - the vocabulary **MUST** state that in the type rather than in prose beside it, so a list cannot say both that nothing may appear inside a component and that something may.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-trait-schema`
@@ -494,11 +519,12 @@ The system **MUST** provide a reusable suite that fails a component's unit run w
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-compatibility`
 
-The system **MUST** decide a contract's backward compatibility from three signals - the type system's own verdict, the declared-prop diff and the inherited-surface diff - **MUST** treat an addition as compatible and a removal, a narrowing or a newly required prop as not, and **MUST** accept an incompatible difference only when the contract's own major moved, naming every reason either way. Where the inherited-surface signal cannot be computed because the base reference carries no file for this contract's origin - the case where the origin key itself changed - the system **MUST** report that signal as skipped rather than let its absence read as agreement.
+The system **MUST** decide a contract's backward compatibility from three signals - the type system's own verdict, the declared-prop diff and the inherited-surface diff - **MUST** treat an addition as compatible and a removal, a narrowing or a newly required prop as not, and **MUST** accept an incompatible difference only when the contract's own major moved, naming every reason either way. It **MUST** read the inherited surface from BOTH revisions of the contract rather than from the current one alone, so that a contract which drops its inherited surface, or moves it to another origin, is compared by what a consumer can still pass rather than skipped for want of something to look up. It **MUST** compare every contract present at the base reference, including one that no committed contract is the heir of: such a removal is backward-incompatible and is accepted only once the coverage allowlist no longer names the component, the same acknowledgement the guard demands of a removed directory. It **MUST** refuse to run at all against a base reference that names no commit in this repository, because every verdict it could give against one would be vacuous. Where a comparison genuinely cannot be made - no file at the base reference for the origin this contract shipped with, no committed file for the origin it names now - the system **MUST** report that signal as skipped rather than let its absence read as agreement.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-compat-decision`
 - `cpt-frontx-ui-kit-algo-component-contracts-compat-unit`
+- `cpt-frontx-ui-kit-algo-component-contracts-compat-removal`
 - `cpt-frontx-ui-kit-flow-component-contracts-guard-change`
 
 **Touches**:
@@ -508,7 +534,7 @@ The system **MUST** decide a contract's backward compatibility from three signal
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-guard-scope`
 
-The system **MUST** hold to the full standard only the components a change touches that are also opted into coverage, **MUST** widen that scope to every covered component when any file that produces or compares a compiled contract changed - the extractor, the compiler, the identifier and schema inputs, the freshness comparison and the shared comparison logic it depends on - and **MUST** treat a touched but uncovered component as information rather than as a failure. Only the guard's own entry point is excluded from that widening, because nothing on the comparison path imports it and re-checking on it would be circular.
+The system **MUST** hold to the full standard only the components a change touches that are also opted into coverage, **MUST** widen that scope to every covered component when any file that produces or compares a compiled contract changed - the extractor, the compiler, the identifier and schema inputs, the freshness comparison and the shared comparison logic it depends on - and **MUST** treat a touched but uncovered component as information rather than as a failure. It **MUST** widen the scope the same way, for its own reason, when the coverage allowlist itself changed: the file that decides which components are checked cannot be the one file no check reads, and an entry naming a directory that does not exist or an overlay that was never written **MUST** fail the guard rather than count as coverage. Excluded from the compile-or-compare widening are only the guard's own entry point, because nothing on the comparison path imports it and re-checking on it would be circular, its own tests, and prose.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-guard`
@@ -523,7 +549,7 @@ The system **MUST** hold to the full standard only the components a change touch
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-coverage-report`
 
-The system **MUST** report the described set against the component set, with a per-directory breakdown that distinguishes an export still to be described from an export that is correctly not a component, and **MUST NOT** derive an exit code from any of those numbers.
+The system **MUST** report the described set against the component set, with a per-directory breakdown that distinguishes an export still to be described from an export that is correctly not a component, **MUST** name every allowlist entry that grants coverage over nothing and leave it out of the described count, and **MUST NOT** derive an exit code from any of those numbers.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-coverage`
@@ -551,7 +577,13 @@ The system **MUST** report the described set against the component set, with a p
 - [x] A contract whose file moved is compared against its earlier path rather than reported as new.
 - [x] A change touching a component that is not opted into coverage passes with that component reported as not yet requiring a contract.
 - [x] A change to any file on the compile-or-compare path - the shared comparison logic included - re-checks every covered component, not only the ones the change touched; a change to the guard's own entry point does not.
-- [x] A contract whose inherited-surface origin key changed reports that signal as skipped rather than passing silently on its absence.
+- [x] A contract that stops composing its inherited surface is refused naming every forwarded prop that disappeared with it, rather than passing because there was no origin left to look up.
+- [x] A contract whose inherited-surface origin moved is compared by forwarded property name and requiredness across the move, and refused when a prop does not survive it; a move every prop survives passes, naming the move.
+- [x] A contract present at the base reference that no committed contract is the heir of is reported as a removal: refused while the coverage allowlist still names its component, accepted and named once it does not; a contract that merely moved is reported as renamed and compared, not as a removal.
+- [x] A base reference that names no commit in this repository stops both the guard and the compatibility check with that reference named, instead of a run in which every contract reads as new.
 - [x] A covered component whose directory has been removed fails the guard, naming the allowlist entry to remove.
+- [x] A change to the coverage allowlist re-checks every component it names; an entry naming no component directory, or a directory with no overlay, fails the guard and is reported by the coverage report without being counted as coverage.
 - [x] The coverage report prints the described set against the component set and sets no exit code, whatever the numbers are.
+- [x] A children list stating that a component takes no children carries that kind alone; one pairing it with a component reference or with text is refused by the vocabulary.
+- [x] Recompiling every described component produces byte-identical artifacts whatever else ran in the same process, and the counting that feeds the coverage report and the guard's completeness check never reaches the extraction a contract is compiled from.
 - [ ] A compatibility run states its comparison source, and a run against a published version of the package reports what a consumer upgrading to the committed contracts would experience - not only what changed since a branch point.

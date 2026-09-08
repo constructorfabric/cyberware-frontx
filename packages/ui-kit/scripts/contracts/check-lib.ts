@@ -73,12 +73,46 @@ export interface PassthroughDiff {
   compatible: boolean;
 }
 
+// The name-level half of every inherited-surface comparison: which forwarded
+// props vanished, which arrived, and which became mandatory. Split out
+// because it is the only half that survives a change of ORIGIN - two origins
+// describe two unrelated surfaces, so a type or enum difference between them
+// says nothing about what a consumer used to be able to pass, while a name
+// that disappears says it exactly. diffPassthroughOriginChange below is that
+// half on its own; diffPassthroughSchema is this half plus the shape checks
+// that only mean something within one origin.
+function comparePassthroughNames(
+  oldSchema: PassthroughSchemaLike,
+  newSchema: PassthroughSchemaLike,
+): { added: string[]; removed: string[]; newlyRequired: string[] } {
+  const oldProps = oldSchema.properties ?? {};
+  const newProps = newSchema.properties ?? {};
+  // A prop the new schema requires and the old one did not rejects a props
+  // object that used to validate (the prop simply absent) - the same
+  // "changed shape" the type/enum checks in diffPassthroughSchema treat as
+  // narrowing, just on the required list rather than on one property's own
+  // constraints. Whether the prop already existed as optional or arrives
+  // with the schema makes no difference to the caller: both reject the same
+  // old call site, and `added` alone never fails a check because adding an
+  // OPTIONAL forwarded prop is the widening direction. A name listed in
+  // `required` that the new schema does not declare at all is a different
+  // defect (a malformed schema, not an incompatible one) and is left to
+  // whoever validates the schema itself.
+  const oldRequired = new Set(oldSchema.required ?? []);
+  return {
+    added: Object.keys(newProps).filter((name) => !(name in oldProps)),
+    removed: Object.keys(oldProps).filter((name) => !(name in newProps)),
+    newlyRequired: (newSchema.required ?? []).filter((name) => name in newProps && !oldRequired.has(name)),
+  };
+}
+
+const NEWLY_REQUIRED_REASON = 'became required where it was optional (or absent) before';
+
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
 export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchema: PassthroughSchemaLike): PassthroughDiff {
   const oldProps = oldSchema.properties ?? {};
   const newProps = newSchema.properties ?? {};
-  const added = Object.keys(newProps).filter((name) => !(name in oldProps));
-  const removed = Object.keys(oldProps).filter((name) => !(name in newProps));
+  const { added, removed, newlyRequired } = comparePassthroughNames(oldSchema, newSchema);
   const narrowed: { prop: string; reason: string }[] = [];
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
 
@@ -117,28 +151,27 @@ export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchem
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
-  // A prop the new schema requires and the old one did not rejects a props
-  // object that used to validate (the prop simply absent) - the same
-  // "changed shape" the type/enum checks above already treat as narrowing,
-  // just on the required list rather than on one property's own
-  // constraints. Whether the prop already existed as optional or arrives
-  // with the schema makes no difference to the caller: both reject the same
-  // old call site, and `added` alone never fails the check because adding an
-  // OPTIONAL forwarded prop is the widening direction. A name listed in
-  // `required` that the new schema does not declare at all is a different
-  // defect (a malformed schema, not an incompatible one) and is left to
-  // whoever validates the schema itself.
-  const oldRequired = new Set(oldSchema.required ?? []);
-  const newlyRequired = (newSchema.required ?? []).filter((name) => name in newProps && !oldRequired.has(name));
-  for (const name of newlyRequired) {
-    narrowed.push({ prop: name, reason: 'became required where it was optional (or absent) before' });
-  }
+  for (const name of newlyRequired) narrowed.push({ prop: name, reason: NEWLY_REQUIRED_REASON });
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
   return { added, removed, narrowed, compatible: removed.length === 0 && narrowed.length === 0 };
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
+
+// The same comparison across a change of ORIGIN, or across the surface being
+// dropped altogether: property names and requiredness only. A prop that
+// disappears from the surface a contract composes rejects a call site that
+// used to pass it, whichever origin declared it; a prop whose type differs
+// between two unrelated origins is not a narrowing of anything, because
+// there was never one surface for it to narrow.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough-origin
+export function diffPassthroughOriginChange(oldSchema: PassthroughSchemaLike, newSchema: PassthroughSchemaLike): PassthroughDiff {
+  const { added, removed, newlyRequired } = comparePassthroughNames(oldSchema, newSchema);
+  const narrowed = newlyRequired.map((prop) => ({ prop, reason: NEWLY_REQUIRED_REASON }));
+  return { added, removed, narrowed, compatible: removed.length === 0 && narrowed.length === 0 };
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough-origin
 
 // gts-ts's own `checkCompatibility(..., 'backward')` diffs a component's OWN
 // properties/required the same shallow way `diffPassthroughSchema` diffs the
@@ -202,6 +235,70 @@ export function skippedPassthroughNote(
   return `${component}: inherited-surface signal skipped - the base ref carries no passthrough type for origin "${origin}"`;
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-skipped
+
+// Which inherited-surface comparison a contract's two revisions admit. The
+// origin is read from EACH revision's own allOf rather than from the new one
+// alone: a contract that dropped its passthrough $ref outright has no origin
+// to look up, so reading only the new side skipped the whole block and
+// reported "compatible" for a change that removed every forwarded prop at
+// once. Four shapes, and only the last is the ordinary one:
+//  - neither revision inherits anything: nothing to compare;
+//  - only the new one does: an inherited surface appeared, which only widens
+//    what a consumer may pass, so there is nothing to report;
+//  - the origin moved, or the new revision inherits nothing at all: compare
+//    by name and requiredness (diffPassthroughOriginChange), because the two
+//    surfaces are not the same surface at two points in time;
+//  - the origin is unchanged: the full shape comparison.
+// A skipped signal is still reported as skipped rather than left to read as
+// agreement, but it is now only reported for what genuinely cannot be
+// compared - a base ref with no file for the origin the contract shipped
+// with, or an origin whose generated file is not committed here.
+export interface PassthroughComparisonInput {
+  component: string;
+  // The origin each revision's own allOf names, undefined when that revision
+  // composes no passthrough type at all.
+  oldOrigin?: string;
+  newOrigin?: string;
+  // The schema for that revision's origin - at the base ref for the old one,
+  // as committed here for the new one - undefined when the file is absent.
+  oldSchema?: PassthroughSchemaLike;
+  newSchema?: PassthroughSchemaLike;
+  baseHasAnyPassthrough: boolean;
+}
+
+export interface PassthroughComparison {
+  diff?: PassthroughDiff;
+  note?: string;
+}
+
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-both
+export function comparePassthroughSurfaces(input: PassthroughComparisonInput): PassthroughComparison {
+  const { component, oldOrigin, newOrigin, oldSchema, newSchema, baseHasAnyPassthrough } = input;
+
+  if (oldOrigin === undefined) return {};
+  if (oldSchema === undefined) {
+    return { note: skippedPassthroughNote(component, oldOrigin, false, baseHasAnyPassthrough) };
+  }
+  if (newOrigin === undefined) {
+    return {
+      diff: diffPassthroughOriginChange(oldSchema, {}),
+      note: `${component}: the contract no longer composes the inherited surface it carried at the base ref (origin "${oldOrigin}")`,
+    };
+  }
+  if (newSchema === undefined) {
+    return {
+      note: `${component}: inherited-surface signal skipped - no committed passthrough type for origin "${newOrigin}"`,
+    };
+  }
+  if (oldOrigin !== newOrigin) {
+    return {
+      diff: diffPassthroughOriginChange(oldSchema, newSchema),
+      note: `${component}: inherited-surface origin moved "${oldOrigin}" -> "${newOrigin}" - compared by forwarded property name and requiredness, the only signals two different origins share`,
+    };
+  }
+  return { diff: diffPassthroughSchema(oldSchema, newSchema) };
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-both
 
 export interface CompatDecisionInput {
   component: string;
@@ -367,6 +464,23 @@ export function touchesSharedContractTooling(changedFiles: string[]): boolean {
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
 
+// The coverage allowlist is not compile-or-compare tooling - editing it
+// changes no component's compiled output - but it decides WHICH components
+// the guard holds to the full standard, so a change to it has to put every
+// entry it now names back in scope. Without this the file could be edited
+// freely: an entry added for a directory with no overlay, or left behind for
+// a directory that no longer exists, was checked by nothing until some
+// unrelated change happened to touch that directory. Its own signal rather
+// than a widening of touchesSharedContractTooling, so the two reasons stay
+// distinguishable in the guard's own output and in the rule above.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
+const COVERAGE_ALLOWLIST_FILE = `${CONTRACTS_TOOLING_PREFIX}covered.json`;
+
+export function touchesCoverageAllowlist(changedFiles: string[]): boolean {
+  return changedFiles.includes(COVERAGE_ALLOWLIST_FILE);
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
+
 // A base-ref contract file `resolveRenameSource` can compare a "not found at
 // this path" unit against - `path` is package-relative (matches
 // `checkCompatForUnit`'s own relPath convention), `id` is the contract's own
@@ -409,6 +523,66 @@ export function resolveRenameSource(input: {
   return byStem?.path;
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-rename-resolve
+
+// A contract that shipped at the base reference and is compared against
+// nothing here: no committed contract found it by path, by rename record, by
+// identifier or by name. Every unit on disk is compared against its own past;
+// a contract that is only in the past is visited by no unit at all, so a
+// deletion - and a rename whose two halves neither git nor resolveRenameSource
+// could pair up - used to leave the whole comparison silent.
+export interface ContractRemoval {
+  // The package-relative path the contract had at the base reference.
+  path: string;
+  stem: string;
+  // The component directory the removed contract described.
+  directory: string;
+  acknowledged: boolean;
+}
+
+// A removal is backward-incompatible on its face: a consumer holding a
+// reference to that contract's identifier now resolves nothing, and unlike a
+// narrowing there is no surviving contract whose major could move to say so.
+// The one acknowledgement the harness records is the one the guard already
+// demands of a removed directory - the coverage allowlist no longer naming
+// the component - so the two rules stay the same rule: while covered.json
+// still names it, a vanished contract is a refusal; once it does not, the
+// removal is reported and accepted.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-removal:p1:inst-cr-find
+export function findRemovedContracts(input: {
+  baseContracts: BaseRefContractEntry[];
+  comparedBasePaths: string[];
+  covered: string[];
+}): ContractRemoval[] {
+  const compared = new Set(input.comparedBasePaths);
+  const coveredSet = new Set(input.covered);
+  const removals: ContractRemoval[] = [];
+  for (const entry of input.baseContracts) {
+    if (compared.has(entry.path)) continue;
+    const directory = /^src\/components\/([^/]+)\//.exec(entry.path)?.[1] ?? entry.stem;
+    removals.push({ path: entry.path, stem: entry.stem, directory, acknowledged: !coveredSet.has(directory) });
+  }
+  return removals;
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-removal:p1:inst-cr-find
+
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-removal:p1:inst-cr-decide
+export function decideRemoval(removal: ContractRemoval): CompatVerdict {
+  if (removal.acknowledged) {
+    return {
+      status: 'pass',
+      notes: [
+        `${removal.stem}: contract removed (${removal.path} at the base ref) - "${removal.directory}" is no longer in covered.json, so the removal is acknowledged`,
+      ],
+    };
+  }
+  return {
+    status: 'fail',
+    notes: [
+      `${removal.stem}: contract removed (${removal.path} at the base ref) while "${removal.directory}" is still listed in covered.json - a removed contract resolves to nothing for a consumer holding it; drop the covered.json entry to acknowledge the removal, or restore the contract`,
+    ],
+  };
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-removal:p1:inst-cr-decide
 
 export interface GuardEvaluationInput {
   component: string;
@@ -489,13 +663,22 @@ export interface CoverageReport {
   total: number;
   coveredCount: number;
   uncovered: string[];
+  // Allowlist entries that name no component directory at all. Counted out
+  // of coveredCount rather than into it: the number is meant to say how much
+  // of the kit is described, and an entry pointing at nothing describes
+  // nothing - it used to be indistinguishable from a real one, so a typo or
+  // a deleted directory quietly inflated the figure the report exists to
+  // give.
+  unknownCovered: string[];
 }
 
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
 export function buildCoverageReport(allComponents: string[], covered: string[]): CoverageReport {
+  const componentSet = new Set(allComponents);
   const coveredSet = new Set(covered);
   const uncovered = allComponents.filter((component) => !coveredSet.has(component)).sort();
-  return { total: allComponents.length, coveredCount: covered.length, uncovered };
+  const unknownCovered = covered.filter((component) => !componentSet.has(component)).sort();
+  return { total: allComponents.length, coveredCount: covered.length - unknownCovered.length, uncovered, unknownCovered };
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
 

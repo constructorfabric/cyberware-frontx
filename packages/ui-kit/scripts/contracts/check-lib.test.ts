@@ -417,6 +417,15 @@ describe('evaluateGuard', () => {
 describe('buildCoverageReport', () => {
   it('counts covered vs total and lists the rest, sorted', () => {
     const report = buildCoverageReport(['button', 'accordion', 'alert'], ['button']);
-    expect(report).toEqual({ total: 3, coveredCount: 1, uncovered: ['accordion', 'alert'] });
+    expect(report).toEqual({ total: 3, coveredCount: 1, uncovered: ['accordion', 'alert'], unknownCovered: [] });
+  });
+
+  it('does not count an allowlist entry that names no component directory', () => {
+    // The number the report exists to give is how much of the kit is
+    // described; an entry pointing at nothing describes nothing, and used to
+    // be indistinguishable from a real one.
+    const report = buildCoverageReport(['button', 'alert'], ['button', 'ghost-component']);
+    expect(report.coveredCount).toBe(1);
+    expect(report.unknownCovered).toEqual(['ghost-component']);
   });
 });

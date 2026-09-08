@@ -810,3 +810,147 @@ composition kind, a family member - is not reached by that walk, so those
 stay resolved by the conformance suites, which also answer a question the
 registry cannot: most components a `don't` rule points at ship no contract
 yet, and "the kit ships this component" is a directory, not a registration.
+
+
+## Five ways the checks printed PASS on a change a consumer would feel
+
+**Observed.** A review of `runCompat` and `runGuard` found five paths where the
+harness reported success on a change it exists to catch. Each was reproduced
+before it was fixed.
+
+- **The inherited surface could be dropped whole.** The passthrough origin was
+  read off the NEW contract only. A contract that stops composing its
+  passthrough type has no origin to look up, so the entire inherited-surface
+  block was skipped and the comparison reported "backward compatible" while
+  every forwarded prop disappeared.
+- **A deleted contract was never compared.** The comparison walks the contract
+  units on disk and asks each one what it used to be. A contract that exists
+  only at the base reference is walked by nobody, so a deletion - and a rename
+  whose two halves neither git's rename detection nor the `$id` nor the stem
+  could pair up - was not passed so much as never looked at.
+- **The coverage allowlist was outside its own gate.** `covered.json` sat in
+  the set of files excluded from the guard's widening, so editing it widened
+  nothing: an entry could be added for a directory that does not exist, or
+  left behind for one that was deleted, and nothing checked it until some
+  unrelated change happened to touch that directory. The coverage report
+  counted such an entry as coverage.
+- **A change of origin failed nothing.** When a component is re-based onto a
+  different primitive, the base reference has no file for the new origin key,
+  so the comparison reported the signal as skipped and let the change through
+  - including when props disappeared across the move. Both files were
+  available the whole time, under two different names.
+- **A base reference that does not resolve.** Reported by the reviewer as
+  passing silently; measured, it was louder than that - `git diff
+  base...HEAD` fails, so the run died with Node's whole spawn record around a
+  one-line `fatal:`. Two lookups did swallow it, though (`ls-tree` for the
+  base-ref contract list and for the generated types), and with the removal
+  sweep above added, an empty contract list means "nothing was removed" as
+  well as "nothing to match against" - a swallowed failure that would now be
+  a wrong verdict rather than a missing hint.
+
+**Changed.** The origin is read from both revisions and the two answers decide
+the comparison: nothing when neither inherits; nothing to report when only the
+current revision does, an arriving surface being the widening direction; a
+comparison by forwarded property name and requiredness when the origin moved
+or the current revision inherits nothing, those being the only signals two
+different surfaces share; the full shape comparison when the origin is
+unchanged. A skipped note is kept for what genuinely cannot be compared and
+for nothing else. Every base-reference contract no committed contract claimed
+is swept up as a removal, refused while `covered.json` still names its
+component and accepted, named, once it does not - the same acknowledgement the
+guard already demands of a removed directory, so the two rules are one rule.
+`covered.json` gets its own widening signal, distinct from the compile-path
+one and printed as its own reason. Both subcommands verify the base reference
+with `git rev-parse --verify <base>^{commit}` before doing anything, and every
+git call whose failure is not itself an answer now raises a one-line error
+naming the command instead of returning an empty list.
+
+**Cost and coverage.** The decision rules stay in `check-lib.ts` as pure
+functions. What moved is the shell: `check.ts` now names its impurities in a
+`CheckContext` - the repository root, the overlay listing, the export listing,
+the freshness comparison, where it logs - and `runCompat`/`runGuard`/
+`runCoverage` return an exit code rather than calling `process.exit`. That is
+what makes `check.e2e.test.ts` possible: twelve cases, each building a real
+git repository in a temp directory with a fixed author and no global git
+config, driving the real entry points over it. Every one of the five was
+confirmed to print PASS, or to print a Node stack dump, before the fix.
+
+**What is still not checked.** The e2e suite injects the compile-and-diff path
+rather than compiling real TypeScript in the fixture repo - those three
+functions resolve paths against this package and can only ever answer about
+this package. The compile path is asserted for real by each described
+component's own contract suite; what the fixture repo tests is everything the
+harness says about a repository.
+
+
+## The coverage report's 126 TypeScript programs
+
+**Observed.** The contract step took 105s in CI, 92% of it `contracts:coverage`
+(96.4s). That command fails no build by design: it walks 63 component
+directories and prints how many are described. It was building two
+`ts.Program`s per directory - one in `extractComponent` for the component
+names, one in `listExportedDeclarationNames` for every exported name - 126
+programs for 63 directories, sharing nothing. A program is not a parse of one
+file: it is the parse, bind and module resolution of that file and its whole
+transitive closure, and the kit's 63 components share nearly all of theirs.
+Measured over the same entry files: 126 programs 33.5s, 63 programs 16.0s, one
+program over all 63 roots 0.73s.
+
+**The result the obvious fix would have changed.** One shared program for
+every extraction is not a free substitution, and the freshness comparison said
+so immediately: with all 63 components in one program, `button` and both
+accordion parts reported their committed passthrough types as stale. Two
+things `checker.typeToString` prints are properties of the whole compilation
+rather than of the file:
+
+- the module specifier inside an `import("...")` type - the same Base UI event
+  type prints as `import("@base-ui/react/types/index")` out of a one-root
+  program and `import("@base-ui/react/index")` out of a 63-root one, the
+  specifier being chosen from the modules the program can already reach;
+- the ORDER of a union's members, which follows internal type ids and so
+  follows the order the program bound its files: `"none" | "off" | "on" | ...`
+  became `"off" | "none" | "on" | ...`.
+
+Both land in a compiled contract, in the prose a property with no schema shape
+carries. Sharing a program for extraction would have made a component's
+committed artifacts depend on which OTHER components happened to be in the
+same run - and on which subcommand ran, since the guard's root set is its
+change set. That is exactly the machine-independence the prop sort (N3) and
+the import-path normalization already exist to protect.
+
+**Changed.** The split is by what an answer is used for, not by what is
+convenient. Extraction that produces an artifact keeps its own program over
+its own file. The two questions whose answers are only counted are moved off
+that path: `listExportedDeclarationNames` builds no program at all - every
+answer it gives is read off the syntax tree, so 63 programs' worth of module
+resolution was being spent on a question no checker was ever asked - and a new
+`listComponentExportNames` answers "which of these files' exports are
+components" for every file in one program, behind its own cache so that an
+extraction taken from it can never reach `compileContract`. The caller
+declares its root set (`CheckContext.prepareExtraction`), because there is no
+one right answer to it: a kit-wide report wants all 63 in one program, a
+single-component compile wants one file.
+
+126 programs became one.
+
+**Numbers**, local, warm, best of two:
+
+| Command | Before | After |
+|---|---|---|
+| `npm run contracts:coverage` | 38.3s | 6.8s |
+| `npm run policy:contracts` (guard + compat + coverage vs `origin/develop`) | 47.5s | 11.9s |
+| `extract.test.ts` | 5.1s | 5.1s |
+
+**Identity.** Every described component was recompiled and every shared schema
+rebuilt: no artifact changed. The coverage report's own JSON is identical
+field for field across all 63 directories, including the per-directory export
+counts and the skipped-export lists.
+
+**Not done: one shared program for `extract.test.ts`'s fixtures.** It is the
+slowest test file in the package (55s in CI) and its 16 fixtures would share
+one program the same way. Left alone deliberately: the measurement above shows
+the program shape moves `typeText`, and one of that file's assertions reads a
+union's member order out of it. Putting the extractor's own suite on a program
+shape no real run uses would point the one test that could catch a `typeText`
+regression at the wrong compilation. The file is unchanged and still builds a
+program per fixture.

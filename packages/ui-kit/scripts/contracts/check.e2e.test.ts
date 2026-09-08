@@ -1,0 +1,363 @@
+// End-to-end coverage for the git-shaped half of the harness: `runCompat`
+// and `runGuard` themselves, driven against a purpose-built fixture
+// repository rather than against this package.
+//
+// check-lib.test.ts proves the decision rules over in-memory JSON and
+// check-lib.compat-e2e.test.ts proves them against a real GTS store, but
+// neither ever reaches `checkCompatForUnit` or `runCompat` - so every rule
+// that is ABOUT the repository (which contracts existed at the base ref,
+// which of them nothing compares itself against any more, whether the base
+// ref resolves at all, what puts a component in the guard's scope) was
+// asserted by nothing. Each case below is one such rule, and each of them
+// printed PASS before the change this suite arrived with.
+//
+// What is real here: `git init`, real commits, the real change-set
+// collection, the real rename detection, the real base-ref lookups, the real
+// GTS store and the real decision rules. What is injected through
+// CheckContext: the overlay listing, the export listing and the freshness
+// comparison - all three resolve paths against compile.ts's own kit root, so
+// bound to this package they can only answer questions about this package.
+// The compile-and-diff path they stand in for is what button/accordion/
+// data-table's own contract suites assert, for real, against real sources.
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+
+import { afterAll, describe, expect, it } from 'vitest';
+
+import { runCompat, runCoverage, runGuard, type CheckContext } from './check';
+import { BASE_TYPE_ID, passthroughTypeId, propsSchemaId } from './ids';
+import { applyContractTestTimeout } from './testing';
+
+// Each case builds a git repository and runs the real GTS store over it;
+// that is real work, and it gets the same 120s margin as the rest of the
+// contracts test surface. Must run before any describe()/it() in the file;
+// see applyContractTestTimeout's own comment in testing.ts.
+applyContractTestTimeout();
+
+const createdRepos: string[] = [];
+
+afterAll(() => {
+  for (const repo of createdRepos) rmSync(repo, { recursive: true, force: true });
+});
+
+// A fixed identity and no global/system git config: the fixture's history
+// must be identical on a developer's machine and on a runner, and a global
+// `core.excludesFile` would otherwise decide which of the fixture's own files
+// `git ls-files --others` reports as untracked.
+function initRepo(root: string): void {
+  const emptyExcludes = join(root, '.git-empty-excludes');
+  execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'ignore' });
+  writeFileSync(emptyExcludes, '');
+  for (const [key, value] of [
+    ['user.name', 'Contract Fixture'],
+    ['user.email', 'contract-fixture@example.invalid'],
+    ['commit.gpgsign', 'false'],
+    ['core.excludesFile', emptyExcludes],
+  ]) {
+    execFileSync('git', ['config', '--local', key, value], { cwd: root, stdio: 'ignore' });
+  }
+}
+
+function pascalCase(stem: string): string {
+  return stem
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('');
+}
+
+// A minimal but real compiled-shape props schema: the same $id grammar and
+// base-derivation allOf compile.ts emits for every real component, plus the
+// passthrough $ref that `compat` reads the inherited-surface origin off.
+function contractJson(
+  component: string,
+  options: { major?: number; origin?: string; properties?: Record<string, unknown>; required?: string[] } = {},
+): Record<string, unknown> {
+  const { major = 1, origin, properties = {}, required = [] } = options;
+  return {
+    $id: propsSchemaId(component, major),
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    type: 'object',
+    allOf: [{ $ref: BASE_TYPE_ID }, ...(origin === undefined ? [] : [{ $ref: passthroughTypeId(origin) }])],
+    properties,
+    required,
+    unevaluatedProperties: false,
+  };
+}
+
+function passthroughJson(origin: string, properties: Record<string, unknown>, required: string[] = []): Record<string, unknown> {
+  return {
+    $id: passthroughTypeId(origin),
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    title: `UiKit ${origin} passthrough`,
+    type: 'object',
+    generated_from: ['button'],
+    properties,
+    required,
+  };
+}
+
+interface Fixture {
+  root: string;
+  lines: string[];
+  context: CheckContext;
+  // Components whose committed artifacts the injected freshness comparison
+  // reports as stale.
+  stale: Set<string>;
+  write: (relativePath: string, contents: unknown) => void;
+  remove: (relativePath: string) => void;
+  git: (...args: string[]) => void;
+  output: () => string;
+}
+
+function createFixture(): Fixture {
+  const root = mkdtempSync(join(tmpdir(), 'contracts-check-e2e-'));
+  createdRepos.push(root);
+  initRepo(root);
+
+  const lines: string[] = [];
+  const stale = new Set<string>();
+
+  const overlayStems = (directory: string): string[] => {
+    const dir = join(root, 'src', 'components', directory);
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .filter((name) => name.endsWith('.contract.yaml'))
+      .map((name) => name.slice(0, -'.contract.yaml'.length))
+      .sort();
+  };
+
+  return {
+    root,
+    lines,
+    stale,
+    write(relativePath, contents) {
+      const path = join(root, relativePath);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, typeof contents === 'string' ? contents : `${JSON.stringify(contents, null, 2)}\n`);
+    },
+    remove(relativePath) {
+      rmSync(join(root, relativePath), { force: true });
+    },
+    git(...args) {
+      execFileSync('git', args, { cwd: root, stdio: 'ignore' });
+    },
+    output: () => lines.join('\n'),
+    context: {
+      kitRoot: root,
+      overlayStems,
+      isComponentFresh: (directory) => !stale.has(directory),
+      // One exported component per overlay, so a covered directory with all
+      // its overlays present reads as complete - the shape every fixture here
+      // wants unless it is testing the incomplete case.
+      componentExportNames: (directory) => overlayStems(directory).map(pascalCase),
+      exportedDeclarationNames: (directory) => overlayStems(directory).map(pascalCase),
+      // No TypeScript source in a fixture repo, so nothing to build a program
+      // over - the two export listings above answer from the overlays.
+      prepareExtraction: () => {},
+      log: (line) => lines.push(line),
+    },
+  };
+}
+
+// The ordinary starting point: one covered component with an overlay, a
+// contract and the inherited surface it composes, all committed.
+function committedButtonKit(fixture: Fixture, options: { properties?: Record<string, unknown> } = {}): void {
+  fixture.write('scripts/contracts/covered.json', ['button']);
+  fixture.write('scripts/contracts/generated/passthrough.base_ui_button.json', passthroughJson('base_ui_button', {
+    className: { type: 'string' },
+    disabled: { type: 'boolean' },
+  }));
+  fixture.write('src/components/button/button.contract.yaml', 'component: button\n');
+  fixture.write(
+    'src/components/button/button.contract.json',
+    contractJson('button', { origin: 'base_ui_button', properties: options.properties ?? { variant: { type: 'string' } } }),
+  );
+  fixture.git('add', '-A');
+  fixture.git('commit', '-m', 'base state');
+}
+
+describe('compat: a change that drops the inherited surface', () => {
+  it('refuses the contract instead of skipping the comparison it can no longer address', () => {
+    // The contract stops composing the passthrough type altogether. Reading
+    // the origin off the NEW contract alone left nothing to look up, so the
+    // whole inherited-surface block was skipped and every forwarded prop
+    // vanished under a PASS.
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.write('src/components/button/button.contract.json', contractJson('button', { properties: { variant: { type: 'string' } } }));
+
+    expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(1);
+    expect(fixture.output()).toContain('passthrough: prop "className" removed');
+    expect(fixture.output()).toContain('passthrough: prop "disabled" removed');
+    expect(fixture.output()).toContain('no longer composes the inherited surface');
+  });
+});
+
+describe('compat: a contract present at the base reference and gone now', () => {
+  it('refuses a removal the coverage allowlist still promises', () => {
+    // No unit on disk visits this contract, so before the base-ref sweep the
+    // deletion was not passed so much as never looked at.
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.remove('src/components/button/button.contract.json');
+    fixture.remove('src/components/button/button.contract.yaml');
+
+    expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(1);
+    expect(fixture.output()).toContain('button: contract removed');
+    expect(fixture.output()).toContain('still listed in covered.json');
+  });
+
+  it('accepts the same removal once covered.json no longer names the component', () => {
+    // The one acknowledgement the harness records, and the same one the
+    // guard demands of a removed directory.
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.remove('src/components/button/button.contract.json');
+    fixture.remove('src/components/button/button.contract.yaml');
+    fixture.write('scripts/contracts/covered.json', []);
+
+    expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(0);
+    expect(fixture.output()).toContain('[REMOVED]');
+    expect(fixture.output()).toContain('the removal is acknowledged');
+  });
+
+  it('reports a renamed contract as renamed, not as a removal plus a new contract', () => {
+    // resolveRenameSource pairs the two halves by $id, so the base-ref path
+    // is claimed and never reaches the removal sweep.
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.remove('src/components/button/button.contract.json');
+    fixture.remove('src/components/button/button.contract.yaml');
+    fixture.write('src/components/action-button/action-button.contract.yaml', 'component: action-button\n');
+    fixture.write(
+      'src/components/action-button/action-button.contract.json',
+      contractJson('button', { origin: 'base_ui_button', properties: { variant: { type: 'string' } } }),
+    );
+    fixture.write('scripts/contracts/covered.json', ['action-button']);
+
+    expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(0);
+    expect(fixture.output()).toContain('renamed from src/components/button/button.contract.json');
+    expect(fixture.output()).not.toContain('contract removed');
+  });
+});
+
+describe('compat: a change of inherited-surface origin', () => {
+  it('refuses a forwarded prop that disappears across the origin move', () => {
+    // Both files exist, under two different origin keys - the case that used
+    // to be reported as "signal skipped" and let through.
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.write('scripts/contracts/generated/passthrough.base_ui_toggle.json', passthroughJson('base_ui_toggle', {
+      className: { type: 'string' },
+    }));
+    fixture.write(
+      'src/components/button/button.contract.json',
+      contractJson('button', { origin: 'base_ui_toggle', properties: { variant: { type: 'string' } } }),
+    );
+
+    expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(1);
+    expect(fixture.output()).toContain('passthrough: prop "disabled" removed');
+    expect(fixture.output()).toContain('origin moved "base_ui_button" -> "base_ui_toggle"');
+  });
+
+  it('accepts the same move when every forwarded prop survives it', () => {
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.write('scripts/contracts/generated/passthrough.base_ui_toggle.json', passthroughJson('base_ui_toggle', {
+      className: { type: 'string' },
+      disabled: { type: 'boolean' },
+      pressed: { type: 'boolean' },
+    }));
+    fixture.write(
+      'src/components/button/button.contract.json',
+      contractJson('button', { origin: 'base_ui_toggle', properties: { variant: { type: 'string' } } }),
+    );
+
+    expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(0);
+    expect(fixture.output()).toContain('origin moved "base_ui_button" -> "base_ui_toggle"');
+  });
+});
+
+describe('a base reference that does not resolve', () => {
+  it('refuses both subcommands by name instead of reporting a green kit against nothing', () => {
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+
+    expect(runCompat('never-fetched-branch', { json: false }, fixture.context)).toBe(1);
+    expect(runGuard('never-fetched-branch', { json: false }, fixture.context)).toBe(1);
+    expect(fixture.output()).toContain('does not resolve to a commit in this repository');
+    // Nothing was compared or reported: the run stopped at the ref.
+    expect(fixture.output()).not.toContain('new contract');
+  });
+});
+
+describe('guard: the coverage allowlist itself', () => {
+  it('re-checks every entry when covered.json changes, and fails one that names no directory', () => {
+    // Editing the file that grants coverage used to widen nothing, so an
+    // entry could be added for a directory that does not exist and be
+    // checked by nothing until some unrelated change touched it.
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.write('scripts/contracts/covered.json', ['button', 'ghost']);
+
+    expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(1);
+    expect(fixture.output()).toContain('guard: covered.json changed');
+    expect(fixture.output()).toContain('ghost: directory removed but still listed in covered.json');
+    // The widening reaches every entry, not only the offending one.
+    expect(fixture.output()).toContain('button: covered and fresh');
+  });
+
+  it('fails an entry whose directory exists but carries no overlay', () => {
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.write('src/components/spinner/spinner.module.css', '.root {}\n');
+    fixture.write('scripts/contracts/covered.json', ['button', 'spinner']);
+
+    expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(1);
+    expect(fixture.output()).toContain('spinner: covered by covered.json but has no spinner.contract.yaml overlay');
+  });
+
+  it('reports an allowlist entry that grants coverage over nothing, without counting it as coverage', () => {
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.write('scripts/contracts/covered.json', ['button', 'ghost']);
+
+    expect(runCoverage({ json: false }, fixture.context)).toBe(0);
+    expect(fixture.output()).toContain('1 of 1 components covered by contracts.');
+    expect(fixture.output()).toContain('ghost: named in covered.json but no such component directory');
+  });
+});
+
+describe('the happy path', () => {
+  it('passes compat and the guard when a covered component is edited and recompiled', () => {
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    // A widening change: one more optional own prop, nothing removed.
+    fixture.write(
+      'src/components/button/button.contract.json',
+      contractJson('button', {
+        origin: 'base_ui_button',
+        properties: { variant: { type: 'string' }, size: { type: 'string' } },
+      }),
+    );
+
+    expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(0);
+    expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(0);
+    expect(fixture.output()).toContain('button: backward compatible');
+    expect(fixture.output()).toContain('button: covered and fresh');
+  });
+
+  it('still fails the guard when a covered component is edited without recompiling', () => {
+    // The rule the guard exists for, asserted through the same entry point
+    // as everything above rather than through evaluateGuard alone.
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.stale.add('button');
+    fixture.write('src/components/button/button.contract.yaml', 'component: button\nsummary: edited\n');
+
+    expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(1);
+    expect(fixture.output()).toContain('committed contract artifacts are stale');
+  });
+});

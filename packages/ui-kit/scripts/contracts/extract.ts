@@ -892,6 +892,39 @@ function loadCompilerOptions(): ts.CompilerOptions {
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-program
 }
 
+// A ts.Program is not a parse of one file: it is the parse, bind and module
+// resolution of that file AND its whole transitive closure - React, Base UI,
+// the DOM lib, every .d.ts they reach - and the kit's components share almost
+// all of that closure. The coverage report built two programs per directory,
+// 126 for 63 components, and spent nearly all of its runtime re-reading the
+// same declaration files. Measured over those 63 entry files: 126 programs
+// 33.5s, 63 programs 16.0s, one program over all 63 roots 0.73s.
+//
+// One shared program is NOT, however, a free substitution for the per-file
+// programs, and this is the reason the split below exists. Two things
+// checker.typeToString prints are program-global rather than file-local:
+//  - the module specifier inside an `import("...")` type - the same Base UI
+//    event type prints as `import("@base-ui/react/types/index")` out of a
+//    one-root program and `import("@base-ui/react/index")` out of a 63-root
+//    one, because the specifier is chosen from the modules the program can
+//    already reach;
+//  - the ORDER of a union's members, which follows internal type ids and so
+//    follows the order the program bound its files - `"none" | "off" | ...`
+//    became `"off" | "none" | ...`.
+// Both land in a compiled contract, in the prose a property with no schema
+// shape carries. Sharing a program for extraction would therefore make a
+// component's committed artifacts depend on which OTHER components happened
+// to be in the same run - the exact machine-independence the sort in
+// `extractComponent` (N3) and the import-path normalization above already
+// exist to protect. Measured, not assumed: the freshness comparison reports
+// every one of those descriptions as a difference.
+//
+// So the split is by what the answer is USED for, not by what is convenient:
+// extraction that produces artifacts keeps its own per-file program, and only
+// the two questions whose answers are counted rather than written - which
+// exports are components, and what every export is called - are allowed to
+// share, or to skip a program altogether.
+
 // One extraction per tsxPath for the life of the process - resolveTargetExtraction,
 // compileContract and compileInstance each resolve a directory's extraction
 // independently (compileInstance calls compileContract, which calls
@@ -905,22 +938,11 @@ function loadCompilerOptions(): ts.CompilerOptions {
 // run, or `contracts:compile` invoked again) starts with an empty cache.
 const extractionCache = new Map<string, ComponentExtraction[]>();
 
-// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1
-// @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-extraction:p1
-export function extractComponent(tsxPath: string): ComponentExtraction[] {
-  const cached = extractionCache.get(tsxPath);
-  if (cached) return cached;
-
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-program
-  const options = loadCompilerOptions();
-  const program = ts.createProgram({ rootNames: [tsxPath], options });
-  const checker = program.getTypeChecker();
-  const source = program.getSourceFile(tsxPath);
-  if (!source) {
-    throw new Error(`extract: ${tsxPath} was not found by the TypeScript program`);
-  }
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-program
-
+// The walk itself, over one already-resolved source file. Split from the
+// program building below so the same walk can serve a per-file program (the
+// artifact path) and a shared one (the counting path) without either being a
+// copy of the other.
+function extractFromSource(source: ts.SourceFile, checker: ts.TypeChecker): ComponentExtraction[] {
   const extractions: ComponentExtraction[] = [];
 
   for (const statement of source.statements) {
@@ -1055,11 +1077,67 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
     }
   }
 
-  extractionCache.set(tsxPath, extractions);
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-return
   return extractions;
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-return
 }
+
+// The extraction a contract is compiled from: its own program, over that file
+// alone, so the result depends on the file and nothing else.
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1
+// @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-extraction:p1
+export function extractComponent(tsxPath: string): ComponentExtraction[] {
+  const cached = extractionCache.get(tsxPath);
+  if (cached) return cached;
+
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-program
+  const program = ts.createProgram({ rootNames: [tsxPath], options: loadCompilerOptions() });
+  const source = program.getSourceFile(tsxPath);
+  if (!source) {
+    throw new Error(`extract: ${tsxPath} was not found by the TypeScript program`);
+  }
+  const extractions = extractFromSource(source, program.getTypeChecker());
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-program
+
+  extractionCache.set(tsxPath, extractions);
+  return extractions;
+}
+
+// Which exports of each given file are React components, for every file in
+// one program instead of one program per file. Names only, and deliberately
+// so: a name is not one of the things a shared program can move (see the
+// note above the split), while the type text next to it is - so this answers
+// the coverage report's "n of m exports" and the guard's "does this directory
+// describe every component it exports", and nothing that gets written down.
+// It keeps its own cache for the same reason: an extraction taken from here
+// must never reach compileContract through the artifact cache.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-shared-program
+const componentNameCache = new Map<string, string[]>();
+
+export function listComponentExportNames(tsxPaths: string[]): Map<string, string[]> {
+  const wanted = tsxPaths.map((path) => resolve(path));
+  const missing = wanted.filter((path) => !componentNameCache.has(path));
+  if (missing.length > 0) {
+    const program = ts.createProgram({ rootNames: missing, options: loadCompilerOptions() });
+    const checker = program.getTypeChecker();
+    for (const path of missing) {
+      const source = program.getSourceFile(path);
+      // A file the walk cannot read reports no components rather than
+      // failing the whole batch - the coverage report it feeds is never
+      // supposed to fail a build, and one unreadable directory must not
+      // take the other 62 down with it.
+      let names: string[] = [];
+      try {
+        if (source) names = extractFromSource(source, checker).map((extraction) => extraction.name);
+      } catch {
+        names = [];
+      }
+      componentNameCache.set(path, names);
+    }
+  }
+  return new Map(wanted.map((path) => [path, componentNameCache.get(path) ?? []]));
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-shared-program
 
 // Every top-level exported declaration name in a file, component or not -
 // used only by check.ts's coverage report (T6: data-table.tsx exports
@@ -1073,10 +1151,13 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
 // leaving a reader to wonder if 2 of 6 exports means four are undescribed
 // gaps or four were never components at all.
 export function listExportedDeclarationNames(tsxPath: string): string[] {
-  const options = loadCompilerOptions();
-  const program = ts.createProgram({ rootNames: [tsxPath], options });
-  const source = program.getSourceFile(tsxPath);
-  if (!source) return [];
+  // Parsed, not compiled: every answer below is read off the syntax tree, so
+  // building a program - and with it React, Base UI and the whole DOM lib -
+  // to reach `source.statements` was 63 programs' worth of module resolution
+  // spent on a question no checker was ever asked.
+  const text = ts.sys.readFile(tsxPath);
+  if (text === undefined) return [];
+  const source = ts.createSourceFile(tsxPath, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 
   const names: string[] = [];
   for (const statement of source.statements) {
