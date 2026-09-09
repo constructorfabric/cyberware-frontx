@@ -15,6 +15,7 @@
 // that call is atomic, exactly as `provenance/write.ts` trusts
 // `ProvenanceWriteFn` without knowing how its real implementation persists.
 import path from 'node:path';
+import { foldForIdentity } from '../paths/volume-case';
 import { FRONTX_NAMESPACE_ROOT } from '../manifest/types';
 import { isStrictDescendantOfTarget, isWellFormedExcludedSubtree } from '../manifest/validate-contract';
 import type {
@@ -251,13 +252,20 @@ function applyMutation(document: ProjectStateDocument, mutation: ProjectStateMut
       return { ...document, templates: rest };
     }
     case 'add-owned-root':
-      return document.projectOwnedRoots.includes(mutation.path)
+      // Case-folded per the project volume, not a bare `.includes` — the
+      // same identity `commands/ownership.ts`'s own no-op check already
+      // decides before ever constructing this mutation, re-checked here so
+      // this pure transform cannot itself append a second spelling of one
+      // already-owned ground for a caller that skips that check.
+      return document.projectOwnedRoots.some((existing) => foldForIdentity(existing) === foldForIdentity(mutation.path))
         ? document
         : { ...document, projectOwnedRoots: [...document.projectOwnedRoots, mutation.path] };
     case 'remove-owned-root':
       return {
         ...document,
-        projectOwnedRoots: document.projectOwnedRoots.filter((existing) => existing !== mutation.path),
+        projectOwnedRoots: document.projectOwnedRoots.filter(
+          (existing) => foldForIdentity(existing) !== foldForIdentity(mutation.path),
+        ),
       };
   }
 }

@@ -48,6 +48,7 @@ import type { ReadFileFn } from '../manifest/types';
 import { parseLocalOrigin } from '../resolver/types';
 import type { FetchFn, ListFolderFilesFn, PathExistsFn } from '../resolver/types';
 import { joinUnderTarget } from '../paths/relative-path';
+import { foldForIdentity } from '../paths/volume-case';
 import type { ErrorCode } from '../envelope';
 // `apply`'s own blanket `catch` at the end of `runApplyPipeline` must not
 // report two deliberate, typed refusals as `INTERNAL`: `PathContainmentError`
@@ -70,6 +71,7 @@ import type { ErrorCode } from '../envelope';
 // distinction `PathContainmentError` and `ExistingSymlinkDestinationError`
 // already carry in their own names.
 import { PathContainmentError, ExistingSymlinkDestinationError } from '../adapters/fs-project-io';
+import { AiNamespaceAliasError } from '../adapters/fs-ai-bundle';
 import type { RemoveProjectFileFn } from '../upgrade/types';
 
 /**
@@ -105,7 +107,14 @@ function canonicalizeBatch(
     for (const rawTarget of targets) {
       const canonical = canonicalizeFn(rawTarget);
       if (canonical === null) return { ok: false, rawTarget };
-      if (canonicalTargets.includes(canonical)) continue;
+      // Folds case per the project volume (`paths/volume-case.ts`), not a
+      // bare `.includes`: two spellings of one not-yet-existing target
+      // (`app`/`App`) in this SAME template's own list are the identical
+      // ground `checkTargetConflicts` would otherwise refuse as a
+      // `TARGET_CONFLICT` a moment later — this template's own idempotent
+      // duplicate, not a conflict with itself, so it is dropped here exactly
+      // as an exact-spelling duplicate already is.
+      if (canonicalTargets.some((existing) => foldForIdentity(existing) === foldForIdentity(canonical))) continue;
       canonicalTargets.push(canonical);
     }
     templates[name] = canonicalTargets;
@@ -1121,8 +1130,10 @@ export async function runApplyPipeline(
         // A thrown failure here is not one thing: `createFsCopyBundleFn`
         // (`adapters/fs-ai-bundle.ts`) refuses fail-closed with
         // `PathContainmentError` when its own destination cannot be proven
-        // to stay inside the project root, and that is the one case this
-        // catch may honestly call `INVALID_PATH` — the same discrimination
+        // to stay inside the project root, and with `AiNamespaceAliasError`
+        // when the destination resolves, through an aliased scope component,
+        // outside the CLI-owned `.frontx/ai/` namespace. Those two are the
+        // cases this catch may honestly call `INVALID_PATH` — the same discrimination
         // the pipeline's own outer catch already applies to a write refusal
         // reached later, at the record step. Anything else — a permission
         // error reading the source bundle or writing the destination, a
@@ -1131,13 +1142,13 @@ export async function runApplyPipeline(
         // project, it simply could not be copied, and reporting it as a
         // containment escape sends whoever reads the refusal chasing a
         // symlink that is not there.
-        if (error instanceof PathContainmentError) {
+        if (error instanceof PathContainmentError || error instanceof AiNamespaceAliasError) {
           return {
             ok: false,
             code: 'INVALID_PATH',
             message:
               `Aborted — the AI-extension bundle for "${entry.templateName}" could not be proven to stay inside the ` +
-              `project root: ${error.message}` +
+              `ground the CLI owns: ${error.message}` +
               describeWrittenPaths(writtenPaths, true) +
               describeBundleRollback(bundledNamesThisCall, true),
             details: bundleFailureDetails,
@@ -1322,6 +1333,24 @@ export async function runApplyPipeline(
         code: 'CONTENT_CONFLICT',
         message: error.message + describeWrittenPaths(writtenPaths, canRollback) + bundleClause,
         details: { paths: [error.destPath], ...(writtenPaths.length > 0 ? { writtenPaths } : {}), ...bundleDetail },
+      };
+    }
+    // The third of the same class: the bundle's destination resolves, through
+    // an aliased scope component, outside the CLI-owned `.frontx/ai/`
+    // namespace. A containment escape like the first, and reported with the
+    // same code — never `INTERNAL`, which would make an ordinary, actionable
+    // state of the developer's own tree read as a failure of this engine.
+    if (error instanceof AiNamespaceAliasError) {
+      return {
+        ok: false,
+        code: 'INVALID_PATH',
+        message: error.message + describeWrittenPaths(writtenPaths, canRollback) + bundleClause,
+        details: {
+          path: error.destPath,
+          resolvedPath: error.resolvedPath,
+          ...(writtenPaths.length > 0 ? { writtenPaths } : {}),
+          ...bundleDetail,
+        },
       };
     }
     // @cpt-end:cpt-frontx-flow-cli-scaffolding-add-template:p1:inst-add-return-write-refusal

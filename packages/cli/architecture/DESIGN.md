@@ -223,6 +223,14 @@ In `--json` mode, every command emits exactly one JSON object on stdout as its l
 
 **ADRs**: [What Every CLI Command's Machine-Readable Output Must Look Like](../../../architecture/ADR/0042-cli-machine-readable-output.md)
 
+#### CLI-10 — Platform path identity
+
+- [x] `p2` - **ID**: `cpt-frontx-constraint-cli-platform-path-identity`
+
+The CLI supports macOS (APFS) and Windows (NTFS), whose default volumes fold case — two spellings differing only in case name the same on-disk location — and Linux (ext4), whose volumes do not. Every place this package compares two paths for identity, ancestry, or containment (the conflict checker, `ownership`, `delete`'s effective-ownership computation, and project-root/inventory-root containment) decides that fold from the actual volume at runtime, detected once per process by a filesystem probe, never guessed from the OS name: a case-insensitive volume treats two spellings of one location as one contested ground; a case-sensitive volume treats them as two independent locations. Canonicalizing a target resolves it to its ON-DISK spelling, not the spelling the caller typed, for exactly the same reason. CI-enforceable invariant: a real-filesystem test detects the running volume's own case sensitivity the same way the product does and asserts the behavior that volume implies — a two-spelling batch refused as `TARGET_CONFLICT` on a case-insensitive volume, both targets applied independently on a case-sensitive one.
+
+**ADRs**: [Detecting and Preventing Conflicting Assembly Before Any Files Are Written](../../../architecture/ADR/0032-assembly-conflict-prevention.md)
+
 ## 3. Technical Architecture
 
 ### 3.1 Domain Model

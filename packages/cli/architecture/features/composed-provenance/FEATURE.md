@@ -340,13 +340,13 @@ Applying a registered template to a target (`apply`), computing and checking own
 1. [x] - `p1` - Accept the `path` argument - `inst-cpoadd-accept`
 2. [x] - `p1` - **IF** `path` does not exist on disk - `inst-cpoadd-if-missing`
    1. [x] - `p1` - **RETURN** `INVALID_PATH` naming the path; `ownership add` accepts only an existing path - `inst-cpoadd-return-missing`
-3. [x] - `p1` - Canonicalize `path` to a project-relative form, fail-closed against a symlink or a `..` segment resolving outside the project root, per the same discipline `cpt-frontx-feature-cli-scaffolding`'s Conflict Checker applies to every target - `inst-cpoadd-canonicalize`
+3. [x] - `p1` - Canonicalize `path` to a project-relative form, fail-closed against a symlink or a `..` segment resolving outside the project root, per the same discipline `cpt-frontx-feature-cli-scaffolding`'s Conflict Checker applies to every target — including resolving to the path's actual on-disk spelling (`inst-cc-canonicalize`) rather than the spelling the caller typed - `inst-cpoadd-canonicalize`
 4. [x] - `p1` - Read the current project state document to obtain every applied target across every registered template's `targets` array - `inst-cpoadd-read-targets`
 5. [x] - `p1` - Submit the canonicalized path against every applied target through the Conflict Checker's geometry check (`cpt-frontx-algo-cli-scaffolding-conflict-check`) - `inst-cpoadd-check-geometry`
 6. [x] - `p1` - **IF** the path coincides with, or is an ancestor of, any applied target — that one direction only, never a strict descendant, which is the intended case this command serves - `inst-cpoadd-if-conflict`
    1. [x] - `p1` - **RETURN** `TARGET_CONFLICT` naming the path and the contesting target; `projectOwnedRoots` unchanged - `inst-cpoadd-return-conflict`
 7. [x] - `p1` - **ELSE** - `inst-cpoadd-else`
-   1. [x] - `p1` - **IF** the path is already present in `projectOwnedRoots` - `inst-cpoadd-if-present`
+   1. [x] - `p1` - **IF** the path is already present in `projectOwnedRoots` — "present" decided per the project volume's own case sensitivity (`cpt-frontx-constraint-cli-platform-path-identity`, CLI DESIGN §2.2), so a second spelling of an already-owned root on a case-insensitive volume answers the same way the recorded spelling does - `inst-cpoadd-if-present`
       1. [x] - `p1` - **RETURN** a no-op - `inst-cpoadd-return-noop`
    2. [x] - `p1` - **ELSE** - `inst-cpoadd-else-append`
       1. [x] - `p1` - Append the path to `projectOwnedRoots` and write the document; no file on disk is created, moved, or deleted - `inst-cpoadd-write`

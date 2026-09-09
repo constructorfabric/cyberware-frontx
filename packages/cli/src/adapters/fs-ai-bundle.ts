@@ -14,7 +14,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { BundleExistsFn, CopyBundleFn, RemoveBundleFn } from '../scaffold/ai-bundle';
-import { assertPathWithinProjectRoot, firstNonDirectoryComponentOf, isInside, resolveWriteParentDir } from './fs-project-io';
+import {
+  assertPathWithinProjectRoot,
+  firstNonDirectoryComponentOf,
+  isInside,
+  resolveNearestExistingAncestor,
+  resolveWriteParentDir,
+} from './fs-project-io';
 import { FRONTX_NAMESPACE_ROOT } from '../manifest/types';
 
 // The one place `.frontx/ai/<manifestName>/` is spelled, from either a
@@ -37,6 +43,81 @@ function bundlePath(root: string, manifestName: string): string {
 function aiNamespaceRoot(root: string): string {
   return path.join(root, FRONTX_NAMESPACE_ROOT, 'ai');
 }
+
+/**
+ * `dest` — the bundle's own destination, or a scope component leading to it
+ * — resolves, once every symlink along it is followed, to somewhere OUTSIDE
+ * the REAL `.frontx/ai/` directory. ADR 0031
+ * (`architecture/ADR/0031-template-ownership-boundary-declaration.md`) makes
+ * that whole namespace ground the CLI alone writes and removes; CLI-owned
+ * ground is defined by RESOLVED LOCATION, not by spelling, so a symlink at a
+ * scope component that ALIASES a developer's own directory elsewhere in the
+ * project is not this namespace's ground merely because its lexical path
+ * starts with `.frontx/ai/`. `resolvedPath` names where the alias actually
+ * leads, so the refusal is actionable rather than only naming the spelling
+ * the developer already knows.
+ */
+export class AiNamespaceAliasError extends Error {
+  readonly destPath: string;
+  readonly resolvedPath: string;
+
+  constructor(destPath: string, resolvedPath: string) {
+    super(
+      `Refusing to write ".frontx/ai/": "${destPath}" resolves, through a symlink, to "${resolvedPath}" — outside ` +
+        'the CLI-owned `.frontx/ai/` directory (ADR 0031) — rather than clearing or writing through a directory the ' +
+        'CLI never created.',
+    );
+    this.name = 'AiNamespaceAliasError';
+    this.destPath = destPath;
+    this.resolvedPath = resolvedPath;
+  }
+}
+
+// @cpt-begin:cpt-frontx-algo-cli-scaffolding-ai-bundle:p1:inst-aib-alias-guard
+/**
+ * Confirms `dest`'s PARENT chain resolves, every symlink followed, to
+ * somewhere inside the REAL `.frontx/ai/` directory — not merely that its
+ * LEXICAL spelling starts with `.frontx/ai/`, which
+ * `reclaimNonDirectoryAiAncestor` and `clearBundleDestination`/`fs.rmSync`
+ * below both trust implicitly otherwise. CLI-owned ground is decided by
+ * resolved location, not by spelling (ADR 0031).
+ *
+ * The parent chain, and deliberately NOT `dest` itself. The two are
+ * different facts with different answers:
+ *
+ *   - a symlink standing at `dest`'s OWN final component is ground this
+ *     algorithm owns outright, and `clearBundleDestination` removes the LINK
+ *     rather than following it, leaving whatever it aliased untouched — the
+ *     behaviour every shape of that case is already pinned against;
+ *   - a symlink standing at an ANCESTOR component (`@scope`) puts `dest`
+ *     itself inside a directory the CLI never created, where the same
+ *     recursive `fs.rmSync` clears a developer's own files. Confirmed by
+ *     repro: a scope component aliasing `mystuff/` cost `mystuff/a/keep.txt`
+ *     under `ok:true`.
+ *
+ * Uses the SAME `resolveNearestExistingAncestor`/`isInside` walk
+ * `assertPathWithinProjectRoot` (`./fs-project-io.ts`) already applies to the
+ * project root, narrowed here to the `.frontx/ai/` boundary that function
+ * does not itself check.
+ *
+ * Tolerates a `.frontx/ai/` that does not exist yet (the ordinary case before
+ * this name's very first bundle): nothing can alias ground never created.
+ */
+function assertDestinationInsideAiNamespace(destRoot: string, dest: string): void {
+  const nsRoot = aiNamespaceRoot(destRoot);
+  const resolvedNsRoot = resolveNearestExistingAncestor(path.resolve(nsRoot));
+  const destParent = path.dirname(path.resolve(dest));
+  const resolvedParent = resolveNearestExistingAncestor(destParent);
+  // @cpt-begin:cpt-frontx-algo-cli-scaffolding-ai-bundle:p1:inst-aib-alias-guard-fail
+  // The namespace root is its own parent's boundary too: `dest` directly
+  // under `.frontx/ai/` resolves its parent TO that root, which `isInside`
+  // accepts as the root itself.
+  if (resolvedNsRoot === null || resolvedParent === null || !isInside(resolvedNsRoot, resolvedParent)) {
+    throw new AiNamespaceAliasError(dest, resolvedParent ?? '<unresolvable — a symlink cycle>');
+  }
+  // @cpt-end:cpt-frontx-algo-cli-scaffolding-ai-bundle:p1:inst-aib-alias-guard-fail
+}
+// @cpt-end:cpt-frontx-algo-cli-scaffolding-ai-bundle:p1:inst-aib-alias-guard
 
 // @cpt-begin:cpt-frontx-algo-cli-scaffolding-ai-bundle:p1:inst-aib-reclaim-ancestor-blocker
 /**
@@ -101,6 +182,15 @@ function isEnoent(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as NodeJS.ErrnoException).code === 'ENOENT';
 }
 
+// `lstat` fails `ENOTDIR`, not `ENOENT`, when a component ABOVE the bundle
+// path — the scope component of a scoped manifest name, e.g. `@x` in
+// `@x/a` — exists and is not a directory. Distinguished from `isEnoent`
+// above so `createFsBundleExistsFn`'s own catch can name the reason it
+// treats this the same way, below.
+function isEnotdir(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as NodeJS.ErrnoException).code === 'ENOTDIR';
+}
+
 /** Real `BundleExistsFn` — true when something stands at the bundle path,
  * decided with `lstat` semantics rather than `existsSync`'s.
  *
@@ -113,18 +203,25 @@ function isEnoent(error: unknown): boolean {
  * symlink is "there" whether or not what it points to is, matching how
  * `assertPathWithinProjectRoot`'s own dangling-symlink handling (`./
  * fs-project-io.ts`) already treats a dangling link as a real entry rather
- * than an ordinary not-yet-existing path. Only `ENOENT` — nothing at all
- * standing at the path — means absent; any other `lstat` failure (e.g. a
- * permission error) propagates rather than silently reading as "no bundle
- * here", the same asymmetry `createFsUnlinkDiskFileFn` (`./fs-upgrade-io.
- * ts`) draws between "already gone" and every other failure. */
+ * than an ordinary not-yet-existing path. `ENOENT` — nothing at all standing
+ * at the path — means absent, and so does `ENOTDIR` — a non-directory
+ * ancestor blocking a scope component strictly above this bundle's own path
+ * (`inst-aib-exists-blocked-ancestor`) makes the bundle itself unreachable,
+ * which is the identical fact for THIS question: no valid bundle stands
+ * beneath a non-directory, whatever the reason a scope component looks that
+ * way today. Any other `lstat` failure (e.g. a permission error) still
+ * propagates rather than silently reading as "no bundle here", the same
+ * asymmetry `createFsUnlinkDiskFileFn` (`./fs-upgrade-io.ts`) draws between
+ * "already gone" and every other failure. */
 export function createFsBundleExistsFn(): BundleExistsFn {
   return async function bundleExists(root: string, manifestName: string): Promise<boolean> {
     try {
       fs.lstatSync(bundlePath(root, manifestName));
       return true;
     } catch (error) {
-      if (isEnoent(error)) return false;
+      // @cpt-begin:cpt-frontx-algo-cli-scaffolding-ai-bundle:p1:inst-aib-exists-blocked-ancestor
+      if (isEnoent(error) || isEnotdir(error)) return false;
+      // @cpt-end:cpt-frontx-algo-cli-scaffolding-ai-bundle:p1:inst-aib-exists-blocked-ancestor
       throw error;
     }
   };
@@ -222,6 +319,12 @@ export function createFsCopyBundleFn(): CopyBundleFn {
     const source = bundlePath(sourceRoot, manifestName);
     const dest = bundlePath(destRoot, manifestName);
     assertPathWithinProjectRoot(destRoot, dest);
+    // A scope component (or `dest` itself) that resolves outside the REAL
+    // `.frontx/ai/` directory — a developer's own alias, not this
+    // namespace's own ground — is refused BEFORE any reclaim or clearing
+    // below ever runs against it; see `assertDestinationInsideAiNamespace`'s
+    // own doc comment.
+    assertDestinationInsideAiNamespace(destRoot, dest);
     // A non-directory standing at a scope component strictly between
     // `.frontx/ai/` and `dest` (`@scope` for a `@scope/pkg` manifest name)
     // must be cleared BEFORE `resolveWriteParentDir`/`mkdirSync` below ever
@@ -245,6 +348,11 @@ export function createFsRemoveBundleFn(): RemoveBundleFn {
   return async function removeBundle(root: string, manifestName: string): Promise<void> {
     const dest = bundlePath(root, manifestName);
     assertPathWithinProjectRoot(root, dest);
+    // Same alias refusal `createFsCopyBundleFn` above applies before ITS OWN
+    // clear — `removeBundle`'s `fs.rmSync` below is exactly the same
+    // destructive step `clearBundleDestination` performs, over the SAME
+    // ground, so it needs the identical guard.
+    assertDestinationInsideAiNamespace(root, dest);
     fs.rmSync(dest, { recursive: true, force: true });
   };
 }

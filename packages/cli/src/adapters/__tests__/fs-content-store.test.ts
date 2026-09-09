@@ -121,6 +121,40 @@ describe('FsContentStore', () => {
       expect(fs.readdirSync(outside)).toEqual(['keep.txt']);
     });
 
+    // The write side proved containment a round before the read side did,
+    // and `apply` reads its payload from this store: a symlink here let a
+    // payload from outside the inventory land in the developer's project
+    // under `ok:true`.
+    it('read() refuses instead of returning content from outside the store', () => {
+      fs.writeFileSync(joinWithinRoot(outside, MANIFEST_FILENAME), '{"name":"@x/inv"}', 'utf-8');
+      fs.writeFileSync(joinWithinRoot(outside, 'foreign.txt'), 'FOREIGN PAYLOAD', 'utf-8');
+      fs.mkdirSync(resolveInstalledContentPath(root, '@x'), { recursive: true });
+      fs.symlinkSync(outside, resolveInstalledContentPath(root, '@x/inv'), 'dir');
+
+      const store = new FsContentStore(root);
+      expect(() => store.read('@x/inv')).toThrow();
+    });
+
+    it('has() refuses instead of reporting outside content as installed', () => {
+      fs.writeFileSync(joinWithinRoot(outside, 'foreign.txt'), 'FOREIGN PAYLOAD', 'utf-8');
+      fs.mkdirSync(resolveInstalledContentPath(root, '@x'), { recursive: true });
+      fs.symlinkSync(outside, resolveInstalledContentPath(root, '@x/inv'), 'dir');
+
+      const store = new FsContentStore(root);
+      expect(() => store.has('@x/inv')).toThrow();
+    });
+
+    it('read() still works through a symlink that resolves back INSIDE the store', () => {
+      const realDir = resolveInstalledContentPath(root, '@x/real');
+      fs.mkdirSync(realDir, { recursive: true });
+      fs.writeFileSync(path.join(realDir, MANIFEST_FILENAME), 'manifest text', 'utf-8');
+      fs.symlinkSync(realDir, resolveInstalledContentPath(root, '@x/aliased'), 'dir');
+
+      const store = new FsContentStore(root);
+      expect(store.read('@x/aliased')).toBe('manifest text');
+      expect(store.has('@x/aliased')).toBe(true);
+    });
+
     it('replace() refuses instead of writing through the symlink or removing what it points at, and the outside directory survives untouched', () => {
       fs.writeFileSync(joinWithinRoot(outside, 'keep.txt'), 'DEVELOPER-OWNED — must survive', 'utf-8');
       fs.mkdirSync(resolveInstalledContentPath(root, '@x'), { recursive: true });

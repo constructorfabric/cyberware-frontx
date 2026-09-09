@@ -17,6 +17,7 @@ import type { ReadProjectStateFn, WriteProjectStateFn, TemplateEntry } from '../
 import { checkTargetConflicts } from '../scaffold/conflict-check';
 import type { CanonicalizeTargetFn, TargetClaim, TargetConflictEntry } from '../scaffold/conflict-check';
 import { pathWithinTarget, joinUnderTarget } from '../paths/relative-path';
+import { foldForIdentity } from '../paths/volume-case';
 import type { ReadTargetPathStateFn } from './add-template';
 import type { InventoryEntry } from '../inventory/types';
 import type { ReadFileFn } from '../manifest/types';
@@ -278,7 +279,11 @@ export async function ownershipAdd(
 
   // @cpt-begin:cpt-frontx-algo-composed-provenance-ownership-add:p1:inst-cpoadd-else
   // @cpt-begin:cpt-frontx-algo-composed-provenance-ownership-add:p1:inst-cpoadd-if-present
-  if (stateResult.document.projectOwnedRoots.includes(canonical)) {
+  // Folds case per the project volume (`paths/volume-case.ts`) rather than a
+  // bare `.includes`, so a second spelling of an already-owned root answers
+  // `noop` exactly as the recorded spelling does, instead of appending a
+  // second entry for the identical ground.
+  if (stateResult.document.projectOwnedRoots.some((root) => foldForIdentity(root) === foldForIdentity(canonical))) {
     // @cpt-begin:cpt-frontx-algo-composed-provenance-ownership-add:p1:inst-cpoadd-return-noop
     return { ok: true, outcome: 'noop', path: canonical, projectOwnedRoots: stateResult.document.projectOwnedRoots };
     // @cpt-end:cpt-frontx-algo-composed-provenance-ownership-add:p1:inst-cpoadd-return-noop

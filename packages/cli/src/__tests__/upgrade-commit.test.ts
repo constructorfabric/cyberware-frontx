@@ -8,6 +8,7 @@
 // around - no real filesystem or network access anywhere in this suite.
 import { describe, expect, it, vi } from 'vitest';
 import { commitUpgrade } from '../upgrade/commit';
+import { AiNamespaceAliasError } from '../adapters/fs-ai-bundle';
 import type { CommitDeps } from '../upgrade/commit';
 import type { DiskEntry, UpgradeOperation, UpgradePlan } from '../upgrade/types';
 import type { ProjectStateDocument, ReadProjectStateFn, WriteProjectStateFn } from '../project-state/types';
@@ -770,6 +771,34 @@ describe('commitUpgrade (cpt-frontx-algo-upgrade-changeset-commit)', () => {
     expect(harness.promoteInventory).toHaveBeenCalledWith('acme-tool');
     const document = harness.readProjectStateDocument();
     expect(document.templates['acme-tool'].origin).toBe('github:acme/tool@v2');
+  });
+
+  // The bundle step can refuse because its destination resolves, through an
+  // aliased scope component, outside the CLI-owned `.frontx/ai/` namespace.
+  // That is an ordinary, actionable state of the developer's own tree, and
+  // `commands/apply.ts` answers the identical refusal from the identical
+  // step with `INVALID_PATH`; reporting it as `INTERNAL` here would have two
+  // engines describe one fact two ways.
+  it('reports a bundle-refresh containment refusal as INVALID_PATH, not INTERNAL, with the transition still standing', async () => {
+    const harness = makeHarness();
+    harness.seedProjectState({
+      formatVersion: 1,
+      templates: { 'acme-tool': { origin: 'github:acme/tool@v1', version: '1.0.0', targets: ['app'] } },
+      projectOwnedRoots: [],
+    });
+    harness.refreshAiBundle.mockRejectedValueOnce(
+      new AiNamespaceAliasError('/repo/.frontx/ai/@acme/tool', '/repo/developer-own-folder'),
+    );
+
+    const result = await commitUpgrade(makePlan({ operations: [] }), harness.deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.code).toBe('INVALID_PATH');
+    expect(result.details).toMatchObject({ bundle: 'acme-tool' });
+    // Committed either way: the code says what KIND of problem it is, never
+    // whether the transition landed.
+    expect(harness.readProjectStateDocument().templates['acme-tool'].origin).toBe('github:acme/tool@v2');
   });
 
   it('unlinks a REMOVE path without removing the directory it leaves empty', async () => {

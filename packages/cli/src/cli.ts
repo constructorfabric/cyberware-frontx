@@ -376,7 +376,13 @@ export function createRealDeps(): CliDeps {
     existsFn: createFsPathExistsFn(),
     listFolderFilesFn: createFsListDiskFilesFn(),
     resolveInstalledContentPathFn: (name: string) => resolveInstalledContentPath(inventoryRoot, name),
-    createReadInstalledContentFn: createFsReadInstalledContentFn,
+    // `inventoryRoot` closed over here, not threaded through `CliDeps`'
+    // own factory type: `createFsReadInstalledContentFn`'s new optional
+    // second parameter (`fs-existing-content.ts`'s own doc comment) is what
+    // lets it tell a remote-origin template's inventory-store address apart
+    // from a local `path:` origin's project-relative one, and this is the
+    // only place that root is known outside the store's own adapters.
+    createReadInstalledContentFn: (repoRoot: string) => createFsReadInstalledContentFn(repoRoot, inventoryRoot),
     createReadExistingContentFn: createFsReadExistingContentFn,
     removeProjectFile: createFsRemoveProjectFileFn(),
     removeEmptyDirFn: createFsRemoveEmptyDirFn(),

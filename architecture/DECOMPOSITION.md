@@ -174,6 +174,9 @@ The installed SDLC kit currently defines feature-entry identifiers only in DECOM
 
 **Owner**: Member-owned compatibility anchor only; behavior is defined in [FEATURE.md](../packages/cli/architecture/features/cli-scaffolding/FEATURE.md).
 
+**Installed-kit coverage references**:
+- `cpt-frontx-constraint-cli-platform-path-identity`
+
 ### 2.13 [Project State, Registration & Ownership Management](../packages/cli/architecture/features/composed-provenance/) - HIGH
 
 - [x] `p1` - **ID**: `cpt-frontx-feature-composed-provenance`

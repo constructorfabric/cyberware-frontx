@@ -71,16 +71,41 @@ export class FsContentStore implements ContentStorePort {
   }
   // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-replace
 
+  // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard
   read(name: string): string | undefined {
     const installedPath = resolveInstalledContentPath(this.root, name);
+    // The write side (`write`/`replace` above) has proven, since the
+    // previous round, that `installedPath` stays inside `this.root` before
+    // ever writing to it. This read side used to trust whatever stood there
+    // by the time a caller asked to read it back — including a payload
+    // materialized by replacing the installed content path with a symlink to
+    // a directory OUTSIDE the store after it was written. `assertWithinRoot`
+    // is the SAME containment `write`/`replace` already prove, called here
+    // with `'read'` so a refusal names what was actually refused.
+    // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard-check
+    // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard-fail
+    assertWithinRoot(this.root, installedPath, 'read');
+    // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard-fail
+    // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard-check
     if (!fs.existsSync(installedPath)) return undefined;
     return readBundle(installedPath);
   }
+  // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard
 
+  // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard
   has(name: string): boolean {
     const installedPath = resolveInstalledContentPath(this.root, name);
+    // Same containment as `read` above, proven before this existence probe
+    // ever inspects what stands at `installedPath` — see that method's own
+    // comment for the fix this closes.
+    // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard-check
+    // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard-fail
+    assertWithinRoot(this.root, installedPath, 'read');
+    // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard-fail
+    // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard-check
     return fs.existsSync(installedPath) && fs.readdirSync(installedPath).length > 0;
   }
+  // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard
 }
 
 // A regular file (or any other non-directory entry) standing where an

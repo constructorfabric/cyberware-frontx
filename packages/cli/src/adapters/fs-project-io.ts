@@ -32,6 +32,7 @@ import type { ReadProjectStateFn, WriteProjectStateFn } from '../project-state/t
 import type { CanonicalizeTargetFn } from '../scaffold/conflict-check';
 import type { ListTargetFilesFn, ListUnenumerableTargetEntriesFn } from '../scaffold/delete-plan';
 import type { PathExistsFn } from '../resolver/types';
+import { foldForIdentity, isVolumeCaseInsensitive } from '../paths/volume-case';
 
 // `writeFile` below refuses to hand `destPath` straight to
 // `fs.writeFileSync` when it already exists as a symlink. `fs.writeFileSync`
@@ -812,10 +813,20 @@ function toPosixPath(relativePath: string): string {
   return relativePath.split(path.sep).join('/');
 }
 
-/** `null` for a broken symlink or a path that vanished mid-walk. */
+/**
+ * `null` for a broken symlink or a path that vanished mid-walk. Uses
+ * `fs.realpathSync.native` — the platform's own `realpath(3)`/
+ * `GetFinalPathNameByHandle`, never the plain JS-implemented
+ * `fs.realpathSync` — because only the native call asks the OS for the
+ * on-disk spelling of each component; the JS implementation resolves
+ * symlinks correctly but otherwise echoes back whatever spelling the
+ * caller passed in, which is wrong on a case-insensitive volume the moment
+ * two callers spell the same existing entry two different ways
+ * (`paths/volume-case.ts`'s own header comment on why that matters).
+ */
 function realPathOrNull(absolutePath: string): string | null {
   try {
-    return fs.realpathSync(absolutePath);
+    return fs.realpathSync.native(absolutePath);
   } catch {
     return null;
   }
@@ -828,8 +839,10 @@ function realPathOrNull(absolutePath: string): string | null {
 // `resolveNearestExistingAncestor` below the same way this module's own
 // callers do.
 export function isInside(root: string, candidate: string): boolean {
-  if (candidate === root) return true;
-  return candidate.startsWith(root + path.sep);
+  const foldedRoot = foldForIdentity(root);
+  const foldedCandidate = foldForIdentity(candidate);
+  if (foldedCandidate === foldedRoot) return true;
+  return foldedCandidate.startsWith(foldedRoot + path.sep);
 }
 
 // @cpt-algo:cpt-frontx-algo-cli-scaffolding-conflict-check:p1
@@ -867,6 +880,12 @@ export function createFsCanonicalizeTargetFn(projectRoot: string): CanonicalizeT
   if (realRoot === null) {
     throw new Error(`project root could not be resolved: ${projectRoot}`);
   }
+  // Seeds the process-wide volume-case probe (`paths/volume-case.ts`) with
+  // the project's own root — "a directory the command is already working
+  // in", that module's own preferred probe location — the first time a
+  // command builds this function, rather than leaving the probe to default
+  // to the OS temp directory on whichever call happens to ask first.
+  isVolumeCaseInsensitive(realRoot);
   return function canonicalizeTarget(rawTarget: string): string | null {
     const lexicalCandidate = path.resolve(realRoot, rawTarget);
     const resolved = resolveNearestExistingAncestor(lexicalCandidate);
@@ -1121,7 +1140,15 @@ export function resolveNearestExistingAncestor(lexicalCandidate: string): string
       return queue.length > 0 ? path.join(candidate, ...queue) : candidate;
     }
     if (!stats.isSymbolicLink()) {
-      resolvedPrefix = candidate;
+      // `realPathOrNull` (not the literal `candidate`) so a segment spelled
+      // in a case other than the one actually on disk — an ordinary
+      // occurrence on a case-insensitive volume, where `lstatSync` above
+      // just matched it regardless of spelling — resolves to the on-disk
+      // spelling before the walk continues. `?? candidate` is defensive
+      // only: `lstatSync` just proved this exact path exists, so
+      // `fs.realpathSync.native` resolving it a moment later can fail only
+      // to a TOCTOU race, never to an ordinary absence.
+      resolvedPrefix = realPathOrNull(candidate) ?? candidate;
       continue;
     }
     linkResolutions += 1;

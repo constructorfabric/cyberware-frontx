@@ -89,7 +89,12 @@ interface CallSite {
 // as having no filesystem calls at all. The import declarations are read
 // from the same AST, so a local alias (`import * as nodeFs`) is followed and
 // an identically named local helper that came from somewhere else is not
-// mistaken for one.
+// mistaken for one. A THIRD shape, `fs.<primitive>.native(...)`
+// (`fs.realpathSync.native`, the platform-native form this package uses for
+// case-correct canonicalization), is recognized as the same primitive as
+// its plain `fs.<primitive>(...)` form — one call, one allow-list entry —
+// rather than as an untracked member access this walk would otherwise miss
+// entirely.
 function collectFsCallSites(filePath: string, text: string): CallSite[] {
   const sourceFile = ts.createSourceFile(filePath, text, ts.ScriptTarget.Latest, true);
   const sites: CallSite[] = [];
@@ -127,6 +132,23 @@ function collectFsCallSites(filePath: string, text: string): CallSite[] {
     if (ts.isCallExpression(node)) {
       const callee = node.expression;
       if (
+        // `fs.<primitive>.native(...)` (e.g. `fs.realpathSync.native`) —
+        // the platform-native form of a tracked primitive, one more member
+        // access deeper than the plain `fs.<primitive>(...)` shape below.
+        // Recorded under the SAME primitive name as the plain form: it is
+        // the identical call for this scan's purposes (one raw filesystem
+        // primitive, one allow-list entry per occurrence), not a second,
+        // untracked one a `.native` suffix would otherwise let slip past
+        // both sweeps unseen.
+        ts.isPropertyAccessExpression(callee) &&
+        callee.name.text === 'native' &&
+        ts.isPropertyAccessExpression(callee.expression) &&
+        ts.isIdentifier(callee.expression.expression) &&
+        namespaceNames.has(callee.expression.expression.text) &&
+        targetNames.has(callee.expression.name.text)
+      ) {
+        record(node, callee.expression.name.text);
+      } else if (
         ts.isPropertyAccessExpression(callee) &&
         ts.isIdentifier(callee.expression) &&
         namespaceNames.has(callee.expression.text) &&
@@ -291,6 +313,20 @@ const WRITE_ALLOW_LIST: Record<string, FileAllowList> = {
       },
     ],
   },
+  'paths/volume-case.ts': {
+    'fs.writeFileSync': [
+      {
+        guard: 'probeVolumeCaseInsensitive',
+        note: 'Creates one uniquely-named, empty marker file under `probeDir` (the OS temp dir by default) to probe volume case-folding; any failure is caught and answered with the conservative fallback.',
+      },
+    ],
+    'fs.rmSync': [
+      {
+        guard: 'probeVolumeCaseInsensitive',
+        note: 'Removes the same marker file this probe just created, `{ force: true }` so a prior failure to create it never surfaces here.',
+      },
+    ],
+  },
 };
 
 // ============================== READ SWEEP ================================
@@ -358,7 +394,13 @@ const READ_ALLOW_LIST: Record<string, FileAllowList> = {
       { guard: 'createFsCanonicalizeTargetFn', note: 'Containment already proven by canonicalization.' },
       { guard: 'createFsAssertPathWithinRootFn', note: 'Caller-side guard, `commands/delete.ts`.' },
     ],
-    'fs.realpathSync': [{ guard: 'realPathOrNull', note: 'Wrapped: a broken symlink or vanished path returns `null`.' }],
+    'fs.realpathSync': [
+      {
+        guard: 'realPathOrNull',
+        note:
+          'Wrapped: a broken symlink or vanished path returns `null`. Calls the platform-native `.realpathSync.native` form so an existing path\'s ON-DISK spelling is returned on a case-insensitive volume, never the caller\'s own spelling.',
+      },
+    ],
     'fs.readdirSync': [{ guard: 'walkFiles', note: 'Dirent-typed; a symlink is resolved only afterward, explicitly.' }],
   },
   'adapters/fs-read-content-items.ts': {
@@ -385,6 +427,12 @@ const READ_ALLOW_LIST: Record<string, FileAllowList> = {
     'fs.realpathSync': [
       { guard: 'isMainModule', note: "Resolves `process.argv[1]` to decide whether this module was started as the executable; touches no project path, and a failure is caught into `isMainModule = false`." },
       { guard: 'isMainModule', note: "The other half of the same comparison, resolving this module's own URL; identical reasoning." },
+    ],
+  },
+  'paths/volume-case.ts': {
+    'fs.statSync': [
+      { guard: 'probeVolumeCaseInsensitive', note: 'Stats the marker file this probe just created, by its own (lower-case) spelling.' },
+      { guard: 'probeVolumeCaseInsensitive', note: 'Stats the SAME marker file by its upper-case spelling, comparing device and inode to the call above.' },
     ],
   },
 };

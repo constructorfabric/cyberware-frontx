@@ -640,7 +640,7 @@ describe('runApplyPipeline — materializing a batch (cpt-frontx-flow-cli-scaffo
     if (result.ok) return;
     expect(result.code).toBe('INTERNAL');
     expect(result.message).toContain('could not be materialized');
-    expect(result.message).not.toContain('could not be proven to stay inside the project root');
+    expect(result.message).not.toContain('could not be proven to stay inside the ground the CLI owns');
     expect(result.details?.writtenPaths).toEqual(['apps/foo/src/index.ts']);
     expect(result.message).toContain('apps/foo/src/index.ts');
     expect(result.message).toContain('removed');
@@ -673,7 +673,7 @@ describe('runApplyPipeline — materializing a batch (cpt-frontx-flow-cli-scaffo
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.code).toBe('INVALID_PATH');
-    expect(result.message).toContain('could not be proven to stay inside the project root');
+    expect(result.message).toContain('could not be proven to stay inside the ground the CLI owns');
     expect(h.files.get('/repo/apps/foo/src/index.ts')).toBeUndefined();
     expect(h.readProjectStateDocument().templates['template-a'].targets).toEqual([]);
   });

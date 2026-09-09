@@ -53,6 +53,8 @@ import path from 'node:path';
 import type { ContentItem } from '../scaffold/types';
 import { SYMLINK_CONTENT_MARKER, DIRECTORY_CONTENT_MARKER, SPECIAL_CONTENT_MARKER } from '../scaffold/existing-content';
 import type { ReadInstalledContentFn, ReadExistingContentFn } from '../scaffold/existing-content';
+import { assertWithinRoot } from './fs-installed-content-path';
+import { isInside } from './fs-project-io';
 
 // Install-time output, never committed template content
 // (`cpt-frontx-algo-template-manifest-validate-content-self-containment`'s own
@@ -182,10 +184,39 @@ function listFilesRecursive(
  * because `createFsReadInstalledContentFn` is also this package's public
  * export (`index.ts`) for callers outside the staged-assembly pipeline, who
  * are free to hand it a path relative to a repo root they supply themselves.
+ *
+ * `inventoryRoot`, when supplied, is the SAME local inventory store root
+ * `FsContentStore`/`resolveInstalledContentPath` (`fs-content-store.ts`,
+ * `fs-installed-content-path.ts`) already address — `cli.ts` passes it,
+ * closed over from its own `inventoryRoot` (`createRealDeps`'s doc comment on
+ * `resolveInstalledContentPathFn`), for every real caller. This is what lets
+ * this function, unlike `fs-content-store.ts`'s own `read`/`has`, tell apart
+ * the TWO shapes `installedContentPath` can be: a remote-origin template's
+ * inventory-store address (`resolveInstalledContentPathFn` in `cli.ts`
+ * computes it as exactly `path.join(inventoryRoot, name)`), or a local
+ * `path:` origin's already-canonicalized folder inside the PROJECT
+ * (`inst-resolve-local-path-check`) — a different boundary this function has
+ * no business re-checking. Only the FIRST shape is checked here, against
+ * `inventoryRoot`, reusing the SAME `assertWithinRoot` the store's own write
+ * side already proves (`fs-content-store.ts`) rather than a second,
+ * independently formulated check — this is what closes the gap a symlink
+ * planted at an installed content path, after this reader's own caller
+ * (`apply`) already resolved it, otherwise leaves open: reading straight
+ * through the link and reporting whatever it aliases as this template's own
+ * content.
  */
-export function createFsReadInstalledContentFn(repoRoot: string): ReadInstalledContentFn {
+export function createFsReadInstalledContentFn(repoRoot: string, inventoryRoot?: string): ReadInstalledContentFn {
   return async function readInstalledContent(installedContentPath: string): Promise<ContentItem[]> {
     const absolute = path.isAbsolute(installedContentPath) ? installedContentPath : path.join(repoRoot, installedContentPath);
+    // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard
+    // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard-check
+    // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard-fail
+    if (inventoryRoot !== undefined && isInside(inventoryRoot, absolute)) {
+      assertWithinRoot(inventoryRoot, absolute, 'read');
+    }
+    // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard-fail
+    // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard-check
+    // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-read-guard
     if (!fs.existsSync(absolute)) return [];
     // A TEMPLATE's payload: install output is not content. `false` here
     // keeps a symlink dirent skipped outright, unchanged by the

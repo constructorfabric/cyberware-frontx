@@ -1,4 +1,5 @@
 import { pathWithinSubtree, pathWithinTarget, targetsNest } from '../paths/relative-path';
+import { foldForIdentity } from '../paths/volume-case';
 import { CLI_RESERVED_ROOTS } from './effective-ownership';
 
 // Resolves a caller-supplied target path against the project root, fail-
@@ -167,10 +168,20 @@ export function checkTargetConflicts(input: ConflictCheckInput): ConflictCheckRe
       // two claims coincide or nest at all — `packages/app` and
       // `packages/app-shell` share a string prefix but no path segment, so
       // it correctly reports no relationship between them; `.` (the project
-      // root, a legitimate target) nests with every other target.
+      // root, a legitimate target) nests with every other target. It also
+      // folds case per the project volume (`paths/volume-case.ts`), so two
+      // spellings of one location on a case-insensitive volume nest here
+      // even before either has ever been materialized on disk.
       if (!targetsNest(a.target, b.target)) continue;
 
-      if (a.target === b.target) {
+      // `foldForIdentity`, not a bare `===`: two spellings of the SAME
+      // not-yet-existing ground (a batch's own two entries, neither
+      // materialized yet) can only be recognized as coinciding here — once
+      // either is created, `canonicalizeFn` converges them on its own — so
+      // this decision has to agree with `targetsNest`'s own fold above,
+      // never a byte-exact comparison `targetsNest` would already treat as
+      // nesting.
+      if (foldForIdentity(a.target) === foldForIdentity(b.target)) {
         // @cpt-begin:cpt-frontx-algo-cli-scaffolding-conflict-check:p1:inst-cc-if-same-template-noop
         if (a.templateName !== null && a.templateName === b.templateName) {
           // @cpt-end:cpt-frontx-algo-cli-scaffolding-conflict-check:p1:inst-cc-if-same-template-noop

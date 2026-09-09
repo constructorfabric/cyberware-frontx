@@ -7,6 +7,14 @@
 // caller deciding containment by bare string prefix while another decides it by
 // path segment, which makes the same two paths overlap for one and not the
 // other.
+//
+// Ground equality below folds through `foldForIdentity`
+// (`./volume-case.ts`) rather than comparing raw strings: on a
+// case-insensitive volume (macOS/APFS, Windows/NTFS) two spellings differing
+// only in case name the same ground, and treating them as different is the
+// defect a caller-supplied path this module exists to compare correctly
+// would otherwise reintroduce one segment at a time.
+import { foldForIdentity } from './volume-case';
 
 // A safe relative path: no surrounding whitespace, not absolute, no backslash,
 // no unsafe character, and no empty, "." or ".." segment. Rejecting rather than
@@ -48,8 +56,8 @@ export function withoutTrailingSlash(value: string): string {
 // and `srcx.ts` inside a claim on `src`, so a template declaring one directory
 // would silently capture every sibling whose name merely extends it.
 export function pathWithinSubtree(path: string, subtree: string): boolean {
-  const root = withoutTrailingSlash(subtree);
-  const target = withoutTrailingSlash(path);
+  const root = foldForIdentity(withoutTrailingSlash(subtree));
+  const target = foldForIdentity(withoutTrailingSlash(path));
   return target === root || target.startsWith(`${root}/`);
 }
 
@@ -98,7 +106,7 @@ function addressesNoLocation(value: string): boolean {
 // Over two manifests' exclusive-subtree claims it is the overlap the pre-flight
 // conflict check refuses (`cpt-frontx-dod-cli-scaffolding-conflict-check`).
 export function pathsNest(a: string, b: string): boolean {
-  if (a === b) return true;
+  if (foldForIdentity(a) === foldForIdentity(b)) return true;
   if (addressesNoLocation(a) || addressesNoLocation(b)) return false;
   return pathWithinSubtree(a, b) || pathWithinSubtree(b, a);
 }

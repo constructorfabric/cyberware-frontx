@@ -211,29 +211,55 @@ describe('apply — AI-extension bundle materialization over a blocked scope com
   // survives, and the bundle is written straight into the directory it
   // aliases — never reclaimed and replaced with a plain directory the way a
   // regular file or FIFO at the same position still is, above.
-  it('traverses a symlinked scope component resolving to a directory INSIDE the project — the link survives and the bundle lands in the aliased directory', async () => {
+  // Round 12 traversed this shape and let the bundle land in the aliased
+  // directory. Round 13's repro showed what that cost: `clearBundleDestination`
+  // clears the destination recursively, and through the alias that destination
+  // is a directory the CLI never created — `dev-owned-scope-dir/a/keep.txt`
+  // went under `ok:true`. CLI-owned ground is decided by resolved location,
+  // not by spelling.
+  it('refuses a symlinked scope component resolving to a developer directory, leaving every file in it untouched', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'frontx-aib-ancestor-symlink-inside-'));
     await setupTemplate(root);
     await mkdir(path.join(root, 'app'), { recursive: true });
     await mkdir(path.join(root, '.frontx', 'ai'), { recursive: true });
     const devDir = path.join(root, 'dev-owned-scope-dir');
-    await mkdir(devDir, { recursive: true });
+    await mkdir(path.join(devDir, 'a'), { recursive: true });
     await writeFile(path.join(devDir, 'KEEP.md'), 'developer file already here', 'utf-8');
+    await writeFile(path.join(devDir, 'a', 'keep.txt'), 'the file round 12 destroyed', 'utf-8');
     await symlink(devDir, path.join(root, '.frontx', 'ai', '@x'));
+
+    const deps = await realDeps(root);
+    const result = await runApplyPipeline({ templates: { '@x/a': ['app'] } }, root, false, deps);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('INVALID_PATH');
+    // The link survives, and so does everything it aliases.
+    const scopeStat = await lstat(path.join(root, '.frontx', 'ai', '@x'));
+    expect(scopeStat.isSymbolicLink()).toBe(true);
+    expect(await readFile(path.join(devDir, 'KEEP.md'), 'utf-8')).toBe('developer file already here');
+    expect(await readFile(path.join(devDir, 'a', 'keep.txt'), 'utf-8')).toBe('the file round 12 destroyed');
+    expect(await readdir(path.join(devDir, 'a'))).toEqual(['keep.txt']);
+  });
+
+  // The boundary is `.frontx/ai/` itself, not "no symlink anywhere": a link
+  // that resolves back INSIDE the CLI-owned namespace is ordinary ground and
+  // is traversed, exactly as a link inside the project root is for
+  // `.frontx/project.json`.
+  it('traverses a scope component that aliases another location INSIDE the CLI-owned .frontx/ai/ namespace', async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'frontx-aib-ancestor-symlink-in-ns-'));
+    await setupTemplate(root);
+    await mkdir(path.join(root, 'app'), { recursive: true });
+    const realScope = path.join(root, '.frontx', 'ai', 'real-scope-dir');
+    await mkdir(realScope, { recursive: true });
+    await symlink(realScope, path.join(root, '.frontx', 'ai', '@x'));
 
     const deps = await realDeps(root);
     const result = await runApplyPipeline({ templates: { '@x/a': ['app'] } }, root, false, deps);
 
     expect(result.ok).toBe(true);
     const scopeStat = await lstat(path.join(root, '.frontx', 'ai', '@x'));
-    expect(scopeStat.isSymbolicLink()).toBe(true); // the link itself survives, never reclaimed
-    const bundled = await readFile(path.join(root, '.frontx', 'ai', '@x', 'a', 'SKILL.md'), 'utf-8');
-    expect(bundled).toBe('bundle content for @x/a');
-    // Written straight into the aliased directory, not beside the link.
-    const bundledThroughAlias = await readFile(path.join(devDir, 'a', 'SKILL.md'), 'utf-8');
-    expect(bundledThroughAlias).toBe('bundle content for @x/a');
-    const keptFile = await readFile(path.join(devDir, 'KEEP.md'), 'utf-8');
-    expect(keptFile).toBe('developer file already here');
+    expect(scopeStat.isSymbolicLink()).toBe(true);
+    expect(await readFile(path.join(realScope, 'a', 'SKILL.md'), 'utf-8')).toBe('bundle content for @x/a');
   });
 
   // DEFECT 2 (containment, unchanged): a symlinked ancestor resolving

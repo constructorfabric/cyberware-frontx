@@ -52,6 +52,7 @@
 // it possible to report one as the other.
 import path from 'node:path';
 import { PathContainmentError } from '../adapters/fs-project-io';
+import { AiNamespaceAliasError } from '../adapters/fs-ai-bundle';
 import { ReservedTempPathOccupiedError } from '../adapters/fs-upgrade-io';
 import { RESERVED_TEMP_SUFFIX, isReservedTempName } from '../paths/reserved-temp-name';
 import { joinUnderTarget } from '../paths/relative-path';
@@ -87,7 +88,18 @@ export type CommitOutcome =
       // reserved-suffixed to report alongside it.
       details: { drifted: { target: string; path: string; tempPath?: string }[] };
     }
-  | { ok: false; code: Extract<UpgradeRefusalCode, 'INTERNAL'>; message: string; details?: Record<string, unknown> };
+  // `INVALID_PATH` alongside `INTERNAL` for the same shape: the bundle step
+  // can refuse because the destination resolves outside ground the CLI owns,
+  // which is an ordinary, actionable state of the developer's tree and not a
+  // failure of this engine. `commands/apply.ts` already answers the identical
+  // refusal from the identical step with the identical code; two engines
+  // reporting one fact two ways is the divergence this package keeps closing.
+  | {
+      ok: false;
+      code: Extract<UpgradeRefusalCode, 'INTERNAL' | 'INVALID_PATH'>;
+      message: string;
+      details?: Record<string, unknown>;
+    };
 
 export interface CommitDeps {
   repoRoot: string;
@@ -722,9 +734,15 @@ export async function commitUpgrade(plan: UpgradePlan, deps: CommitDeps): Promis
     // the same way a promotion failure is, because the bundle content is
     // re-derivable from the same installed content path the refresh step
     // reads.
+    // A containment escape is not an internal failure of this engine but an
+    // ordinary, actionable state of the developer's own tree — the same
+    // discrimination `commands/apply.ts` applies to the identical two typed
+    // refusals from the identical bundle step. The transition still stands
+    // either way; only the code and the wording differ.
+    const escaped = caught instanceof PathContainmentError || caught instanceof AiNamespaceAliasError;
     return {
       ok: false,
-      code: 'INTERNAL',
+      code: escaped ? 'INVALID_PATH' : 'INTERNAL',
       message: `${plan.name}'s transition and inventory promotion both landed, but its AI-extension bundle could not be refreshed: ${caught instanceof Error ? caught.message : String(caught)}`,
       details: { bundle: plan.name },
     };
