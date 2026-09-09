@@ -95,7 +95,7 @@ export interface ComponentExtraction {
   // resolved through Omit/Pick and BaseUIComponentProps / ComponentProps
   // generic arguments - undefined when the props type has no such anchor (a
   // from-scratch interface with no DOM/Base UI heritage, e.g. DataTable's).
-  // It decides WHICH hand-written passthrough schema the contract composes,
+  // It decides WHICH hand-written passthrough schema the contract names,
   // so a component with forwarded DOM props and no resolvable element kind
   // is refused rather than compiled without them.
   elementKind?: string;

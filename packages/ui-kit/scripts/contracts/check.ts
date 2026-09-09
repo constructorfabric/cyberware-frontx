@@ -51,6 +51,7 @@ import {
   type PassthroughDiff,
 } from './check-lib';
 import {
+  hostElementToken,
   loadBaseSchema,
   loadPassthroughSchema,
   overlayStems,
@@ -381,26 +382,6 @@ function repoChangedFilesSince(ctx: CheckContext, base: string): string[] {
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-deps
 
-// The host element a contract's own allOf carries, read off its passthrough
-// $ref rather than re-derived through extraction - `compat` compares two
-// POINTS IN TIME of the same contract, and the ref each one actually shipped
-// with is the ground truth for which passthrough file it composes, not
-// whatever extraction says the CURRENT source resolves to. Called for BOTH
-// revisions: see comparePassthroughSurfaces in check-lib.ts for what each
-// combination of the two answers means.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough
-function passthroughElementFromContract(contract: CompiledContract): string | undefined {
-  for (const ref of contract.allOf) {
-    const match = /passthrough\.([a-z0-9_]+)\.v\d+~$/.exec(ref.$ref);
-    // The token, not the tag: `dom_button`, which is also the file name under
-    // scripts/contracts/passthrough/ - the two are one identity, so nothing
-    // here has to reverse domPassthroughToken.
-    if (match) return match[1];
-  }
-  return undefined;
-}
-// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough
-
 // A compiled contract unit: one `*.contract.yaml` overlay directly under a
 // component directory. `directory` and `stem` are equal for the ordinary
 // case (button/button); a compound component's part has its own stem inside
@@ -498,26 +479,34 @@ function checkCompatForUnit(
   // Both revisions' host elements, and the schema each one names: the old one
   // as it shipped at the base ref, the new one as it is committed here.
   // Reading the element off the new contract alone made an entire class of
-  // change invisible - drop the passthrough $ref and there is no element to
-  // look up, so the block was skipped and every forwarded prop disappeared
-  // silently.
-  const newElement = passthroughElementFromContract(newContract);
-  const oldElement = passthroughElementFromContract(oldContract);
+  // change invisible - drop the reference and there is no element to look up,
+  // so the block was skipped and every forwarded prop disappeared silently.
+  // Read off the reference each revision HOLDS, not re-derived through
+  // extraction - `compat` compares two POINTS IN TIME of the same contract,
+  // and the reference each one actually shipped with is the ground truth for
+  // which surface it named, not whatever extraction says the CURRENT source
+  // resolves to. Read for BOTH revisions: see comparePassthroughSurfaces in
+  // check-lib.ts for what each combination of the two answers means.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough
+  const newElement = hostElementToken(newContract);
+  const oldElement = hostElementToken(oldContract);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough
   let newPassthrough: Record<string, unknown> | undefined;
   if (newElement !== undefined) {
     const newPassthroughPath = join(passthroughDir(ctx), `${newElement}.json`);
     if (existsSync(newPassthroughPath)) {
       newPassthrough = JSON.parse(readFileSync(newPassthroughPath, 'utf8')) as Record<string, unknown>;
-      // Registered so the store this comparison runs in can resolve the
-      // contract's own allOf, exactly as before.
+      // Registered so the surface the contract NAMES is a resolvable type in
+      // the store this comparison runs in, rather than an id pointing at
+      // nothing.
       gts.register(newPassthrough);
     }
   }
   const oldPassthrough =
     oldElement === undefined ? undefined : readJsonAt(ctx, base, `scripts/contracts/passthrough/${oldElement}.json`);
   // The old revision's own surface, when it is a different type from the new
-  // one: registered so the store can resolve BOTH synthetic revisions' allOf
-  // rather than only the current one's. Skipped when the element is
+  // one: registered so the surface BOTH synthetic revisions name is
+  // resolvable, not only the current one's. Skipped when the element is
   // unchanged, where the two carry the same $id and the second registration
   // would only overwrite the first.
   if (oldPassthrough !== undefined && oldElement !== newElement) gts.register(oldPassthrough);
@@ -532,11 +521,11 @@ function checkCompatForUnit(
   const passthroughDiff: PassthroughDiff | undefined = passthrough.diff;
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-both
 
-  // gts-ts's checkCompatibility (GtsCompatibility.checkCompatibility) never
-  // resolves allOf/$ref - it diffs the two schemas' OWN properties/required
-  // fields (see check-lib.ts's diffPassthroughSchema comment for why the
-  // passthrough surface needs its own diff above). Old and new normally
-  // share the same real $id (same component, same major), so both are
+  // gts-ts's checkCompatibility (GtsCompatibility.checkCompatibility) diffs
+  // the two schemas' OWN properties/required fields and never follows a
+  // reference of any kind (see check-lib.ts's diffPassthroughSchema comment
+  // for why the forwarded surface needs its own diff above). Old and new
+  // normally share the same real $id (same component, same major), so both are
   // registered under synthetic minor-versioned ids to avoid one silently
   // overwriting the other in the store.
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-register

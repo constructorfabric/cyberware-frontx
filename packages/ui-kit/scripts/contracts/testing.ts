@@ -15,11 +15,13 @@ import { GTS, type ValidationResult } from '@globaltypesystem/gts-ts';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  BASE_TYPE_ID,
   buildMetamodel,
   buildTraitTypes,
   compileContract,
   compileInstance,
   findUntypedPropMismatches,
+  hostElementRef,
   isExternalAlternative,
   loadBaseSchema,
   loadPassthroughSchemas,
@@ -27,7 +29,13 @@ import {
   type CompiledContract,
   type ContractInstance,
 } from './compile';
-import { bareGtsId, componentTypeRefPattern, passthroughTypeIdPattern, traitTypeIdPattern } from './ids';
+import {
+  bareGtsId,
+  componentTypeRefPattern,
+  passthroughTypeIdPattern,
+  passthroughTypeRefPattern,
+  traitTypeIdPattern,
+} from './ids';
 import { checkComponentFreshness, type FreshnessReport } from './freshness';
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -171,28 +179,24 @@ function loadCommittedContracts(): Record<string, unknown>[] {
   return contracts;
 }
 
-// The type ids one committed contract composes, read off a document loaded as
-// plain JSON: the base type first, then the surface of its host element if it
-// has one. Narrowed rather than cast - a committed file is data until
-// something checks it, and this reader is one of the things checking it.
-function composedTypeIds(contract: Record<string, unknown>): string[] {
-  const allOf: unknown = contract.allOf;
-  if (!Array.isArray(allOf)) return [];
-  const entries: unknown[] = allOf;
-  const ids: string[] = [];
-  for (const entry of entries) {
-    if (entry === null || typeof entry !== 'object' || !('$ref' in entry)) continue;
-    const ref: unknown = entry.$ref;
-    if (typeof ref === 'string') ids.push(ref);
+// The surfaces the kit's committed contracts name, bare: one entry per
+// contract that holds a host-element reference, read through the same reader
+// every other surface-aware check uses (compile.ts's hostElementRef) rather
+// than through a second walk over the schema body.
+function composedSurfaceRefs(): Set<string> {
+  const refs = new Set<string>();
+  for (const contract of loadCommittedContracts()) {
+    const ref = hostElementRef(contract);
+    if (ref !== undefined) refs.add(ref);
   }
-  return ids;
+  return refs;
 }
 
 // The registry a contract instance is validated in: the base type, the
 // vocabulary its trait schema references, every element-kind passthrough type
-// a contract may compose, the metamodel the instance is typed by, and every
-// contract the kit ships - which is what the instance's own props_schema
-// reference has to resolve against.
+// a contract may name, the metamodel the instance is typed by, and every
+// contract the kit ships - which is what the instance's own props_schema and
+// host_element references have to resolve against.
 export function registeredKitStore(): GTS {
   const gts = new GTS();
   gts.register(JSON.parse(JSON.stringify(loadBaseSchema())) as Record<string, unknown>);
@@ -328,38 +332,53 @@ export function assertContractFreshness(directory: string, exportStem: string = 
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-parent
 
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-element
-    it('composes an element-kind passthrough type that exists and is named in the grammar', () => {
-      // The passthrough types are hand-written, so nothing recompiles them
-      // into place: what has to hold is that the reference a contract carries
-      // names a committed file, and that the file's own identifier obeys the
-      // passthrough grammar rather than merely matching the string the
-      // contract happens to hold.
-      const pattern = new RegExp(passthroughTypeIdPattern());
-      const committed = new Map(loadPassthroughSchemas().map((schema) => [String(schema.$id), schema]));
-      for (const id of committed.keys()) {
-        expect(id, `${id} is not a grammatical passthrough type id`).toMatch(pattern);
-      }
+    it('derives from exactly one type, the abstract base component type', () => {
+      // The single-parent rule, asserted on the schema body rather than left
+      // to the id: the chained $id says one parent, and an allOf carrying a
+      // second $ref would say two. The host element's surface is a reference
+      // the contract HOLDS - checked below - not a parent it derives from.
       const contract = compileContract(directory, exportStem);
-      for (const ref of contract.allOf) {
-        if (!ref.$ref.includes('.passthrough.')) continue;
-        expect(committed.has(ref.$ref), `${exportStem}: composes "${ref.$ref}", which no committed file declares`).toBe(true);
-      }
+      expect(contract.allOf, `${exportStem}: a contract derives from one type`).toEqual([{ $ref: BASE_TYPE_ID }]);
     });
 
-    it('leaves no committed element surface that no contract composes', () => {
+    it('resolves the host-element surface it names to a committed file in the grammar', () => {
+      // The surfaces are hand-written, so nothing recompiles them into place:
+      // what has to hold is that the reference a contract HOLDS resolves to a
+      // committed file, and that the file's own identifier obeys the
+      // passthrough grammar rather than merely matching the string the
+      // contract happens to carry. Both spellings appear here on purpose - a
+      // reference value is bare, a file's own `$id` carries `gts://` - so the
+      // committed set is keyed by the bare form the reference is compared
+      // against. A contract that names no surface has nothing to resolve,
+      // which is the honest answer for DataTable and not a skipped check.
+      const idPattern = new RegExp(passthroughTypeIdPattern());
+      const refPattern = new RegExp(passthroughTypeRefPattern());
+      const committed = new Set<string>();
+      for (const schema of loadPassthroughSchemas()) {
+        const id = String(schema.$id);
+        expect(id, `${id} is not a grammatical passthrough type id`).toMatch(idPattern);
+        committed.add(bareGtsId(id));
+      }
+      const ref = hostElementRef(compileContract(directory, exportStem));
+      if (ref === undefined) return;
+      expect(ref, `${exportStem}: host_element "${ref}" is not a grammatical passthrough reference`).toMatch(refPattern);
+      expect(committed.has(ref), `${exportStem}: names "${ref}", which no committed file declares`).toBe(true);
+    });
+
+    it('leaves no committed element surface that no contract names', () => {
       // The union rule the vocabulary comparison already applies, over the
       // one directory it could not reach: a surface the builder does not
       // produce (nothing produces these - they are written by hand) and no
-      // contract composes is registered in every store and read by nobody.
-      // Composition is read off the committed contracts, which this same
-      // suite holds to a fresh compile, so a stale file cannot hide an
-      // orphan here.
-      const composed = new Set(loadCommittedContracts().flatMap(composedTypeIds));
+      // contract names is registered in every store and read by nobody. The
+      // references are read off the committed contracts, which this same
+      // suite holds to a fresh compile, so a stale file cannot hide an orphan
+      // here.
+      const named = composedSurfaceRefs();
       const orphans = loadPassthroughSchemas()
-        .map((schema) => String(schema.$id))
-        .filter((id) => !composed.has(id))
+        .map((schema) => bareGtsId(String(schema.$id)))
+        .filter((ref) => !named.has(ref))
         .sort();
-      expect(orphans, `committed element surfaces no contract composes:\n${orphans.join('\n')}`).toEqual([]);
+      expect(orphans, `committed element surfaces no contract names:\n${orphans.join('\n')}`).toEqual([]);
     });
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-element
 
@@ -409,9 +428,10 @@ export function assertContractFreshness(directory: string, exportStem: string = 
 //
 // Only base.component.json and the contract are registered: gts-ts resolves
 // a schema's trait chain from the GTS ID's OWN dot-token segments
-// (GtsStore.buildSchemaChain), not by dereferencing allOf $refs, so neither
-// the passthrough type nor any other component's contract is ever consulted
-// for trait validation.
+// (GtsStore.buildSchemaChain), not by dereferencing any $ref, so neither the
+// host element's surface nor any other component's contract is ever consulted
+// for trait validation - and host_element is a plain string value in the block
+// being checked, not a type this store has to resolve.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-traits
 export function validateContractTraits(contract: CompiledContract): ValidationResult & { entity_type: string } {
   const gts = new GTS();

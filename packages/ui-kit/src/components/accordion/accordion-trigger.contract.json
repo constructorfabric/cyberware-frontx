@@ -6,9 +6,6 @@
   "allOf": [
     {
       "$ref": "gts://gts.frontx.uikit.base.component.v1~"
-    },
-    {
-      "$ref": "gts://gts.frontx.uikit.passthrough.dom_button.v1~"
     }
   ],
   "properties": {
@@ -114,6 +111,7 @@
     "family": {
       "root": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",
       "role": "part"
-    }
+    },
+    "host_element": "gts.frontx.uikit.passthrough.dom_button.v1~"
   }
 }

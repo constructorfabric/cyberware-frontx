@@ -63,7 +63,7 @@ describe('the hand-written element surface', () => {
 
   it('leaves no property schema empty, in any committed surface', () => {
     // Driven from the committed set rather than from `div` alone: the rule
-    // is about every surface a contract can compose, and a file written next
+    // is about every surface a contract can name, and a file written next
     // week is exactly the one nobody would remember to name here.
     const empty = loadPassthroughSchemas().flatMap((surface) => {
       const declarations = {

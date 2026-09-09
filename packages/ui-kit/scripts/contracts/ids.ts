@@ -102,10 +102,24 @@ export function domPassthroughToken(elementKind: string): string {
 // component that renders that element. Independently versioned from any
 // component's contract. A function, not a constant, because the id has to be
 // parameterized the same way the hand-written file name is.
+//
+// Two spellings for the same reason the base type has two: the bare form is
+// what an id-VALUED field holds - a contract names its host element's surface
+// as a value, so the value is bare - and the URI form is what the surface
+// file's own `$id` carries.
+export function passthroughTypeRef(elementToken: string): string {
+  return `gts.${VENDOR_PACKAGE}.passthrough.${elementToken}.v1~`;
+}
+
 export function passthroughTypeId(elementToken: string): string {
-  return `gts://gts.${VENDOR_PACKAGE}.passthrough.${elementToken}.v1~`;
+  return `gts://${passthroughTypeRef(elementToken)}`;
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-passthrough
+
+// The x-gts-ref target a host-element reference declares: any type in the
+// passthrough namespace. Written as a trailing-`*` prefix pattern for the same
+// reason COMPONENT_REF_TARGET is - the one wildcard shape gts-ts implements.
+export const PASSTHROUGH_REF_TARGET = `gts.${VENDOR_PACKAGE}.passthrough.*`;
 
 // GTS tokens are snake_case; kit directories are kebab-case
 // (navigation-menu -> navigation_menu).
@@ -197,7 +211,32 @@ export function traitTypeIdPattern(): string {
 // domPassthroughToken normalizes it) would pass that equality check just as
 // easily as it would fail this pattern, which is the whole point of asserting
 // the grammar directly instead.
+//
+// Two patterns off one grammar, matching the two spellings above: the bare one
+// is what a host-element reference VALUE is checked against, the URI one what
+// a surface file's own `$id` is.
+// `captureToken` wraps the element token in a capture group, the way
+// componentSegmentPattern does for a component name: reading the token back out
+// of a reference is how a surface FILE is located, and the token is that file's
+// own name, so nothing has to reverse domPassthroughToken.
+function passthroughGrammar(captureToken = false): string {
+  const token = captureToken ? '([a-z_][a-z0-9_]*)' : '[a-z_][a-z0-9_]*';
+  return `gts\\.${escapeRegExp(VENDOR_PACKAGE)}\\.passthrough\\.${token}\\.v\\d+~`;
+}
+
+export function passthroughTypeRefPattern(): string {
+  return `^${passthroughGrammar()}$`;
+}
+
 export function passthroughTypeIdPattern(): string {
-  return `^gts://gts\\.${escapeRegExp(VENDOR_PACKAGE)}\\.passthrough\\.[a-z_][a-z0-9_]*\\.v\\d+~$`;
+  return `^gts://${passthroughGrammar()}$`;
+}
+
+// The element token a passthrough reference carries, or undefined when the
+// string is not one. Accepts either spelling - a reference VALUE is bare, a
+// schema `$id` carries `gts://` - because both name the same type.
+export function passthroughElementToken(id: string): string | undefined {
+  const match = new RegExp(`^${passthroughGrammar(true)}$`).exec(bareGtsId(id));
+  return match?.[1];
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-patterns

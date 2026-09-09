@@ -167,15 +167,17 @@ Contracts, metamodel instances, overlays and the harness that produces them stay
 | Token | A named appearance value the kit defines once for every component to consume. | A CSS custom property on the theme's root and theme blocks |
 | Overlay | The hand-authored half of a contract: meaning, composition rules, invariants, anti-patterns, examples and coverage claims. | A YAML document beside the component, one per described export |
 | Extraction | The machine-owned half: the exported components of a file with their variant axes, defaults, the host element each renders, and every prop filed by where its declaration lives - the component's own source, the primitive library's props for the part it wraps, or React's attributes for that element. | An in-memory result of reading the component's TypeScript through the compiler API |
-| Contract | The compiled join of an overlay and an extraction: a props schema carrying the component's meaning in two extension blocks, composing the surface of the element it renders and annotating rather than rejecting a prop nothing evaluates. | A JSON Schema 2020-12 document committed beside the component |
-| Metamodel instance | The same meaning as a standalone typed record, naming the contract as its props schema. | A JSON document committed beside the component |
-| Abstract base type | The root every component contract derives from: it declares no props and states which concepts a contract's validator-read block carries. | A JSON Schema 2020-12 document under the harness, with its own type identifier |
+| Contract | The compiled join of an overlay and an extraction: a props schema carrying the component's meaning in two extension blocks, deriving from the abstract base type and no other, naming the surface of the element it renders as an identifier it holds, and annotating rather than rejecting a prop nothing evaluates. | A JSON Schema 2020-12 document committed beside the component |
+| Metamodel instance | The same meaning as a standalone typed record, naming the contract as its props schema and the same host element surface the contract names. | A JSON document committed beside the component |
+| Abstract base type | The one type every component contract derives from, and the only one: it declares no props and states which concepts a contract's validator-read block carries. | A JSON Schema 2020-12 document under the harness, with its own type identifier |
 | Metamodel type | The type every metamodel instance is an instance of: the shape of a contract as a standalone record. | A JSON Schema 2020-12 document under the harness, with its own type identifier |
-| Passthrough type | The attributes React declares for one host element, forwarded by every component that renders it. Hand-written per element kind, not derived: the attributes of a `<button>` are the same for whoever renders one, so a per-component derivation produced near-copies of one fact. What more than one kind declares, each file declares identically, checked on the compile path; whether a file is complete is deliberately unchecked. A prop the primitive library declares for its own part is NOT here - that is the component's API and lives in its contract's properties. | A hand-written JSON Schema 2020-12 document under the harness, one per element kind, with its own type identifier |
+| Passthrough type | The attributes React declares for one host element, forwarded by every component that renders it. Hand-written per element kind, not derived: the attributes of a `<button>` are the same for whoever renders one, so a per-component derivation produced near-copies of one fact. Referenced, never inherited: a set shared kit-wide by every component that renders the same element is something a component uses, so a contract holds its identifier and whoever wants its assertions applies it beside the contract. What more than one kind declares, each file declares identically, checked on the compile path; whether a file is complete is deliberately unchecked. A prop the primitive library declares for its own part is NOT here - that is the component's API and lives in its contract's properties. | A hand-written JSON Schema 2020-12 document under the harness, one per element kind, with its own type identifier |
 | Vocabulary type | One concept the overlay states, defined once and referenced by everything that carries it - one type per concept the metamodel references, currently twelve. | A JSON Schema 2020-12 document under the harness, one per concept, each with its own type identifier |
 | Coverage allowlist | The set of components opted into contract enforcement. | A committed list of component directory names |
 
 #### Contract type relationships
+
+A contract has ONE parent: the abstract base type, which is what its chained identifier says and what its schema body says. Everything else a contract relates to it holds as an identifier, the host element's surface included - a set shared kit-wide by every component that renders the same element is something a component uses, not a second thing it is.
 
 The abstract base type states which concepts a contract's validator-read block carries; each concept is a type of its own, and the metamodel type reaches the same concepts through the same identifiers. A reference to another component is that component's own derived contract identifier: a component IS the type derived from the base, so nothing else stands in for it.
 
@@ -183,9 +185,9 @@ Two kinds of edge, and the diagram distinguishes them: a **solid** arrow means t
 
 An identifier held as a value names a SPECIFIC contract major. When a component's contract major moves, every reference to it moves with it: a reference to a component that ships a contract must equal that contract's current props-schema identifier exactly, and a reference to a component that ships none may only name major 1. Those identifiers are resolved by each component's conformance suite - against the component directory, and against the contract identifier where a contract exists - not by the type registry: the type system's own reference validator does not follow a reference into another type, and most referenced components ship no contract yet, so the directory is what says the kit ships that component at all.
 
-Three overlay fields are not vocabulary types and stay inline in the metamodel: `invariants`, `anti_patterns` and `examples` are documentation no validator reads, so there is nothing for another type to enforce or for anything else to reference. A fourth, `hidden`, is a list of prop-and-reason entries - the prop the kit does not advertise and why it does not - which the validator does read but no other type needs to reference, so it stays inline too. The abstract base type's trait vocabulary is therefore six references plus that one inline field, and a contract's validator-read block carries all seven.
+Three overlay fields are not vocabulary types and stay inline in the metamodel: `invariants`, `anti_patterns` and `examples` are documentation no validator reads, so there is nothing for another type to enforce or for anything else to reference. A fourth, `hidden`, is a list of prop-and-reason entries - the prop the kit does not advertise and why it does not - which the validator does read but no other type needs to reference, so it stays inline too. So does `host_element`, the identifier of the surface a contract's component renders: a single identifier-valued field, read by four checks and referenced by no other type. The abstract base type's trait vocabulary is therefore six references plus those two inline fields, and a contract's validator-read block carries all eight. `host_element` is the one of the eight an overlay may not write - which element a component renders is a fact of its source - so the compiler supplies it, and it is absent for a component that renders no host element of its own.
 
-A component's derived type is left open rather than closed: its `unevaluatedProperties` carries the annotation `x-uikit-verdict: unchecked`, so a prop nothing in the schema evaluates is admitted and reported by the harness rather than rejected by a validator that cannot tell a typo'd kit prop from an attribute nobody has classified yet.
+A component's derived type is left open rather than closed: its `unevaluatedProperties` carries the annotation `x-uikit-verdict: unchecked`, so a prop nothing in the schema evaluates is admitted and reported by the harness rather than rejected by a validator that cannot tell a typo'd kit prop from an attribute nobody has classified yet. That openness is also what admits a forwarded attribute, which is why holding the surface as an identifier rather than merging it in changes nothing a consumer may pass: a validator that resolves the identifier applies the surface's own assertions beside the contract, and one that does not gets the unchecked verdict.
 
 Where a surface and a composition trait speak about the same thing, the trait governs. The surface for `<div>` admits `children`, because React does; a contract whose composition says `kinds: [none]` states that the component takes no children at all, and that statement is the answer - the validator accepting a `children` prop against the element surface is not a permission to pass one. The surface describes the element; the composition describes the component.
 
@@ -212,9 +214,10 @@ classDiagram
     class ExtensionPoint["extension_point"]
 
     Contract --|> BaseType : derives from
-    Contract --> Passthrough : composes the surface of its host element
+    Contract ..> Passthrough : host element surface
     Instance ..> MetaType : typed by
     Instance ..> Contract : props schema
+    Instance ..> Passthrough : host element surface
     BaseType --> Rule : trait vocabulary
     BaseType --> Composition : trait vocabulary
     BaseType --> Deprecations : trait vocabulary
@@ -243,11 +246,11 @@ classDiagram
 
 | Type | References | Cardinality | Owner of the fact |
 |------|------------|-------------|-------------------|
-| Component contract | the abstract base type, the passthrough type for its host element | one base, zero or one passthrough | the compiler builds it; the extraction owns the prop facts, the overlay author the meaning |
-| Metamodel instance | the metamodel type, the component contract | exactly one of each | the compiler |
+| Component contract | the abstract base type, and the passthrough type for its host element as an identifier it holds | exactly one base, zero or one passthrough | the compiler builds it; the extraction owns the prop facts, the overlay author the meaning |
+| Metamodel instance | the metamodel type, the component contract, the same passthrough type its contract names | exactly one of each of the first two, zero or one passthrough | the compiler |
 | Abstract base type | each of the six field-level vocabulary types | one each | the trait schema builder |
 | Metamodel type | the same six vocabulary types | one each | the metamodel builder |
-| Passthrough type | nothing; component contracts reference it | one type per element kind, referenced by one or more contracts - a committed file no contract composes fails a described component's conformance suite | hand-written; whoever adds an element kind decides what that element accepts |
+| Passthrough type | nothing; component contracts and their instances hold its identifier | one type per element kind, referenced by one or more contracts - a committed file no contract names fails a described component's conformance suite | hand-written; whoever adds an element kind decides what that element accepts |
 | dont_use_when_rule | a component contract, or an external alternative | exactly one of the two per rule | the overlay author |
 | external_alternative | nothing | zero or one per rule | the overlay author |
 | composition | a child composition, a parent composition, external alternatives | zero or one of each | the overlay author for children and for a mount point outside the kit; the compiler for the parent |

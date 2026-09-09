@@ -98,5 +98,6 @@
       }
     ]
   },
+  "host_element": "gts.frontx.uikit.passthrough.dom_button.v1~",
   "props_schema": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~"
 }

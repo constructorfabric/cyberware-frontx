@@ -3,8 +3,8 @@
 // compiling the component right now produces. The element-kind passthrough
 // types are hand-written source, not compiler output, so there is nothing to
 // compare them against - what the conformance suite checks about them instead
-// is that their identifiers obey the grammar and that a contract composing
-// one names a file that exists. Both the per-component vitest suite (see testing.ts) and
+// is that their identifiers obey the grammar and that the reference a contract
+// holds resolves to a file that exists. Both the per-component vitest suite (see testing.ts) and
 // the merge-scoped guard (check.ts's `guard` subcommand) need the identical
 // comparison - one to fail a test with a diff, the other to fail a CI check
 // with the same diff - so the comparison lives here once; each caller only

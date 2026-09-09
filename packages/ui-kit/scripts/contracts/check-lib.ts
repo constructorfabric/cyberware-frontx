@@ -68,13 +68,12 @@ export interface PassthroughDiff {
   added: string[];
   removed: string[];
   narrowed: { prop: string; reason: string }[];
-  // An element-kind passthrough type is one of several in-place applicators a
-  // component schema composes (see its own $comment) - gts-ts's flat
-  // property/required/enum comparison never sees it, because it never
-  // resolves the component contract's allOf/$ref. This is the check that
-  // closes that gap: an added forwarded prop only widens what a consumer may
-  // pass (backward compatible), while a removed prop or a narrowed enum/type
-  // can reject something that used to validate.
+  // An element-kind passthrough type is a separate type the contract NAMES
+  // (see its own $comment) - gts-ts's flat property/required/enum comparison
+  // never sees it, because it follows no reference of any kind. This is the
+  // check that closes that gap: an added forwarded prop only widens what a
+  // consumer may pass (backward compatible), while a removed prop or a
+  // narrowed enum/type can reject something that used to validate.
   compatible: boolean;
 }
 
@@ -208,7 +207,7 @@ export interface OwnPropsDiff {
   newlyRequiredProps: string[];
   narrowedProps: { prop: string; reason: string }[];
   // Props that left `properties` and are still accepted by the forwarded
-  // surface the current revision composes. Reported so the move is visible,
+  // surface the current revision names. Reported so the move is visible,
   // and left out of `removedProps` so it does not force a major bump.
   movedToForwardedSurface: string[];
   compatible: boolean;
@@ -278,11 +277,11 @@ export function diffOwnPropsSchema(
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
 
 // Which forwarded-surface comparison a contract's two revisions admit. The
-// host element is read from EACH revision's own allOf rather than from the
-// new one alone: a contract that dropped its passthrough $ref outright has no
-// element to look up, so reading only the new side skipped the whole block
-// and reported "compatible" for a change that removed every forwarded prop at
-// once. Four shapes, and only the last is the ordinary one:
+// host element is read from EACH revision's own reference rather than from the
+// new one alone: a contract that dropped its host-element reference outright
+// has no element to look up, so reading only the new side skipped the whole
+// block and reported "compatible" for a change that removed every forwarded
+// prop at once. Four shapes, and only the last is the ordinary one:
 //  - neither revision forwards anything: nothing to compare;
 //  - only the new one does: a forwarded surface appeared, which only widens
 //    what a consumer may pass, so there is nothing to report;
@@ -300,8 +299,8 @@ export function diffOwnPropsSchema(
 // the element it named there.
 export interface PassthroughComparisonInput {
   component: string;
-  // The host element each revision's own allOf names, undefined when that
-  // revision composes no passthrough type at all.
+  // The host element each revision's own reference names, undefined when that
+  // revision names no passthrough type at all.
   oldElement?: string;
   newElement?: string;
   // The schema for that revision's element - at the base ref for the old one,
@@ -328,7 +327,7 @@ export function comparePassthroughSurfaces(input: PassthroughComparisonInput): P
   if (newElement === undefined) {
     return {
       diff: diffPassthroughSchema(oldSchema, {}),
-      note: `${component}: the contract no longer composes the forwarded surface it carried at the base ref (element "${oldElement}")`,
+      note: `${component}: the contract no longer names the forwarded surface it carried at the base ref (element "${oldElement}")`,
     };
   }
   if (newSchema === undefined) {
@@ -852,7 +851,7 @@ export interface DirectoryExportCoverage {
 }
 
 // What a props object looks like against one contract: which names the
-// contract or the element surface it composes accounts for, which nothing
+// contract or the element surface it names accounts for, which nothing
 // accounts for, and which of those are one edit away from a real kit prop.
 //
 // This is the report that replaces `unevaluatedProperties: false`. Closing
@@ -878,7 +877,7 @@ export interface PassthroughPropsLike {
 }
 
 export interface PropsClassification {
-  // Declared by the contract itself, or by the element surface it composes,
+  // Declared by the contract itself, or by the element surface it names,
   // or matching one of that surface's patterns (aria-*, data-*, on*) without
   // being one edit from a prop the contract declares - see classifyProps for
   // why that order matters.

@@ -112,5 +112,6 @@
       "reason": "The root's own stylesheet fixes the layout to a single column (accordion.module.css's `.root { flex-direction: column }`), so the only value `orientation` could add - \"horizontal\" - would put Base UI's horizontal keyboard axis on a vertical layout. Hidden rather than listed: a contract listing it would be this kit's own statement that it works."
     }
   ],
+  "host_element": "gts.frontx.uikit.passthrough.dom_div.v1~",
   "props_schema": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~"
 }

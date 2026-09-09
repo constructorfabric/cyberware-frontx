@@ -29,6 +29,7 @@ import {
   buildPropsAndRequired,
   compileContract,
   compileInstance,
+  compilePropsValidator,
   isExternalAlternative,
   loadBaseSchema,
   loadPassthroughSchema,
@@ -51,10 +52,12 @@ import {
   instanceIdPattern,
   METAMODEL_VERSION,
   passthroughTypeId,
+  passthroughTypeRef,
 } from '../../../scripts/contracts/ids';
 import {
   applyContractTestTimeout,
   assertContractFreshness,
+  registeredKitStore,
   resolveComponentRef,
   validateContractTraits,
 } from '../../../scripts/contracts/testing';
@@ -87,37 +90,14 @@ const passthroughSchema = loadPassthroughSchema('button');
 // anything talking to the library gets the bare id - bareGtsId (ids.ts) is
 // the one place that conversion lives.
 
-// The contract is a derived type: it is only a complete schema once its
-// parent and the shared passthrough type are resolvable, so every validator
-// in this file is built through here. `ajv.compile` throws on an
-// unresolvable $ref, which is itself part of the check - a typo in either
-// ref fails the suite rather than validating against a truncated schema.
+// The props validator every "props validation" test below uses: the harness's
+// own (compile.ts's compilePropsValidator), which resolves the surface this
+// contract NAMES and applies it beside the contract. The composition is the
+// harness's job rather than this file's, so the one place a contract and its
+// host element's surface meet is the same one every other reader goes
+// through.
 function compileValidator(): ReturnType<Ajv2020['compile']> {
-  const ajv = new Ajv2020();
-  // x-uikit and x-gts-traits are the kit's own annotation vocabulary (the
-  // documentation half and the validator-read half - see compile.ts's
-  // SEMANTIC_FIELD_TARGETS). Declaring both keeps Ajv's strict mode on for
-  // every other keyword - the alternative, `strict: false`, would also
-  // swallow a genuine typo like `unevaluatedProperites`, which is exactly
-  // the class of mistake this schema exists to catch. Neither has a
-  // `validate`/`code`, so neither asserts anything here: this Ajv instance
-  // checks props, not traits - x-gts-traits is what GTS.validateEntity
-  // checks against base.component.json's x-gts-traits-schema (see
-  // validateContractTraits, testing.ts, and "button contract in a GTS
-  // store" below).
-  ajv.addKeyword({ keyword: 'x-uikit' });
-  ajv.addKeyword({ keyword: 'x-gts-traits' });
-  // base.component.json (added below) carries this one, not the component
-  // schema itself - declared for the same reason: strict mode must not trip
-  // over gts-ts's own annotation keyword while checking props.
-  ajv.addKeyword({ keyword: 'x-gts-traits-schema' });
-  // The verdict annotation inside the contract's own `unevaluatedProperties`
-  // (compile.ts's OPEN_UNEVALUATED). Declared for the same reason: it asserts
-  // nothing, and strict mode must not trip over it while checking props.
-  ajv.addKeyword({ keyword: UNCHECKED_VERDICT_KEY });
-  ajv.addSchema(baseSchema);
-  ajv.addSchema(passthroughSchema);
-  return ajv.compile(contract);
+  return compilePropsValidator(contract);
 }
 const extraction = resolveTargetExtraction('button');
 const metaSchema = JSON.parse(
@@ -187,7 +167,7 @@ describe('button contract conformance', () => {
     }
   });
 
-  it('derives from the base component type, with the base as the parent ref', () => {
+  it('derives from the base component type alone, and NAMES its host element surface', () => {
     // Chained id and schema body must agree on the parent: gts-ts reads the
     // FIRST $ref in allOf as the parent (store.findParentRef), and the id is
     // that parent's id plus this component's segment. Whether the COMMITTED
@@ -196,9 +176,16 @@ describe('button contract conformance', () => {
     // already checks that centrally, byte-for-byte against buildBaseSchema(),
     // for every component that calls it - a second, narrower literal check
     // here would just be the same fact with two owners.
-    expect(contract.allOf[0]).toEqual({ $ref: BASE_TYPE_ID });
+    //
+    // One entry, not two: the surface of the <button> Button renders used to
+    // sit here as a second parent, which said Button IS two things. It is a
+    // reference the contract holds instead - the same id, bare, because an
+    // id-valued field holds an id - and the surface it resolves to is what
+    // the file itself declares.
+    expect(contract.allOf).toEqual([{ $ref: BASE_TYPE_ID }]);
     expect(contract.$id.startsWith(BASE_TYPE_ID)).toBe(true);
-    expect(contract.allOf).toContainEqual({ $ref: PASSTHROUGH_TYPE_ID });
+    expect(contract['x-gts-traits'].host_element).toBe(bareGtsId(PASSTHROUGH_TYPE_ID));
+    expect(instance.host_element).toBe(bareGtsId(PASSTHROUGH_TYPE_ID));
     expect(passthroughSchema.$id).toBe(PASSTHROUGH_TYPE_ID);
   });
 
@@ -209,7 +196,8 @@ describe('button contract conformance', () => {
     // annotates the verdict; classifyProps is what tells them apart (see
     // "the unchecked-props report" below). `additionalProperties` was never
     // an option here for a different reason: it only sees its sibling
-    // `properties` and would reject every prop reached through allOf/$ref.
+    // `properties`, so it would reject every forwarded attribute the moment a
+    // validator composed the host element's surface in beside the contract.
     expect(contract.unevaluatedProperties).toEqual(OPEN_UNEVALUATED);
     expect(contract.unevaluatedProperties[UNCHECKED_VERDICT_KEY]).toBe('unchecked');
     expect(contract).not.toHaveProperty('additionalProperties');
@@ -310,12 +298,24 @@ describe('button props validation', () => {
     expect(validate(props), new Ajv2020().errorsText(validate.errors)).toBe(true);
   });
 
-  it('rejects a value the element surface does type', () => {
+  it('rejects a value the element surface does type, once the surface is composed in', () => {
     // The element surface is not decoration: `type` on a <button> is one of
     // three values, and a fourth fails even though the prop itself is
-    // forwarded rather than declared by the kit.
+    // forwarded rather than declared by the kit. It fails through the
+    // COMPOSITION - the validator resolved the reference the contract holds
+    // and applied the surface beside it - not through the schema body, which
+    // no longer merges the surface in. A validator that ignores the reference
+    // gets the open verdict instead, which is the honest answer for a reader
+    // that never looked the surface up.
     const validate = compileValidator();
     expect(validate({ type: 'sumbit' })).toBe(false);
+    const contractAlone = new Ajv2020();
+    contractAlone.addKeyword({ keyword: 'x-uikit' });
+    contractAlone.addKeyword({ keyword: 'x-gts-traits' });
+    contractAlone.addKeyword({ keyword: 'x-gts-traits-schema' });
+    contractAlone.addKeyword({ keyword: UNCHECKED_VERDICT_KEY });
+    contractAlone.addSchema(baseSchema);
+    expect(contractAlone.compile(contract)({ type: 'sumbit' })).toBe(true);
   });
 
   it('still rejects a value outside an axis enum', () => {
@@ -492,9 +492,9 @@ describe('overlay and extraction safety', () => {
 
   it('keeps a declared prop that agrees with the element surface, rather than deferring to it', () => {
     // The declaration is the more specific one and the contract carries it:
-    // both schemas apply to the same value through allOf, so agreement is
-    // all that is required, and a reader of `properties` sees every prop the
-    // component declares.
+    // a validator that composes the host element's surface in applies both to
+    // the same value, so agreement is all that is required, and a reader of
+    // `properties` sees every prop the component declares.
     const agreeing = syntheticExtraction([
       { name: 'disabled', optional: true, typeText: 'boolean | undefined', declarationFile: 'button.tsx' },
     ]);
@@ -777,7 +777,7 @@ describe('button contract in a GTS store', () => {
     return gts;
   }
 
-  it('validates as a derived GTS type, and so does the passthrough type it composes', () => {
+  it('validates as a derived GTS type, and so does the passthrough type it names', () => {
     // BASE_TYPE_ID is deliberately not checked here - see "the abstract base
     // type alone never resolves its own trait schema" below for why it
     // cannot pass this same call.
@@ -829,6 +829,22 @@ describe('button contract in a GTS store', () => {
     registerContractTypes((entity) => gts.register(entity));
     gts.register(buildMetamodel());
     gts.register(JSON.parse(JSON.stringify(instance)) as Record<string, unknown>);
+    const result = gts.validateInstance(instance.id);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('not found in registry');
+  });
+
+  it("fails when the surface the instance's host_element names is absent from the registry", () => {
+    // Negative control for the OTHER reference gts-ts resolves itself. It sits
+    // directly on an instance property, which is as deep as
+    // XGtsRefValidator's walk goes, so the surface a contract names is
+    // resolved by the registry and not only by the conformance suite - a claim
+    // worth a failing case, because the same reference inside x-gts-traits is
+    // stripped before any validator sees it.
+    const gts = registeredKitStore();
+    const orphaned = { ...(JSON.parse(JSON.stringify(instance)) as Record<string, unknown>) };
+    orphaned.host_element = passthroughTypeRef('dom_nope');
+    gts.register(orphaned);
     const result = gts.validateInstance(instance.id);
     expect(result.ok).toBe(false);
     expect(result.error).toContain('not found in registry');

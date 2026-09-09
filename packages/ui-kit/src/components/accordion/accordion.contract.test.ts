@@ -10,7 +10,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addContractTypes,
-  BASE_TYPE_ID,
   buildMetamodel,
   compileContract,
   contractMajor,
@@ -22,7 +21,7 @@ import {
   type CompiledContract,
   type ContractInstance,
 } from '../../../scripts/contracts/compile';
-import { bareGtsId, componentTypeRef } from '../../../scripts/contracts/ids';
+import { bareGtsId, componentTypeRef, passthroughTypeRef } from '../../../scripts/contracts/ids';
 import {
   applyContractTestTimeout,
   assertContractFreshness,
@@ -253,10 +252,20 @@ describe('accordion family in a GTS store', () => {
     }
   });
 
-  it('every contract derives from the base type, with the base as the parent ref', () => {
-    for (const { stem, contract } of Object.values(units)) {
-      expect(contract.allOf[0], stem).toEqual({ $ref: BASE_TYPE_ID });
+  it('each part names the surface of the element it renders, in both halves of its artifact', () => {
+    // Agreement between the three things that could disagree: the element the
+    // extraction resolved, the reference the contract holds, and the reference
+    // the instance holds. Worth stating on this family in particular, because
+    // it is the one place in the kit where a family spans two elements - the
+    // trigger renders a <button>, the other three a <div> - so a family
+    // shares a root and not a surface.
+    for (const { stem, contract, instance, passthroughSchema } of Object.values(units)) {
+      const ref = bareGtsId(String(passthroughSchema.$id));
+      expect(contract['x-gts-traits'].host_element, stem).toBe(ref);
+      expect(instance.host_element, stem).toBe(ref);
     }
+    expect(units['accordion-trigger'].contract['x-gts-traits'].host_element).toBe(passthroughTypeRef('dom_button'));
+    expect(units[DIRECTORY].contract['x-gts-traits'].host_element).toBe(passthroughTypeRef('dom_div'));
   });
 
   it('fails when the parent type is not registered - negative control', () => {

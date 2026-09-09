@@ -201,6 +201,13 @@
       },
       "minItems": 1
     },
+    "host_element": {
+      "type": "string",
+      "pattern": "^gts\\.frontx\\.uikit\\.passthrough\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
+      "x-gts-ref": "gts.frontx.uikit.passthrough.*",
+      "description": "GTS id of the hand-written surface for the host element this component renders - what it forwards to that element. HELD as an id, not composed into the schema as a second parent: a contract derives from ONE type, the abstract base component type, and a surface shared kit-wide by every component that renders the same element is not a second thing this component IS. Whoever needs the surface resolves it through this reference and applies it beside the contract; nothing in the props schema merges it in. `x-gts-ref` declares what the value must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating. Absent entirely for a component that renders no host element of its own - DataTable, which renders its Table internally.",
+      "$comment": "The element token, not the tag: `dom_button` for a <button>, normalized by domPassthroughToken - the same token the committed file under scripts/contracts/passthrough/ is named by, so the reference and the file name are one identity."
+    },
     "props_schema": {
       "type": "string",
       "pattern": "^gts\\.frontx\\.uikit\\.base\\.component\\.v1~frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",

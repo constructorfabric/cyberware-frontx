@@ -28,7 +28,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { OPEN_UNEVALUATED } from './compile';
 import { runCompat, runCoverage, runGuard, type CheckContext } from './check';
-import { BASE_TYPE_ID, passthroughTypeId, propsSchemaId } from './ids';
+import { BASE_TYPE_ID, passthroughTypeId, passthroughTypeRef, propsSchemaId } from './ids';
 import { applyContractTestTimeout } from './testing';
 
 // Each case builds a git repository and runs the real GTS store over it;
@@ -69,8 +69,9 @@ function pascalCase(stem: string): string {
 }
 
 // A minimal but real compiled-shape props schema: the same $id grammar and
-// base-derivation allOf compile.ts emits for every real component, plus the
-// passthrough $ref that `compat` reads the host element off.
+// single-parent allOf compile.ts emits for every real component, plus the
+// host-element reference `compat` reads the surface off - held in
+// x-gts-traits, bare, exactly as a real contract holds it.
 function contractJson(
   component: string,
   options: { major?: number; element?: string; properties?: Record<string, unknown>; required?: string[] } = {},
@@ -80,10 +81,11 @@ function contractJson(
     $id: propsSchemaId(component, major),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     type: 'object',
-    allOf: [{ $ref: BASE_TYPE_ID }, ...(element === undefined ? [] : [{ $ref: passthroughTypeId(element) }])],
+    allOf: [{ $ref: BASE_TYPE_ID }],
     properties,
     required,
     unevaluatedProperties: OPEN_UNEVALUATED,
+    'x-gts-traits': element === undefined ? {} : { host_element: passthroughTypeRef(element) },
   };
 }
 
@@ -175,7 +177,7 @@ function createFixture(): Fixture {
 }
 
 // The ordinary starting point: one covered component with an overlay, a
-// contract and the element surface it composes, all committed.
+// contract and the element surface it names, all committed.
 function committedButtonKit(fixture: Fixture, options: { properties?: Record<string, unknown> } = {}): void {
   fixture.write('scripts/contracts/covered.json', ['button']);
   fixture.write('scripts/contracts/passthrough/dom_button.json', passthroughJson('dom_button', {
@@ -206,7 +208,7 @@ describe('compat: a change that drops the forwarded surface', () => {
     expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(1);
     expect(fixture.output()).toContain('passthrough: prop "className" removed');
     expect(fixture.output()).toContain('passthrough: prop "disabled" removed');
-    expect(fixture.output()).toContain('no longer composes the forwarded surface');
+    expect(fixture.output()).toContain('no longer names the forwarded surface');
   });
 });
 
@@ -296,7 +298,7 @@ describe('compat: a change of host element', () => {
     expect(fixture.output()).toContain('host element moved "dom_button" -> "dom_div"');
   });
 
-  it('refuses a narrowing of the shared surface itself, for every component that composes it', () => {
+  it('refuses a narrowing of the shared surface itself, for every component that names it', () => {
     // The surfaces are hand-written and shared, so editing one is not a
     // per-component change: dropping `disabled` from the <button> surface
     // narrows what every component rendering a button accepts, and the

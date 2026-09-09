@@ -36,8 +36,10 @@ applyContractTestTimeout();
 const COMPONENT = 'compat-e2e-fixture';
 
 // A minimal but real compiled-shape props schema: the same $id grammar and
-// base-derivation allOf compile.ts emits for every real component, with a
-// hand-picked properties/required set per scenario below.
+// single-parent allOf compile.ts emits for every real component, with a
+// hand-picked properties/required set per scenario below. No host-element
+// reference: these scenarios are about a contract's OWN props, and the
+// forwarded surface has its own comparison (check.e2e.test.ts).
 function schema(major: number, properties: Record<string, { type?: string; enum?: string[]; description?: string }>, required: string[]) {
   return {
     $id: propsSchemaId(COMPONENT, major),

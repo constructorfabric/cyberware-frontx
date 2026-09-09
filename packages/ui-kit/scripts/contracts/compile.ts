@@ -13,11 +13,12 @@
 // linked through the instance's props_schema field.
 //
 // A component's props schema is not a standalone schema that happens to look
-// like its neighbours: it derives from base.component.json and composes the
-// hand-written passthrough type for the HOST ELEMENT it renders
-// (passthrough/dom_button.json for Button, dom_div.json for Accordion's
-// root). Both of those are hand-written source - they describe no component's
-// code, so there is nothing to extract for either. React's DOM attributes for
+// like its neighbours: it derives from base.component.json - one parent, the
+// only one - and NAMES the hand-written passthrough type for the HOST ELEMENT
+// it renders (passthrough/dom_button.json for Button, dom_div.json for
+// Accordion's root), which whoever validates props resolves and applies
+// beside it. Both of those are hand-written source - they describe no
+// component's code, so there is nothing to extract for either. React's DOM attributes for
 // a given element are the same surface for every component that renders it,
 // and a prop the primitive library declares for its own part is the
 // component's API rather than forwarded surface (extract.ts's
@@ -84,13 +85,17 @@ import {
   instanceIdPattern,
   METAMODEL_TYPE_ID,
   METAMODEL_VERSION,
+  passthroughElementToken,
+  PASSTHROUGH_REF_TARGET,
   passthroughTypeId,
+  passthroughTypeRef,
+  passthroughTypeRefPattern,
   propsSchemaId,
   traitTypeId,
   VENDOR_PACKAGE,
 } from './ids';
 
-export { BASE_TYPE_ID, passthroughTypeId, propsSchemaId, instanceId, componentTypeRef };
+export { BASE_TYPE_ID, passthroughTypeId, passthroughTypeRef, propsSchemaId, instanceId, componentTypeRef };
 
 export interface Examples {
   good: { title: string; code: string }[];
@@ -289,6 +294,11 @@ export interface ContractInstance extends Omit<Overlay, 'component' | 'compositi
   gts_type: string;
   metamodel: string;
   component: string;
+  // The surface of the host element this component renders, held as an id
+  // rather than embedded: the same reference the contract's own
+  // x-gts-traits carries, so the two halves of one artifact name one surface.
+  // Absent for a component that renders no host element of its own.
+  host_element?: string;
   props_schema: string;
 }
 
@@ -376,15 +386,32 @@ type FieldsFor<Target extends SemanticTarget> = {
 type UikitFields = FieldsFor<'x-uikit'>;
 type TraitFields = FieldsFor<'x-gts-traits'>;
 
+// Validator-read fields the COMPILER writes rather than the overlay: read off
+// the extraction, so an overlay may not author them (buildOverlaySchema
+// removes them for exactly that reason). `host_element` is the only one -
+// which element a component renders is a fact of its source, not a claim an
+// author gets to make - and it is listed here rather than in SEMANTIC_FIELDS
+// because that list is what an overlay may say. Its definition still lives in
+// the metamodel like every other trait field, so the trait schema and the
+// metamodel reach one shape through one place.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-host
+const MACHINE_TRAIT_FIELDS = ['host_element'] as const;
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-host
+
 export interface CompiledContract {
   $id: string;
   $schema: string;
   title: string;
   type: 'object';
-  // Base first: gts-ts treats the FIRST $ref in allOf as the parent of the
-  // derived type (store.findParentRef), which is what makes the chained $id
-  // above and the schema body agree about who the parent is.
-  allOf: SchemaRef[];
+  // Exactly one entry, always the abstract base type: a contract derives from
+  // ONE type, which is what its chained $id already says. gts-ts treats the
+  // first $ref in allOf as the parent of the derived type
+  // (store.findParentRef), so a single entry is also the only shape in which
+  // the id and the schema body cannot disagree about who the parent is. The
+  // host element's surface used to sit here as a second parent; it is now a
+  // reference the contract HOLDS (x-gts-traits.host_element) - see
+  // hostElementRef below.
+  allOf: [SchemaRef];
   properties: Record<string, ContractProperty>;
   // Own props whose extraction reported `optional: false`. A prop the
   // passthrough type owns never reaches this list - one owner, one required
@@ -415,15 +442,19 @@ export interface CompiledContract {
   // x-uikit-routed counterparts always have been - the trait schema's own
   // nullable+default shape is what makes that absence resolve instead of
   // failing gts-ts's completeness check. `composition` is the compiled one
-  // (derived `parent`, `mounts_in` merged into it), not the authored one.
-  'x-gts-traits': Omit<Pick<Overlay, TraitFields>, 'composition'> & { composition: CompiledComposition };
+  // (derived `parent`, `mounts_in` merged into it), not the authored one, and
+  // `host_element` is not authored at all - see MACHINE_TRAIT_FIELDS.
+  'x-gts-traits': Omit<Pick<Overlay, TraitFields>, 'composition'> & {
+    composition: CompiledComposition;
+    host_element?: string;
+  };
 }
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-// The hand-written normative types this compiler composes. Read from disk
-// rather than inlined so the artifacts, the conformance test and Ajv all see
-// one copy of each.
+// The hand-written normative types this compiler derives from and names. Read
+// from disk rather than inlined so the artifacts, the conformance test and Ajv
+// all see one copy of each.
 const SCHEMA_DIR = dirname(fileURLToPath(import.meta.url));
 const PASSTHROUGH_DIR = join(SCHEMA_DIR, 'passthrough');
 const TYPES_DIR = join(SCHEMA_DIR, 'types');
@@ -525,6 +556,19 @@ export function registerContractTypes(register: (entity: Record<string, unknown>
   for (const type of loadTraitTypes()) register(type);
 }
 
+// The host-element surface an extraction implies, bare: the surface for the
+// element the component renders, and only when it actually forwards something
+// to it. A component that resolves an element but forwards nothing to it names
+// no surface - there would be nothing for the surface to account for - so the
+// contract and the instance decide it here, once, rather than each applying
+// its own version of the rule and disagreeing the day one of them changes.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
+export function hostElementFor(extraction: ComponentExtraction): string | undefined {
+  if (extraction.passthroughProps.length === 0 || extraction.elementKind === undefined) return undefined;
+  return passthroughTypeRef(domPassthroughToken(extraction.elementKind));
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
+
 // The hand-written passthrough type for one host element - what a component
 // rendering that element forwards to it. One file per element kind under
 // scripts/contracts/passthrough/, never generated: React's DOM attributes for
@@ -539,23 +583,30 @@ export function registerContractTypes(register: (entity: Record<string, unknown>
 // decides what that element actually accepts.
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-load
-export const loadPassthroughSchema = memoizeSchemaBy((elementKind: string): Record<string, unknown> => {
+// Keyed by the TOKEN rather than the tag, because a contract holds the token:
+// the reference it carries names the surface, and the token inside that
+// reference is the file's own name. The tag-keyed wrapper below is what the
+// compile path uses, where the tag is what the extractor resolved.
+export const loadPassthroughSchemaByToken = memoizeSchemaBy((token: string): Record<string, unknown> => {
   assertSharedAttributesAgree();
-  const token = domPassthroughToken(elementKind);
   const path = join(PASSTHROUGH_DIR, `${token}.json`);
   if (!existsSync(path)) {
     throw new Error(
-      `no hand-written passthrough type for element kind "${elementKind}" - expected ` +
+      `no hand-written passthrough type "${token}" - expected ` +
         `scripts/contracts/passthrough/${token}.json. Write it (see dom_button.json for the shape: the common ` +
         `attributes, the element's own, and the aria-/data-/on* patterns) rather than deriving one per component`,
     );
   }
   return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
 });
+
+export function loadPassthroughSchema(elementKind: string): Record<string, unknown> {
+  return loadPassthroughSchemaByToken(domPassthroughToken(elementKind));
+}
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-load
 
 // Every committed element-kind type, for a reader that needs the whole set: a
-// GTS store registering what contracts compose, and the conformance suite's
+// GTS store registering what contracts name, and the conformance suite's
 // identifier-grammar check.
 export const loadPassthroughSchemas = memoizeSchema((): Record<string, unknown>[] =>
   readdirSync(PASSTHROUGH_DIR)
@@ -563,6 +614,47 @@ export const loadPassthroughSchemas = memoizeSchema((): Record<string, unknown>[
     .sort()
     .map((name) => JSON.parse(readFileSync(join(PASSTHROUGH_DIR, name), 'utf8')) as Record<string, unknown>),
 );
+
+// The host-element surface a contract NAMES, read off the reference it holds
+// rather than re-derived through extraction. Two readers, because the two
+// callers hold different things: a compiled contract in memory, or a document
+// read as plain JSON out of some git revision - which is data until something
+// checks it, so it is narrowed rather than cast.
+//
+// This is the one place the composed reference is turned back into a surface.
+// Every surface-aware check goes through it, so a contract that names no
+// surface answers "none" once, here, instead of each check inventing its own
+// walk over the schema body.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-compose
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+export function hostElementRef(contract: unknown): string | undefined {
+  if (!isRecord(contract)) return undefined;
+  const traits = contract['x-gts-traits'];
+  if (!isRecord(traits)) return undefined;
+  const ref = traits.host_element;
+  return typeof ref === 'string' ? ref : undefined;
+}
+
+// The element token that reference carries - `dom_button`, which is also the
+// name of the committed file under scripts/contracts/passthrough/, so the
+// reference and the file are one identity.
+export function hostElementToken(contract: unknown): string | undefined {
+  const ref = hostElementRef(contract);
+  return ref === undefined ? undefined : passthroughElementToken(ref);
+}
+
+// The committed surface that reference resolves to, or undefined when the
+// contract names none. A reference naming a file that does not exist is NOT
+// swallowed here - loadPassthroughSchema refuses by name, which is the same
+// refusal a compile gets.
+export function loadHostSurface(contract: unknown): Record<string, unknown> | undefined {
+  const token = hostElementToken(contract);
+  return token === undefined ? undefined : loadPassthroughSchemaByToken(token);
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-compose
 
 // One attribute, one shape - across element kinds as well as inside one.
 // The surfaces are hand-written, so what two of them state in common they
@@ -600,9 +692,9 @@ export function sharedAttributeConflicts(surfaces: readonly Record<string, unkno
   return conflicts.sort();
 }
 
-// Applied once per process, on the path every compile takes: a contract
-// composes one element's surface, so nothing on the compile path would ever
-// look at two of them otherwise.
+// Applied once per process, on the path every compile takes: a contract names
+// one element's surface, so nothing on the compile path would ever look at two
+// of them otherwise.
 let sharedAttributesAgree = false;
 function assertSharedAttributesAgree(): void {
   if (sharedAttributesAgree) return;
@@ -1147,14 +1239,24 @@ export const buildMetamodel = memoizeSchema((): Record<string, unknown> => ({
         minItems: 1,
       },
       // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-hidden
-      // The one reference gts-ts itself resolves against the registry: it
-      // sits directly on an instance property, which is as deep as
+      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-host
+      host_element: {
+        type: 'string',
+        pattern: passthroughTypeRefPattern(),
+        'x-gts-ref': PASSTHROUGH_REF_TARGET,
+        description:
+          "GTS id of the hand-written surface for the host element this component renders - what it forwards to that element. HELD as an id, not composed into the schema as a second parent: a contract derives from ONE type, the abstract base component type, and a surface shared kit-wide by every component that renders the same element is not a second thing this component IS. Whoever needs the surface resolves it through this reference and applies it beside the contract; nothing in the props schema merges it in. `x-gts-ref` declares what the value must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating. Absent entirely for a component that renders no host element of its own - DataTable, which renders its Table internally.",
+        $comment: "The element token, not the tag: `dom_button` for a <button>, normalized by domPassthroughToken - the same token the committed file under scripts/contracts/passthrough/ is named by, so the reference and the file name are one identity.",
+      },
+      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-host
+      // The two references gts-ts itself resolves against the registry: both
+      // sit directly on an instance property, which is as deep as
       // XGtsRefValidator's own walk goes, so GTS.validateInstance fails an
-      // instance whose props schema is not a registered type (see the
-      // component contract suites). A reference nested inside a referenced
-      // vocabulary type - a `don't` alternative, a composition kind - is not
-      // reached by that walk and is resolved by the conformance suite
-      // instead.
+      // instance whose props schema - or whose host-element surface - is not a
+      // registered type (see the component contract suites). A reference
+      // nested inside a referenced vocabulary type - a `don't` alternative, a
+      // composition kind - is not reached by that walk and is resolved by the
+      // conformance suite instead.
       props_schema: {
         type: 'string',
         pattern: componentTypeRefPattern(),
@@ -1257,11 +1359,21 @@ export const buildGtsTraitsSchema = memoizeSchema((): Record<string, unknown> =>
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-nullable
   }
 
+  // The compiler-written trait fields, taken from the same metamodel
+  // definitions and always nullable: a component that renders no host element
+  // of its own has nothing to say here, and validateSchemaTraits demands a
+  // value or a default for every declared property.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-host
+  for (const field of MACHINE_TRAIT_FIELDS) {
+    properties[field] = nullableTraitProperty(metamodelProperties[field]);
+  }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-host
+
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-trait-schema:p2:inst-ts-return
   return {
     type: 'object',
     description:
-      "Validator-read half of the overlay: what GTS.validateEntity checks a component contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from base.component down to the component's own contract). Everything here is a fact a validator or lint actually reads - dont_use_when's typed alternative, composition, deprecations, coverage (including its assumptions), family, extension_points and hidden; a purely documentary field (intent, typical_uses, invariants, anti_patterns, examples) lives in x-uikit instead, which no validator reads. Six of the fields are a REFERENCE to the vocabulary type that owns its shape (gts.frontx.uikit.trait.*), so that concept is defined once, in one place, for both this schema and the metamodel; hidden stays inline, because nothing else references it. additionalProperties: false so an unknown trait key fails GTS.validateEntity by name instead of vanishing silently.",
+      "Validator-read half of the overlay: what GTS.validateEntity checks a component contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from base.component down to the component's own contract). Everything here is a fact a validator or lint actually reads - dont_use_when's typed alternative, composition, deprecations, coverage (including its assumptions), family, extension_points, hidden and host_element; a purely documentary field (intent, typical_uses, invariants, anti_patterns, examples) lives in x-uikit instead, which no validator reads. Six of the fields are a REFERENCE to the vocabulary type that owns its shape (gts.frontx.uikit.trait.*), so that concept is defined once, in one place, for both this schema and the metamodel; hidden and host_element stay inline, because nothing else references either. host_element is the one field here the overlay does not author: which element a component renders is a fact of its source, and the compiler writes it. additionalProperties: false so an unknown trait key fails GTS.validateEntity by name instead of vanishing silently.",
     properties,
     // Only the fields the overlay itself always requires (buildMetamodel's
     // own `required` list) are required here too - `family`/`extension_points`
@@ -1285,7 +1397,7 @@ export const buildBaseSchema = memoizeSchema((): Record<string, unknown> => ({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: 'UiKit base component',
     description:
-      "Abstract base type every kit component's props schema derives from. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which the hand-written surface for each host element declares, because a base shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, the validator-read half of the overlay vocabulary that GTS.validateEntity checks a component's own x-gts-traits against. Six of its fields are references to the types that own each concept (gts.frontx.uikit.trait.*) rather than inline definitions; the seventh, hidden, the validator reads but nothing else references, so it stays inline - see the domain model in the package DESIGN for how they relate.",
+      "The ONE type every kit component's props schema derives from, and the only one: a contract has a single parent, which is what its chained $id says, and the surface of the host element it renders is a reference it holds rather than a second parent. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which the hand-written surface for each host element declares, because a base shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, the validator-read half of the overlay vocabulary that GTS.validateEntity checks a component's own x-gts-traits against. Six of its fields are references to the types that own each concept (gts.frontx.uikit.trait.*) rather than inline definitions; two, hidden and host_element, the validator reads but nothing else references, so they stay inline - see the domain model in the package DESIGN for how they relate.",
     type: 'object',
     $comment:
       "No additionalProperties/unevaluatedProperties here on purpose. gts-ts's validateSchemaAgainstParent rejects a derived schema that adds properties when the base sets additionalProperties: false, and closing the base would mean every component had to restate it. A derived component type does not close itself either: its unevaluatedProperties carries an annotated open schema ({ \"x-uikit-verdict\": \"unchecked\" }), so a prop nothing evaluates is admitted and reported as UNCHECKED by whoever reads the props rather than rejected by Ajv, which cannot tell a typo'd kit prop from an attribute this harness has not classified yet.",
@@ -1301,7 +1413,7 @@ export const buildBaseSchema = memoizeSchema((): Record<string, unknown> => ({
 // instead of the field silently not making it into the compiled artifact.
 export function buildOverlaySchema(): Record<string, unknown> {
   const metamodel = buildMetamodel();
-  const machineOwned = ['id', 'gts_type', 'metamodel', 'props_schema'];
+  const machineOwned = ['id', 'gts_type', 'metamodel', 'host_element', 'props_schema'];
   const properties = { ...(metamodel.properties as Record<string, unknown>) };
   for (const key of machineOwned) delete properties[key];
   const required = (metamodel.required as string[]).filter((key) => !machineOwned.includes(key));
@@ -1321,7 +1433,7 @@ export function buildOverlaySchema(): Record<string, unknown> {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: 'UiKit component contract overlay',
     description:
-      "Shape of the hand-written overlay a contract compiles from - the metamodel's authored fields, plus the contract major its identifiers carry. `id`, `gts_type`, `metamodel` and `props_schema` are the compiler's own; an overlay may not write them.",
+      "Shape of the hand-written overlay a contract compiles from - the metamodel's authored fields, plus the contract major its identifiers carry. `id`, `gts_type`, `metamodel`, `host_element` and `props_schema` are the compiler's own; an overlay may not write them. `host_element` is among them because which element a component renders is a fact of its source, read off the extraction, not a claim an author gets to make.",
     type: 'object',
     $defs: metamodel.$defs,
     properties,
@@ -1388,6 +1500,42 @@ export function assertValidatesAgainst(component: string, what: string, schema: 
   addContractTypes(ajv);
   assertAgainstValidator(component, what, ajv.compile(schema), value);
 }
+
+// A validator for one contract's PROPS: the contract, plus the surface of the
+// host element it NAMES. The two are composed here, at the point of
+// validation, because that is what holding a reference means - the contract
+// carries the surface's id and whoever checks props resolves it and applies
+// the surface beside the contract. Nothing merges the surface into the
+// contract's own body, so this is the only place the two meet, and a contract
+// naming no surface (DataTable) is checked against itself alone.
+//
+// The kit's three annotation blocks are declared rather than switched off with
+// `strict: false`, which would also swallow a genuine typo like
+// `unevaluatedProperites` - exactly the class of mistake these schemas exist
+// to catch. None of them asserts anything here: this instance checks props,
+// not traits.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-compose
+export function compilePropsValidator(contract: CompiledContract): ValidateFunction {
+  const ajv = new Ajv2020({ allErrors: true });
+  addContractTypes(ajv);
+  for (const keyword of ['x-uikit', 'x-gts-traits', 'x-gts-traits-schema']) {
+    if (!ajv.getKeyword(keyword)) ajv.addKeyword({ keyword });
+  }
+  ajv.addSchema(loadBaseSchema());
+  const surface = loadHostSurface(contract);
+  if (surface === undefined) return ajv.compile(contract);
+  ajv.addSchema(surface);
+  ajv.addSchema(contract);
+  // A wrapper applying both at the same instance location. `ajv.compile`
+  // throws on an unresolvable $ref, which is itself part of the check - a
+  // reference naming a type nothing registered fails here rather than
+  // validating against half a schema.
+  return ajv.compile({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    allOf: [{ $ref: contract.$id }, { $ref: String(surface.$id) }],
+  });
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-passthrough:p1:inst-ps-compose
 
 // The validation half, over an already-compiled validator. Split out so the
 // two schemas EVERY compile validates against - the metamodel for an
@@ -1526,6 +1674,11 @@ export function compileInstance(directory: string, exportStem: string = director
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-instance:p2:inst-mi-assemble
   const overlay = loadOverlay(directory, exportStem);
   const major = overlay.major ?? DEFAULT_CONTRACT_MAJOR;
+  // The host element comes from the source, not the overlay - so the instance
+  // needs the extraction the contract is built from. Cached per source file
+  // (extract.ts's extractionCache), so asking here costs nothing once the
+  // contract for the same component has been compiled in this process.
+  const extraction = resolveTargetExtraction(directory, exportStem);
   const instance: ContractInstance = {
     id: instanceId(exportStem, major),
     gts_type: `${METAMODEL_TYPE_ID}~`,
@@ -1543,6 +1696,10 @@ export function compileInstance(directory: string, exportStem: string = director
     family: overlay.family,
     extension_points: overlay.extension_points,
     hidden: overlay.hidden,
+    // The surface of the host element, held as an id exactly as the contract
+    // holds it - the same reference, so the two halves of one artifact name
+    // one surface. Undefined for a component that renders none.
+    host_element: hostElementFor(extraction),
     // The bare id, not the `gts://` URI form the contract's own $id carries:
     // an id-VALUED field holds an id, and gts-ts's reference validator
     // rejects the URI form outright (Gts.isValidGtsID).
@@ -1677,12 +1834,13 @@ export function buildPropsAndRequired(
 }
 
 // One prop, one shape. Where a prop's name is also declared by the
-// element-kind passthrough type this contract composes, the two schemas both
-// apply to the same value, so a disagreement is not a precedence question -
-// it is a props object that can satisfy neither. Only an ASSERTING entry on
-// the element side can disagree: an annotation-only one (`style`, `children`)
-// states nothing to contradict, which is exactly why a Base UI component's
-// state-function `style` composes cleanly over React's plain object.
+// element-kind passthrough type this contract names, a validator that resolves
+// that reference applies both to the same value, so a disagreement is not a
+// precedence question - it is a props object that can satisfy neither. Only an
+// ASSERTING entry on the element side can disagree: an annotation-only one
+// (`style`, `children`) states nothing to contradict, which is exactly why a
+// Base UI component's state-function `style` composes cleanly over React's
+// plain object.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
 function assertAgreesWithElementSurface(
   component: string,
@@ -1990,7 +2148,9 @@ export function compileContract(directory: string, exportStem: string = director
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
 
   let passthroughSchema: Record<string, unknown> | undefined;
-  let passthroughRef: SchemaRef | undefined;
+  // The id of that surface, bare: an id-VALUED field holds an id, and gts-ts's
+  // reference validator rejects the URI form outright (Gts.isValidGtsID).
+  let hostElement: string | undefined;
   if (extraction.passthroughProps.length > 0) {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
     if (!extraction.elementKind) {
@@ -2010,7 +2170,7 @@ export function compileContract(directory: string, exportStem: string = director
     passthroughSchema = loadPassthroughSchema(extraction.elementKind);
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
-    passthroughRef = { $ref: passthroughTypeId(domPassthroughToken(extraction.elementKind)) };
+    hostElement = hostElementFor(extraction);
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
   }
 
@@ -2040,7 +2200,9 @@ export function compileContract(directory: string, exportStem: string = director
     title: `UiKit ${exportStem} contract`,
     type: 'object',
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
-    allOf: passthroughRef ? [{ $ref: BASE_TYPE_ID }, passthroughRef] : [{ $ref: BASE_TYPE_ID }],
+    // One parent, always the base type. The host element's surface is named
+    // as a value below (x-gts-traits.host_element), not composed in here.
+    allOf: [{ $ref: BASE_TYPE_ID }],
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
     properties,
     required,
@@ -2060,7 +2222,13 @@ export function compileContract(directory: string, exportStem: string = director
       cannot_extract: extraction.cannotExtract,
     },
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
-    'x-gts-traits': { ...pickFields(overlay, gtsTraitsFields), composition: compileComposition(directory, exportStem, overlay) },
+    'x-gts-traits': {
+      ...pickFields(overlay, gtsTraitsFields),
+      composition: compileComposition(directory, exportStem, overlay),
+      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
+      host_element: hostElement,
+      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
+    },
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
   };
   // M3: validated against buildGtsTraitsSchema() here, not only inside

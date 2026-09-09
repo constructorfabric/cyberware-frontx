@@ -13,7 +13,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addContractTypes,
-  BASE_TYPE_ID,
   buildMetamodel,
   compileContract,
   compileInstance,
@@ -134,11 +133,16 @@ describe('data-table: coverage counts only component exports', () => {
 });
 
 describe('data-table: no forwarded surface for either contract', () => {
-  it('DataTable has no DOM/Base UI heritage - allOf carries only the base type', () => {
+  it('DataTable has no DOM/Base UI heritage - it names no host element surface', () => {
+    // The absence is stated in the reference, not in the allOf: every
+    // contract's allOf is the base type alone (the shared conformance suite
+    // asserts that for all of them), so "no forwarded surface" is now
+    // `host_element` being absent from both halves of the artifact.
     const extraction = resolveTargetExtraction(DIRECTORY, DIRECTORY);
     expect(extraction.passthroughProps).toEqual([]);
     expect(extraction.elementKind).toBeUndefined();
-    expect(units[DIRECTORY].contract.allOf).toEqual([{ $ref: BASE_TYPE_ID }]);
+    expect(units[DIRECTORY].contract['x-gts-traits'].host_element).toBeUndefined();
+    expect(units[DIRECTORY].instance.host_element).toBeUndefined();
   });
 
   it('DataTableSortButton composes Button by rendering it, not by extending its props type - also no passthrough', () => {
@@ -152,7 +156,8 @@ describe('data-table: no forwarded surface for either contract', () => {
     expect(extraction.passthroughProps).toEqual([]);
     expect(extraction.apiProps).toEqual([]);
     expect(extraction.elementKind).toBeUndefined();
-    expect(units['data-table-sort-button'].contract.allOf).toEqual([{ $ref: BASE_TYPE_ID }]);
+    expect(units['data-table-sort-button'].contract['x-gts-traits'].host_element).toBeUndefined();
+    expect(units['data-table-sort-button'].instance.host_element).toBeUndefined();
   });
 });
 
@@ -223,12 +228,6 @@ describe('data-table in a GTS store', () => {
       const result = gts.validateEntity(bareGtsId(contract.$id));
       expect(result.ok, `${stem}: ${result.error}`).toBe(true);
       expect(result.entity_type).toBe('schema');
-    }
-  });
-
-  it('every contract derives from the base type, with the base as the parent ref', () => {
-    for (const { stem, contract } of Object.values(units)) {
-      expect(contract.allOf[0], stem).toEqual({ $ref: BASE_TYPE_ID });
     }
   });
 

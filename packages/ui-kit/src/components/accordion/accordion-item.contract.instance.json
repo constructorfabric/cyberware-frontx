@@ -87,5 +87,6 @@
     "root": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",
     "role": "part"
   },
+  "host_element": "gts.frontx.uikit.passthrough.dom_div.v1~",
   "props_schema": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
 }

@@ -6,9 +6,6 @@
   "allOf": [
     {
       "$ref": "gts://gts.frontx.uikit.base.component.v1~"
-    },
-    {
-      "$ref": "gts://gts.frontx.uikit.passthrough.dom_button.v1~"
     }
   ],
   "properties": {
@@ -170,6 +167,7 @@
           "reason": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)` so a caller can style off the primitive's own state. A JSON Schema `object` would reject the function form, so nothing is asserted; the kit's own styling goes through `variant`/`size` and CSS Modules, not through this."
         }
       ]
-    }
+    },
+    "host_element": "gts.frontx.uikit.passthrough.dom_button.v1~"
   }
 }

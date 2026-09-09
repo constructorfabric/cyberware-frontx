@@ -287,7 +287,7 @@ describe('comparePassthroughSurfaces', () => {
     const { diff, note } = comparePassthroughSurfaces({ component: 'button', oldElement: 'dom_button', oldSchema: surface });
     expect(diff?.removed).toEqual(['className', 'disabled']);
     expect(diff?.compatible).toBe(false);
-    expect(note).toContain('no longer composes the forwarded surface');
+    expect(note).toContain('no longer names the forwarded surface');
   });
 
   it('compares across a change of host element, naming the move', () => {

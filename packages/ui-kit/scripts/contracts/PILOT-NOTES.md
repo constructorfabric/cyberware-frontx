@@ -70,7 +70,7 @@ nothing to regenerate.
   registry would have reopened a hole closed one commit earlier.
 - **Only the element kinds the kit renders are committed.** `dom_button` and
   `dom_div` are what the three described components resolve; `dom_anchor` and
-  `dom_input` are not written, because a committed schema no contract composes
+  `dom_input` are not written, because a committed schema no contract names
   is a file nothing checks and nothing reads. A kind with no file fails the
   compile by name, which is the point at which somebody decides what that
   element accepts.
@@ -198,7 +198,7 @@ would then reject item-only props (`value`, `disabled`) as undeclared
 additions under a base the derivation treats as closed.
 
 What shipped instead: **four independent contracts**, each its own derived
-type from `base.component` (`allOf: [base, the host element's surface]`), with
+type from `base.component` and from nothing else, with
 ids kept flat via `gtsToken` (`accordion-item` -> `accordion_item`, one
 token, so the "5 dot-tokens per segment" GTS grammar is unaffected by the
 dash). Family membership moved out of the schema and into the metamodel
@@ -377,8 +377,8 @@ are NOT a compound family - they are two independent top-level exports that
 happen to share a directory, so neither overlay sets `family`. Both props
 types are from-scratch interfaces with no `Omit<...>`/`ComponentProps<...>`
 heritage at all - `DataTableProps` extends nothing, `DataTableSortButtonProps`
-extends nothing - so both compile with `allOf: [base.component]` only, no
-forwarded surface at all, confirmed by `resolveTargetExtraction(...)`
+extends nothing - so neither names a host element surface at all, confirmed
+by `resolveTargetExtraction(...)`
 reporting no host element and no forwarded or API props for either (asserted
 directly in `data-table.contract.test.ts`).
 
@@ -586,8 +586,8 @@ the two artifacts serve different readers with different costs: the
 INSTANCE is what a catalog, a plan validator, or a lint rule reads without
 loading JSON Schema machinery at all - `intent`, `dont_use_when`,
 `composition` and the rest as a plain typed object, one `JSON.parse` and a
-metamodel-shaped Ajv check, no `allOf` chain to walk, no passthrough type to
-resolve, no GTS store to register into. The PROPS SCHEMA (and its
+metamodel-shaped Ajv check, no derivation chain to walk, no host-element
+surface to resolve, no GTS store to register into. The PROPS SCHEMA (and its
 `x-gts-traits` annotation) is what a schema-aware validator or a
 structured-output projection reads - the shape `GTS.validateEntity`,
 `gtsPlugin.registerSchema` and Ajv itself all expect. Merging them would
@@ -1216,3 +1216,69 @@ the trait schema against a contract's validator-read block - are compiled once.
 The guard is where the saving is. The policy wrapper's remaining time is
 almost entirely the coverage report's single TypeScript program over all 63
 component entry files, which no amount of schema caching touches.
+
+
+## A contract had two parents, and the second one was not a parent
+
+**Observed.** A component contract composed both of its parents through
+`allOf`: the abstract base component type first, then the hand-written surface
+of the host element it renders. Read as a type model, that says a Button IS
+an abstract kit component AND IS React's `<button>` attribute set - multiple
+inheritance, and the surface is the wrong side of it. The base type is what a
+contract's chained id derives from
+(`gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~` names
+one parent); the surface is a hand-written set shared kit-wide by every
+component that renders the same element, which is a thing a component USES,
+not a second thing it is. The type-system maintainer's review of that line:
+"I would avoid multiple inheritance at all cost. Composition is more suitable
+here."
+
+The merge was also buying less than it looked like. A forwarded attribute
+already passes through the derived type's openness - `unevaluatedProperties`
+carries the annotated open schema `{ "x-uikit-verdict": "unchecked" }`, so a
+prop nothing evaluates is admitted and reported rather than rejected - not
+through the second `allOf` branch. What the branch did add was the surface's
+own assertions on the attributes it types (`type` on a `<button>` is one of
+three values), and those are assertions a validator can apply from a reference
+just as well as from a merge.
+
+**Changed.** A contract derives from exactly one type. `allOf` carries the
+base type and nothing else, and the surface is a value the contract names:
+`x-gts-traits.host_element`, the surface's GTS id, bare. The instance carries
+the same reference beside `props_schema`. Every surface-aware check reads it
+through one reader (`hostElementRef`/`hostElementToken`/`loadHostSurface` in
+`compile.ts`) instead of walking the schema body: the compatibility check's
+element-surface comparison for both revisions, the coverage report's line of
+forwarded props no surface declares, the conformance assertions that the
+reference resolves to a committed file and that no committed surface is named
+by nothing. Props validation composes at the point of use -
+`compilePropsValidator` resolves the reference and applies the surface beside
+the contract - so the assertions the merge used to contribute are still made,
+by the reader that asked for them rather than by the artifact.
+
+**Where the reference lives, and why there.** In `x-gts-traits`, as a trait
+field, not as a top-level `x-uikit-host` annotation. `x-gts-traits` is the
+half of the overlay a validator reads and `GTS.validateEntity` checks against
+the base type's `x-gts-traits-schema`; `x-uikit` is prose with no validator on
+the other end. The host element is read by four checks, so it belongs in the
+half that is checked - and its shape is then declared once, in the metamodel,
+the way every other trait field is. On the instance it is a top-level field
+beside `props_schema`, which makes it the second reference gts-ts resolves
+against the registry itself: `XGtsRefValidator` walks instance properties, so
+an instance naming a surface no committed file declares now fails by name,
+which the `allOf` `$ref` never did on the trait path.
+
+The value is spelled the way every other reference here is: a string with
+`type` and `pattern` beside `x-gts-ref`, because `GtsStore.normalizeSchema`
+strips `x-gts-ref` before any validator sees the schema and would drop a
+branch left with nothing else in it. `x-gts-ref` states what the value must
+resolve to (`gts.frontx.uikit.passthrough.*`), the pattern is what rejects a
+malformed one.
+
+**What the compiler owns.** `host_element` is the one trait field an overlay
+may not write - which element a component renders is a fact of its source -
+so it is listed as machine-owned (`MACHINE_TRAIT_FIELDS`), removed from the
+overlay schema, and nullable in the trait schema for the same reason `family`
+is: `GtsStore.validateSchemaTraits` demands a value or a default for every
+declared property, and DataTable renders its Table internally and names no
+surface at all.

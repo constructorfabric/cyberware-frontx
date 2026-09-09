@@ -8,7 +8,7 @@
 // alongside React's own attributes for the element underneath. Both resolve a
 // host element through the same BaseUIComponentProps generic - `button` and
 // `div` - and that element decides which hand-written passthrough type the
-// contract composes, while the part's own props reach the contract's
+// contract names, while the part's own props reach the contract's
 // properties. Two components wrapping the same primitive legitimately share
 // the same element surface, which is the point: React's attributes for a
 // `<button>` are the same attributes whoever renders it.
