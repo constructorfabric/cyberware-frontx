@@ -30,7 +30,7 @@ dont_use_when:
         over a real anchor - `render={<a href="..." />}` with
         `nativeButton={false}`.
   - rule: Toggling a persistent on/off state
-    instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.switch.v1~ # Switch
+    instead: gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.switch.v1~ # Switch
 
 composition:
   children:
@@ -61,7 +61,8 @@ anti_patterns:
 #     tone: { since: "0.5.0", replacement: "variant", hint: "tone=X maps to variant=X" }
 deprecations: {}
 
-# "verified: no" and "not described" are different answers - say which.
+# "failed" (looked at, does not hold) and "unknown" (nobody looked) are
+# different answers - say which.
 # `assumptions` carry a `kind`; every `untyped_prop` names a property this
 # contract declares but cannot type, and the conformance suite checks the
 # pairing both ways - a property Ajv will not check must say so here, and a
@@ -69,7 +70,7 @@ deprecations: {}
 # contract.
 coverage:
   a11y: verified # focus, aria-busy and disabled semantics come from Base UI plus the loading contract above
-  rtl: not-described
+  rtl: unknown
   assumptions:
     - kind: untyped_prop
       prop: icon

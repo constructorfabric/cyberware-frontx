@@ -15,13 +15,13 @@ import {
   contractMajor,
   compileInstance,
   loadBaseSchema,
-  loadPassthroughSchema,
+  loadElementSurface,
   registerContractTypes,
   resolveTargetExtraction,
   type CompiledContract,
   type ContractInstance,
 } from '../../../scripts/contracts/compile';
-import { bareGtsId, componentTypeRef, passthroughTypeRef } from '../../../scripts/contracts/ids';
+import { bareGtsId, componentTypeRef, elementTypeRef } from '../../../scripts/contracts/ids';
 import {
   applyContractTestTimeout,
   assertContractFreshness,
@@ -47,7 +47,7 @@ interface CompiledUnit {
   stem: string;
   contract: CompiledContract;
   instance: ContractInstance;
-  passthroughSchema: Record<string, unknown>;
+  elementSurface: Record<string, unknown>;
 }
 
 function compileUnit(stem: string): CompiledUnit {
@@ -60,7 +60,7 @@ function compileUnit(stem: string): CompiledUnit {
   if (!extraction.elementKind) {
     throw new Error(`${stem}: expected a host element kind, extraction resolved none`);
   }
-  return { stem, contract, instance, passthroughSchema: loadPassthroughSchema(extraction.elementKind) };
+  return { stem, contract, instance, elementSurface: loadElementSurface(extraction.elementKind) };
 }
 
 const units: Record<string, CompiledUnit> = Object.fromEntries(ALL_STEMS.map((stem) => [stem, compileUnit(stem)]));
@@ -197,22 +197,22 @@ describe('accordion family: assumptions carry a kind', () => {
     }
   });
 
-  it('the root hides orientation and carries the reason on the entry itself', () => {
+  it('the root withholds orientation and carries the reason on the entry itself', () => {
     // The kit's own root stylesheet fixes a column layout, so Base UI's
     // horizontal orientation is not something this kit offers. Left out of
-    // `properties`, and the reason is on the `hidden` entry rather than in a
+    // `properties`, and the reason is on the `withheld` entry rather than in a
     // second assumption saying the same thing beside it.
-    const hidden = units[DIRECTORY].instance.hidden ?? [];
-    expect(hidden.map((entry) => entry.prop)).toEqual(['orientation']);
-    expect(hidden[0].reason).toContain('flex-direction: column');
+    const withheld = units[DIRECTORY].instance.withheld ?? [];
+    expect(withheld.map((entry) => entry.prop)).toEqual(['orientation']);
+    expect(withheld[0].reason).toContain('flex-direction: column');
     expect(units[DIRECTORY].contract.properties).not.toHaveProperty('orientation');
     const assumptions = units[DIRECTORY].instance.coverage.assumptions ?? [];
-    expect(assumptions.filter((a) => a.kind === 'hidden_part')).toEqual([]);
+    expect(assumptions.filter((a) => a.kind === 'unexposed_part')).toEqual([]);
   });
 
-  it("the trigger's hidden_part assumption documents the Header+Trigger composition", () => {
+  it("the trigger's unexposed_part assumption documents the Header+Trigger composition", () => {
     const assumptions = units['accordion-trigger'].instance.coverage.assumptions ?? [];
-    expect(assumptions.some((a) => a.kind === 'hidden_part' && (/Header/.test(a.claim) || /Header/.test(a.reason)))).toBe(true);
+    expect(assumptions.some((a) => a.kind === 'unexposed_part' && (/Header/.test(a.claim) || /Header/.test(a.reason)))).toBe(true);
   });
 
   it('files a Base UI part prop as API and a React attribute as forwarded surface', () => {
@@ -230,15 +230,15 @@ describe('accordion family in a GTS store', () => {
   function registeredStore(): GTS {
     const gts = new GTS();
     gts.register(baseSchema);
-    // The vocabulary the base type's trait schema references: a store
-    // missing one fails every entity in it, not just the trait block.
+    // The vocabulary the base type's x-gts-traits-schema references: a store
+    // missing one fails every entity in it, not just the x-gts-traits block.
     registerContractTypes((entity) => gts.register(entity));
     // The element surfaces this family's four contracts $ref. Three of the
     // four render a <div> and the trigger renders a <button>, so there are
     // two distinct schemas across four contracts - de-duplicated by $id,
     // because registering the same one twice is not a fact about the family.
-    const byId = new Map(Object.values(units).map(({ passthroughSchema }) => [String(passthroughSchema.$id), passthroughSchema]));
-    for (const passthroughSchema of byId.values()) gts.register(passthroughSchema);
+    const byId = new Map(Object.values(units).map(({ elementSurface }) => [String(elementSurface.$id), elementSurface]));
+    for (const elementSurface of byId.values()) gts.register(elementSurface);
     for (const { contract } of Object.values(units)) gts.register(contract);
     return gts;
   }
@@ -259,26 +259,26 @@ describe('accordion family in a GTS store', () => {
     // it is the one place in the kit where a family spans two elements - the
     // trigger renders a <button>, the other three a <div> - so a family
     // shares a root and not a surface.
-    for (const { stem, contract, instance, passthroughSchema } of Object.values(units)) {
-      const ref = bareGtsId(String(passthroughSchema.$id));
+    for (const { stem, contract, instance, elementSurface } of Object.values(units)) {
+      const ref = bareGtsId(String(elementSurface.$id));
       expect(contract['x-gts-traits'].host_element, stem).toBe(ref);
       expect(instance.host_element, stem).toBe(ref);
     }
-    expect(units['accordion-trigger'].contract['x-gts-traits'].host_element).toBe(passthroughTypeRef('dom_button'));
-    expect(units[DIRECTORY].contract['x-gts-traits'].host_element).toBe(passthroughTypeRef('dom_div'));
+    expect(units['accordion-trigger'].contract['x-gts-traits'].host_element).toBe(elementTypeRef('dom_button'));
+    expect(units[DIRECTORY].contract['x-gts-traits'].host_element).toBe(elementTypeRef('dom_div'));
   });
 
   it('fails when the parent type is not registered - negative control', () => {
     const gts = new GTS();
-    const byId = new Map(Object.values(units).map(({ passthroughSchema }) => [String(passthroughSchema.$id), passthroughSchema]));
-    for (const passthroughSchema of byId.values()) gts.register(passthroughSchema);
+    const byId = new Map(Object.values(units).map(({ elementSurface }) => [String(elementSurface.$id), elementSurface]));
+    for (const elementSurface of byId.values()) gts.register(elementSurface);
     for (const { contract } of Object.values(units)) gts.register(contract);
     const result = gts.validateEntity(bareGtsId(units[DIRECTORY].contract.$id));
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Parent schema not found');
   });
 
-  it("every contract's x-gts-traits validates against base.component.json's x-gts-traits-schema", () => {
+  it("every contract's x-gts-traits validates against ui.component.json's x-gts-traits-schema", () => {
     // See button.contract.test.ts for which gts-ts API this goes through
     // (GTS.validateEntity) and why the registration round-trips through
     // JSON first (validateContractTraits, testing.ts) - real here because

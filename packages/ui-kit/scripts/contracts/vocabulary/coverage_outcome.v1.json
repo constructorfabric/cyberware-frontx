@@ -1,0 +1,12 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.coverage_outcome.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit coverage outcome",
+  "description": "The answer to one coverage claim. \"failed\" (looked at, does not hold) and \"unknown\" (nobody looked) are different answers and may not collapse into one.",
+  "type": "string",
+  "enum": [
+    "verified",
+    "failed",
+    "unknown"
+  ]
+}

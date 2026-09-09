@@ -146,8 +146,8 @@ Prose describing a component can only be reviewed by a person, one screen at a t
    1. [x] - `p1` - Hold every in-scope component to a fresh contract and **RETURN** a non-zero exit on any violation - `inst-guard-exit`
 6. [x] - `p1` - **IF** the subcommand is the compatibility check - `inst-dispatch-compat`
    1. [x] - `p1` - Compare every committed contract against the base reference, sweep for the contracts that only exist there, and **RETURN** a non-zero exit on any refusal - `inst-compat-exit`
-7. [x] - `p1` - **IF** the subcommand is the coverage report - `inst-dispatch-coverage`
-   1. [x] - `p1` - Print the report and **RETURN** success whatever the numbers are - `inst-coverage-exit`
+7. [x] - `p1` - **IF** the subcommand is the coverage report - `inst-dispatch-enrollment`
+   1. [x] - `p1` - Print the report and **RETURN** success whatever the numbers are - `inst-enrollment-exit`
 
 ## 3. Processes / Business Logic (CDSL)
 
@@ -238,7 +238,7 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 
 ### Host Element Surface
 
-- [x] `p1` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-passthrough`
+- [x] `p1` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-element-surface`
 
 **Input**: The host element a component renders.
 
@@ -251,11 +251,11 @@ A surface therefore reaches a props object through whoever resolves the referenc
 Two properties of a hand-written set are worth stating, because one is checked and the other deliberately is not. What more than one element kind declares, every file declaring it declares identically - the files are written by hand, so nothing constructs that agreement, and the compile refuses a disagreement by attribute name. Whether a file is COMPLETE is unchecked: nothing compares it against the attributes a component actually forwards, so an attribute no file declares reaches a consumer as unchecked and is never rejected, and the coverage report lists the forwarded props no surface declares so the gap is visible without being a gate.
 
 **Steps**:
-1. [x] - `p1` - Load the committed surface for that element - `inst-ps-load`
-2. [x] - `p1` - **IF** no file is committed for it, refuse naming the element and the path expected, rather than compiling a contract that forwards an undeclared surface - `inst-ps-load`
-3. [x] - `p1` - Refuse when two element kinds declare one attribute differently, naming the attribute and what each file states: the global attributes and the three patterns are typed out per file, so only this comparison keeps the copies in step, and the compatibility check reads a difference between two surfaces as a narrowing a consumer feels - `inst-ps-agree`
-4. [x] - `p1` - Resolve the surface a contract NAMES through the reference it holds - one reader for every check that needs it, rather than each check walking the schema body its own way - and answer "none" for a contract that names no surface - `inst-ps-compose`
-   1. [x] - `p1` - Compose the two at the point of validation: the contract and that surface applied to the same props object, so what the surface asserts about an attribute it types is still asserted - by the reader that resolved the reference rather than by the contract's own body. A reader that never looks the surface up gets the open verdict instead, which is the honest answer for a reader that never asked - `inst-ps-compose`
+1. [x] - `p1` - Load the committed surface for that element - `inst-es-load`
+2. [x] - `p1` - **IF** no file is committed for it, refuse naming the element and the path expected, rather than compiling a contract that forwards an undeclared surface - `inst-es-load`
+3. [x] - `p1` - Refuse when two element kinds declare one attribute differently, naming the attribute and what each file states: the global attributes and the three patterns are typed out per file, so only this comparison keeps the copies in step, and the compatibility check reads a difference between two surfaces as a narrowing a consumer feels - `inst-es-agree`
+4. [x] - `p1` - Resolve the surface a contract NAMES through the reference it holds - one reader for every check that needs it, rather than each check walking the schema body its own way - and answer "none" for a contract that names no surface - `inst-es-compose`
+   1. [x] - `p1` - Compose the two at the point of validation: the contract and that surface applied to the same props object, so what the surface asserts about an attribute it types is still asserted - by the reader that resolved the reference rather than by the contract's own body. A reader that never looks the surface up gets the open verdict instead, which is the honest answer for a reader that never asked - `inst-es-compose`
 
 ### Composition Derivation
 
@@ -290,7 +290,7 @@ Where a component may be mounted is not a fact about that component: it is a fac
 
 ### Unchecked Property Report
 
-- [x] `p1` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-unchecked-props`
+- [x] `p1` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-props-classification`
 
 **Input**: A props object, a contract, and the host element surface that contract names.
 
@@ -299,12 +299,12 @@ Where a component may be mounted is not a fact about that component: it is a fac
 This is what replaced closing the schema. A closed schema answered "invalid" to a typo'd kit prop and to a name this harness has not classified yet - a new React attribute, a prop of a primitive part nobody has described - and only the first is a mistake. Telling them apart needs a comparison a schema cannot make.
 
 **Steps**:
-1. [x] - `p1` - Count a prop as known when the contract declares it or the element surface declares it BY NAME: an exact declaration on either side accounts for the value - `inst-uc-classify`
-2. [x] - `p1` - Upgrade a name that is one edit from a prop the CONTRACT declares to a near miss, naming what it is probably meant to be. Only the contract's own props: a near miss of a forwarded DOM attribute is a typo in React's surface, not in the thing this contract exists to describe, and reporting those would make the report noisier than the closure it replaced - `inst-uc-near-miss`
-   1. [x] - `p1` - Decide this BEFORE the surface's patterns are consulted: a pattern cannot tell a typo of a name it was written for from that name, so `^on[A-Z]` answered "known" to `onValuechange` against a contract declaring `onValueChange` - a typo in the one half of a contract this report exists to protect - `inst-uc-near-miss`
-   2. [x] - `p1` - Measure the distance as a bounded edit distance, since the only question asked of it is whether two names are exactly one edit apart - `inst-uc-distance`
-3. [x] - `p1` - Count a prop as known when it matches one of the surface's patterns and no prop the contract declares is one edit from it - `inst-uc-classify`
-4. [x] - `p1` - Report every other name as unchecked, which is a report and not a refusal - `inst-uc-classify`
+1. [x] - `p1` - Count a prop as known when the contract declares it or the element surface declares it BY NAME: an exact declaration on either side accounts for the value - `inst-pc-classify`
+2. [x] - `p1` - Upgrade a name that is one edit from a prop the CONTRACT declares to a near miss, naming what it is probably meant to be. Only the contract's own props: a near miss of a forwarded DOM attribute is a typo in React's surface, not in the thing this contract exists to describe, and reporting those would make the report noisier than the closure it replaced - `inst-pc-near-miss`
+   1. [x] - `p1` - Decide this BEFORE the surface's patterns are consulted: a pattern cannot tell a typo of a name it was written for from that name, so `^on[A-Z]` answered "known" to `onValuechange` against a contract declaring `onValueChange` - a typo in the one half of a contract this report exists to protect - `inst-pc-near-miss`
+   2. [x] - `p1` - Measure the distance as a bounded edit distance, since the only question asked of it is whether two names are exactly one edit apart - `inst-pc-distance`
+3. [x] - `p1` - Count a prop as known when it matches one of the surface's patterns and no prop the contract declares is one edit from it - `inst-pc-classify`
+4. [x] - `p1` - Report every other name as unchecked, which is a report and not a refusal - `inst-pc-classify`
 
 ### Contract Identifier Construction
 
@@ -319,13 +319,13 @@ This is what replaced closing the schema. A closed schema answered "invalid" to 
 2. [x] - `p1` - Take the contract major from the component's own overlay, defaulting to the first major when it states none, and take the TARGET's major wherever an identifier names another component - a reference carries the major that component ships, which is a fact about its overlay and not about the referrer's. Read from a kit-wide constant instead, the one acknowledgement the compatibility check accepts for a narrowing could only be given by rewriting every identifier in the kit at once - `inst-id-major`
 3. [x] - `p1` - Build the props-schema identifier by chaining the component's segment onto the abstract base type, and make that identifier what a reference to the component holds - a component is the type derived from the base, so there is no second identifier to point at - `inst-id-props-schema`
 4. [x] - `p1` - Build the metamodel instance identifier from the same segment, without the terminator that would make it a type - `inst-id-instance`
-5. [x] - `p1` - Build the host-element surface identifier from the element the component renders, normalizing the tag into the token grammar every other identifier here uses - the element kind stays the real tag for a reader, and the token is what an identifier and a file name can carry. Expose it in both spellings for the same reason the base type is: bare for the reference a contract holds as a VALUE, and in the form a schema keyword requires for the surface file's own identifier - and expose the token back out of a reference, because that token is the surface file's name - `inst-id-passthrough`
-6. [x] - `p1` - Build the vocabulary type identifier from its concept token - `inst-id-trait-type`
+5. [x] - `p1` - Build the host-element surface identifier from the element the component renders, normalizing the tag into the token grammar every other identifier here uses - the element kind stays the real tag for a reader, and the token is what an identifier and a file name can carry. Expose it in both spellings for the same reason the base type is: bare for the reference a contract holds as a VALUE, and in the form a schema keyword requires for the surface file's own identifier - and expose the token back out of a reference, because that token is the surface file's name - `inst-id-element`
+6. [x] - `p1` - Build the vocabulary type identifier from its concept token - `inst-id-vocabulary-type`
 7. [x] - `p1` - **RETURN** the patterns that recognize each identifier shape - `inst-id-patterns`
 
 ### Trait Schema Derivation
 
-- [x] `p2` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-trait-schema`
+- [x] `p2` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema`
 
 **Input**: The metamodel's field definitions.
 
@@ -338,7 +338,7 @@ This is what replaced closing the schema. A closed schema answered "invalid" to 
    3. [x] - `p1` - Leave both directions of a composition optional. An absent children list means UNCONSTRAINED, which a layout component needs and cannot state by enumerating a kit it does not know or by claiming a content kind it does not require; a mount-point list is absent for most of the kit, which is mounted anywhere - `inst-ts-vocabulary`
    4. [x] - `p1` - Give the mount-point list the same two branches an alternative to a "don't" has - a component reference, or the external form - so a mount point outside the kit is stated rather than approximated by the nearest component - `inst-ts-vocabulary`
    5. [x] - `p1` - Require every assumption to carry a kind drawn from a closed list, and require the kind that is about one property to name that property: without a kind the field was a paragraph, and nothing could ask whether every property the schema cannot type has an entry - `inst-ts-vocabulary`
-   6. [x] - `p1` - State the props the kit does not advertise as prop-and-reason entries, both required: a bare name leaves every later reader to rediscover why the prop is gone, and the reason written beside the name is the reason a parallel assumption was carrying by hand. One of the two validator-read fields nothing else references, so it stays inline rather than becoming a type of its own - `inst-ts-hidden`
+   6. [x] - `p1` - State the props the kit does not advertise as prop-and-reason entries, both required: a bare name leaves every later reader to rediscover why the prop is gone, and the reason written beside the name is the reason a parallel assumption was carrying by hand. One of the two validator-read fields nothing else references, so it stays inline rather than becoming a type of its own - `inst-ts-withheld`
 2. [x] - `p1` - Take the metamodel's definitions of exactly the fields a validator reads - `inst-ts-fields`
    1. [x] - `p1` - Include the one validator-read field the OVERLAY may not write, the host element's surface reference, and remove it from what an overlay may state: which element a component renders is a fact of its source. Its shape is still declared once, in the metamodel, like every other field here - `inst-ts-host`
 3. [x] - `p1` - State each of those fields as a reference to the type that owns its shape, so the trait schema and the metamodel resolve one definition rather than each carrying a copy - `inst-ts-ref`
@@ -371,7 +371,7 @@ The surface a component forwards to its host element is not compared here: it is
 **Output**: A pass or a refusal, with the reasons.
 
 **Steps**:
-1. [x] - `p1` - Diff the forwarded surface: a removed prop, a changed shape or a dropped value is incompatible, while an added prop is not. One comparison covers a change of host element as well as a change to a surface itself, because the surfaces are hand-written and shared kit-wide: what two element kinds have in common they state identically, checked by the rule the compile enforces on the surfaces themselves, so a difference between them is a real difference rather than one hand-written file having drifted from another - `inst-cd-passthrough`
+1. [x] - `p1` - Diff the forwarded surface: a removed prop, a changed shape or a dropped value is incompatible, while an added prop is not. One comparison covers a change of host element as well as a change to a surface itself, because the surfaces are hand-written and shared kit-wide: what two element kinds have in common they state identically, checked by the rule the compile enforces on the surfaces themselves, so a difference between them is a real difference rather than one hand-written file having drifted from another - `inst-cd-element-surface`
 2. [x] - `p1` - Diff the declared props: a removed prop and a newly required prop are both incompatible, whether the prop was required before or not - `inst-cd-own`
    1. [x] - `p1` - Apply the same shape rule to a declared prop that the forwarded surface already gets - a changed type, a type appearing where none existed, a dropped enum value, an enum appearing where the prop accepted any value of its type. One rule, one function, because a narrowing does not mean something different depending on which half of a contract the property lives in; and the type system's own verdict does not report an enum appearing over an existing type, which is the shape this compiler emits the day a plain string prop becomes a literal union - `inst-cd-shape`
    2. [x] - `p1` - Reconcile a declared prop that left the properties against the forwarded surface: a name that surface still accepts, by declaration or by pattern, is not gone - a component dropping its own narrower declaration of a forwarded attribute changes nothing a consumer passes. Report the move either way, because the component's own declaration really did disappear, and compare the shapes where the surface declares one - accepted is not the same as accepted unchanged - `inst-cd-own-forwarded`
@@ -415,9 +415,9 @@ A base reference answers the question a reviewer has - did this change narrow a 
 3. [x] - `p1` - **IF** no earlier version resolves - `inst-cu-new`
    1. [x] - `p1` - Report the contract as new and **RETURN** a pass - `inst-cu-new-return`
 4. [x] - `p1` - Register both revisions under distinct synthesized versions, so the type system can compare two states of what is otherwise one identifier - `inst-cu-register`
-5. [x] - `p1` - Compare the forwarded surface at both revisions, reading the host element from the reference each revision's own contract shipped with rather than from the source as it is now - `inst-cu-passthrough`
-   1. [x] - `p1` - Read the element from the base revision as well as the current one, and decide the comparison from both: nothing to compare when neither names a surface; nothing to report when only the current one does, because a forwarded surface that arrives only widens; the shape comparison otherwise, against the empty surface when the current revision names none, and naming the move when the element changed - `inst-cu-passthrough-both`
-   2. [x] - `p1` - **IF** the comparison genuinely cannot be made - no file at the base reference for the element this contract shipped with, or none committed for the element it names now - report the forwarded-surface signal as skipped for that element, without refusing the change - `inst-cu-passthrough-both`
+5. [x] - `p1` - Compare the forwarded surface at both revisions, reading the host element from the reference each revision's own contract shipped with rather than from the source as it is now - `inst-cu-element-surface`
+   1. [x] - `p1` - Read the element from the base revision as well as the current one, and decide the comparison from both: nothing to compare when neither names a surface; nothing to report when only the current one does, because a forwarded surface that arrives only widens; the shape comparison otherwise, against the empty surface when the current revision names none, and naming the move when the element changed - `inst-cu-element-surface-both`
+   2. [x] - `p1` - **IF** the comparison genuinely cannot be made - no file at the base reference for the element this contract shipped with, or none committed for the element it names now - report the forwarded-surface signal as skipped for that element, without refusing the change - `inst-cu-element-surface-both`
 6. [x] - `p1` - **RETURN** the decision for this contract, and the base-reference path it was compared against, so a contract that no longer has an heir can be told from one that was never compared - `inst-cu-decide`
 
 ### Contracts Removed Since The Base Reference
@@ -458,26 +458,26 @@ The comparison above walks the contracts on disk and asks each one what it used 
    1. [x] - `p1` - Report it and **RETURN** without failing - `inst-gd-empty-return`
 5. [x] - `p1` - **FOR EACH** directory in scope, decide its verdict - `inst-gd-each`
 6. [x] - `p1` - A covered directory that no longer exists is a violation naming the allowlist; an absent directory that is not covered is only reported - `inst-gd-removed`
-7. [x] - `p1` - A directory that is not covered requires no contract yet and is only reported - `inst-gd-uncovered`
+7. [x] - `p1` - A directory that is not covered requires no contract yet and is only reported - `inst-gd-unenrolled`
    1. [x] - `p1` - A directory the allowlist named at the base reference and does not name now is reported as dropped from coverage rather than as ordinarily uncovered, and does not fail: de-listing is legitimate - it is the acknowledgement a removed contract needs - but it is also the last moment anything states that the component's artifacts stop being guarded, and silence is how one left coverage with no line in any output - `inst-gd-delisted`
-8. [x] - `p1` - A covered directory needs an overlay for every component it exports, and its committed artifacts must equal a fresh compile - `inst-gd-covered`
+8. [x] - `p1` - A covered directory needs an overlay for every component it exports, and its committed artifacts must equal a fresh compile - `inst-gd-enrolled`
    1. [x] - `p1` - A covered directory must also ship its own conformance suite: the freshness comparison is asserted in two runs on purpose, and without the suite the second of them - the unit run of whoever changed the component - never happens - `inst-gd-suite`
 9. [x] - `p1` - **RETURN** the verdicts - `inst-gd-return`
 
 ### Coverage Report
 
-- [x] `p2` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-coverage`
+- [x] `p2` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-enrollment`
 
 **Input**: The component directories and the coverage allowlist.
 
 **Output**: The described set against the component set, with a per-directory breakdown of what is not yet described.
 
 **Steps**:
-1. [x] - `p1` - Count the component directories and the ones the allowlist covers - `inst-cv-count`
-2. [x] - `p1` - **FOR EACH** uncovered directory, pair its described exports with its component exports and the exports that are correctly not components - `inst-cv-uncovered`
-3. [x] - `p1` - Report every allowlist entry that grants coverage over nothing - one naming no component directory, one naming a directory that carries no overlay - and leave those entries out of the described count, which is meant to say how much of the kit is described - `inst-cv-allowlist`
-4. [x] - `p1` - **FOR EACH** described contract, report the props it forwards that the surface for its host element declares by neither name nor pattern: the surface's completeness is unchecked by design, so this is the gap made visible next to the coverage numbers rather than a verdict on anything - `inst-cv-forwarded`
-5. [x] - `p1` - **RETURN** the report by whichever output path was asked for, setting no exit code either way - `inst-cv-return`
+1. [x] - `p1` - Count the component directories and the ones the allowlist covers - `inst-en-count`
+2. [x] - `p1` - **FOR EACH** uncovered directory, pair its described exports with its component exports and the exports that are correctly not components - `inst-en-unenrolled`
+3. [x] - `p1` - Report every allowlist entry that grants coverage over nothing - one naming no component directory, one naming a directory that carries no overlay - and leave those entries out of the described count, which is meant to say how much of the kit is described - `inst-en-allowlist`
+4. [x] - `p1` - **FOR EACH** described contract, report the props it forwards that the surface for its host element declares by neither name nor pattern: the surface's completeness is unchecked by design, so this is the gap made visible next to the coverage numbers rather than a verdict on anything - `inst-en-forwarded`
+5. [x] - `p1` - **RETURN** the report by whichever output path was asked for, setting no exit code either way - `inst-en-return`
 
 ### Conformance Suite Construction
 
@@ -545,10 +545,10 @@ The system **MUST** compile an admitted overlay and an extraction into a props s
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-compilation`
 - `cpt-frontx-ui-kit-algo-component-contracts-instance`
-- `cpt-frontx-ui-kit-algo-component-contracts-passthrough`
+- `cpt-frontx-ui-kit-algo-component-contracts-element-surface`
 - `cpt-frontx-ui-kit-algo-component-contracts-composition`
 - `cpt-frontx-ui-kit-algo-component-contracts-untyped-props`
-- `cpt-frontx-ui-kit-algo-component-contracts-unchecked-props`
+- `cpt-frontx-ui-kit-algo-component-contracts-props-classification`
 
 **Constraints**: `cpt-frontx-ui-kit-constraint-contracts-repository-only`
 
@@ -569,12 +569,12 @@ The system **MUST** construct every contract, instance, host-element-surface and
 
 ### The Validator-Read Block Is Derived, Not Restated
 
-- [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-trait-schema`
+- [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-gts-traits-schema`
 
 The system **MUST** express the overlay's validator-read vocabulary as one type per concept, each with its own identifier, and **MUST** derive the trait schema the abstract base type carries from the metamodel's own field definitions rather than maintaining a second copy of them - by reference, so that a concept is defined once and the trait schema and the metamodel resolve the same definition. It **MUST** make the one mechanical adjustment the type store requires, an optional field given a null alternative and default placed so the referenced type cannot overwrite it, without changing the shape a component that sets those fields must satisfy. Where a field holds the identifier of another type, the declaration **MUST** carry both the reference and the grammar that rejects a malformed identifier, because the type store removes the reference annotation before validating and a declaration left with nothing else in it stops constraining the value at all. Where one value of a field contradicts every other - the child-composition kind meaning "no children at all" - the vocabulary **MUST** state that in the type rather than in prose beside it, so a list cannot say both that nothing may appear inside a component and that something may. Every kind a field admits **MUST** be defined in the type that admits it, including the non-component content kind, so a reader never has to find the definition elsewhere. Both directions of a composition **MUST** be optional, because an absent children list is the only honest way to say "unconstrained" and most of the kit has no mount point to state; and an assumption about what a contract cannot express **MUST** carry a kind from a closed list, with the kind that is about one property naming that property, so a family of such claims can be checked against the contract instead of read one at a time. The two validator-read fields nothing else references - the props the kit does not advertise, and the host element's surface reference - stay inline rather than becoming types of their own; the first **MUST** pair every name with the reason it is not advertised. The host element's surface reference is the one validator-read field an overlay **MUST NOT** write, because which element a component renders is a fact of its source, and it **MUST** resolve for a component that renders none - which is what the null alternative and default are for.
 
 **Implements**:
-- `cpt-frontx-ui-kit-algo-component-contracts-trait-schema`
+- `cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema`
 
 **Touches**:
 - Entities: `Contract`
@@ -635,12 +635,12 @@ The system **MUST** hold to the full standard only the components a change touch
 
 ### Kit-Wide Coverage Is Reported, Never Enforced
 
-- [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-coverage-report`
+- [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-enrollment-report`
 
 The system **MUST** report the described set against the component set, with a per-directory breakdown that distinguishes an export still to be described from an export that is correctly not a component, **MUST** name every allowlist entry that grants coverage over nothing and leave it out of the described count, and **MUST NOT** derive an exit code from any of those numbers.
 
 **Implements**:
-- `cpt-frontx-ui-kit-algo-component-contracts-coverage`
+- `cpt-frontx-ui-kit-algo-component-contracts-enrollment`
 - `cpt-frontx-ui-kit-flow-component-contracts-guard-change`
 
 **Touches**:

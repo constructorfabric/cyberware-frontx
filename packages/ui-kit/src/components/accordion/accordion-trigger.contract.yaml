@@ -9,7 +9,7 @@ typical_uses:
 
 dont_use_when:
   - rule: A standalone button with no AccordionItem to expand or collapse
-    instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~ # Button
+    instead: gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.button.v1~ # Button
 
 # `parent` is derived from AccordionItem's own `children`, not authored here.
 composition:
@@ -31,7 +31,7 @@ deprecations: {}
 coverage:
   a11y: verified # focus and aria-expanded/aria-controls wiring come from Base UI
   assumptions:
-    - kind: hidden_part
+    - kind: unexposed_part
       claim: AccordionTrigger wraps two Base UI parts, Header and Trigger
       reason: >-
         The kit's AccordionTrigger composes Base UI's Accordion.Header
@@ -69,5 +69,5 @@ examples:
         state through Base UI context; outside one, clicking it does nothing.
 
 family:
-  root: gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~ # Accordion
+  root: gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion.v1~ # Accordion
   role: part

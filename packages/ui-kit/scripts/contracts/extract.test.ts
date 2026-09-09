@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { classifyDeclarationSite, extractComponent, isBooleanAxis, normalizeTypeText, parseStringLiteralUnion } from './extract';
-import { domPassthroughToken, passthroughTypeId, passthroughTypeIdPattern } from './ids';
+import { domElementToken, elementTypeId, elementTypeIdPattern } from './ids';
 import { applyContractTestTimeout } from './testing';
 
 // Each fixture below is its own tsx path, so extractComponent's per-path
@@ -55,7 +55,7 @@ describe('extractComponent: type alias and intersection props (F15)', () => {
 
   it('classifies the ComponentProps<\'div\'> half as forwarded DOM surface, not own', () => {
     const own = new Set(banner.ownProps.map((p) => p.name));
-    const forwarded = new Set(banner.passthroughProps.map((p) => p.name));
+    const forwarded = new Set(banner.forwardedProps.map((p) => p.name));
     expect(own.has('tone')).toBe(true);
     expect(own.has('id')).toBe(false);
     expect(forwarded.has('id')).toBe(true);
@@ -90,7 +90,7 @@ describe('extractComponent: a Base UI part prop is API, a React attribute is for
 
   it("files React's own DOM attributes as forwarded surface, whichever primitive is underneath", () => {
     for (const extraction of [wrapsButton, wrapsAccordionRoot]) {
-      const forwarded = new Set(extraction.passthroughProps.map((p) => p.name));
+      const forwarded = new Set(extraction.forwardedProps.map((p) => p.name));
       for (const prop of ['id', 'title', 'onClick', 'children']) expect(forwarded, `${extraction.name}: ${prop}`).toContain(prop);
       expect(extraction.apiProps.map((p) => p.name), extraction.name).not.toContain('onClick');
     }
@@ -134,7 +134,7 @@ describe('extractComponent: no host element for a from-scratch props type', () =
     for (const extraction of extractions) {
       expect(extraction.elementKind).toBeUndefined();
       expect(extraction.apiProps).toEqual([]);
-      expect(extraction.passthroughProps).toEqual([]);
+      expect(extraction.forwardedProps).toEqual([]);
       expect(extraction.unclassifiedProps).toEqual([]);
     }
   });
@@ -242,7 +242,7 @@ describe('extractComponent: heritage shapes recognized by resolved symbol, not i
     expect(card.cannotExtract).toEqual([]);
     expect(card.elementKind).toBe('section');
     expect(card.ownProps.map((p) => p.name)).toContain('heading');
-    expect(card.passthroughProps.map((p) => p.name)).toContain('id');
+    expect(card.forwardedProps.map((p) => p.name)).toContain('id');
   });
 
   it('does not mistake a locally shadowed "Omit" for the real global utility type', () => {
@@ -250,7 +250,7 @@ describe('extractComponent: heritage shapes recognized by resolved symbol, not i
     // failure mode that matters for it is the opposite of ComponentProps's:
     // a local name collision. The old text match would have unwrapped this
     // shadow's first "type argument" (ComponentProps<'span'>) and silently
-    // resolved a `span` passthrough kind/origin through a utility type that
+    // resolved a `span` forwarded kind/origin through a utility type that
     // is not really Omit<T, K> at all. The forwarded props ARE present on
     // the checker-resolved type (this shadow really does forward them) -
     // proving this is a case of "found real props, refused to guess which
@@ -258,7 +258,7 @@ describe('extractComponent: heritage shapes recognized by resolved symbol, not i
     // compiler refuses such a component; see compileContract.
     const [gadget] = extractComponent(fixture('aliased-omit.fixture.tsx'));
     expect(gadget.elementKind).toBeUndefined();
-    expect(gadget.passthroughProps.length).toBeGreaterThan(0);
+    expect(gadget.forwardedProps.length).toBeGreaterThan(0);
     expect(gadget.cannotExtract.length).toBeGreaterThan(0);
   });
 
@@ -280,7 +280,7 @@ describe('extractComponent: bare union type in heritage position (N2)', () => {
 });
 
 describe('extractComponent: a hyphenated element tag reaches a snake_case token (M2)', () => {
-  const PASSTHROUGH_ID_PATTERN = new RegExp(passthroughTypeIdPattern());
+  const PASSTHROUGH_ID_PATTERN = new RegExp(elementTypeIdPattern());
 
   it("keeps the tag as the element kind and normalizes it only where an identifier needs it", () => {
     // Two different things, deliberately: the element kind is the real tag
@@ -288,8 +288,8 @@ describe('extractComponent: a hyphenated element tag reaches a snake_case token 
     // identifier and a file name can carry.
     const [widget] = extractComponent(fixture('custom-element-kind.fixture.tsx'));
     expect(widget.elementKind).toBe('my-custom-element');
-    expect(domPassthroughToken(widget.elementKind!)).toBe('dom_my_custom_element');
-    expect(passthroughTypeId(domPassthroughToken(widget.elementKind!))).toMatch(PASSTHROUGH_ID_PATTERN);
+    expect(domElementToken(widget.elementKind!)).toBe('dom_my_custom_element');
+    expect(elementTypeId(domElementToken(widget.elementKind!))).toMatch(PASSTHROUGH_ID_PATTERN);
   });
 });
 
@@ -314,7 +314,7 @@ describe('extractComponent: synthetic property symbol with no declaration (N4)',
   });
 
   it('never emits declarationFile: "unknown" as ordinary prop data', () => {
-    const allProps = [...widget.ownProps, ...widget.apiProps, ...widget.passthroughProps, ...widget.unclassifiedProps];
+    const allProps = [...widget.ownProps, ...widget.apiProps, ...widget.forwardedProps, ...widget.unclassifiedProps];
     expect(allProps.some((p) => p.declarationFile === 'unknown')).toBe(false);
   });
 
@@ -335,7 +335,7 @@ describe('extractComponent: forwardRef/memo-wrapped components (M8)', () => {
 describe('extractComponent: every prop list sorted by name (N3)', () => {
   it('returns each of the four prop lists in ascending name order', () => {
     const [button] = extractComponent(join(process.cwd(), 'src/components/button/button.tsx'));
-    for (const list of [button.ownProps, button.apiProps, button.passthroughProps, button.unclassifiedProps]) {
+    for (const list of [button.ownProps, button.apiProps, button.forwardedProps, button.unclassifiedProps]) {
       const names = list.map((p) => p.name);
       expect(names).toEqual([...names].sort());
     }

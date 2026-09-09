@@ -45,18 +45,18 @@ function schema(major: number, properties: Record<string, { type?: string; enum?
     $id: propsSchemaId(COMPONENT, major),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     type: 'object' as const,
-    allOf: [{ $ref: 'gts://gts.frontx.uikit.base.component.v1~' }],
+    allOf: [{ $ref: 'gts://gts.frontx.uikit.ui.component.v1~' }],
     properties,
     required,
-    unevaluatedProperties: { 'x-uikit-verdict': 'unchecked' } as const,
+    unevaluatedProperties: { 'x-uikit-classification': 'unknown' } as const,
   };
 }
 
-// The real library's own backward verdict for two revisions, on its own -
+// The real library's own backward decision for two revisions, on its own -
 // what this project reads as ONE of three compatibility signals, and what
 // the suite below pins so a change in it is a test failure here rather than
 // a silently weaker gate.
-function gtsBackwardVerdict(old: ReturnType<typeof schema>, fresh: ReturnType<typeof schema>) {
+function gtsBackwardDecision(old: ReturnType<typeof schema>, fresh: ReturnType<typeof schema>) {
   const gts = new GTS();
   gts.register(loadBaseSchema());
   const oldSynthetic = { ...old, $id: synthesizeVersionedId(old.$id, 0) };
@@ -70,7 +70,7 @@ function gtsBackwardVerdict(old: ReturnType<typeof schema>, fresh: ReturnType<ty
 // store (mirrors checkCompatForUnit exactly), runs the real backward check
 // plus the real own-props diff, and hands both to the real decideCompat.
 function checkRealCompat(old: ReturnType<typeof schema>, fresh: ReturnType<typeof schema>) {
-  const result = gtsBackwardVerdict(old, fresh);
+  const result = gtsBackwardDecision(old, fresh);
 
   return decideCompat({
     component: COMPONENT,
@@ -104,17 +104,17 @@ describe('decideCompat against a real GTS instance and real gts-ts compatibility
   it('fails when an own prop is renamed (old name gone, new name added)', () => {
     const old = schema(1, { iconName: { type: 'string' } }, []);
     const fresh = schema(1, { icon: { type: 'string' } }, []);
-    const verdict = checkRealCompat(old, fresh);
-    expect(verdict.status).toBe('fail');
-    expect(verdict.notes[0]).toContain('own prop "iconName" removed');
+    const decision = checkRealCompat(old, fresh);
+    expect(decision.status).toBe('fail');
+    expect(decision.notes[0]).toContain('own prop "iconName" removed');
   });
 
   it('passes the same enum removal when the contract major moved, with a note naming both versions', () => {
     const old = schema(1, { variant: { type: 'string', enum: ['default', 'destructive'] } }, []);
     const fresh = schema(2, { variant: { type: 'string', enum: ['default'] } }, []);
-    const verdict = checkRealCompat(old, fresh);
-    expect(verdict.status).toBe('pass');
-    expect(verdict.notes[0]).toContain('v1 -> v2');
+    const decision = checkRealCompat(old, fresh);
+    expect(decision.status).toBe('pass');
+    expect(decision.notes[0]).toContain('v1 -> v2');
   });
 
   it('passes when nothing changed', () => {
@@ -127,7 +127,7 @@ describe('decideCompat against a real GTS instance and real gts-ts compatibility
     // A property with no type/enum accepts anything either way; the prose
     // added to it (compile.ts's describeUntypeableProperty) tells a reader
     // what tsc checks instead. gts-ts's own backward check is asserted here
-    // rather than assumed, because this project reads its verdict as one of
+    // rather than assumed, because this project reads its decision as one of
     // three compatibility signals - if the library ever started treating an
     // annotation as a schema change, every recompile of an existing
     // contract would start refusing itself.
@@ -137,43 +137,43 @@ describe('decideCompat against a real GTS instance and real gts-ts compatibility
   });
 });
 
-describe("what gts-ts's own backward verdict does and does not see", () => {
+describe("what gts-ts's own backward decision does and does not see", () => {
   // Pinned, not assumed. Every one of these was measured against the
   // installed library; each is a reason `diffOwnPropsSchema` exists, and a
   // future version of gts-ts that starts (or stops) reporting one of them
   // makes this suite fail here rather than quietly changing how much the
   // gate catches.
   it('reports a dropped enum value', () => {
-    const verdict = gtsBackwardVerdict(
+    const decision = gtsBackwardDecision(
       schema(1, { variant: { type: 'string', enum: ['default', 'destructive'] } }, []),
       schema(1, { variant: { type: 'string', enum: ['default'] } }, []),
     );
-    expect(verdict.is_backward_compatible).toBe(false);
-    expect(verdict.backward_errors.join(' ')).toContain("Enum value 'destructive' removed");
+    expect(decision.is_backward_compatible).toBe(false);
+    expect(decision.backward_errors.join(' ')).toContain("Enum value 'destructive' removed");
   });
 
   it('reports a constraint appearing where the property asserted nothing, as any -> the new type', () => {
-    const verdict = gtsBackwardVerdict(schema(1, { tone: {} }, []), schema(1, { tone: { type: 'string' } }, []));
-    expect(verdict.is_backward_compatible).toBe(false);
-    expect(verdict.backward_errors.join(' ')).toContain('from any to string');
+    const decision = gtsBackwardDecision(schema(1, { tone: {} }, []), schema(1, { tone: { type: 'string' } }, []));
+    expect(decision.is_backward_compatible).toBe(false);
+    expect(decision.backward_errors.join(' ')).toContain('from any to string');
   });
 
   it('does NOT report an enum appearing on a property that already carried its type', () => {
     // The gap this project closes locally: every value outside the new union
     // stops validating, and this is the shape the compiler emits the day a
     // plain `string` prop becomes a literal union.
-    const verdict = gtsBackwardVerdict(
+    const decision = gtsBackwardDecision(
       schema(1, { tone: { type: 'string' } }, []),
       schema(1, { tone: { type: 'string', enum: ['info', 'warning'] } }, []),
     );
-    expect(verdict.is_backward_compatible).toBe(true);
-    expect(verdict.backward_errors).toEqual([]);
+    expect(decision.is_backward_compatible).toBe(true);
+    expect(decision.backward_errors).toEqual([]);
   });
 
   it('does NOT report an optional property vanishing, nor one that newly became required', () => {
-    const vanished = gtsBackwardVerdict(schema(1, { icon: { type: 'string' } }, []), schema(1, {}, []));
+    const vanished = gtsBackwardDecision(schema(1, { icon: { type: 'string' } }, []), schema(1, {}, []));
     expect(vanished.is_backward_compatible).toBe(true);
-    const required = gtsBackwardVerdict(
+    const required = gtsBackwardDecision(
       schema(1, { label: { type: 'string' } }, []),
       schema(1, { label: { type: 'string' } }, ['label']),
     );
@@ -185,9 +185,9 @@ describe('an own-props narrowing gts-ts calls compatible', () => {
   it('fails at an unchanged major on an enum appearing over an existing type', () => {
     const old = schema(1, { tone: { type: 'string' } }, []);
     const fresh = schema(1, { tone: { type: 'string', enum: ['info', 'warning'] } }, []);
-    const verdict = checkRealCompat(old, fresh);
-    expect(verdict.status).toBe('fail');
-    expect(verdict.notes[0]).toContain('own prop "tone" enum constraint added');
+    const decision = checkRealCompat(old, fresh);
+    expect(decision.status).toBe('fail');
+    expect(decision.notes[0]).toContain('own prop "tone" enum constraint added');
   });
 
   it('accepts the same change with the contract major moved', () => {

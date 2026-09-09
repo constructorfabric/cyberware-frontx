@@ -1,5 +1,5 @@
 {
-  "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.accordion.v1",
+  "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.ui.accordion.v1",
   "gts_type": "gts.frontx.uikit.meta.component.v1~",
   "metamodel": "1.0.0",
   "component": "accordion",
@@ -11,17 +11,17 @@
   "dont_use_when": [
     {
       "rule": "A single show/hide toggle for one piece of content",
-      "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.collapsible.v1~"
+      "instead": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.collapsible.v1~"
     },
     {
       "rule": "Primary navigation between sections that stays visible",
-      "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.tabs.v1~"
+      "instead": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.tabs.v1~"
     }
   ],
   "composition": {
     "children": {
       "kinds": [
-        "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
+        "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v1~"
       ]
     }
   },
@@ -48,7 +48,7 @@
   "deprecations": {},
   "coverage": {
     "a11y": "verified",
-    "rtl": "not-described",
+    "rtl": "unknown",
     "assumptions": [
       {
         "kind": "untyped_prop",
@@ -98,20 +98,20 @@
     ]
   },
   "family": {
-    "root": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",
+    "root": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion.v1~",
     "role": "root",
     "parts": [
-      "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~",
-      "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~",
-      "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_content.v1~"
+      "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v1~",
+      "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_trigger.v1~",
+      "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_content.v1~"
     ]
   },
-  "hidden": [
+  "withheld": [
     {
       "prop": "orientation",
-      "reason": "The root's own stylesheet fixes the layout to a single column (accordion.module.css's `.root { flex-direction: column }`), so the only value `orientation` could add - \"horizontal\" - would put Base UI's horizontal keyboard axis on a vertical layout. Hidden rather than listed: a contract listing it would be this kit's own statement that it works."
+      "reason": "The root's own stylesheet fixes the layout to a single column (accordion.module.css's `.root { flex-direction: column }`), so the only value `orientation` could add - \"horizontal\" - would put Base UI's horizontal keyboard axis on a vertical layout. Withheld rather than listed: a contract listing it would be this kit's own statement that it works."
     }
   ],
-  "host_element": "gts.frontx.uikit.passthrough.dom_div.v1~",
-  "props_schema": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~"
+  "host_element": "gts.frontx.uikit.element.dom_div.v1~",
+  "props_schema": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion.v1~"
 }

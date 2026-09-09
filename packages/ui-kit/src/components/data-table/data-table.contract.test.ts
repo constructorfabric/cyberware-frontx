@@ -1,7 +1,7 @@
 // Conformance for both DataTable contracts (DataTable, DataTableSortButton)
 // - one file because they share a directory and the interesting assertions
-// (extension points, no-passthrough, non-component exports correctly
-// excluded from coverage) are about the directory as a whole, not either
+// (extension points, no host element, non-component exports correctly
+// excluded from enrollment) are about the directory as a whole, not either
 // contract in isolation. See button.contract.test.ts for the per-component
 // conformance shape assertContractFreshness reuses.
 import { dirname, join } from 'node:path';
@@ -95,10 +95,10 @@ describe('data-table: metamodel validity', () => {
   });
 });
 
-describe('data-table: coverage counts only component exports', () => {
+describe('data-table: enrollment counts only component exports', () => {
   // The directory exports six names in total; four are helpers/features/
-  // types, not components, and must never be counted against coverage or
-  // demanded an overlay - see check.ts's componentExportCoverage.
+  // types, not components, and must never be counted against enrollment or
+  // demanded an overlay - see check.ts's componentExportEnrollment.
   it('data-table.tsx exports exactly two React components: DataTable and DataTableSortButton', () => {
     const extraction = resolveTargetExtraction(DIRECTORY, DIRECTORY);
     const sortButtonExtraction = resolveTargetExtraction(DIRECTORY, 'data-table-sort-button');
@@ -123,7 +123,7 @@ describe('data-table: coverage counts only component exports', () => {
       expect(allExports, name).toContain(name);
     }
     // Every non-component name is genuinely not one of the two compiled
-    // contracts' component names - the coverage report's "skipped" list
+    // contracts' component names - the enrollment report's "skipped" list
     // and the actual overlay set must agree on this.
     const componentNames = new Set(['DataTable', 'DataTableSortButton']);
     for (const name of nonComponents) {
@@ -139,13 +139,13 @@ describe('data-table: no forwarded surface for either contract', () => {
     // asserts that for all of them), so "no forwarded surface" is now
     // `host_element` being absent from both halves of the artifact.
     const extraction = resolveTargetExtraction(DIRECTORY, DIRECTORY);
-    expect(extraction.passthroughProps).toEqual([]);
+    expect(extraction.forwardedProps).toEqual([]);
     expect(extraction.elementKind).toBeUndefined();
     expect(units[DIRECTORY].contract['x-gts-traits'].host_element).toBeUndefined();
     expect(units[DIRECTORY].instance.host_element).toBeUndefined();
   });
 
-  it('DataTableSortButton composes Button by rendering it, not by extending its props type - also no passthrough', () => {
+  it('DataTableSortButton composes Button by rendering it, not by extending its props type - also no forwarded surface', () => {
     // DataTableSortButtonProps declares column/children/className itself and
     // extends nothing; the <Button> underneath is JSX in its own render
     // body, which the extractor's own/inherited split never sees (own vs
@@ -153,7 +153,7 @@ describe('data-table: no forwarded surface for either contract', () => {
     // what a component renders) - classify what the extractor actually
     // reports, don't assume it from what the component renders.
     const extraction = resolveTargetExtraction(DIRECTORY, 'data-table-sort-button');
-    expect(extraction.passthroughProps).toEqual([]);
+    expect(extraction.forwardedProps).toEqual([]);
     expect(extraction.apiProps).toEqual([]);
     expect(extraction.elementKind).toBeUndefined();
     expect(units['data-table-sort-button'].contract['x-gts-traits'].host_element).toBeUndefined();
@@ -195,7 +195,7 @@ describe('data-table: coverage.assumptions carry a kind', () => {
     const { instance } = units['data-table-sort-button'];
     const assumptions = instance.coverage.assumptions ?? [];
     expect(assumptions.some((a) => a.kind === 'external_mount')).toBe(true);
-    expect(assumptions.some((a) => a.kind === 'hidden_part' && /composes the kit's own Button/.test(a.claim))).toBe(true);
+    expect(assumptions.some((a) => a.kind === 'unexposed_part' && /composes the kit's own Button/.test(a.claim))).toBe(true);
     expect(assumptions.filter((a) => a.kind === 'untyped_prop').map((a) => a.prop).sort()).toEqual(['children', 'column']);
     // The typed composition field covers kit-to-kit nesting only: a column's
     // `header` render function is a TanStack Table prop, not a kit
@@ -215,8 +215,8 @@ describe('data-table in a GTS store', () => {
   function registeredStore(): GTS {
     const gts = new GTS();
     gts.register(baseSchema);
-    // The vocabulary the base type's trait schema references: a store
-    // missing one fails every entity in it, not just the trait block.
+    // The vocabulary the base type's x-gts-traits-schema references: a store
+    // missing one fails every entity in it, not just the x-gts-traits block.
     registerContractTypes((entity) => gts.register(entity));
     for (const { contract } of Object.values(units)) gts.register(contract);
     return gts;
@@ -239,12 +239,12 @@ describe('data-table in a GTS store', () => {
     expect(result.error).toContain('Parent schema not found');
   });
 
-  it("every contract's x-gts-traits validates against base.component.json's x-gts-traits-schema", () => {
+  it("every contract's x-gts-traits validates against ui.component.json's x-gts-traits-schema", () => {
     // See button.contract.test.ts for which gts-ts API this goes through
     // and why validateContractTraits (testing.ts) round-trips the contract
     // through JSON first. Real here: DataTable sets extension_points but not
     // family, DataTableSortButton sets neither - between the two contracts,
-    // every optional-trait absence shape this directory can produce is
+    // every optional x-gts-traits absence shape this directory can produce is
     // exercised.
     for (const { stem, contract } of Object.values(units)) {
       const result = validateContractTraits(contract);

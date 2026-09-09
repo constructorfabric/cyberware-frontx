@@ -1,5 +1,5 @@
 {
-  "$id": "gts://gts.frontx.uikit.trait.extension_point.v1~",
+  "$id": "gts://gts.frontx.uikit.vocabulary.extension_point.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UiKit extension point",
   "description": "One growth point a consumer extends this component through, declared at the component level instead of enumerating every plugin-shaped prop individually (DataTable's `columns` accepts arbitrary third-party ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed).",

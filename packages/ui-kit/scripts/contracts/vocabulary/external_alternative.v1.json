@@ -1,5 +1,5 @@
 {
-  "$id": "gts://gts.frontx.uikit.trait.external_alternative.v1~",
+  "$id": "gts://gts.frontx.uikit.vocabulary.external_alternative.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UiKit external alternative",
   "description": "The alternative to a \"don't\" when it is outside this kit. Without this form the only way to satisfy a required component ref is to name the nearest kit component as a stand-in, which reads to a resolver as a real recommendation and to an agent as an instruction to reach for a component the rule was written to steer it away from.",

@@ -1,11 +1,11 @@
 {
-  "$id": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.data_table.v1~",
+  "$id": "gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.data_table.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "UiKit data-table contract",
+  "title": "UiKit DataTable",
   "type": "object",
   "allOf": [
     {
-      "$ref": "gts://gts.frontx.uikit.base.component.v1~"
+      "$ref": "gts://gts.frontx.uikit.ui.component.v1~"
     }
   ],
   "properties": {
@@ -42,7 +42,7 @@
     "data"
   ],
   "unevaluatedProperties": {
-    "x-uikit-verdict": "unchecked"
+    "x-uikit-classification": "unknown"
   },
   "x-uikit": {
     "metamodel": "1.0.0",
@@ -117,9 +117,6 @@
         "optional": true
       }
     },
-    "passthrough": [
-      "DataTableProps<TData> (src/components/data-table/data-table.tsx)"
-    ],
     "variant_sources": [],
     "cannot_extract": []
   },
@@ -127,7 +124,7 @@
     "dont_use_when": [
       {
         "rule": "Static markup with no sorting, selection or pagination need",
-        "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.table.v1~"
+        "instead": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.table.v1~"
       }
     ],
     "composition": {
@@ -139,8 +136,8 @@
     },
     "deprecations": {},
     "coverage": {
-      "a11y": "not-described",
-      "rtl": "not-described",
+      "a11y": "unknown",
+      "rtl": "unknown",
       "assumptions": [
         {
           "kind": "behaviour",

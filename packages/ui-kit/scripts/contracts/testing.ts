@@ -17,14 +17,14 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   BASE_TYPE_ID,
   buildMetamodel,
-  buildTraitTypes,
+  buildVocabularyTypes,
   compileContract,
   compileInstance,
   findUntypedPropMismatches,
   hostElementRef,
   isExternalAlternative,
   loadBaseSchema,
-  loadPassthroughSchemas,
+  loadElementSurfaces,
   registerContractTypes,
   type CompiledContract,
   type ContractInstance,
@@ -32,9 +32,9 @@ import {
 import {
   bareGtsId,
   componentTypeRefPattern,
-  passthroughTypeIdPattern,
-  passthroughTypeRefPattern,
-  traitTypeIdPattern,
+  elementTypeIdPattern,
+  elementTypeRefPattern,
+  vocabularyTypeIdPattern,
 } from './ids';
 import { checkComponentFreshness, type FreshnessReport } from './freshness';
 
@@ -193,7 +193,7 @@ function composedSurfaceRefs(): Set<string> {
 }
 
 // The registry a contract instance is validated in: the base type, the
-// vocabulary its trait schema references, every element-kind passthrough type
+// vocabulary its x-gts-traits-schema references, every host element surface
 // a contract may name, the metamodel the instance is typed by, and every
 // contract the kit ships - which is what the instance's own props_schema and
 // host_element references have to resolve against.
@@ -201,7 +201,7 @@ export function registeredKitStore(): GTS {
   const gts = new GTS();
   gts.register(JSON.parse(JSON.stringify(loadBaseSchema())) as Record<string, unknown>);
   registerContractTypes((entity) => gts.register(entity));
-  for (const passthrough of loadPassthroughSchemas()) gts.register(passthrough);
+  for (const surface of loadElementSurfaces()) gts.register(surface);
   gts.register(buildMetamodel());
   for (const contract of loadCommittedContracts()) gts.register(contract);
   return gts;
@@ -256,8 +256,8 @@ export function assertContractFreshness(directory: string, exportStem: string = 
       // it catches a change to the grammar itself, or to how an identifier
       // is assembled, that leaves the two disagreeing while every schema
       // still validates.
-      const pattern = new RegExp(traitTypeIdPattern());
-      for (const type of buildTraitTypes()) {
+      const pattern = new RegExp(vocabularyTypeIdPattern());
+      for (const type of buildVocabularyTypes()) {
         expect(String(type.$id), `${String(type.$id)} is not a grammatical vocabulary type id`).toMatch(pattern);
       }
     });
@@ -332,7 +332,7 @@ export function assertContractFreshness(directory: string, exportStem: string = 
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-parent
 
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-element
-    it('derives from exactly one type, the abstract base component type', () => {
+    it('derives from exactly one type, the abstract component type', () => {
       // The single-parent rule, asserted on the schema body rather than left
       // to the id: the chained $id says one parent, and an allOf carrying a
       // second $ref would say two. The host element's surface is a reference
@@ -345,23 +345,23 @@ export function assertContractFreshness(directory: string, exportStem: string = 
       // The surfaces are hand-written, so nothing recompiles them into place:
       // what has to hold is that the reference a contract HOLDS resolves to a
       // committed file, and that the file's own identifier obeys the
-      // passthrough grammar rather than merely matching the string the
+      // element-surface grammar rather than merely matching the string the
       // contract happens to carry. Both spellings appear here on purpose - a
       // reference value is bare, a file's own `$id` carries `gts://` - so the
       // committed set is keyed by the bare form the reference is compared
       // against. A contract that names no surface has nothing to resolve,
       // which is the honest answer for DataTable and not a skipped check.
-      const idPattern = new RegExp(passthroughTypeIdPattern());
-      const refPattern = new RegExp(passthroughTypeRefPattern());
+      const idPattern = new RegExp(elementTypeIdPattern());
+      const refPattern = new RegExp(elementTypeRefPattern());
       const committed = new Set<string>();
-      for (const schema of loadPassthroughSchemas()) {
+      for (const schema of loadElementSurfaces()) {
         const id = String(schema.$id);
-        expect(id, `${id} is not a grammatical passthrough type id`).toMatch(idPattern);
+        expect(id, `${id} is not a grammatical element surface id`).toMatch(idPattern);
         committed.add(bareGtsId(id));
       }
       const ref = hostElementRef(compileContract(directory, exportStem));
       if (ref === undefined) return;
-      expect(ref, `${exportStem}: host_element "${ref}" is not a grammatical passthrough reference`).toMatch(refPattern);
+      expect(ref, `${exportStem}: host_element "${ref}" is not a grammatical element-surface reference`).toMatch(refPattern);
       expect(committed.has(ref), `${exportStem}: names "${ref}", which no committed file declares`).toBe(true);
     });
 
@@ -374,7 +374,7 @@ export function assertContractFreshness(directory: string, exportStem: string = 
       // suite holds to a fresh compile, so a stale file cannot hide an orphan
       // here.
       const named = composedSurfaceRefs();
-      const orphans = loadPassthroughSchemas()
+      const orphans = loadElementSurfaces()
         .map((schema) => bareGtsId(String(schema.$id)))
         .filter((ref) => !named.has(ref))
         .sort();
@@ -397,7 +397,7 @@ export function assertContractFreshness(directory: string, exportStem: string = 
   });
 }
 
-// Registers base.component.json plus a JSON-round-tripped copy of a compiled
+// Registers ui.component.json plus a JSON-round-tripped copy of a compiled
 // contract into a fresh GTS store and returns GTS.validateEntity's result
 // for that contract's own $id.
 //
@@ -405,7 +405,7 @@ export function assertContractFreshness(directory: string, exportStem: string = 
 // - GtsStore.validateSchemaAgainstParent (which, for a derived schema,
 // itself calls the private validateSchemaTraits as its last step - the
 // merged-values-against-effective-schema Ajv check) and
-// GtsStore.validateEntityTraits (the closure check: every trait schema in
+// GtsStore.validateEntityTraits (the closure check: every x-gts-traits-schema in
 // the chain must set additionalProperties: false). Both already run through
 // this one call; nothing here calls validateSchemaTraits directly, because
 // GTS.validateEntity already reaches it for a derived schema like a
@@ -426,20 +426,21 @@ export function assertContractFreshness(directory: string, exportStem: string = 
 // anything the day a future refactor made pickFields omit unset keys
 // instead of assigning them undefined.
 //
-// Only base.component.json and the contract are registered: gts-ts resolves
-// a schema's trait chain from the GTS ID's OWN dot-token segments
+// Only ui.component.json and the contract are registered: gts-ts resolves
+// a schema's x-gts-traits chain from the GTS ID's OWN dot-token segments
 // (GtsStore.buildSchemaChain), not by dereferencing any $ref, so neither the
 // host element's surface nor any other component's contract is ever consulted
-// for trait validation - and host_element is a plain string value in the block
+// for x-gts-traits validation - and host_element is a plain string value in the block
 // being checked, not a type this store has to resolve.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-traits
 export function validateContractTraits(contract: CompiledContract): ValidationResult & { entity_type: string } {
   const gts = new GTS();
   gts.register(JSON.parse(JSON.stringify(loadBaseSchema())) as Record<string, unknown>);
-  // The vocabulary the base type's trait schema references. Without them
+  // The vocabulary the base type's x-gts-traits-schema references. Without them
   // gts-ts fails the whole check with "Unresolvable trait schema reference"
-  // rather than a validation error, which is the right failure - a trait
-  // schema whose types are missing has not been checked against anything.
+  // rather than a validation error, which is the right failure - an
+  // x-gts-traits-schema whose types are missing has not been checked against
+  // anything.
   registerContractTypes((entity) => gts.register(entity));
   gts.register(JSON.parse(JSON.stringify(contract)) as Record<string, unknown>);
   return gts.validateEntity(bareGtsId(contract.$id));

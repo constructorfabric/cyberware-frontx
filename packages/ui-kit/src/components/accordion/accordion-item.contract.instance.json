@@ -1,5 +1,5 @@
 {
-  "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.accordion_item.v1",
+  "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.ui.accordion_item.v1",
   "gts_type": "gts.frontx.uikit.meta.component.v1~",
   "metamodel": "1.0.0",
   "component": "accordion-item",
@@ -10,19 +10,19 @@
   "dont_use_when": [
     {
       "rule": "A section that must always stay visible and never collapse",
-      "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~"
+      "instead": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.card.v1~"
     }
   ],
   "composition": {
     "children": {
       "kinds": [
-        "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~",
-        "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_content.v1~"
+        "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_trigger.v1~",
+        "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_content.v1~"
       ]
     },
     "parent": {
       "kinds": [
-        "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~"
+        "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion.v1~"
       ]
     }
   },
@@ -84,9 +84,9 @@
     ]
   },
   "family": {
-    "root": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",
+    "root": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion.v1~",
     "role": "part"
   },
-  "host_element": "gts.frontx.uikit.passthrough.dom_div.v1~",
-  "props_schema": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
+  "host_element": "gts.frontx.uikit.element.dom_div.v1~",
+  "props_schema": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v1~"
 }

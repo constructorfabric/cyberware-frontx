@@ -20,7 +20,7 @@ typical_uses:
 
 dont_use_when:
   - rule: Static markup with no sorting, selection or pagination need
-    instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.table.v1~ # Table
+    instead: gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.table.v1~ # Table
 
 composition:
   # DataTable takes no children at all - not even text: DataTableProps has no
@@ -59,8 +59,8 @@ anti_patterns:
 deprecations: {}
 
 coverage:
-  a11y: not-described
-  rtl: not-described
+  a11y: unknown
+  rtl: unknown
   assumptions:
     - kind: behaviour
       claim: sorting, row-selection and pagination state are internal, not props

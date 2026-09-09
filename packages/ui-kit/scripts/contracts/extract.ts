@@ -14,7 +14,7 @@
 //
 //   - the component's own source file           -> ownProps
 //   - the primitive library's props for a part  -> apiProps
-//   - React's DOM attribute types               -> passthroughProps
+//   - React's DOM attribute types               -> forwardedProps
 //
 // The middle set is the one that matters most to a reader. A prop declared in
 // a Base UI part's own props type - Accordion root's `multiple`, Button's
@@ -25,7 +25,7 @@
 // 233-entry generated file nobody read. React's own DOM attributes really are
 // forwarded surface, and they are the same surface for every component that
 // renders the same host element, which is why they are declared once per
-// element kind by hand (see compile.ts's loadPassthroughSchema) instead of
+// element kind by hand (see compile.ts's loadElementSurface) instead of
 // re-derived per component.
 //
 // This is what a text-only extractor structurally cannot see: `Omit<X,
@@ -54,7 +54,7 @@ export interface ExtractedProp {
   // filesystem path, which would make a committed contract machine-specific.
   declarationFile: string;
   // The JSDoc @default tag's text, when the declaring symbol carries one -
-  // Base UI annotates several passthrough props this way (nativeButton,
+  // Base UI annotates several forwarded props this way (nativeButton,
   // focusableWhenDisabled) and it is worth keeping next to the fact it
   // documents rather than discarding it at extraction time.
   jsDocDefault?: string;
@@ -84,7 +84,7 @@ export interface ComponentExtraction {
   // Declared in React's DOM attribute types: the surface every component
   // rendering the same host element forwards, declared once per element kind
   // by hand rather than re-derived here.
-  passthroughProps: ExtractedProp[];
+  forwardedProps: ExtractedProp[];
   // Declared somewhere none of the three above covers - a second primitive
   // library, a utility package. Named rather than filed: which side of the
   // API/forwarded line such a prop belongs on is a question about that
@@ -95,17 +95,16 @@ export interface ComponentExtraction {
   // resolved through Omit/Pick and BaseUIComponentProps / ComponentProps
   // generic arguments - undefined when the props type has no such anchor (a
   // from-scratch interface with no DOM/Base UI heritage, e.g. DataTable's).
-  // It decides WHICH hand-written passthrough schema the contract names,
+  // It decides WHICH hand-written element surface the contract names,
   // so a component with forwarded DOM props and no resolvable element kind
   // is refused rather than compiled without them.
   elementKind?: string;
-  // Human-readable labels for the non-variant heritage this component's own
-  // Props type declares - "what the component forwards to an element",
-  // kept for readers of the compiled contract, not consumed by the compiler.
-  passthroughSources: string[];
   // Human-readable labels for the VariantProps<typeof X> heritage this
-  // component's own Props type declares - where its cva axes come from, the
-  // complement of passthroughSources above.
+  // component's own Props type declares - where its cva axes come from,
+  // kept for readers of the compiled contract, not consumed by the compiler.
+  // The non-variant heritage carries no label of its own: which element a
+  // component forwards to is stated once, as the host-element surface the
+  // contract names, and a second prose copy of it was one fact in two places.
   variantSourceLabels: string[];
   cannotExtract: string[];
 }
@@ -114,7 +113,7 @@ export interface ComponentExtraction {
 // actually holds; `React.ReactNode` and the bare `ReactNode` name the same
 // type under two different printed spellings depending on how the checker's
 // import context resolves it. Both are normalized away before a type text is
-// compared (own-vs-passthrough conflict check) or classified (NORMATIVE_TYPES
+// compared (own-vs-surface conflict check) or classified (NORMATIVE_TYPES
 // lookup), or the same fact would silently disagree with itself depending on
 // which side happened to print the qualified form.
 export function normalizeTypeText(typeText: string): string {
@@ -293,7 +292,7 @@ export function isBooleanAxis(values: string[]): boolean {
 // Resolves every `VariantProps<typeof X>` heritage entry found on a
 // component's props type into the cva axes/defaults it names. A heritage
 // entry that cannot be traced to a real cva(...) call - the defect F16
-// documents, a cva moved to a sibling file or hidden behind an alias the old
+// documents, a cva moved to a sibling file or masked behind an alias the old
 // syntax-only walk never saw - is recorded with a `cva:` prefix so
 // compileContract can fail the build on it instead of shipping a contract
 // that silently lost its variant axes.
@@ -612,8 +611,8 @@ function walkPropsType(
 // symbol - not a hand-kept name list, so the two functions can never
 // disagree about where "the component's own heritage" ends and "a
 // well-known type helper's internals" begins) - one for kind/variant
-// resolution, this one for the read-only labels x-uikit.passthrough and
-// x-uikit.variant_sources carry. A node this walk genuinely cannot classify
+// resolution, this one for the read-only labels x-uikit.variant_sources
+// carries. A node this walk genuinely cannot classify
 // (see walkPropsType's matching branches) is named in `cannotExtract`
 // instead of silently becoming an opaque label (N2/M1): the label-only
 // consumer downstream still gets a leaf back so it has something to render,
@@ -691,48 +690,26 @@ function resolveTopLevelMembers(
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
 }
 
-// x-uikit.passthrough / x-uikit.variant_sources: what the component's own
-// props type extends, split into forwarded-to-an-element vs
-// where-its-own-cva-axes-come-from. Each passthrough label carries the
-// declaration file the checker resolved it to (a node_modules- or
-// kit-relative path) alongside the heritage text, so a reader sees not just
-// "Omit<ButtonPrimitive.Props, 'className'>" but which file that type
-// actually comes from.
-function topLevelHeritageLabels(
+// x-uikit.variant_sources: where this component's own cva axes come from,
+// read off the VariantProps<typeof X> entries of its props type's heritage.
+// The walk covers the whole heritage rather than the variant entries alone
+// because a node it cannot classify is a fact worth recording either way
+// (resolveTopLevelMembers writes it into `cannotExtract`), and because the
+// non-variant entries are what the walk has to step over to find the variant
+// ones.
+function variantSourceLabelsOf(
   node: ts.TypeNode,
   checker: ts.TypeChecker,
-  kitRoot: string,
   cannotExtract: string[],
-): { passthroughSources: string[]; variantSourceLabels: string[] } {
+): string[] {
   const members = resolveTopLevelMembers(node, checker, new Set(), 0, cannotExtract);
-  const passthroughSources: string[] = [];
-  const variantSourceLabels: string[] = [];
+  const labels: string[] = [];
   for (const member of members) {
     const parts = typeRefParts(member);
     const shape = parts && classifyHeritageReference(parts.location, checker);
-    if (shape?.kind === 'variant-props') {
-      variantSourceLabels.push(member.getText());
-      continue;
-    }
-    const text = member.getText();
-    // For `Omit<X, 'className'>` the informative location is X, not the
-    // built-in Omit utility type itself (which would always resolve to
-    // TypeScript's own lib.es5.d.ts and tell a reader nothing about which
-    // component library the props actually come from).
-    const location =
-      parts && shape?.kind === 'omit-pick' && parts.args?.length ? typeRefParts(parts.args[0])?.location : parts?.location;
-    if (location) {
-      const symbol = checker.getSymbolAtLocation(location);
-      const resolved = symbol && (symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol);
-      const decl = resolved?.getDeclarations()?.[0];
-      if (decl) {
-        passthroughSources.push(`${text} (${relativeDeclarationFile(decl.getSourceFile().fileName, kitRoot)})`);
-        continue;
-      }
-    }
-    passthroughSources.push(text);
+    if (shape?.kind === 'variant-props') labels.push(member.getText());
   }
-  return { passthroughSources, variantSourceLabels };
+  return labels;
 }
 
 // Where a prop's declaration lives decides which of the three sets it is
@@ -813,7 +790,7 @@ function isReactWrapperCall(call: ts.CallExpression, checker: ts.TypeChecker, wr
 // ...))`) - M8: the initializer becomes a CallExpression instead of a
 // function value, which the old arrow/function-expression-only check
 // silently read as "not component-shaped," undercounting check.ts's own
-// coverage report by miscounting a real, unwrapped component as one of the
+// enrollment report by miscounting a real, unwrapped component as one of the
 // exports it intentionally skips. `forwardRef`'s render function and
 // `memo`'s wrapped component are both their call's first argument - the
 // only argument shape either wrapper accepts there.
@@ -886,7 +863,7 @@ const kitRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 // One parsed tsconfig.src.json for every extraction in the process - the
 // compiler options that decide module resolution and JSX must match what
 // actually ships, and re-reading/re-parsing the config file per component
-// would be wasted work across a kit-wide run (see T4's coverage report).
+// would be wasted work across a kit-wide run (see T4's enrollment report).
 let cachedCompilerOptions: ts.CompilerOptions | undefined;
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-program
 function loadCompilerOptions(): ts.CompilerOptions {
@@ -905,7 +882,7 @@ function loadCompilerOptions(): ts.CompilerOptions {
 // A ts.Program is not a parse of one file: it is the parse, bind and module
 // resolution of that file AND its whole transitive closure - React, Base UI,
 // the DOM lib, every .d.ts they reach - and the kit's components share almost
-// all of that closure. The coverage report built two programs per directory,
+// all of that closure. The enrollment report built two programs per directory,
 // 126 for 63 components, and spent nearly all of its runtime re-reading the
 // same declaration files. Measured over those 63 entry files: 126 programs
 // 33.5s, 63 programs 16.0s, one program over all 63 roots 0.73s.
@@ -977,10 +954,9 @@ function extractFromSource(source: ts.SourceFile, checker: ts.TypeChecker): Comp
       const param = firstParameter(candidate, checker);
       const ownProps: ExtractedProp[] = [];
       const apiProps: ExtractedProp[] = [];
-      const passthroughProps: ExtractedProp[] = [];
+      const forwardedProps: ExtractedProp[] = [];
       const unclassifiedProps: ExtractedProp[] = [];
       let elementKind: string | undefined;
-      let passthroughSources: string[] = [];
       let variantSourceLabels: string[] = [];
       let axes: Record<string, string[]> = {};
       let booleanAxes: string[] = [];
@@ -993,9 +969,7 @@ function extractFromSource(source: ts.SourceFile, checker: ts.TypeChecker): Comp
         if (param.type) {
           walkPropsType(param.type, checker, walk, new Set(), 0);
           // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
-          const labels = topLevelHeritageLabels(param.type, checker, kitRoot, cannotExtract);
-          passthroughSources = labels.passthroughSources;
-          variantSourceLabels = labels.variantSourceLabels;
+          variantSourceLabels = variantSourceLabelsOf(param.type, checker, cannotExtract);
         }
         // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-heritage
         elementKind = walk.kind;
@@ -1057,7 +1031,7 @@ function extractFromSource(source: ts.SourceFile, checker: ts.TypeChecker): Comp
                 apiProps.push(extracted);
                 break;
               case 'react-dom':
-                passthroughProps.push(extracted);
+                forwardedProps.push(extracted);
                 break;
               default:
                 unclassifiedProps.push(extracted);
@@ -1079,7 +1053,7 @@ function extractFromSource(source: ts.SourceFile, checker: ts.TypeChecker): Comp
       // its way to guarantee.
       // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-return
       const byName = (a: ExtractedProp, b: ExtractedProp): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-      for (const list of [ownProps, apiProps, passthroughProps, unclassifiedProps]) list.sort(byName);
+      for (const list of [ownProps, apiProps, forwardedProps, unclassifiedProps]) list.sort(byName);
 
       extractions.push({
         name,
@@ -1088,10 +1062,9 @@ function extractFromSource(source: ts.SourceFile, checker: ts.TypeChecker): Comp
         defaults,
         ownProps,
         apiProps,
-        passthroughProps,
+        forwardedProps,
         unclassifiedProps,
         elementKind,
-        passthroughSources,
         variantSourceLabels,
         cannotExtract,
       });
@@ -1129,7 +1102,7 @@ export function extractComponent(tsxPath: string): ComponentExtraction[] {
 // one program instead of one program per file. Names only, and deliberately
 // so: a name is not one of the things a shared program can move (see the
 // note above the split), while the type text next to it is - so this answers
-// the coverage report's "n of m exports" and the guard's "does this directory
+// the enrollment report's "n of m exports" and the guard's "does this directory
 // describe every component it exports", and nothing that gets written down.
 // It keeps its own cache for the same reason: an extraction taken from here
 // must never reach compileContract through the artifact cache.
@@ -1145,7 +1118,7 @@ export function listComponentExportNames(tsxPaths: string[]): Map<string, string
     for (const path of missing) {
       const source = program.getSourceFile(path);
       // A file the walk cannot read reports no components rather than
-      // failing the whole batch - the coverage report it feeds is never
+      // failing the whole batch - the enrollment report it feeds is never
       // supposed to fail a build, and one unreadable directory must not
       // take the other 62 down with it.
       let names: string[] = [];
@@ -1162,13 +1135,13 @@ export function listComponentExportNames(tsxPaths: string[]): Map<string, string
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-shared-program
 
 // Every top-level exported declaration name in a file, component or not -
-// used only by check.ts's coverage report (T6: data-table.tsx exports
+// used only by check.ts's enrollment report (T6: data-table.tsx exports
 // DataTable/DataTableSortButton alongside four non-component helpers/types -
 // dataTableColumnHelper, dataTableFeatures, dataTableSelectionColumn,
 // DataTableSelectionColumnLabels). extractComponent already excludes these
 // correctly (isReactComponentCandidate requires an uppercase, JSX-returning
 // function/const; an interface or type alias is not even a value
-// declaration), so coverage's "N of M" count was never wrong - what was
+// declaration), so the enrollment report's "N of M" count was never wrong - what was
 // missing is a way to SHOW which exports were excluded and why, rather than
 // leaving a reader to wonder if 2 of 6 exports means four are undescribed
 // gaps or four were never components at all.

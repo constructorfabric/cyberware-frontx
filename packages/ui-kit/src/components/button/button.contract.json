@@ -1,11 +1,11 @@
 {
-  "$id": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~",
+  "$id": "gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.button.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "UiKit button contract",
+  "title": "UiKit Button",
   "type": "object",
   "allOf": [
     {
-      "$ref": "gts://gts.frontx.uikit.base.component.v1~"
+      "$ref": "gts://gts.frontx.uikit.ui.component.v1~"
     }
   ],
   "properties": {
@@ -54,7 +54,7 @@
   },
   "required": [],
   "unevaluatedProperties": {
-    "x-uikit-verdict": "unchecked"
+    "x-uikit-classification": "unknown"
   },
   "x-uikit": {
     "metamodel": "1.0.0",
@@ -113,9 +113,6 @@
         "optional": true
       }
     },
-    "passthrough": [
-      "Omit<ButtonPrimitive.Props, 'className'> (@base-ui/react/button/Button.d.mts)"
-    ],
     "variant_sources": [
       "VariantProps<typeof buttonVariants>"
     ],
@@ -132,7 +129,7 @@
       },
       {
         "rule": "Toggling a persistent on/off state",
-        "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.switch.v1~"
+        "instead": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.switch.v1~"
       }
     ],
     "composition": {
@@ -146,7 +143,7 @@
     "deprecations": {},
     "coverage": {
       "a11y": "verified",
-      "rtl": "not-described",
+      "rtl": "unknown",
       "assumptions": [
         {
           "kind": "untyped_prop",
@@ -168,6 +165,6 @@
         }
       ]
     },
-    "host_element": "gts.frontx.uikit.passthrough.dom_button.v1~"
+    "host_element": "gts.frontx.uikit.element.dom_button.v1~"
   }
 }

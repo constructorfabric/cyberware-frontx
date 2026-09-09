@@ -42,7 +42,7 @@
     "demo": "vite demo",
     "contracts:compile": "tsx scripts/contracts/compile.ts",
     "contracts:check": "tsx scripts/contracts/check.ts",
-    "contracts:coverage": "tsx scripts/contracts/check.ts coverage"
+    "contracts:enrollment": "tsx scripts/contracts/check.ts enrollment"
   },
   "dependencies": {
     "@base-ui/react": "1.6.0",

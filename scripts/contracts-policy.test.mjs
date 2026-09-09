@@ -41,14 +41,14 @@ describe('baseRefFromArgv', () => {
 });
 
 describe('runCli', () => {
-  it('runs guard then compat with the given base ref, then coverage, in order', () => {
+  it('runs guard then compat with the given base ref, then the enrollment report, in order', () => {
     const runner = fakeRunner();
     const exit = runCli({ argv: ['--base-ref', 'origin/develop'], env: {}, log: () => {}, runner });
     expect(exit).toBe(0);
     expect(runner.calls).toEqual([
       { npmScript: 'contracts:check', args: ['guard', '--base', 'origin/develop'] },
       { npmScript: 'contracts:check', args: ['compat', '--base', 'origin/develop'] },
-      { npmScript: 'contracts:coverage', args: [] },
+      { npmScript: 'contracts:enrollment', args: [] },
     ]);
   });
 
@@ -64,25 +64,25 @@ describe('runCli', () => {
     expect(runner.calls[0].args).toEqual(['guard', '--base', 'origin/develop']);
   });
 
-  it('skips guard and compat, but still runs coverage, when no base ref is given anywhere', () => {
+  it('skips guard and compat, but still runs the enrollment report, when no base ref is given anywhere', () => {
     const runner = fakeRunner();
     /** @type {string[]} */
     const messages = [];
     const exit = runCli({ argv: [], env: {}, log: (line) => messages.push(line), runner });
     expect(exit).toBe(0);
-    expect(runner.calls).toEqual([{ npmScript: 'contracts:coverage', args: [] }]);
+    expect(runner.calls).toEqual([{ npmScript: 'contracts:enrollment', args: [] }]);
     expect(messages.some((line) => line.includes('No base ref given'))).toBe(true);
   });
 
-  it('stops after guard and propagates its exit code, without running compat or coverage', () => {
+  it('stops after guard and propagates its exit code, without running compat or the enrollment report', () => {
     const runner = fakeRunner({ 'contracts:check': 1 });
     const exit = runCli({ argv: ['--base-ref', 'origin/develop'], env: {}, log: () => {}, runner });
     expect(exit).toBe(1);
     expect(runner.calls).toEqual([{ npmScript: 'contracts:check', args: ['guard', '--base', 'origin/develop'] }]);
   });
 
-  it('never lets a nonzero coverage exit fail the policy - coverage is informational only', () => {
-    const runner = fakeRunner({ 'contracts:coverage': 1 });
+  it('never lets a nonzero enrollment-report exit fail the policy - the report is informational only', () => {
+    const runner = fakeRunner({ 'contracts:enrollment': 1 });
     const exit = runCli({ argv: ['--base-ref', 'origin/develop'], env: {}, log: () => {}, runner });
     expect(exit).toBe(0);
   });

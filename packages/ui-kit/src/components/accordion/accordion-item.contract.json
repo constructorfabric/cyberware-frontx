@@ -1,11 +1,11 @@
 {
-  "$id": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~",
+  "$id": "gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "UiKit accordion-item contract",
+  "title": "UiKit AccordionItem",
   "type": "object",
   "allOf": [
     {
-      "$ref": "gts://gts.frontx.uikit.base.component.v1~"
+      "$ref": "gts://gts.frontx.uikit.ui.component.v1~"
     }
   ],
   "properties": {
@@ -30,7 +30,7 @@
   },
   "required": [],
   "unevaluatedProperties": {
-    "x-uikit-verdict": "unchecked"
+    "x-uikit-classification": "unknown"
   },
   "x-uikit": {
     "metamodel": "1.0.0",
@@ -66,9 +66,6 @@
       ]
     },
     "slots": {},
-    "passthrough": [
-      "Omit<AccordionPrimitive.Item.Props, 'className'> (@base-ui/react/accordion/item/AccordionItem.d.mts)"
-    ],
     "variant_sources": [],
     "cannot_extract": [
       "heritage: \"{\n    [P in keyof T]?: T[P];\n}\" is a MappedType, not a shape this walk can classify - cannot extract"
@@ -78,19 +75,19 @@
     "dont_use_when": [
       {
         "rule": "A section that must always stay visible and never collapse",
-        "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~"
+        "instead": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.card.v1~"
       }
     ],
     "composition": {
       "children": {
         "kinds": [
-          "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~",
-          "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_content.v1~"
+          "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_trigger.v1~",
+          "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_content.v1~"
         ]
       },
       "parent": {
         "kinds": [
-          "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~"
+          "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion.v1~"
         ]
       }
     },
@@ -125,9 +122,9 @@
       ]
     },
     "family": {
-      "root": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",
+      "root": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion.v1~",
       "role": "part"
     },
-    "host_element": "gts.frontx.uikit.passthrough.dom_div.v1~"
+    "host_element": "gts.frontx.uikit.element.dom_div.v1~"
   }
 }

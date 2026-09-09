@@ -1,22 +1,22 @@
 {
-  "$id": "gts://gts.frontx.uikit.trait.composition.v1~",
+  "$id": "gts://gts.frontx.uikit.vocabulary.composition.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UiKit composition",
   "description": "How this component nests: what may go inside it, and what it may be mounted under. Separate facts, separate types, and both optional. `children` absent means UNCONSTRAINED - a layout component that accepts whatever a consumer puts in it neither enumerates a kit it does not know nor claims \"text\" it does not require, and an empty or invented list would read as a rule rather than as its absence. `parent` is derived from every other contract's `children` and merged with the overlay's own `mounts_in`; an overlay may not write it (the compiler refuses one that does).",
   "type": "object",
   "properties": {
     "children": {
-      "$ref": "gts://gts.frontx.uikit.trait.child_composition.v1~"
+      "$ref": "gts://gts.frontx.uikit.vocabulary.child_composition.v1~"
     },
     "mounts_in": {
       "type": "array",
       "items": {
-        "$ref": "gts://gts.frontx.uikit.trait.external_alternative.v1~"
+        "$ref": "gts://gts.frontx.uikit.vocabulary.external_alternative.v1~"
       },
       "minItems": 1
     },
     "parent": {
-      "$ref": "gts://gts.frontx.uikit.trait.parent_composition.v1~"
+      "$ref": "gts://gts.frontx.uikit.vocabulary.parent_composition.v1~"
     }
   },
   "additionalProperties": false

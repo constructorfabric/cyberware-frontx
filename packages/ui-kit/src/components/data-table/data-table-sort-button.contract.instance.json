@@ -1,5 +1,5 @@
 {
-  "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.data_table_sort_button.v1",
+  "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.ui.data_table_sort_button.v1",
   "gts_type": "gts.frontx.uikit.meta.component.v1~",
   "metamodel": "1.0.0",
   "component": "data-table-sort-button",
@@ -10,7 +10,7 @@
   "dont_use_when": [
     {
       "rule": "A standalone action button with no column to sort",
-      "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~"
+      "instead": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.button.v1~"
     }
   ],
   "composition": {
@@ -42,7 +42,7 @@
   ],
   "deprecations": {},
   "coverage": {
-    "a11y": "not-described",
+    "a11y": "unknown",
     "assumptions": [
       {
         "kind": "untyped_prop",
@@ -57,7 +57,7 @@
         "reason": "`ReactNode`, so an element is as valid as a string. Required, because a sort button with no label is a button whose only content is a direction arrow."
       },
       {
-        "kind": "hidden_part",
+        "kind": "unexposed_part",
         "claim": "DataTableSortButton composes the kit's own Button internally",
         "reason": "It renders a `<Button variant=\"ghost\" size=\"sm\">` around its own label and a trailing sort-arrow icon - this is internal composition (JSX in DataTableSortButton's own render body), not a props-type heritage relationship, so none of Button's own props reach this contract: DataTableSortButtonProps declares `column`/`children`/`className` itself and extends nothing."
       },
@@ -83,5 +83,5 @@
       }
     ]
   },
-  "props_schema": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.data_table_sort_button.v1~"
+  "props_schema": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.data_table_sort_button.v1~"
 }

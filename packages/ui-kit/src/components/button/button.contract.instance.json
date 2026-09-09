@@ -1,5 +1,5 @@
 {
-  "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.button.v1",
+  "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.ui.button.v1",
   "gts_type": "gts.frontx.uikit.meta.component.v1~",
   "metamodel": "1.0.0",
   "component": "button",
@@ -18,7 +18,7 @@
     },
     {
       "rule": "Toggling a persistent on/off state",
-      "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.switch.v1~"
+      "instead": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.switch.v1~"
     }
   ],
   "composition": {
@@ -52,7 +52,7 @@
   "deprecations": {},
   "coverage": {
     "a11y": "verified",
-    "rtl": "not-described",
+    "rtl": "unknown",
     "assumptions": [
       {
         "kind": "untyped_prop",
@@ -98,6 +98,6 @@
       }
     ]
   },
-  "host_element": "gts.frontx.uikit.passthrough.dom_button.v1~",
-  "props_schema": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~"
+  "host_element": "gts.frontx.uikit.element.dom_button.v1~",
+  "props_schema": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.button.v1~"
 }

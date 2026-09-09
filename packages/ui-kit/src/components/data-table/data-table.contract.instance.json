@@ -1,5 +1,5 @@
 {
-  "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.data_table.v1",
+  "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.ui.data_table.v1",
   "gts_type": "gts.frontx.uikit.meta.component.v1~",
   "metamodel": "1.0.0",
   "component": "data-table",
@@ -12,7 +12,7 @@
   "dont_use_when": [
     {
       "rule": "Static markup with no sorting, selection or pagination need",
-      "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.table.v1~"
+      "instead": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.table.v1~"
     }
   ],
   "composition": {
@@ -48,8 +48,8 @@
   ],
   "deprecations": {},
   "coverage": {
-    "a11y": "not-described",
-    "rtl": "not-described",
+    "a11y": "unknown",
+    "rtl": "unknown",
     "assumptions": [
       {
         "kind": "behaviour",
@@ -135,5 +135,5 @@
       "typed_by": "@tanstack/react-table tableFeatures({ rowSelectionFeature, rowSortingFeature, rowPaginationFeature, ... })"
     }
   ],
-  "props_schema": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.data_table.v1~"
+  "props_schema": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.data_table.v1~"
 }

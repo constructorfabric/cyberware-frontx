@@ -1,7 +1,7 @@
 // Freshness: whether the artifacts committed next to a component's source
 // (<name>.contract.json and <name>.contract.instance.json) are exactly what
-// compiling the component right now produces. The element-kind passthrough
-// types are hand-written source, not compiler output, so there is nothing to
+// compiling the component right now produces. The host elements' surfaces
+// are hand-written source, not compiler output, so there is nothing to
 // compare them against - what the conformance suite checks about them instead
 // is that their identifiers obey the grammar and that the reference a contract
 // holds resolves to a file that exists. Both the per-component vitest suite (see testing.ts) and
@@ -17,17 +17,17 @@ import { jsonDiff } from './check-lib';
 import {
   buildBaseSchema,
   buildMetamodel,
-  buildTraitTypes,
+  buildVocabularyTypes,
   compileContract,
   compileInstance,
   loadBaseSchema,
   resolveTargetExtraction,
-  traitTypeFileName,
+  vocabularyTypeFileName,
 } from './compile';
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CONTRACTS_DIR = join(kitRoot, 'scripts', 'contracts');
-const TYPES_DIR = join(CONTRACTS_DIR, 'types');
+const VOCABULARY_DIR = join(CONTRACTS_DIR, 'vocabulary');
 
 export interface FreshnessReport {
   component: string;
@@ -43,7 +43,7 @@ export interface FreshnessReport {
   // untyped_prop assumption rather than in x-uikit.slots, which is the kit's
   // own slotted props and nothing else.
   slotSchemaMismatches: string[];
-  // The schemas that belong to no single component - the abstract base type,
+  // The schemas that belong to no single component - the abstract component type,
   // the metamodel, and each vocabulary type the two of them reference -
   // keyed by file name. Computed on every call regardless of which component
   // is being checked (cheap: the builders are pure construction, and the
@@ -82,21 +82,21 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-artifacts
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-base
   const sharedSchemaDiffs: Record<string, string[]> = {
-    'base.component.json': jsonDiff(loadBaseSchema(), buildBaseSchema()),
+    'ui.component.json': jsonDiff(loadBaseSchema(), buildBaseSchema()),
     'ui-component.meta.json': jsonDiff(readJsonIfExists(join(CONTRACTS_DIR, 'ui-component.meta.json')), buildMetamodel()),
   };
   // The union of what the builder produces and what the directory holds, not
   // just the builder's own list: a type file the builder no longer produces
-  // was diffed by nobody while `loadTraitTypes` went on registering it in
+  // was diffed by nobody while `loadVocabularyTypes` went on registering it in
   // every GTS store and every Ajv instance - a definition the harness applies
   // and no comparison covers. An orphan reads as "missing from the fresh
   // compile", which is exactly what it is.
-  const freshTypes = new Map(buildTraitTypes().map((type) => [traitTypeFileName(type), type]));
-  const committedTypeFiles = existsSync(TYPES_DIR)
-    ? readdirSync(TYPES_DIR).filter((name) => name.endsWith('.json'))
+  const freshTypes = new Map(buildVocabularyTypes().map((type) => [vocabularyTypeFileName(type), type]));
+  const committedTypeFiles = existsSync(VOCABULARY_DIR)
+    ? readdirSync(VOCABULARY_DIR).filter((name) => name.endsWith('.json'))
     : [];
   for (const fileName of [...new Set([...freshTypes.keys(), ...committedTypeFiles])].sort()) {
-    sharedSchemaDiffs[`types/${fileName}`] = jsonDiff(readJsonIfExists(join(TYPES_DIR, fileName)), freshTypes.get(fileName));
+    sharedSchemaDiffs[`vocabulary/${fileName}`] = jsonDiff(readJsonIfExists(join(VOCABULARY_DIR, fileName)), freshTypes.get(fileName));
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-base
 

@@ -27,8 +27,8 @@ import { dirname, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { OPEN_UNEVALUATED } from './compile';
-import { runCompat, runCoverage, runGuard, type CheckContext } from './check';
-import { BASE_TYPE_ID, passthroughTypeId, passthroughTypeRef, propsSchemaId } from './ids';
+import { runCompat, runEnrollment, runGuard, type CheckContext } from './check';
+import { BASE_TYPE_ID, elementTypeId, elementTypeRef, propsSchemaId } from './ids';
 import { applyContractTestTimeout } from './testing';
 
 // Each case builds a git repository and runs the real GTS store over it;
@@ -85,15 +85,15 @@ function contractJson(
     properties,
     required,
     unevaluatedProperties: OPEN_UNEVALUATED,
-    'x-gts-traits': element === undefined ? {} : { host_element: passthroughTypeRef(element) },
+    'x-gts-traits': element === undefined ? {} : { host_element: elementTypeRef(element) },
   };
 }
 
-function passthroughJson(element: string, properties: Record<string, unknown>, required: string[] = []): Record<string, unknown> {
+function elementSurfaceJson(element: string, properties: Record<string, unknown>, required: string[] = []): Record<string, unknown> {
   return {
-    $id: passthroughTypeId(element),
+    $id: elementTypeId(element),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    title: `UiKit ${element} passthrough`,
+    title: `UiKit ${element} element`,
     type: 'object',
     properties,
     required,
@@ -154,12 +154,12 @@ function createFixture(): Fixture {
     context: {
       kitRoot: root,
       overlayStems,
-      // A covered directory in these fixtures ships a conformance suite
+      // A enrolled directory in these fixtures ships a conformance suite
       // unless a case says otherwise, so the shape every other case wants is
       // the ordinary one; `missingSuite` is how a case opts out.
       contractTestExists: (directory) => !missingSuite.has(directory),
       isComponentFresh: (directory) => !stale.has(directory),
-      // One exported component per overlay, so a covered directory with all
+      // One exported component per overlay, so a enrolled directory with all
       // its overlays present reads as complete - the shape every fixture here
       // wants unless it is testing the incomplete case.
       componentExportNames: (directory) => overlayStems(directory).map(pascalCase),
@@ -176,11 +176,11 @@ function createFixture(): Fixture {
   };
 }
 
-// The ordinary starting point: one covered component with an overlay, a
+// The ordinary starting point: one enrolled component with an overlay, a
 // contract and the element surface it names, all committed.
 function committedButtonKit(fixture: Fixture, options: { properties?: Record<string, unknown> } = {}): void {
-  fixture.write('scripts/contracts/covered.json', ['button']);
-  fixture.write('scripts/contracts/passthrough/dom_button.json', passthroughJson('dom_button', {
+  fixture.write('scripts/contracts/enrolled.json', ['button']);
+  fixture.write('scripts/contracts/elements/dom_button.json', elementSurfaceJson('dom_button', {
     className: { type: 'string' },
     disabled: { type: 'boolean' },
   }));
@@ -195,7 +195,7 @@ function committedButtonKit(fixture: Fixture, options: { properties?: Record<str
 
 describe('compat: a change that drops the forwarded surface', () => {
   it('refuses the contract instead of skipping the comparison it can no longer address', () => {
-    // The contract stops composing the passthrough type altogether. Reading
+    // The contract stops composing the element surface altogether. Reading
     // the element off the NEW contract alone left nothing to look up, so the
     // whole forwarded-surface block was skipped and every forwarded prop
     // vanished under a PASS. Still the case the removal path has to catch
@@ -206,14 +206,14 @@ describe('compat: a change that drops the forwarded surface', () => {
     fixture.write('src/components/button/button.contract.json', contractJson('button', { properties: { variant: { type: 'string' } } }));
 
     expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(1);
-    expect(fixture.output()).toContain('passthrough: prop "className" removed');
-    expect(fixture.output()).toContain('passthrough: prop "disabled" removed');
+    expect(fixture.output()).toContain('element surface: prop "className" removed');
+    expect(fixture.output()).toContain('element surface: prop "disabled" removed');
     expect(fixture.output()).toContain('no longer names the forwarded surface');
   });
 });
 
 describe('compat: a contract present at the base reference and gone now', () => {
-  it('refuses a removal the coverage allowlist still promises', () => {
+  it('refuses a removal the enrolled set still promises', () => {
     // No unit on disk visits this contract, so before the base-ref sweep the
     // deletion was not passed so much as never looked at.
     const fixture = createFixture();
@@ -223,17 +223,17 @@ describe('compat: a contract present at the base reference and gone now', () => 
 
     expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(1);
     expect(fixture.output()).toContain('button: contract removed');
-    expect(fixture.output()).toContain('still listed in covered.json');
+    expect(fixture.output()).toContain('still listed in enrolled.json');
   });
 
-  it('accepts the same removal once covered.json no longer names the component', () => {
+  it('accepts the same removal once enrolled.json no longer names the component', () => {
     // The one acknowledgement the harness records, and the same one the
     // guard demands of a removed directory.
     const fixture = createFixture();
     committedButtonKit(fixture);
     fixture.remove('src/components/button/button.contract.json');
     fixture.remove('src/components/button/button.contract.yaml');
-    fixture.write('scripts/contracts/covered.json', []);
+    fixture.write('scripts/contracts/enrolled.json', []);
 
     expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(0);
     expect(fixture.output()).toContain('[REMOVED]');
@@ -252,7 +252,7 @@ describe('compat: a contract present at the base reference and gone now', () => 
       'src/components/action-button/action-button.contract.json',
       contractJson('button', { element: 'dom_button', properties: { variant: { type: 'string' } } }),
     );
-    fixture.write('scripts/contracts/covered.json', ['action-button']);
+    fixture.write('scripts/contracts/enrolled.json', ['action-button']);
 
     expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(0);
     expect(fixture.output()).toContain('renamed from src/components/button/button.contract.json');
@@ -268,7 +268,7 @@ describe('compat: a change of host element', () => {
     // committed, so this is comparable and is compared.
     const fixture = createFixture();
     committedButtonKit(fixture);
-    fixture.write('scripts/contracts/passthrough/dom_div.json', passthroughJson('dom_div', {
+    fixture.write('scripts/contracts/elements/dom_div.json', elementSurfaceJson('dom_div', {
       className: { type: 'string' },
     }));
     fixture.write(
@@ -277,14 +277,14 @@ describe('compat: a change of host element', () => {
     );
 
     expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(1);
-    expect(fixture.output()).toContain('passthrough: prop "disabled" removed');
+    expect(fixture.output()).toContain('element surface: prop "disabled" removed');
     expect(fixture.output()).toContain('host element moved "dom_button" -> "dom_div"');
   });
 
   it('accepts the same move when every forwarded prop survives it', () => {
     const fixture = createFixture();
     committedButtonKit(fixture);
-    fixture.write('scripts/contracts/passthrough/dom_div.json', passthroughJson('dom_div', {
+    fixture.write('scripts/contracts/elements/dom_div.json', elementSurfaceJson('dom_div', {
       className: { type: 'string' },
       disabled: { type: 'boolean' },
       role: { type: 'string' },
@@ -305,12 +305,12 @@ describe('compat: a change of host element', () => {
     // element does not have to move for that to be a break.
     const fixture = createFixture();
     committedButtonKit(fixture);
-    fixture.write('scripts/contracts/passthrough/dom_button.json', passthroughJson('dom_button', {
+    fixture.write('scripts/contracts/elements/dom_button.json', elementSurfaceJson('dom_button', {
       className: { type: 'string' },
     }));
 
     expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(1);
-    expect(fixture.output()).toContain('passthrough: prop "disabled" removed');
+    expect(fixture.output()).toContain('element surface: prop "disabled" removed');
   });
 });
 
@@ -327,45 +327,45 @@ describe('a base reference that does not resolve', () => {
   });
 });
 
-describe('guard: the coverage allowlist itself', () => {
-  it('re-checks every entry when covered.json changes, and fails one that names no directory', () => {
-    // Editing the file that grants coverage used to widen nothing, so an
+describe('guard: the enrolled set itself', () => {
+  it('re-checks every entry when enrolled.json changes, and fails one that names no directory', () => {
+    // Editing the file that grants enrollment used to widen nothing, so an
     // entry could be added for a directory that does not exist and be
     // checked by nothing until some unrelated change touched it.
     const fixture = createFixture();
     committedButtonKit(fixture);
-    fixture.write('scripts/contracts/covered.json', ['button', 'ghost']);
+    fixture.write('scripts/contracts/enrolled.json', ['button', 'ghost']);
 
     expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(1);
-    expect(fixture.output()).toContain('guard: covered.json changed');
-    expect(fixture.output()).toContain('ghost: directory removed but still listed in covered.json');
+    expect(fixture.output()).toContain('guard: enrolled.json changed');
+    expect(fixture.output()).toContain('ghost: directory removed but still listed in enrolled.json');
     // The widening reaches every entry, not only the offending one.
-    expect(fixture.output()).toContain('button: covered and fresh');
+    expect(fixture.output()).toContain('button: enrolled and fresh');
   });
 
   it('fails an entry whose directory exists but carries no overlay', () => {
     const fixture = createFixture();
     committedButtonKit(fixture);
     fixture.write('src/components/spinner/spinner.module.css', '.root {}\n');
-    fixture.write('scripts/contracts/covered.json', ['button', 'spinner']);
+    fixture.write('scripts/contracts/enrolled.json', ['button', 'spinner']);
 
     expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(1);
-    expect(fixture.output()).toContain('spinner: covered by covered.json but has no spinner.contract.yaml overlay');
+    expect(fixture.output()).toContain('spinner: enrolled but has no spinner.contract.yaml overlay');
   });
 
-  it('reports an allowlist entry that grants coverage over nothing, without counting it as coverage', () => {
+  it('reports an allowlist entry that grants enrollment over nothing, without counting it as enrollment', () => {
     const fixture = createFixture();
     committedButtonKit(fixture);
-    fixture.write('scripts/contracts/covered.json', ['button', 'ghost']);
+    fixture.write('scripts/contracts/enrolled.json', ['button', 'ghost']);
 
-    expect(runCoverage({ json: false }, fixture.context)).toBe(0);
-    expect(fixture.output()).toContain('1 of 1 components covered by contracts.');
-    expect(fixture.output()).toContain('ghost: named in covered.json but no such component directory');
+    expect(runEnrollment({ json: false }, fixture.context)).toBe(0);
+    expect(fixture.output()).toContain('1 of 1 components enrolled.');
+    expect(fixture.output()).toContain('ghost: named in enrolled.json but no such component directory');
   });
 });
 
 describe('the happy path', () => {
-  it('passes compat and the guard when a covered component is edited and recompiled', () => {
+  it('passes compat and the guard when a enrolled component is edited and recompiled', () => {
     const fixture = createFixture();
     committedButtonKit(fixture);
     // A widening change: one more optional own prop, nothing removed.
@@ -380,10 +380,10 @@ describe('the happy path', () => {
     expect(runCompat('HEAD', { json: false }, fixture.context)).toBe(0);
     expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(0);
     expect(fixture.output()).toContain('button: backward compatible');
-    expect(fixture.output()).toContain('button: covered and fresh');
+    expect(fixture.output()).toContain('button: enrolled and fresh');
   });
 
-  it('still fails the guard when a covered component is edited without recompiling', () => {
+  it('still fails the guard when a enrolled component is edited without recompiling', () => {
     // The rule the guard exists for, asserted through the same entry point
     // as everything above rather than through evaluateGuard alone.
     const fixture = createFixture();
@@ -397,7 +397,7 @@ describe('the happy path', () => {
 });
 
 describe('guard: an overlay elsewhere in the kit', () => {
-  it("re-checks every covered component when any overlay changes, because a children list decides another component's parent", () => {
+  it("re-checks every enrolled component when any overlay changes, because a children list decides another component's parent", () => {
     // The widening the derived `parent` made necessary. Editing the accordion
     // overlay changes what AccordionItem's compiled contract says about where
     // it may be mounted - a contract in the same directory here, and in a
@@ -410,7 +410,7 @@ describe('guard: an overlay elsewhere in the kit', () => {
 
     expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(1);
     expect(fixture.output()).toContain('guard: an overlay changed');
-    expect(fixture.output()).toContain('button: covered by covered.json but its committed contract artifacts are stale');
+    expect(fixture.output()).toContain('button: enrolled but its committed contract artifacts are stale');
   });
 
   it('does not widen when only a compiled artifact changed', () => {
@@ -426,7 +426,7 @@ describe('guard: an overlay elsewhere in the kit', () => {
 });
 
 describe('guard: a dependency bump', () => {
-  it("re-checks every covered component when the package's own package.json changes", () => {
+  it("re-checks every enrolled component when the package's own package.json changes", () => {
     // A committed contract carries the checker's printed type text for every
     // property the provider-safe subset cannot express, so a dependency bump
     // reshapes artifacts with no file under src/components or
@@ -438,10 +438,10 @@ describe('guard: a dependency bump', () => {
 
     expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(1);
     expect(fixture.output()).toContain('guard: a dependency manifest changed');
-    expect(fixture.output()).toContain('button: covered by covered.json but its committed contract artifacts are stale');
+    expect(fixture.output()).toContain('button: enrolled but its committed contract artifacts are stale');
   });
 
-  it('re-checks every covered component when the lockfile changes, which a package-relative diff cannot see', () => {
+  it('re-checks every enrolled component when the lockfile changes, which a package-relative diff cannot see', () => {
     const fixture = createFixture();
     committedButtonKit(fixture);
     fixture.stale.add('button');
@@ -454,10 +454,10 @@ describe('guard: a dependency bump', () => {
   });
 });
 
-describe('guard: a covered component with no conformance suite', () => {
+describe('guard: a enrolled component with no conformance suite', () => {
   it('fails, because the freshness comparison would then only ever run in continuous integration', () => {
     // The comparison is asserted twice on purpose - here, and in the unit run
-    // of whoever changed the component. A covered directory shipping no
+    // of whoever changed the component. A enrolled directory shipping no
     // suite silently halves that.
     const fixture = createFixture();
     committedButtonKit(fixture);
@@ -471,18 +471,18 @@ describe('guard: a covered component with no conformance suite', () => {
   });
 });
 
-describe('guard: a component dropped from the coverage allowlist', () => {
+describe('guard: a component dropped from the enrolled set', () => {
   it('reports the de-listing instead of letting it leave scope in silence', () => {
     // The new list alone takes the component out of scope with no line in
     // any output, and the same edit is what the removal sweep accepts as an
-    // acknowledgement - so the edit that drops coverage must not also be the
+    // acknowledgement - so the edit that drops enrollment must not also be the
     // edit nothing looks at. Reported, not failed: de-listing is allowed.
     const fixture = createFixture();
     committedButtonKit(fixture);
-    fixture.write('scripts/contracts/covered.json', []);
+    fixture.write('scripts/contracts/enrolled.json', []);
 
     expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(0);
-    expect(fixture.output()).toContain('button: dropped from covered.json by this change');
+    expect(fixture.output()).toContain('button: dropped from enrolled.json by this change');
     expect(fixture.output()).toContain('no longer guarded');
   });
 });

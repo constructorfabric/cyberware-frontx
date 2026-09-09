@@ -24,10 +24,10 @@ import {
   buildGtsTraitsSchema,
   buildMetamodel,
   buildPropsAndRequired,
-  buildTraitTypes,
+  buildVocabularyTypes,
   describeUntypeableProperty,
-  loadPassthroughSchema,
-  loadPassthroughSchemas,
+  loadElementSurface,
+  loadElementSurfaces,
   sharedAttributeConflicts,
 } from './compile';
 import { extractComponent } from './extract';
@@ -42,10 +42,10 @@ applyContractTestTimeout();
 const fixture = (name: string) => join(process.cwd(), 'scripts/contracts/__fixtures__', name);
 
 const [picker] = extractComponent(fixture('untypeable-props.fixture.tsx'));
-const passthrough = loadPassthroughSchema('div');
+const elementSurface = loadElementSurface('div');
 
 describe('the hand-written element surface', () => {
-  const properties = passthrough.properties as Record<string, { type?: string; description?: string }>;
+  const properties = elementSurface.properties as Record<string, { type?: string; description?: string }>;
 
   it('states the TypeScript type of every attribute it cannot assert', () => {
     // `style` and `children` are the two React attributes no JSON Schema
@@ -65,7 +65,7 @@ describe('the hand-written element surface', () => {
     // Driven from the committed set rather than from `div` alone: the rule
     // is about every surface a contract can name, and a file written next
     // week is exactly the one nobody would remember to name here.
-    const empty = loadPassthroughSchemas().flatMap((surface) => {
+    const empty = loadElementSurfaces().flatMap((surface) => {
       const declarations = {
         ...(surface.properties as Record<string, Record<string, unknown>>),
         ...(surface.patternProperties as Record<string, Record<string, unknown>>),
@@ -78,7 +78,7 @@ describe('the hand-written element surface', () => {
   });
 
   it('admits the aria-, data- and event-handler families by pattern rather than by name', () => {
-    expect(Object.keys(passthrough.patternProperties as Record<string, unknown>).sort()).toEqual(['^aria-', '^data-', '^on[A-Z]']);
+    expect(Object.keys(elementSurface.patternProperties as Record<string, unknown>).sort()).toEqual(['^aria-', '^data-', '^on[A-Z]']);
   });
 });
 
@@ -90,7 +90,7 @@ describe('what two element kinds both declare', () => {
     // compatibility check reads a difference between two surfaces as a
     // narrowing a consumer feels, which is only true while what they share
     // they state the same way.
-    expect(sharedAttributeConflicts(loadPassthroughSchemas())).toEqual([]);
+    expect(sharedAttributeConflicts(loadElementSurfaces())).toEqual([]);
   });
 
   it('names the attribute when two kinds disagree about it', () => {
@@ -113,7 +113,7 @@ describe('what two element kinds both declare', () => {
 });
 
 describe('a declared prop with no JSON Schema representation', () => {
-  const { properties, slots } = buildPropsAndRequired('picker', picker, passthrough);
+  const { properties, slots } = buildPropsAndRequired("picker", picker, elementSurface);
 
   it('states its type text next to the slot record that holds it', () => {
     // `selection: Value[]` depends on the component's own type parameter -
@@ -160,7 +160,7 @@ describe('describeUntypeableProperty', () => {
 
 
 describe('the vocabulary the base type and the metamodel reference', () => {
-  const builtIds = new Set(buildTraitTypes().map((type) => String(type.$id)));
+  const builtIds = new Set(buildVocabularyTypes().map((type) => String(type.$id)));
 
   function gtsRefs(node: unknown, found: string[] = []): string[] {
     if (Array.isArray(node)) {
@@ -177,15 +177,15 @@ describe('the vocabulary the base type and the metamodel reference', () => {
   }
 
   it('is complete: every reference resolves to a type the builder writes', () => {
-    // A field added to the trait schema or the metamodel naming a type
+    // A field added to the x-gts-traits-schema or the metamodel naming a type
     // nobody builds would fail at validation time with "Unresolvable trait
     // schema reference", far from the edit that caused it. This is that
     // failure moved to the build.
-    const referenced = new Set([...gtsRefs(buildBaseSchema()), ...gtsRefs(buildMetamodel()), ...gtsRefs(buildTraitTypes())]);
+    const referenced = new Set([...gtsRefs(buildBaseSchema()), ...gtsRefs(buildMetamodel()), ...gtsRefs(buildVocabularyTypes())]);
     expect([...referenced].filter((ref) => !builtIds.has(ref))).toEqual([]);
   });
 
-  it('keeps the reference ahead of the null alternative on an optional trait field', () => {
+  it('keeps the reference ahead of the null alternative on an optional x-gts-traits field', () => {
     // Key ORDER is load-bearing here, which is why it is asserted:
     // GtsStore.resolveTraitSchemaRefs merges a resolved reference in at the
     // position of the `$ref` key, so a `type` written before it is

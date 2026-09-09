@@ -1,11 +1,11 @@
 {
-  "$id": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~",
+  "$id": "gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_trigger.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "UiKit accordion-trigger contract",
+  "title": "UiKit AccordionTrigger",
   "type": "object",
   "allOf": [
     {
-      "$ref": "gts://gts.frontx.uikit.base.component.v1~"
+      "$ref": "gts://gts.frontx.uikit.ui.component.v1~"
     }
   ],
   "properties": {
@@ -24,7 +24,7 @@
   },
   "required": [],
   "unevaluatedProperties": {
-    "x-uikit-verdict": "unchecked"
+    "x-uikit-classification": "unknown"
   },
   "x-uikit": {
     "metamodel": "1.0.0",
@@ -60,9 +60,6 @@
       ]
     },
     "slots": {},
-    "passthrough": [
-      "Omit<AccordionPrimitive.Trigger.Props, 'className'> (@base-ui/react/accordion/trigger/AccordionTrigger.d.mts)"
-    ],
     "variant_sources": [],
     "cannot_extract": []
   },
@@ -70,7 +67,7 @@
     "dont_use_when": [
       {
         "rule": "A standalone button with no AccordionItem to expand or collapse",
-        "instead": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~"
+        "instead": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.button.v1~"
       }
     ],
     "composition": {
@@ -81,7 +78,7 @@
       },
       "parent": {
         "kinds": [
-          "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
+          "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v1~"
         ]
       }
     },
@@ -90,7 +87,7 @@
       "a11y": "verified",
       "assumptions": [
         {
-          "kind": "hidden_part",
+          "kind": "unexposed_part",
           "claim": "AccordionTrigger wraps two Base UI parts, Header and Trigger",
           "reason": "The kit's AccordionTrigger composes Base UI's Accordion.Header (a plain wrapper, not separately exposed by the kit) around Accordion.Trigger into one exported component; this contract describes the exported surface, not the two-part internal composition, so Header's own props are not part of it."
         },
@@ -109,9 +106,9 @@
       ]
     },
     "family": {
-      "root": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",
+      "root": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion.v1~",
       "role": "part"
     },
-    "host_element": "gts.frontx.uikit.passthrough.dom_button.v1~"
+    "host_element": "gts.frontx.uikit.element.dom_button.v1~"
   }
 }

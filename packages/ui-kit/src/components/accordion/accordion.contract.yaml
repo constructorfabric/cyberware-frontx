@@ -18,13 +18,13 @@ typical_uses:
 
 dont_use_when:
   - rule: A single show/hide toggle for one piece of content
-    instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.collapsible.v1~ # Collapsible
+    instead: gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.collapsible.v1~ # Collapsible
   - rule: Primary navigation between sections that stays visible
-    instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.tabs.v1~ # Tabs
+    instead: gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.tabs.v1~ # Tabs
 
 composition:
   children:
-    kinds: [gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~] # AccordionItem
+    kinds: [gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v1~] # AccordionItem
 
 invariants:
   - id: multiple-false-at-most-one-open
@@ -56,22 +56,23 @@ anti_patterns:
 deprecations: {}
 
 # Base UI's Accordion.Root also accepts `orientation`, and this kit does not
-# offer it. The reason travels with the name: a bare list of hidden props
+# offer it. The reason travels with the name: a bare list of withheld props
 # leaves every later reader to work out why each one is gone.
-hidden:
+withheld:
   - prop: orientation
     reason: >-
       The root's own stylesheet fixes the layout to a single column
       (accordion.module.css's `.root { flex-direction: column }`), so the
       only value `orientation` could add - "horizontal" - would put Base UI's
-      horizontal keyboard axis on a vertical layout. Hidden rather than
+      horizontal keyboard axis on a vertical layout. Withheld rather than
       listed: a contract listing it would be this kit's own statement that it
       works.
 
-# "verified: no" and "not described" are different answers - say which.
+# "failed" (looked at, does not hold) and "unknown" (nobody looked) are
+# different answers - say which.
 coverage:
   a11y: verified # keyboard nav between triggers, ARIA expanded/controls wiring come from Base UI
-  rtl: not-described
+  rtl: unknown
   assumptions:
     - kind: untyped_prop
       prop: value
@@ -146,9 +147,9 @@ examples:
 # part; a part (accordion-item.contract.yaml, ...) points back with `role:
 # part` and no `parts` of its own.
 family:
-  root: gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~
+  root: gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion.v1~
   role: root
   parts:
-    - gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~ # AccordionItem
-    - gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~ # AccordionTrigger
-    - gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_content.v1~ # AccordionContent
+    - gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v1~ # AccordionItem
+    - gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_trigger.v1~ # AccordionTrigger
+    - gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_content.v1~ # AccordionContent

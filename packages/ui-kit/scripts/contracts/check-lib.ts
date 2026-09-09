@@ -1,5 +1,5 @@
-// Pure logic for the contract checks (compat, guard, coverage): everything
-// here takes already-loaded JSON or file lists and returns a verdict - no
+// Pure logic for the contract checks (compat, guard, enrollment): everything
+// here takes already-loaded JSON or file lists and returns a decision - no
 // filesystem, no git, no gts-ts. check.ts is the thin, impure shell that
 // loads inputs (git show, fs.readFileSync, GTS.checkCompatibility) and hands
 // them to these functions; keeping the split lets the decision rules be unit
@@ -8,7 +8,7 @@
 // Structural JSON diff, order-independent for objects (JSON.stringify would
 // report two schemas that only differ in property insertion order as
 // unequal, which a freshly compiled schema and its committed copy have no
-// reason to guarantee). Used both for contract/instance/passthrough
+// reason to guarantee). Used both for contract, instance and element-surface
 // freshness (committed vs a fresh compile) and would read the same way for
 // any other "does A still equal B" check in this tool.
 export function jsonDiff(committed: unknown, fresh: unknown, path = '$'): string[] {
@@ -43,7 +43,7 @@ export function jsonDiff(committed: unknown, fresh: unknown, path = '$'): string
   return [`${path}: ${JSON.stringify(committed)} !== ${JSON.stringify(fresh)}`];
 }
 
-export interface PassthroughPropertyLike {
+export interface ElementSurfacePropertyLike {
   type?: string;
   enum?: string[];
   // Declared so the diff below can be seen NOT to read it. A property that
@@ -54,8 +54,8 @@ export interface PassthroughPropertyLike {
   description?: string;
 }
 
-export interface PassthroughSchemaLike {
-  properties?: Record<string, PassthroughPropertyLike>;
+export interface ElementSurfaceSchemaLike {
+  properties?: Record<string, ElementSurfacePropertyLike>;
   required?: string[];
   // The pattern families a surface admits by shape rather than by name
   // (`^aria-`, `^data-`, `^on[A-Z]`). Read only by the reconciliation in
@@ -64,11 +64,11 @@ export interface PassthroughSchemaLike {
   patternProperties?: Record<string, unknown>;
 }
 
-export interface PassthroughDiff {
+export interface ElementSurfaceDiff {
   added: string[];
   removed: string[];
   narrowed: { prop: string; reason: string }[];
-  // An element-kind passthrough type is a separate type the contract NAMES
+  // An host element surface is a separate type the contract NAMES
   // (see its own $comment) - gts-ts's flat property/required/enum comparison
   // never sees it, because it follows no reference of any kind. This is the
   // check that closes that gap: an added forwarded prop only widens what a
@@ -81,15 +81,15 @@ export interface PassthroughDiff {
 // props vanished, which arrived, and which became mandatory. Split out from
 // the shape checks below because the two answer different questions and a
 // reader of either should not have to skip the other.
-function comparePassthroughNames(
-  oldSchema: PassthroughSchemaLike,
-  newSchema: PassthroughSchemaLike,
+function compareElementSurfaceNames(
+  oldSchema: ElementSurfaceSchemaLike,
+  newSchema: ElementSurfaceSchemaLike,
 ): { added: string[]; removed: string[]; newlyRequired: string[] } {
   const oldProps = oldSchema.properties ?? {};
   const newProps = newSchema.properties ?? {};
   // A prop the new schema requires and the old one did not rejects a props
   // object that used to validate (the prop simply absent) - the same
-  // "changed shape" the type/enum checks in diffPassthroughSchema treat as
+  // "changed shape" the type/enum checks in diffElementSurface treat as
   // narrowing, just on the required list rather than on one property's own
   // constraints. Whether the prop already existed as optional or arrives
   // with the schema makes no difference to the caller: both reject the same
@@ -120,7 +120,7 @@ const NEWLY_REQUIRED_REASON = 'became required where it was optional (or absent)
 // value of its type. The reverse of each - a constraint lifted entirely -
 // accepts a strict superset and is not checked here at all.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-shape
-function shapeNarrowings(name: string, oldProp: PassthroughPropertyLike, newProp: PassthroughPropertyLike): { prop: string; reason: string }[] {
+function shapeNarrowings(name: string, oldProp: ElementSurfacePropertyLike, newProp: ElementSurfacePropertyLike): { prop: string; reason: string }[] {
   const narrowed: { prop: string; reason: string }[] = [];
   if (oldProp.type !== undefined && newProp.type !== undefined && oldProp.type !== newProp.type) {
     narrowed.push({ prop: name, reason: `type changed from "${oldProp.type}" to "${newProp.type}"` });
@@ -141,32 +141,32 @@ function shapeNarrowings(name: string, oldProp: PassthroughPropertyLike, newProp
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-shape
 
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
-export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchema: PassthroughSchemaLike): PassthroughDiff {
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-element-surface
+export function diffElementSurface(oldSchema: ElementSurfaceSchemaLike, newSchema: ElementSurfaceSchemaLike): ElementSurfaceDiff {
   const oldProps = oldSchema.properties ?? {};
   const newProps = newSchema.properties ?? {};
-  const { added, removed, newlyRequired } = comparePassthroughNames(oldSchema, newSchema);
+  const { added, removed, newlyRequired } = compareElementSurfaceNames(oldSchema, newSchema);
   const narrowed: { prop: string; reason: string }[] = [];
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-element-surface
 
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-element-surface
   for (const name of Object.keys(oldProps)) {
     if (!(name in newProps)) continue;
     narrowed.push(...shapeNarrowings(name, oldProps[name], newProps[name]));
   }
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-element-surface
 
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-element-surface
   for (const name of newlyRequired) narrowed.push({ prop: name, reason: NEWLY_REQUIRED_REASON });
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-element-surface
 
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-element-surface
   return { added, removed, narrowed, compatible: removed.length === 0 && narrowed.length === 0 };
 }
-// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-passthrough
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-element-surface
 
 // gts-ts's own `checkCompatibility(..., 'backward')` diffs a component's OWN
-// properties/required the same shallow way `diffPassthroughSchema` diffs the
+// properties/required the same shallow way `diffElementSurface` diffs the
 // forwarded surface - but it does not see everything a consumer would feel.
 // Measured against the real library rather than read off its source (see
 // check-lib.compat-e2e.test.ts, which pins each of these):
@@ -186,7 +186,7 @@ export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchem
 //    literal union, and it rejects every value outside the union. (The
 //    neighbouring case - a constraint appearing where the prop asserted
 //    nothing at all - IS caught, as "type changed from any to string", so
-//    the gap is narrower than "narrowing is unchecked" and is closed here
+//    the gap is narrower than "narrowing is unverified" and is closed here
 //    with the same rule the forwarded surface already used.)
 //
 // A prop that leaves `properties` is not always gone, either: a component
@@ -194,11 +194,11 @@ export function diffPassthroughSchema(oldSchema: PassthroughSchemaLike, newSchem
 // through the surface its host element declares, and a consumer passing it
 // notices nothing. `movedToForwardedSurface` is that reconciliation - a
 // removal the surface still accepts, with a compatible shape, is not a
-// removal. gts-ts's own verdict is computed over the flat schema and cannot
+// removal. gts-ts's own decision is computed over the flat schema and cannot
 // make that distinction either, but it also does not flag an optional prop
 // vanishing, so the two answers do not fight.
 export interface OwnPropsSchemaLike {
-  properties?: Record<string, PassthroughPropertyLike>;
+  properties?: Record<string, ElementSurfacePropertyLike>;
   required?: string[];
 }
 
@@ -217,9 +217,9 @@ export interface OwnPropsDiff {
 // outright, or matched by one of its pattern families (`aria-*`, `data-*`,
 // `on*`).
 function forwardedEntry(
-  surface: PassthroughSchemaLike | undefined,
+  surface: ElementSurfaceSchemaLike | undefined,
   name: string,
-): { accepted: boolean; shape: PassthroughPropertyLike | undefined } {
+): { accepted: boolean; shape: ElementSurfacePropertyLike | undefined } {
   if (surface === undefined) return { accepted: false, shape: undefined };
   const declared = (surface.properties ?? {})[name];
   if (declared !== undefined) return { accepted: true, shape: declared };
@@ -233,7 +233,7 @@ function forwardedEntry(
 export function diffOwnPropsSchema(
   oldSchema: OwnPropsSchemaLike,
   newSchema: OwnPropsSchemaLike,
-  forwardedSurface?: PassthroughSchemaLike,
+  forwardedSurface?: ElementSurfaceSchemaLike,
 ): OwnPropsDiff {
   const oldProps = oldSchema.properties ?? {};
   const newProps = newSchema.properties ?? {};
@@ -297,53 +297,53 @@ export function diffOwnPropsSchema(
 // agreement, and only for what genuinely cannot be compared: no committed
 // file for the element this contract names now, or none at the base ref for
 // the element it named there.
-export interface PassthroughComparisonInput {
+export interface ElementSurfaceComparisonInput {
   component: string;
   // The host element each revision's own reference names, undefined when that
-  // revision names no passthrough type at all.
+  // revision names no element surface at all.
   oldElement?: string;
   newElement?: string;
   // The schema for that revision's element - at the base ref for the old one,
   // as committed here for the new one - undefined when the file is absent.
-  oldSchema?: PassthroughSchemaLike;
-  newSchema?: PassthroughSchemaLike;
+  oldSchema?: ElementSurfaceSchemaLike;
+  newSchema?: ElementSurfaceSchemaLike;
 }
 
-export interface PassthroughComparison {
-  diff?: PassthroughDiff;
+export interface ElementSurfaceComparison {
+  diff?: ElementSurfaceDiff;
   note?: string;
 }
 
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-both
-export function comparePassthroughSurfaces(input: PassthroughComparisonInput): PassthroughComparison {
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-element-surface-both
+export function compareElementSurfaces(input: ElementSurfaceComparisonInput): ElementSurfaceComparison {
   const { component, oldElement, newElement, oldSchema, newSchema } = input;
 
   if (oldElement === undefined) return {};
   if (oldSchema === undefined) {
     return {
-      note: `${component}: forwarded-surface signal skipped - the base ref carries no passthrough type for element "${oldElement}"`,
+      note: `${component}: forwarded-surface signal skipped - the base ref carries no committed surface for element "${oldElement}"`,
     };
   }
   if (newElement === undefined) {
     return {
-      diff: diffPassthroughSchema(oldSchema, {}),
+      diff: diffElementSurface(oldSchema, {}),
       note: `${component}: the contract no longer names the forwarded surface it carried at the base ref (element "${oldElement}")`,
     };
   }
   if (newSchema === undefined) {
     return {
-      note: `${component}: forwarded-surface signal skipped - no committed passthrough type for element "${newElement}"`,
+      note: `${component}: forwarded-surface signal skipped - no committed surface for element "${newElement}"`,
     };
   }
   return {
-    diff: diffPassthroughSchema(oldSchema, newSchema),
+    diff: diffElementSurface(oldSchema, newSchema),
     note:
       oldElement === newElement
         ? undefined
         : `${component}: host element moved "${oldElement}" -> "${newElement}"`,
   };
 }
-// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-passthrough-both
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-element-surface-both
 
 export interface CompatDecisionInput {
   component: string;
@@ -351,17 +351,17 @@ export interface CompatDecisionInput {
   newMajor: number;
   gtsBackwardCompatible: boolean;
   gtsBackwardErrors: string[];
-  passthroughDiff?: PassthroughDiff;
+  elementSurfaceDiff?: ElementSurfaceDiff;
   ownPropsDiff?: OwnPropsDiff;
 }
 
-export interface CompatVerdict {
+export interface CompatDecision {
   status: 'pass' | 'fail';
   notes: string[];
 }
 
 // The decision rule T4 specifies: a contract that is backward-incompatible
-// (by any signal - gts-ts's own schema-body comparison, the passthrough
+// (by any signal - gts-ts's own schema-body comparison, the element-surface
 // structural diff above, or the own-props diff above) is only acceptable
 // when the contract major in its $id moved, because that is the one visible
 // acknowledgement that consumers built against the old major are expected to
@@ -369,16 +369,16 @@ export interface CompatVerdict {
 // props schema that silently rejects code that used to validate.
 // @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-compatibility:p1
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1
-export function decideCompat(input: CompatDecisionInput): CompatVerdict {
+export function decideCompat(input: CompatDecisionInput): CompatDecision {
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-combine
-  const { component, oldMajor, newMajor, gtsBackwardCompatible, gtsBackwardErrors, passthroughDiff, ownPropsDiff } = input;
-  const passthroughIncompatible = passthroughDiff !== undefined && !passthroughDiff.compatible;
+  const { component, oldMajor, newMajor, gtsBackwardCompatible, gtsBackwardErrors, elementSurfaceDiff, ownPropsDiff } = input;
+  const elementSurfaceIncompatible = elementSurfaceDiff !== undefined && !elementSurfaceDiff.compatible;
   const ownPropsIncompatible = ownPropsDiff !== undefined && !ownPropsDiff.compatible;
-  const incompatible = !gtsBackwardCompatible || passthroughIncompatible || ownPropsIncompatible;
+  const incompatible = !gtsBackwardCompatible || elementSurfaceIncompatible || ownPropsIncompatible;
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-combine
 
   // A prop that moved from the contract's own properties to the surface it
-  // forwards is reported whichever way the verdict goes: nothing a consumer
+  // forwards is reported whichever way the decision goes: nothing a consumer
   // passes stops validating, so it is not a reason to fail, but it IS the
   // component's own declaration disappearing and a reviewer should see it.
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own-forwarded
@@ -401,8 +401,8 @@ export function decideCompat(input: CompatDecisionInput): CompatVerdict {
     ...(ownPropsDiff?.removedProps.map((prop) => `own prop "${prop}" removed`) ?? []),
     ...(ownPropsDiff?.newlyRequiredProps.map((prop) => `own prop "${prop}" became required`) ?? []),
     ...(ownPropsDiff?.narrowedProps.map((entry) => `own prop "${entry.prop}" ${entry.reason}`) ?? []),
-    ...(passthroughDiff?.removed.map((prop) => `passthrough: prop "${prop}" removed`) ?? []),
-    ...(passthroughDiff?.narrowed.map((entry) => `passthrough: prop "${entry.prop}" ${entry.reason}`) ?? []),
+    ...(elementSurfaceDiff?.removed.map((prop) => `element surface: prop "${prop}" removed`) ?? []),
+    ...(elementSurfaceDiff?.narrowed.map((entry) => `element surface: prop "${entry.prop}" ${entry.reason}`) ?? []),
   ];
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-combine
 
@@ -459,7 +459,7 @@ export function synthesizeVersionedId(id: string, minor: number): string {
 // function: it only ever answers "which directory's own files changed",
 // never "which components does this change affect" - a change under
 // scripts/contracts/** that reshapes every compiled contract (the compiler,
-// the extractor, the metamodel, a generated passthrough file) is a
+// the extractor, the metamodel, a committed element surface) is a
 // DIFFERENT question, answered by touchesSharedContractTooling below, not by
 // widening this regex.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-map
@@ -480,19 +480,19 @@ const CONTRACTS_TOOLING_PREFIX = 'scripts/contracts/';
 // Files under scripts/contracts/ that are neither shared build/extraction
 // logic nor a hand-authored input to it: the guard's own entry point (a bug
 // fix in check.ts cannot change what any component compiles to, and
-// re-checking every covered component because check.ts changed would be
+// re-checking every enrolled component because check.ts changed would be
 // circular, since check.ts is what performs that check), its unit tests,
 // and prose. Everything else directly under scripts/contracts/ (compile.ts,
 // extract.ts, ids.ts, freshness.ts, testing.ts, check-lib.ts,
-// base.component.json, ui-component.meta.json, every generated passthrough
-// file) participates in producing or comparing EVERY covered component's
+// ui.component.json, ui-component.meta.json, every committed element
+// surface) participates in producing or comparing EVERY enrolled component's
 // compiled output, so a change to any of it invalidates the "only the
 // touched directory needs re-checking" assumption mapChangedFilesToComponents
 // makes (M6 - the review's own name for exactly this blind spot).
 //
 // check-lib.ts belongs on the participating side despite holding the guard's
 // own decision rules, and was wrongly excluded here: freshness.ts imports
-// jsonDiff from this module, so every freshness verdict for every covered
+// jsonDiff from this module, so every freshness decision for every enrolled
 // component runs through this file. A jsonDiff change can flip all of them
 // while touching no component directory - exactly the blind spot the widening
 // exists to close. The circularity argument covers check.ts alone, which
@@ -504,13 +504,13 @@ const CONTRACTS_TOOLING_PREFIX = 'scripts/contracts/';
 // somebody took about that file, and the next person to add a test file has
 // to work out whether the omission was deliberate.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
-const NON_TOOLING_CONTRACTS_FILES = new Set(['check.ts', 'covered.json', 'PILOT-NOTES.md']);
+const NON_TOOLING_CONTRACTS_FILES = new Set(['check.ts', 'enrolled.json', 'PILOT-NOTES.md']);
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
 
 // Whether any changed file is shared contract-compiling machinery (see
 // NON_TOOLING_CONTRACTS_FILES above for what is deliberately excluded).
 // check.ts's guard treats "yes" as a reason to re-evaluate freshness for
-// EVERY entry in covered.json, not just the components whose own directory
+// EVERY entry in enrolled.json, not just the components whose own directory
 // changed - a compiler/extractor/metamodel edit can silently reshape a
 // component's compiled contract without touching that component's own
 // files at all.
@@ -526,7 +526,7 @@ export function touchesSharedContractTooling(changedFiles: string[]): boolean {
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen
 
-// The coverage allowlist is not compile-or-compare tooling - editing it
+// The enrolled set is not compile-or-compare tooling - editing it
 // changes no component's compiled output - but it decides WHICH components
 // the guard holds to the full standard, so a change to it has to put every
 // entry it now names back in scope. Without this the file could be edited
@@ -536,10 +536,10 @@ export function touchesSharedContractTooling(changedFiles: string[]): boolean {
 // than a widening of touchesSharedContractTooling, so the two reasons stay
 // distinguishable in the guard's own output and in the rule above.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
-const COVERAGE_ALLOWLIST_FILE = `${CONTRACTS_TOOLING_PREFIX}covered.json`;
+const ENROLLMENT_FILE = `${CONTRACTS_TOOLING_PREFIX}enrolled.json`;
 
-export function touchesCoverageAllowlist(changedFiles: string[]): boolean {
-  return changedFiles.includes(COVERAGE_ALLOWLIST_FILE);
+export function touchesEnrollmentList(changedFiles: string[]): boolean {
+  return changedFiles.includes(ENROLLMENT_FILE);
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
 
@@ -645,42 +645,42 @@ export interface ContractRemoval {
 // reference to that contract's identifier now resolves nothing, and unlike a
 // narrowing there is no surviving contract whose major could move to say so.
 // The one acknowledgement the harness records is the one the guard already
-// demands of a removed directory - the coverage allowlist no longer naming
-// the component - so the two rules stay the same rule: while covered.json
+// demands of a removed directory - the enrolled set no longer naming
+// the component - so the two rules stay the same rule: while enrolled.json
 // still names it, a vanished contract is a refusal; once it does not, the
 // removal is reported and accepted.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-removal:p1:inst-cr-find
 export function findRemovedContracts(input: {
   baseContracts: BaseRefContractEntry[];
   comparedBasePaths: string[];
-  covered: string[];
+  enrolled: string[];
 }): ContractRemoval[] {
   const compared = new Set(input.comparedBasePaths);
-  const coveredSet = new Set(input.covered);
+  const enrolledSet = new Set(input.enrolled);
   const removals: ContractRemoval[] = [];
   for (const entry of input.baseContracts) {
     if (compared.has(entry.path)) continue;
     const directory = /^src\/components\/([^/]+)\//.exec(entry.path)?.[1] ?? entry.stem;
-    removals.push({ path: entry.path, stem: entry.stem, directory, acknowledged: !coveredSet.has(directory) });
+    removals.push({ path: entry.path, stem: entry.stem, directory, acknowledged: !enrolledSet.has(directory) });
   }
   return removals;
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-removal:p1:inst-cr-find
 
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-removal:p1:inst-cr-decide
-export function decideRemoval(removal: ContractRemoval): CompatVerdict {
+export function decideRemoval(removal: ContractRemoval): CompatDecision {
   if (removal.acknowledged) {
     return {
       status: 'pass',
       notes: [
-        `${removal.stem}: contract removed (${removal.path} at the base ref) - "${removal.directory}" is no longer in covered.json, so the removal is acknowledged`,
+        `${removal.stem}: contract removed (${removal.path} at the base ref) - "${removal.directory}" is no longer in enrolled.json, so the removal is acknowledged`,
       ],
     };
   }
   return {
     status: 'fail',
     notes: [
-      `${removal.stem}: contract removed (${removal.path} at the base ref) while "${removal.directory}" is still listed in covered.json - a removed contract resolves to nothing for a consumer holding it; drop the covered.json entry to acknowledge the removal, or restore the contract`,
+      `${removal.stem}: contract removed (${removal.path} at the base ref) while "${removal.directory}" is still listed in enrolled.json - a removed contract resolves to nothing for a consumer holding it; drop the enrolled.json entry to acknowledge the removal, or restore the contract`,
     ],
   };
 }
@@ -688,7 +688,7 @@ export function decideRemoval(removal: ContractRemoval): CompatVerdict {
 
 export interface GuardEvaluationInput {
   component: string;
-  covered: boolean;
+  enrolled: boolean;
   overlayExists: boolean;
   artifactsFresh: boolean;
   // False when the component's own directory no longer exists on disk -
@@ -697,29 +697,29 @@ export interface GuardEvaluationInput {
   // keeps meaning exactly what it meant before this field existed.
   componentExists?: boolean;
   // Whether the directory ships a `*.contract.test.ts`. The freshness
-  // comparison a covered component is held to is asserted in TWO runs on
+  // comparison a enrolled component is held to is asserted in TWO runs on
   // purpose - the guard's, and the component's own unit run - and the second
   // one only happens if the suite exists. Without it, staleness reaches the
   // developer who caused it only when continuous integration says so, which
   // is the slower half of the pair the design is built on.
   contractTestExists?: boolean;
-  // Whether the coverage allowlist named this component at the base
+  // Whether the enrolled set named this component at the base
   // reference. A component dropped from the list is out of scope from the
   // next change onward, so the change that drops it is the last one that can
   // say anything about it.
-  wasCovered?: boolean;
+  wasEnrolled?: boolean;
 }
 
 export interface GuardResult {
   component: string;
-  status: 'covered-ok' | 'covered-violation' | 'uncovered-info' | 'component-removed' | 'coverage-dropped';
+  status: 'enrolled-ok' | 'enrolled-violation' | 'unenrolled-info' | 'component-removed' | 'enrollment-dropped';
   message: string;
 }
 
-// A component touched but not (yet) in covered.json is informational, never
-// a failure - covered.json is an opt-in allowlist growing one component at a
+// A component touched but not (yet) in enrolled.json is informational, never
+// a failure - enrolled.json is an opt-in allowlist growing one component at a
 // time (T5, T6, ...), not a floor every touched directory must already meet.
-// Once a component IS in covered.json, the guard holds it to what T4
+// Once a component IS in enrolled.json, the guard holds it to what T4
 // promises for Button: an overlay must exist, and the committed artifacts
 // must be exactly what a fresh compile produces.
 // @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-guard-scope:p1
@@ -727,112 +727,112 @@ export interface GuardResult {
 export function evaluateGuard(input: GuardEvaluationInput): GuardResult {
   const {
     component,
-    covered,
+    enrolled,
     overlayExists,
     artifactsFresh,
     componentExists = true,
     contractTestExists = true,
-    wasCovered = covered,
+    wasEnrolled = enrolled,
   } = input;
   // A deleted directory is a designed outcome (M10), not a crash: only a
-  // problem when covered.json still names a component that no longer
-  // exists - an untouched-by-coverage deletion is exactly as uninteresting
-  // as any other uncovered change.
+  // problem when enrolled.json still names a component that no longer
+  // exists - an unenrolled deletion is exactly as uninteresting
+  // as any other unenrolled change.
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-removed
   if (!componentExists) {
-    return covered
+    return enrolled
       ? {
           component,
           status: 'component-removed',
-          message: `${component}: directory removed but still listed in covered.json - remove it from covered.json`,
+          message: `${component}: directory removed but still listed in enrolled.json - remove it from enrolled.json`,
         }
-      : { component, status: 'uncovered-info', message: `${component}: directory removed - nothing to check` };
+      : { component, status: 'unenrolled-info', message: `${component}: directory removed - nothing to check` };
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-removed
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-uncovered
-  if (!covered) {
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-unenrolled
+  if (!enrolled) {
     // Dropped from the allowlist by THIS change: reported rather than
     // failed, because de-listing is a legitimate act (it is the one
     // acknowledgement the harness records for a removed contract), but it is
     // also the last moment anything says the component's artifacts stop
-    // being guarded. Silence here is how a component left coverage with no
-    // line in any run's output.
+    // being guarded. Silence here is how a component left the enrolled set
+    // with no line in any run's output.
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-delisted
-    if (wasCovered) {
+    if (wasEnrolled) {
       return {
         component,
-        status: 'coverage-dropped',
+        status: 'enrollment-dropped',
         message:
-          `${component}: dropped from covered.json by this change - its committed contract artifacts are no longer ` +
+          `${component}: dropped from enrolled.json by this change - its committed contract artifacts are no longer ` +
           `guarded for freshness or compatibility from here on`,
       };
     }
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-delisted
     return {
       component,
-      status: 'uncovered-info',
-      message: `${component}: touched, not in covered.json - no contract required yet`,
+      status: 'unenrolled-info',
+      message: `${component}: touched, not in enrolled.json - no contract required yet`,
     };
   }
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-uncovered
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-unenrolled
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-enrolled
   if (!overlayExists) {
     return {
       component,
-      status: 'covered-violation',
-      message: `${component}: covered by covered.json but has no ${component}.contract.yaml overlay`,
+      status: 'enrolled-violation',
+      message: `${component}: enrolled but has no ${component}.contract.yaml overlay`,
     };
   }
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-enrolled
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-suite
   if (!contractTestExists) {
     return {
       component,
-      status: 'covered-violation',
+      status: 'enrolled-violation',
       message:
-        `${component}: covered by covered.json but ships no ${component}.contract.test.ts - the freshness ` +
+        `${component}: enrolled but ships no ${component}.contract.test.ts - the freshness ` +
         `comparison would then only ever run in continuous integration, never in the unit run of whoever changed it`,
     };
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-suite
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-enrolled
   if (!artifactsFresh) {
     return {
       component,
-      status: 'covered-violation',
-      message: `${component}: covered by covered.json but its committed contract artifacts are stale - run npm run contracts:compile -- ${component}`,
+      status: 'enrolled-violation',
+      message: `${component}: enrolled but its committed contract artifacts are stale - run npm run contracts:compile -- ${component}`,
     };
   }
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
-  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
-  return { component, status: 'covered-ok', message: `${component}: covered and fresh` };
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-covered
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-enrolled
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-enrolled
+  return { component, status: 'enrolled-ok', message: `${component}: enrolled and fresh` };
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-enrolled
 }
 
-export interface CoverageReport {
+export interface EnrollmentReport {
   total: number;
-  coveredCount: number;
-  uncovered: string[];
+  enrolledCount: number;
+  unenrolled: string[];
   // Allowlist entries that name no component directory at all. Counted out
-  // of coveredCount rather than into it: the number is meant to say how much
+  // of enrolledCount rather than into it: the number is meant to say how much
   // of the kit is described, and an entry pointing at nothing describes
   // nothing - it used to be indistinguishable from a real one, so a typo or
   // a deleted directory quietly inflated the figure the report exists to
   // give.
-  unknownCovered: string[];
+  unknownEnrolled: string[];
 }
 
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
-export function buildCoverageReport(allComponents: string[], covered: string[]): CoverageReport {
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-enrollment:p2:inst-en-count
+export function buildEnrollmentReport(allComponents: string[], enrolled: string[]): EnrollmentReport {
   const componentSet = new Set(allComponents);
-  const coveredSet = new Set(covered);
-  const uncovered = allComponents.filter((component) => !coveredSet.has(component)).sort();
-  const unknownCovered = covered.filter((component) => !componentSet.has(component)).sort();
-  return { total: allComponents.length, coveredCount: covered.length - unknownCovered.length, uncovered, unknownCovered };
+  const enrolledSet = new Set(enrolled);
+  const unenrolled = allComponents.filter((component) => !enrolledSet.has(component)).sort();
+  const unknownEnrolled = enrolled.filter((component) => !componentSet.has(component)).sort();
+  return { total: allComponents.length, enrolledCount: enrolled.length - unknownEnrolled.length, unenrolled, unknownEnrolled };
 }
-// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-count
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-enrollment:p2:inst-en-count
 
-export interface DirectoryExportCoverage {
+export interface DirectoryExportEnrollment {
   directory: string;
   // How many of the directory's exported components (extractComponent's
   // result for its .tsx) have a `<stem>.contract.yaml` overlay directly
@@ -840,7 +840,7 @@ export interface DirectoryExportCoverage {
   // export (the norm) is either 0 of 1 or 1 of 1 - the interesting case T5
   // adds is a compound directory partway through being described.
   totalExports: number;
-  coveredExports: number;
+  enrolledExports: number;
   // Exported names the extractor did not generate a contract for because
   // they are not a React component - a helper function, a feature-set
   // const, a type/interface (T6: data-table.tsx's dataTableColumnHelper,
@@ -860,8 +860,9 @@ export interface DirectoryExportCoverage {
 // attribute, a prop of a primitive part nobody has described) - and only the
 // first is a mistake. Splitting them needs a comparison the schema cannot
 // make: `variannt` is an error because `variant` exists, while `tooltip` is
-// merely unchecked. So the schema admits everything and annotates the verdict
-// (compile.ts's OPEN_UNEVALUATED), and this is where the verdict is decided.
+// merely unknown. So the schema admits everything and annotates the
+// classification (compile.ts's OPEN_UNEVALUATED), and this is where the
+// classification is decided.
 //
 // The consumer this exists for - a plan validator that reads a component's
 // props before anything renders - is out of scope here; what is in scope is
@@ -871,7 +872,7 @@ export interface ContractPropsLike {
   properties?: Record<string, unknown>;
 }
 
-export interface PassthroughPropsLike {
+export interface ElementSurfacePropsLike {
   properties?: Record<string, unknown>;
   patternProperties?: Record<string, unknown>;
 }
@@ -884,8 +885,8 @@ export interface PropsClassification {
   known: string[];
   // Accounted for by nothing. Not an error on its own: the schema admits it
   // and says so.
-  unchecked: string[];
-  // The subset of `unchecked` within one edit of a prop the CONTRACT declares
+  unknown: string[];
+  // The subset of `unknown` within one edit of a prop the CONTRACT declares
   // - the kit's own API, not the DOM surface underneath it, because a
   // near-miss of `className` is a typo in a DOM attribute and a near-miss of
   // `variant` is a typo in the thing this contract exists to describe. Each
@@ -896,7 +897,7 @@ export interface PropsClassification {
 // Levenshtein distance, bounded at 2 - the only question asked of it is
 // "exactly one edit apart", and a full matrix over two prop names is cheap
 // enough that the bound is for clarity rather than for speed.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-distance
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-distance
 function editDistance(a: string, b: string): number {
   if (Math.abs(a.length - b.length) > 1) return 2;
   let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
@@ -913,22 +914,22 @@ function editDistance(a: string, b: string): number {
   }
   return previous[b.length];
 }
-// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-distance
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-distance
 
-// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-classify
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-classify
 export function classifyProps(
   props: Record<string, unknown>,
   contract: ContractPropsLike,
-  passthrough?: PassthroughPropsLike,
+  surface?: ElementSurfacePropsLike,
 ): PropsClassification {
   const contractProps = Object.keys(contract.properties ?? {});
-  const elementProps = new Set(Object.keys(passthrough?.properties ?? {}));
-  const patterns = Object.keys(passthrough?.patternProperties ?? {}).map((source) => new RegExp(source));
+  const elementProps = new Set(Object.keys(surface?.properties ?? {}));
+  const patterns = Object.keys(surface?.patternProperties ?? {}).map((source) => new RegExp(source));
   const declared = new Set(contractProps);
 
   const known: string[] = [];
-  const unchecked: string[] = [];
+  const unknown: string[] = [];
   const nearMiss: { prop: string; probably: string }[] = [];
 
   for (const name of Object.keys(props).sort()) {
@@ -937,7 +938,7 @@ export function classifyProps(
       known.push(name);
       continue;
     }
-    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-near-miss
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-near-miss
     // The near miss is decided BEFORE the patterns, because a pattern cannot
     // tell one from a name it was written for: `^on[A-Z]` matches
     // `onValuechange` exactly as readily as `onValueChange`, so a pattern
@@ -945,36 +946,36 @@ export function classifyProps(
     // contract this report exists to protect.
     const probably = contractProps.filter((candidate) => editDistance(name, candidate) === 1).sort()[0];
     if (probably !== undefined) {
-      unchecked.push(name);
+      unknown.push(name);
       nearMiss.push({ prop: name, probably });
       continue;
     }
-    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-near-miss
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-near-miss
     if (patterns.some((pattern) => pattern.test(name))) {
       known.push(name);
       continue;
     }
-    unchecked.push(name);
+    unknown.push(name);
   }
 
-  return { known, unchecked, nearMiss };
+  return { known, unknown, nearMiss };
 }
-// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-unchecked-props:p1:inst-uc-classify
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-classify
 
 // Which props a component forwards to its host element that the committed
 // surface for that element declares by neither name nor pattern. The
 // surfaces are hand-written, and their completeness is deliberately
-// unchecked: nobody enumerates React's attributes for an element, so an
+// unverified: nobody enumerates React's attributes for an element, so an
 // attribute the file does not name is not an error - it is a prop that
-// reaches a consumer as unchecked instead of as known. What was missing was
-// any way to SEE that set, which is what this is: a report the coverage
+// reaches a consumer as unknown instead of as known. What was missing was
+// any way to SEE that set, which is what this is: a report the enrollment
 // command prints and no exit code is derived from.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-forwarded
-export function undeclaredForwardedProps(forwarded: readonly string[], passthrough?: PassthroughPropsLike): string[] {
-  const declared = new Set(Object.keys(passthrough?.properties ?? {}));
-  const patterns = Object.keys(passthrough?.patternProperties ?? {}).map((source) => new RegExp(source));
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-enrollment:p2:inst-en-forwarded
+export function undeclaredForwardedProps(forwarded: readonly string[], surface?: ElementSurfacePropsLike): string[] {
+  const declared = new Set(Object.keys(surface?.properties ?? {}));
+  const patterns = Object.keys(surface?.patternProperties ?? {}).map((source) => new RegExp(source));
   return [...forwarded]
     .filter((name) => !declared.has(name) && !patterns.some((pattern) => pattern.test(name)))
     .sort();
 }
-// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-coverage:p2:inst-cv-forwarded
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-enrollment:p2:inst-en-forwarded

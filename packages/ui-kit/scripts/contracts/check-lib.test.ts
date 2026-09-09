@@ -6,12 +6,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildCoverageReport,
+  buildEnrollmentReport,
   classifyProps,
-  comparePassthroughSurfaces,
+  compareElementSurfaces,
   decideCompat,
   diffOwnPropsSchema,
-  diffPassthroughSchema,
+  diffElementSurface,
   evaluateGuard,
   extractContractMajor,
   jsonDiff,
@@ -59,14 +59,14 @@ describe('jsonDiff', () => {
   });
 });
 
-describe('diffPassthroughSchema', () => {
+describe('diffElementSurface', () => {
   it('is compatible when a prop is only added', () => {
-    const diff = diffPassthroughSchema({ properties: { disabled: { type: 'boolean' } } }, { properties: { disabled: { type: 'boolean' }, form: { type: 'string' } } });
+    const diff = diffElementSurface({ properties: { disabled: { type: 'boolean' } } }, { properties: { disabled: { type: 'boolean' }, form: { type: 'string' } } });
     expect(diff).toEqual({ added: ['form'], removed: [], narrowed: [], compatible: true });
   });
 
   it('is incompatible when a prop is removed', () => {
-    const diff = diffPassthroughSchema(
+    const diff = diffElementSurface(
       { properties: { disabled: { type: 'boolean' }, form: { type: 'string' } } },
       { properties: { disabled: { type: 'boolean' } } },
     );
@@ -75,19 +75,19 @@ describe('diffPassthroughSchema', () => {
   });
 
   it('is incompatible when a shared prop changes type', () => {
-    const diff = diffPassthroughSchema({ properties: { size: { type: 'number' } } }, { properties: { size: { type: 'string' } } });
+    const diff = diffElementSurface({ properties: { size: { type: 'number' } } }, { properties: { size: { type: 'string' } } });
     expect(diff.narrowed).toEqual([{ prop: 'size', reason: 'type changed from "number" to "string"' }]);
     expect(diff.compatible).toBe(false);
   });
 
   it('is incompatible when an enum value is dropped, but not when one is only added', () => {
-    const dropped = diffPassthroughSchema(
+    const dropped = diffElementSurface(
       { properties: { variant: { type: 'string', enum: ['a', 'b'] } } },
       { properties: { variant: { type: 'string', enum: ['a'] } } },
     );
     expect(dropped.narrowed).toEqual([{ prop: 'variant', reason: 'enum value(s) removed: b' }]);
 
-    const widened = diffPassthroughSchema(
+    const widened = diffElementSurface(
       { properties: { variant: { type: 'string', enum: ['a'] } } },
       { properties: { variant: { type: 'string', enum: ['a', 'b'] } } },
     );
@@ -95,7 +95,7 @@ describe('diffPassthroughSchema', () => {
   });
 
   it('is incompatible when an unconstrained prop gains an enum', () => {
-    const diff = diffPassthroughSchema(
+    const diff = diffElementSurface(
       { properties: { variant: { type: 'string' } } },
       { properties: { variant: { type: 'string', enum: ['primary'] } } },
     );
@@ -104,7 +104,7 @@ describe('diffPassthroughSchema', () => {
   });
 
   it('is incompatible when an untyped prop gains a type', () => {
-    const diff = diffPassthroughSchema({ properties: { render: {} } }, { properties: { render: { type: 'string' } } });
+    const diff = diffElementSurface({ properties: { render: {} } }, { properties: { render: { type: 'string' } } });
     expect(diff.narrowed).toEqual([{ prop: 'render', reason: 'type constraint added: "string" where none existed before' }]);
     expect(diff.compatible).toBe(false);
   });
@@ -115,13 +115,13 @@ describe('diffPassthroughSchema', () => {
     // prop still accepts anything, and here is what tsc checks instead" is
     // a real difference to a consumer, and only the first rejects something
     // that used to validate.
-    const described = diffPassthroughSchema(
+    const described = diffElementSurface(
       { properties: { render: {} } },
       { properties: { render: { description: 'TS: ReactNode. Not expressible in JSON Schema, checked by tsc.' } } },
     );
     expect(described).toEqual({ added: [], removed: [], narrowed: [], compatible: true });
 
-    const reworded = diffPassthroughSchema(
+    const reworded = diffElementSurface(
       { properties: { render: { description: 'TS: ReactNode. Not expressible in JSON Schema, checked by tsc.' } } },
       { properties: { render: { description: 'TS: ReactElement. Not expressible in JSON Schema, checked by tsc.' } } },
     );
@@ -129,10 +129,10 @@ describe('diffPassthroughSchema', () => {
   });
 
   it('is compatible when a type or enum constraint is removed entirely, not merely widened', () => {
-    const typeLifted = diffPassthroughSchema({ properties: { render: { type: 'string' } } }, { properties: { render: {} } });
+    const typeLifted = diffElementSurface({ properties: { render: { type: 'string' } } }, { properties: { render: {} } });
     expect(typeLifted).toEqual({ added: [], removed: [], narrowed: [], compatible: true });
 
-    const enumLifted = diffPassthroughSchema(
+    const enumLifted = diffElementSurface(
       { properties: { variant: { type: 'string', enum: ['a', 'b'] } } },
       { properties: { variant: { type: 'string' } } },
     );
@@ -140,7 +140,7 @@ describe('diffPassthroughSchema', () => {
   });
 
   it('is incompatible when a forwarded prop becomes required, whether it existed as optional before or arrives required', () => {
-    const becameRequired = diffPassthroughSchema(
+    const becameRequired = diffElementSurface(
       { properties: { autoFocus: { type: 'boolean' } } },
       { properties: { autoFocus: { type: 'boolean' } }, required: ['autoFocus'] },
     );
@@ -150,12 +150,12 @@ describe('diffPassthroughSchema', () => {
     // A prop that is new AND required in the same step rejects every old
     // call site just as hard as a tightened optional one, so it must not
     // ride in on `added` (which alone never fails the check).
-    const addedRequired = diffPassthroughSchema({ properties: {}, required: [] }, { properties: { id: { type: 'string' } }, required: ['id'] });
+    const addedRequired = diffElementSurface({ properties: {}, required: [] }, { properties: { id: { type: 'string' } }, required: ['id'] });
     expect(addedRequired.added).toEqual(['id']);
     expect(addedRequired.narrowed).toEqual([{ prop: 'id', reason: 'became required where it was optional (or absent) before' }]);
     expect(addedRequired.compatible).toBe(false);
 
-    const stayedRequired = diffPassthroughSchema(
+    const stayedRequired = diffElementSurface(
       { properties: { autoFocus: { type: 'boolean' } }, required: ['autoFocus'] },
       { properties: { autoFocus: { type: 'boolean' } }, required: ['autoFocus'] },
     );
@@ -206,38 +206,38 @@ describe('decideCompat', () => {
   });
 
   it('fails a backward-incompatible schema change at an unchanged major', () => {
-    const verdict = decideCompat({ ...base, gtsBackwardCompatible: false, gtsBackwardErrors: ["Required property 'foo' removed in new schema"] });
-    expect(verdict.status).toBe('fail');
-    expect(verdict.notes[0]).toContain('unchanged');
+    const decision = decideCompat({ ...base, gtsBackwardCompatible: false, gtsBackwardErrors: ["Required property 'foo' removed in new schema"] });
+    expect(decision.status).toBe('fail');
+    expect(decision.notes[0]).toContain('unchanged');
   });
 
   it('passes a backward-incompatible schema change when the major moved, with a note', () => {
-    const verdict = decideCompat({ ...base, newMajor: 2, gtsBackwardCompatible: false, gtsBackwardErrors: ['type changed'] });
-    expect(verdict.status).toBe('pass');
-    expect(verdict.notes[0]).toContain('v1 -> v2');
+    const decision = decideCompat({ ...base, newMajor: 2, gtsBackwardCompatible: false, gtsBackwardErrors: ['type changed'] });
+    expect(decision.status).toBe('pass');
+    expect(decision.notes[0]).toContain('v1 -> v2');
   });
 
-  it('fails on an incompatible passthrough diff alone, even when the schema-level check is clean', () => {
-    const verdict = decideCompat({
+  it('fails on an incompatible element-surface diff alone, even when the schema-level check is clean', () => {
+    const decision = decideCompat({
       ...base,
-      passthroughDiff: { added: [], removed: ['form'], narrowed: [], compatible: false },
+      elementSurfaceDiff: { added: [], removed: ['form'], narrowed: [], compatible: false },
     });
-    expect(verdict.status).toBe('fail');
-    expect(verdict.notes[0]).toContain('passthrough: prop "form" removed');
+    expect(decision.status).toBe('fail');
+    expect(decision.notes[0]).toContain('element surface: prop "form" removed');
   });
 
   it('fails on an incompatible own-props diff alone, even when gts-ts reports backward compatible', () => {
-    const verdict = decideCompat({
+    const decision = decideCompat({
       ...base,
       ownPropsDiff: { removedProps: [], newlyRequiredProps: ['id'], narrowedProps: [], movedToForwardedSurface: [], compatible: false },
     });
-    expect(verdict.status).toBe('fail');
-    expect(verdict.notes[0]).toContain('own prop "id" became required');
+    expect(decision.status).toBe('fail');
+    expect(decision.notes[0]).toContain('own prop "id" became required');
   });
 });
 
 describe('extractContractMajor / synthesizeVersionedId', () => {
-  const id = 'gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~';
+  const id = 'gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.button.v1~';
 
   it('reads the major off the trailing version segment', () => {
     expect(extractContractMajor(id)).toBe(1);
@@ -245,7 +245,7 @@ describe('extractContractMajor / synthesizeVersionedId', () => {
 
   it('synthesizes a distinct, still-major-1 id by inserting a minor before the trailing tilde', () => {
     const synthetic = synthesizeVersionedId(id, 0);
-    expect(synthetic).toBe('gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1.0~');
+    expect(synthetic).toBe('gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.button.v1.0~');
     expect(extractContractMajor(synthetic)).toBe(1);
   });
 
@@ -269,29 +269,29 @@ describe('mapChangedFilesToComponents', () => {
   });
 });
 
-describe('comparePassthroughSurfaces', () => {
+describe('compareElementSurfaces', () => {
   const surface = { properties: { className: { type: 'string' }, disabled: { type: 'boolean' } }, required: [] };
 
   it('has nothing to compare when neither revision forwards anything', () => {
-    expect(comparePassthroughSurfaces({ component: 'data-table' })).toEqual({});
+    expect(compareElementSurfaces({ component: 'data-table' })).toEqual({});
   });
 
   it('reports nothing when only the current revision forwards - an arriving surface only widens', () => {
-    expect(comparePassthroughSurfaces({ component: 'button', newElement: 'dom_button', newSchema: surface })).toEqual({});
+    expect(compareElementSurfaces({ component: 'button', newElement: 'dom_button', newSchema: surface })).toEqual({});
   });
 
   it('reports every forwarded prop as removed when the contract stops composing a surface', () => {
     // The defect this branch exists for: reading the element off the new
     // contract alone left nothing to look up, so the block was skipped and
     // every forwarded prop disappeared under a PASS.
-    const { diff, note } = comparePassthroughSurfaces({ component: 'button', oldElement: 'dom_button', oldSchema: surface });
+    const { diff, note } = compareElementSurfaces({ component: 'button', oldElement: 'dom_button', oldSchema: surface });
     expect(diff?.removed).toEqual(['className', 'disabled']);
     expect(diff?.compatible).toBe(false);
     expect(note).toContain('no longer names the forwarded surface');
   });
 
   it('compares across a change of host element, naming the move', () => {
-    const { diff, note } = comparePassthroughSurfaces({
+    const { diff, note } = compareElementSurfaces({
       component: 'button',
       oldElement: 'dom_button',
       newElement: 'dom_div',
@@ -303,7 +303,7 @@ describe('comparePassthroughSurfaces', () => {
   });
 
   it('says nothing about a move when the element is unchanged', () => {
-    const { diff, note } = comparePassthroughSurfaces({
+    const { diff, note } = compareElementSurfaces({
       component: 'button',
       oldElement: 'dom_button',
       newElement: 'dom_button',
@@ -315,11 +315,11 @@ describe('comparePassthroughSurfaces', () => {
   });
 
   it('reports a skipped signal for a surface it genuinely cannot read', () => {
-    const missingAtBase = comparePassthroughSurfaces({ component: 'button', oldElement: 'dom_button', newElement: 'dom_button', newSchema: surface });
+    const missingAtBase = compareElementSurfaces({ component: 'button', oldElement: 'dom_button', newElement: 'dom_button', newSchema: surface });
     expect(missingAtBase.diff).toBeUndefined();
-    expect(missingAtBase.note).toContain('the base ref carries no passthrough type for element "dom_button"');
-    const missingHere = comparePassthroughSurfaces({ component: 'button', oldElement: 'dom_button', newElement: 'dom_div', oldSchema: surface });
-    expect(missingHere.note).toContain('no committed passthrough type for element "dom_div"');
+    expect(missingAtBase.note).toContain('the base ref carries no committed surface for element "dom_button"');
+    const missingHere = compareElementSurfaces({ component: 'button', oldElement: 'dom_button', newElement: 'dom_div', oldSchema: surface });
+    expect(missingHere.note).toContain('no committed surface for element "dom_div"');
   });
 });
 
@@ -334,7 +334,7 @@ describe('touchesSharedContractTooling', () => {
       'scripts/contracts/extract.ts',
       'scripts/contracts/ids.ts',
       'scripts/contracts/ui-component.meta.json',
-      'scripts/contracts/base.component.json',
+      'scripts/contracts/ui.component.json',
     ]) {
       expect(touchesSharedContractTooling([file])).toBe(true);
     }
@@ -343,26 +343,26 @@ describe('touchesSharedContractTooling', () => {
   it('is true for a hand-written element-surface type', () => {
     // Shared kit-wide: one edit here changes what every component rendering
     // that element forwards, in every one of their contracts.
-    expect(touchesSharedContractTooling(['scripts/contracts/passthrough/dom_button.json'])).toBe(true);
+    expect(touchesSharedContractTooling(['scripts/contracts/elements/dom_button.json'])).toBe(true);
   });
 
-  // A vocabulary type is referenced by the base type's trait schema and by
-  // the metamodel, so changing one reshapes what every covered component is
+  // A vocabulary type is referenced by the base type's x-gts-traits-schema and by
+  // the metamodel, so changing one reshapes what every enrolled component is
   // validated against - the same standing as the two files that reference
   // it, which this list already covers.
   it('is true for a vocabulary type', () => {
-    expect(touchesSharedContractTooling(['scripts/contracts/types/trait.dont_use_when_rule.v1.json'])).toBe(true);
+    expect(touchesSharedContractTooling(['scripts/contracts/vocabulary/dont_use_when_rule.v1.json'])).toBe(true);
   });
 
   // freshness.ts imports jsonDiff from check-lib.ts, so this module sits on
-  // every covered component's comparison path: a change here can flip every
-  // freshness verdict without touching a single component directory. Only
+  // every enrolled component's comparison path: a change here can flip every
+  // freshness decision without touching a single component directory. Only
   // check.ts - which nothing in that path imports - stays excluded.
   it('is true for the shared comparison logic', () => {
     expect(touchesSharedContractTooling(['scripts/contracts/check-lib.ts'])).toBe(true);
   });
 
-  it('is false for the guard/compat entry point, any test file, fixtures, covered.json and pilot notes', () => {
+  it('is false for the guard/compat entry point, any test file, fixtures, enrolled.json and pilot notes', () => {
     // The entry point is named in the exclusion set; a test file is excluded
     // by its suffix, which is why naming one in that set as well said
     // nothing and it no longer does.
@@ -371,7 +371,7 @@ describe('touchesSharedContractTooling', () => {
       'scripts/contracts/check-lib.test.ts',
       'scripts/contracts/extract.test.ts',
       'scripts/contracts/__fixtures__/cva-aliased.fixture.tsx',
-      'scripts/contracts/covered.json',
+      'scripts/contracts/enrolled.json',
       'scripts/contracts/PILOT-NOTES.md',
     ]) {
       expect(touchesSharedContractTooling([file])).toBe(false);
@@ -381,13 +381,13 @@ describe('touchesSharedContractTooling', () => {
 
 describe('resolveRenameSource', () => {
   const baseContracts = [
-    { path: 'src/components/accordion/accordion-item.contract.json', id: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~', stem: 'accordion-item' },
+    { path: 'src/components/accordion/accordion-item.contract.json', id: 'gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v1~', stem: 'accordion-item' },
   ];
 
   it('prefers gits own rename detection when it named a source path', () => {
     const source = resolveRenameSource({
       currentPath: 'src/components/accordion/accordion-part.contract.json',
-      currentId: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_part.v1~',
+      currentId: 'gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_part.v1~',
       currentStem: 'accordion-part',
       renamedFrom: 'src/components/accordion/accordion-item.contract.json',
       baseContracts,
@@ -398,7 +398,7 @@ describe('resolveRenameSource', () => {
   it('falls back to matching by $id when git named no rename source', () => {
     const source = resolveRenameSource({
       currentPath: 'src/components/accordion-part/accordion-item.contract.json',
-      currentId: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~',
+      currentId: 'gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v1~',
       currentStem: 'accordion-item',
       baseContracts,
     });
@@ -408,7 +408,7 @@ describe('resolveRenameSource', () => {
   it('falls back to matching by stem when neither rename detection nor $id matched', () => {
     const source = resolveRenameSource({
       currentPath: 'src/components/accordion-v2/accordion-item.contract.json',
-      currentId: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v2~',
+      currentId: 'gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v2~',
       currentStem: 'accordion-item',
       baseContracts,
     });
@@ -418,7 +418,7 @@ describe('resolveRenameSource', () => {
   it('is undefined when nothing at the base ref matches by any signal - genuinely new', () => {
     const source = resolveRenameSource({
       currentPath: 'src/components/data-table/data-table.contract.json',
-      currentId: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.data_table.v1~',
+      currentId: 'gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.data_table.v1~',
       currentStem: 'data-table',
       baseContracts,
     });
@@ -427,53 +427,53 @@ describe('resolveRenameSource', () => {
 });
 
 describe('evaluateGuard', () => {
-  it('is informational, not a violation, for a touched component outside covered.json', () => {
-    const result = evaluateGuard({ component: 'accordion', covered: false, overlayExists: false, artifactsFresh: false });
-    expect(result.status).toBe('uncovered-info');
+  it('is informational, not a violation, for a touched component outside enrolled.json', () => {
+    const result = evaluateGuard({ component: 'accordion', enrolled: false, overlayExists: false, artifactsFresh: false });
+    expect(result.status).toBe('unenrolled-info');
   });
 
-  it('violates when a covered component has no overlay', () => {
-    const result = evaluateGuard({ component: 'button', covered: true, overlayExists: false, artifactsFresh: false });
-    expect(result.status).toBe('covered-violation');
+  it('violates when a enrolled component has no overlay', () => {
+    const result = evaluateGuard({ component: 'button', enrolled: true, overlayExists: false, artifactsFresh: false });
+    expect(result.status).toBe('enrolled-violation');
     expect(result.message).toContain('no button.contract.yaml overlay');
   });
 
-  it('violates when a covered component with an overlay has stale artifacts', () => {
-    const result = evaluateGuard({ component: 'button', covered: true, overlayExists: true, artifactsFresh: false });
-    expect(result.status).toBe('covered-violation');
+  it('violates when a enrolled component with an overlay has stale artifacts', () => {
+    const result = evaluateGuard({ component: 'button', enrolled: true, overlayExists: true, artifactsFresh: false });
+    expect(result.status).toBe('enrolled-violation');
     expect(result.message).toContain('stale');
   });
 
-  it('passes when a covered component has an overlay and fresh artifacts', () => {
-    const result = evaluateGuard({ component: 'button', covered: true, overlayExists: true, artifactsFresh: true });
-    expect(result.status).toBe('covered-ok');
+  it('passes when a enrolled component has an overlay and fresh artifacts', () => {
+    const result = evaluateGuard({ component: 'button', enrolled: true, overlayExists: true, artifactsFresh: true });
+    expect(result.status).toBe('enrolled-ok');
   });
 
-  it('violates with a fix hint when a covered component directory was removed', () => {
-    const result = evaluateGuard({ component: 'button', covered: true, overlayExists: false, artifactsFresh: false, componentExists: false });
+  it('violates with a fix hint when a enrolled component directory was removed', () => {
+    const result = evaluateGuard({ component: 'button', enrolled: true, overlayExists: false, artifactsFresh: false, componentExists: false });
     expect(result.status).toBe('component-removed');
-    expect(result.message).toContain('remove it from covered.json');
+    expect(result.message).toContain('remove it from enrolled.json');
   });
 
-  it('is informational, not a violation, when a removed component was never covered', () => {
-    const result = evaluateGuard({ component: 'button', covered: false, overlayExists: false, artifactsFresh: false, componentExists: false });
-    expect(result.status).toBe('uncovered-info');
+  it('is informational, not a violation, when a removed component was never enrolled', () => {
+    const result = evaluateGuard({ component: 'button', enrolled: false, overlayExists: false, artifactsFresh: false, componentExists: false });
+    expect(result.status).toBe('unenrolled-info');
   });
 });
 
-describe('buildCoverageReport', () => {
-  it('counts covered vs total and lists the rest, sorted', () => {
-    const report = buildCoverageReport(['button', 'accordion', 'alert'], ['button']);
-    expect(report).toEqual({ total: 3, coveredCount: 1, uncovered: ['accordion', 'alert'], unknownCovered: [] });
+describe('buildEnrollmentReport', () => {
+  it('counts enrolled vs total and lists the rest, sorted', () => {
+    const report = buildEnrollmentReport(['button', 'accordion', 'alert'], ['button']);
+    expect(report).toEqual({ total: 3, enrolledCount: 1, unenrolled: ['accordion', 'alert'], unknownEnrolled: [] });
   });
 
   it('does not count an allowlist entry that names no component directory', () => {
     // The number the report exists to give is how much of the kit is
     // described; an entry pointing at nothing describes nothing, and used to
     // be indistinguishable from a real one.
-    const report = buildCoverageReport(['button', 'alert'], ['button', 'ghost-component']);
-    expect(report.coveredCount).toBe(1);
-    expect(report.unknownCovered).toEqual(['ghost-component']);
+    const report = buildEnrollmentReport(['button', 'alert'], ['button', 'ghost-component']);
+    expect(report.enrolledCount).toBe(1);
+    expect(report.unknownEnrolled).toEqual(['ghost-component']);
   });
 });
 
@@ -508,20 +508,20 @@ describe('classifyProps', () => {
   // here; button.contract.test.ts drives it against a real contract and its
   // real element surface.
   const contract = { properties: { variant: {}, size: {}, loading: {} } };
-  const passthrough = {
+  const elementSurface = {
     properties: { className: {}, title: {} },
     patternProperties: { '^aria-': {}, '^data-': {}, '^on[A-Z]': {} },
   };
 
   it('counts a contract prop, an element attribute and a pattern match as known', () => {
-    const report = classifyProps({ variant: 'ghost', title: 'x', 'aria-label': 'y', onClick: () => {} }, contract, passthrough);
+    const report = classifyProps({ variant: 'ghost', title: 'x', 'aria-label': 'y', onClick: () => {} }, contract, elementSurface);
     expect(report.known).toEqual(['aria-label', 'onClick', 'title', 'variant']);
-    expect(report.unchecked).toEqual([]);
+    expect(report.unknown).toEqual([]);
   });
 
-  it('reports a name nothing accounts for as unchecked, not as an error', () => {
-    const report = classifyProps({ tooltip: 'x' }, contract, passthrough);
-    expect(report.unchecked).toEqual(['tooltip']);
+  it('reports a name nothing accounts for as unknown, not as an error', () => {
+    const report = classifyProps({ tooltip: 'x' }, contract, elementSurface);
+    expect(report.unknown).toEqual(['tooltip']);
     expect(report.nearMiss).toEqual([]);
   });
 
@@ -532,15 +532,15 @@ describe('classifyProps', () => {
       ['variantt', 'variant'],
       ['varant', 'variant'],
     ] as const) {
-      const report = classifyProps({ [typo]: 'ghost' }, contract, passthrough);
+      const report = classifyProps({ [typo]: 'ghost' }, contract, elementSurface);
       expect(report.nearMiss, typo).toEqual([{ prop: typo, probably: real }]);
     }
   });
 
-  it('leaves a two-edit miss unchecked - a guess that far off is noise', () => {
-    const report = classifyProps({ varant: 'ghost', vrient: 'ghost' }, contract, passthrough);
+  it('leaves a two-edit miss unknown - a guess that far off is noise', () => {
+    const report = classifyProps({ varant: 'ghost', vrient: 'ghost' }, contract, elementSurface);
     expect(report.nearMiss.map((entry) => entry.prop)).toEqual(['varant']);
-    expect(report.unchecked).toEqual(['varant', 'vrient']);
+    expect(report.unknown).toEqual(['varant', 'vrient']);
   });
 
   it('decides a near miss of a contract prop before a surface pattern can claim the name', () => {
@@ -548,37 +548,37 @@ describe('classifyProps', () => {
     // `onValueChange`, so a pattern consulted first answered "known" to a
     // typo in the one half of the contract this report exists to protect.
     const handlers = { properties: { onValueChange: {}, variant: {} } };
-    const report = classifyProps({ onValuechange: () => {} }, handlers, passthrough);
+    const report = classifyProps({ onValuechange: () => {} }, handlers, elementSurface);
     expect(report.known).toEqual([]);
-    expect(report.unchecked).toEqual(['onValuechange']);
+    expect(report.unknown).toEqual(['onValuechange']);
     expect(report.nearMiss).toEqual([{ prop: 'onValuechange', probably: 'onValueChange' }]);
   });
 
   it('still counts a pattern match no contract prop is one edit from as known', () => {
-    const report = classifyProps({ onFocus: () => {}, 'data-testid': 'x' }, contract, passthrough);
+    const report = classifyProps({ onFocus: () => {}, 'data-testid': 'x' }, contract, elementSurface);
     expect(report.known).toEqual(['data-testid', 'onFocus']);
-    expect(report.unchecked).toEqual([]);
+    expect(report.unknown).toEqual([]);
   });
 
   it('does not treat a near-miss of an element attribute as a near miss', () => {
     // A typo in a DOM attribute is React's business; reporting it here would
     // make the report noisier than the closure it replaced.
-    const report = classifyProps({ titl: 'x' }, contract, passthrough);
-    expect(report.unchecked).toEqual(['titl']);
+    const report = classifyProps({ titl: 'x' }, contract, elementSurface);
+    expect(report.unknown).toEqual(['titl']);
     expect(report.nearMiss).toEqual([]);
   });
 
   it('works with no element surface at all - a component that forwards nothing', () => {
     const report = classifyProps({ variant: 'ghost', className: 'x' }, contract);
     expect(report.known).toEqual(['variant']);
-    expect(report.unchecked).toEqual(['className']);
+    expect(report.unknown).toEqual(['className']);
   });
 });
 
 describe('undeclaredForwardedProps', () => {
-  // The gap the coverage report prints: a surface is hand-written, so its
+  // The gap the enrollment report prints: a surface is hand-written, so its
   // completeness is nobody's check, and an attribute no file names reaches a
-  // consumer as unchecked rather than as rejected. Reported so the gap is
+  // consumer as unknown rather than as rejected. Reported so the gap is
   // visible; no exit code is derived from it.
   const surface = {
     properties: { className: { type: 'string' }, disabled: { type: 'boolean' } },
@@ -701,27 +701,27 @@ describe('touchesDependencyManifest', () => {
 });
 
 describe('evaluateGuard: the conformance suite and a de-listing', () => {
-  const covered = { component: 'button', covered: true, overlayExists: true, artifactsFresh: true };
+  const enrolled = { component: 'button', enrolled: true, overlayExists: true, artifactsFresh: true };
 
-  it('fails a covered component that ships no conformance suite', () => {
-    const result = evaluateGuard({ ...covered, contractTestExists: false });
-    expect(result.status).toBe('covered-violation');
+  it('fails a enrolled component that ships no conformance suite', () => {
+    const result = evaluateGuard({ ...enrolled, contractTestExists: false });
+    expect(result.status).toBe('enrolled-violation');
     expect(result.message).toContain('ships no button.contract.test.ts');
   });
 
   it('reports a component dropped from the allowlist by this change, without failing', () => {
-    const result = evaluateGuard({ ...covered, covered: false, wasCovered: true });
-    expect(result.status).toBe('coverage-dropped');
-    expect(result.message).toContain('dropped from covered.json by this change');
+    const result = evaluateGuard({ ...enrolled, enrolled: false, wasEnrolled: true });
+    expect(result.status).toBe('enrollment-dropped');
+    expect(result.message).toContain('dropped from enrolled.json by this change');
   });
 
-  it('reports an ordinarily uncovered component as information, as before', () => {
-    const result = evaluateGuard({ ...covered, covered: false, wasCovered: false });
-    expect(result.status).toBe('uncovered-info');
+  it('reports an ordinarily unenrolled component as information, as before', () => {
+    const result = evaluateGuard({ ...enrolled, enrolled: false, wasEnrolled: false });
+    expect(result.status).toBe('unenrolled-info');
   });
 
   it('defaults both fields so a caller that states neither means what it always meant', () => {
-    expect(evaluateGuard(covered).status).toBe('covered-ok');
-    expect(evaluateGuard({ ...covered, covered: false }).status).toBe('uncovered-info');
+    expect(evaluateGuard(enrolled).status).toBe('enrolled-ok');
+    expect(evaluateGuard({ ...enrolled, enrolled: false }).status).toBe('unenrolled-info');
   });
 });

@@ -5,10 +5,10 @@
  * branch exists to build did not exist in the shipped workflow).
  *
  * Runs, in the ui-kit workspace: `contracts:check -- guard --base <ref>`,
- * `contracts:check -- compat --base <ref>`, then `contracts:coverage`
- * (informational only - covered.json is an opt-in allowlist grown one
+ * `contracts:check -- compat --base <ref>`, then `contracts:enrollment`
+ * (informational only - enrolled.json is an opt-in allowlist grown one
  * component at a time, not a floor every component must already meet, so a
- * low coverage number never fails the build; it runs last, for visibility,
+ * low enrollment number never fails the build; it runs last, for visibility,
  * whether or not guard/compat ran at all).
  *
  * The base ref is never guessed here - this script only accepts one, either
@@ -27,7 +27,7 @@
  * push) and this script just runs against whatever it is given - if nothing
  * is given (a branch's first push has no `before` commit worth diffing
  * against), guard/compat are skipped with a printed reason rather than
- * diffing against nothing; coverage still runs.
+ * diffing against nothing; the enrollment report still runs.
  *
  * CLI entry: `node scripts/contracts-policy.mjs [--base-ref <ref>]`
  * (exit 0 on success). Core logic is exported for unit tests.
@@ -93,7 +93,7 @@ export function runCli(options = {}) {
   if (!baseRef) {
     log(
       '[contracts-policy] No base ref given (--base-ref / CONTRACTS_POLICY_BASE_REF) - ' +
-        'skipping guard and compat (nothing to diff against); coverage still runs.',
+        'skipping guard and compat (nothing to diff against); the enrollment report still runs.',
     );
   } else {
     const guardExit = runner.run('contracts:check', ['guard', '--base', baseRef]);
@@ -102,11 +102,11 @@ export function runCli(options = {}) {
     if (compatExit !== 0) return compatExit;
   }
 
-  // Never gates the build on its own exit code - `contracts:coverage` itself
+  // Never gates the build on its own exit code - `contracts:enrollment` itself
   // never calls process.exit(1) (see check.ts's runCoverage), so this is
   // belt-and-braces against a future change to that contract, not a real
   // branch this policy expects to take today.
-  runner.run('contracts:coverage', []);
+  runner.run('contracts:enrollment', []);
   return 0;
 }
 

@@ -14,7 +14,7 @@ typical_uses:
 
 dont_use_when:
   - rule: A standalone action button with no column to sort
-    instead: gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~ # Button
+    instead: gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.button.v1~ # Button
 
 composition:
   children:
@@ -50,7 +50,7 @@ anti_patterns:
 deprecations: {}
 
 coverage:
-  a11y: not-described
+  a11y: unknown
   assumptions:
     - kind: untyped_prop
       prop: column
@@ -69,7 +69,7 @@ coverage:
         `ReactNode`, so an element is as valid as a string. Required, because
         a sort button with no label is a button whose only content is a
         direction arrow.
-    - kind: hidden_part
+    - kind: unexposed_part
       claim: DataTableSortButton composes the kit's own Button internally
       reason: >-
         It renders a `<Button variant="ghost" size="sm">` around its own
