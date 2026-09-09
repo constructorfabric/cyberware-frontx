@@ -300,3 +300,39 @@ required = true
 [[systems.children.codebase]]
 path = "packages/cyber-pilot-kit-frontx/src"
 extensions = [".ts"]
+
+# Workspace Template Family is root-owned nested scope, not a packages/<pkg> member and not a
+# templates-layer member's own artifact chain: the templates-territory-traceability decision
+# (cpt-frontx-adr-template-territory-traceability) forecloses giving template territory its own
+# artifact tree until template ownership has settled, and the five templates this family
+# comprises stay excluded from the registry the same way template-shell and template-mfe are
+# (see the ignore entry above). What this system owns instead is the ecosystem-facing contract
+# the split introduces between independently-versioned siblings - the shell-screen integration
+# surface, the shared GTS conventions, and the guard/versioning obligations already fixed by
+# ADR-0017, ADR-0018 and ADR-0033 - never the templates' own file contents, which the domain-model
+# mapping (architecture/explorations/2026-09-02-workspace-template-domain-mapping.md) carries.
+# FEATURE is deliberately undeclared rather than declared `required = false`: DECOMPOSITION and
+# FEATURE are explicitly deferred by team decision of 2026-09-02, stated in the PRD itself
+# (workspace-templates PRD §4.2) with the maintainer's acceptance of the PRD/DESIGN pair as the
+# resumption trigger, and an undeclared kind is unenforced, the same convention CLI's own ADR
+# comment above documents.
+[[systems.children]]
+name = "Workspace Template Family"
+slug = "workspace-templates"
+kit = "sdlc"
+artifacts_dir = "architecture/workspace-templates"
+
+[[systems.children.autodetect]]
+kit = "sdlc"
+system_root = "{project_root}"
+artifacts_root = "architecture/workspace-templates"
+
+[systems.children.autodetect.artifacts.PRD]
+pattern = "PRD.md"
+traceability = "FULL"
+required = true
+
+[systems.children.autodetect.artifacts.DESIGN]
+pattern = "DESIGN.md"
+traceability = "FULL"
+required = true
