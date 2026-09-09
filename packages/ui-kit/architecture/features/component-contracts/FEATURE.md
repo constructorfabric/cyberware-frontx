@@ -19,17 +19,17 @@
   - [Metamodel Instance Assembly](#metamodel-instance-assembly)
   - [Host Element Surface](#host-element-surface)
   - [Composition Derivation](#composition-derivation)
-  - [Untyped Properties And Their Assumptions](#untyped-properties-and-their-assumptions)
-  - [Unchecked Property Report](#unchecked-property-report)
+  - [Untyped Properties And The Statements About Them](#untyped-properties-and-the-statements-about-them)
+  - [Prop Classification Report](#prop-classification-report)
   - [Contract Identifier Construction](#contract-identifier-construction)
-  - [Trait Schema Derivation](#trait-schema-derivation)
+  - [Meaning Schema Derivation](#meaning-schema-derivation)
   - [Freshness Comparison](#freshness-comparison)
   - [Compatibility Decision](#compatibility-decision)
   - [Comparison Source Beyond The Repository](#comparison-source-beyond-the-repository)
   - [Per-Contract Comparison Against The Base Reference](#per-contract-comparison-against-the-base-reference)
   - [Contracts Removed Since The Base Reference](#contracts-removed-since-the-base-reference)
-  - [Guard Scope And Verdicts](#guard-scope-and-verdicts)
-  - [Coverage Report](#coverage-report)
+  - [Guard Scope And Decisions](#guard-scope-and-decisions)
+  - [Enrollment Report](#enrollment-report)
   - [Conformance Suite Construction](#conformance-suite-construction)
 - [4. States (CDSL)](#4-states-cdsl)
   - [No Lifecycle To Model](#no-lifecycle-to-model)
@@ -190,14 +190,14 @@ Prose describing a component can only be reviewed by a person, one screen at a t
    1. [x] - `p1` - Refuse, naming each such field - `inst-oa-machine-owned-refuse`
 2. [x] - `p1` - **IF** the overlay carries a field the vocabulary does not define, or a field of the wrong shape - `inst-oa-unknown-field`
    1. [x] - `p1` - Refuse, naming the field and its position in the document - `inst-oa-unknown-field-refuse`
-3. [x] - `p1` - Admit the alternative a "don't" names in either of the two forms that resolve - a reference to a component this kit ships, or an explicit statement of what to use outside the kit with the reason no kit component fits - and refuse any other shape - `inst-oa-alternative`
-4. [x] - `p1` - **IF** the overlay writes a field the compiler derives - the mount points a component may appear under, computed from every other contract's allowed children - `inst-oa-derived-field`
-   1. [x] - `p1` - Refuse, naming the field and the field that IS authorable for a mount point outside the kit - `inst-oa-derived-field-refuse`
+3. [x] - `p1` - Admit a recommendation that states what to use instead in the words a reader acts on, with the kit component to resolve when the kit ships one and without it when the kit ships nothing - and refuse any other shape - `inst-oa-alternative`
+4. [x] - `p1` - **IF** the overlay writes an entry the compiler FILLS - a component reference among the mount points, which is computed from every other contract's accepted components, or a family root's member list, which is computed from every contract naming that family as a part - `inst-oa-derived-field`
+   1. [x] - `p1` - Refuse, naming what fills the entry and where the fact belongs instead. Refused ahead of the shape check, whose own answer would be "unknown key": the field admits the filled shape for the compiled artifact's sake, so what an author needs told is which side of the relationship states it - `inst-oa-derived-field-refuse`
 5. [x] - `p1` - **IF** the component the overlay declares is not the one being compiled - `inst-oa-name-mismatch`
    1. [x] - `p1` - Refuse, naming both - `inst-oa-name-mismatch-refuse`
 6. [x] - `p1` - **RETURN** the admitted overlay - `inst-oa-return`
-7. [x] - `p1` - **IF** the admitted overlay references a prop the component does not have - a deprecation's key, the prop icons arrive through, a prop the overlay hides, a prop an untyped-prop assumption names - `inst-oa-absent-prop`
-   1. [x] - `p1` - Refuse, naming the prop. A deprecation and an icon slot may only name a prop the component declares itself; a hidden name and an assumption may also name one the primitive declares, and a hidden name may NOT name one the component declares, which would be the overlay asking the compiler to drop what the source states - `inst-oa-absent-prop-refuse`
+7. [x] - `p1` - **IF** the admitted overlay references a prop the component does not have - a deprecation's key, the prop icons arrive through, a declared slot, the prop a capability is turned on by, a prop the overlay withholds, the prop an untyped statement is about - `inst-oa-absent-prop`
+   1. [x] - `p1` - Refuse, naming the prop. A deprecation, an icon slot, a declared slot and a capability's switch may only name a prop the component declares itself; a withheld name and an untyped statement may also name one the primitive declares, and a withheld name may NOT name one the component declares, which would be the overlay asking the compiler to drop what the source states - `inst-oa-absent-prop-refuse`
 
 ### Contract Compilation
 
@@ -218,10 +218,10 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 6. [x] - `p1` - Declare each prop the primitive library states for the part being wrapped as a property of this contract, typed where the provider-safe subset can express it and annotated with its own TypeScript type where it cannot, unless the overlay hides it - such a prop is this component's API, not surface it merely forwards, and filing it as forwarded surface is what buried a compound component's whole domain API in a file no reader opened - `inst-cc-api`
 7. [x] - `p1` - Where a property's name is also declared by the host element's surface, fail when the two shapes disagree: both apply to the same value, so a disagreement is a props object that can satisfy neither - `inst-cc-owner-conflict`
    1. [x] - `p1` - Refuse, naming the prop, where it was declared and what the element surface states - `inst-cc-owner-conflict-refuse`
-8. [x] - `p1` - Route each meaning field to the block a validator reads or to the block that is prose, exactly once - `inst-cc-route`
+8. [x] - `p1` - Route each meaning field to its block through ONE map, exactly once, and emit the extraction's own facts into the other. Every meaning field goes to the block a validator reads, because the meaning of a component is processing metadata of its type; the map keeps both targets so that answer stays reversible in one edit - `inst-cc-route`
 9. [x] - `p1` - Derive the contract from exactly ONE type, the abstract base component type - which is what its chained identifier already says. The surface of the host element it renders is NOT a second parent: it is a hand-written set shared kit-wide by every component that renders the same element, so it is something the component uses rather than a second thing the component is - `inst-cc-close`
    1. [x] - `p1` - Name that surface as a reference the contract HOLDS in its validator-read block, and give the metamodel instance the same reference, so the two halves of one artifact name one surface. Decide it from the extraction in one place, for both halves: a component that resolves an element but forwards nothing to it names no surface, and two copies of that rule would disagree the day one of them changed - `inst-cc-close`
-   2. [x] - `p1` - Leave the derived type OPEN: `unevaluatedProperties` carries the annotation `x-uikit-verdict: unchecked` rather than `false`, stating that a prop nothing evaluates is unchecked rather than invalid - a schema cannot tell a typo'd kit prop from an attribute this harness has not classified, and answering "invalid" to both made the second unusable. This is also why dropping the surface out of the schema body changes nothing a consumer may pass: a forwarded attribute was already admitted by the openness, not by the merge - `inst-cc-close`
+   2. [x] - `p1` - Leave the derived type OPEN: `unevaluatedProperties` carries the annotation `x-uikit-classification: unchecked` rather than `false`, stating that a prop nothing evaluates is unchecked rather than invalid - a schema cannot tell a typo'd kit prop from an attribute this harness has not classified, and answering "invalid" to both made the second unusable. This is also why dropping the surface out of the schema body changes nothing a consumer may pass: a forwarded attribute was already admitted by the openness, not by the merge - `inst-cc-close`
 10. [x] - `p1` - **RETURN** the contract after validating its validator-read block against the base type's trait schema - `inst-cc-return`
 
 ### Metamodel Instance Assembly
@@ -230,10 +230,12 @@ Prose describing a component can only be reviewed by a person, one screen at a t
 
 **Input**: A component directory and the artifact stem being compiled.
 
-**Output**: The metamodel instance for that artifact.
+**Output**: The metamodel instance for that artifact: a thin typed record.
+
+The instance NAMES the contract and repeats nothing it says. What a component means is processing metadata of its type and is emitted once, into the props schema's own validator-read block; an instance carrying a second copy would be one fact in two documents with nothing keeping them in step. What is left is what only an instance can carry: its own identity, the type it is an instance of, the vocabulary version it was compiled against, and the two references the type system itself resolves against a registry - which is the reason the document exists at all.
 
 **Steps**:
-1. [x] - `p1` - Assemble the instance from the admitted overlay in the metamodel's own field order, naming the contract as its props schema - `inst-mi-assemble`
+1. [x] - `p1` - Assemble the record: its own instance identifier, the metamodel type it is an instance of, the vocabulary version, the component's name, and the two references - its props schema and the surface of the host element it renders, the second decided from the extraction in the same one place the contract's own reference is - `inst-mi-assemble`
 2. [x] - `p1` - **RETURN** it after validating it against the metamodel - `inst-mi-validate`
 
 ### Host Element Surface
@@ -263,32 +265,35 @@ Two properties of a hand-written set are worth stating, because one is checked a
 
 **Input**: The artifact stem being compiled, and its admitted overlay.
 
-**Output**: The composition its contract and its instance carry.
+**Output**: Where the component may be mounted, and which family it belongs to, as its contract carries them.
 
-Where a component may be mounted is not a fact about that component: it is a fact about the components that allow it inside them. Authored on both sides it was a claim about somebody else's contract, free to disagree with it - a part could name a parent whose own children never mentioned the part - and only a test comparing the two would notice. Derived, there is one statement and the other direction is a view of it.
+Where a component may be mounted is not a fact about that component: it is a fact about the components that accept it inside them. Authored on both sides it was a claim about somebody else's contract, free to disagree with it - a part could name a parent whose own accepted list never mentioned the part - and only a test comparing the two would notice. Filled, there is one statement and the other direction is a view of it. A family's membership runs the same way: every member states which family it belongs to and its role in it, and the root's member list is the view over those statements.
+
+Both are materialized into the contract rather than left to a reader to compute, because the reader this feature is for holds one contract document and nothing else: what it needs to act correctly is written down, and what only the harness needs is computed.
 
 **Steps**:
-1. [x] - `p1` - Read every overlay in the kit and collect the ones whose allowed children name this component; those components are its parents. Overlays, not compiled contracts: an overlay is the authored source, so the derivation is right even while a committed contract is stale, which is the state every recompile passes through - `inst-co-derive`
-2. [x] - `p1` - Merge the mount points the overlay states in the external form - a mount point outside the kit, where a typed reference has nothing to point at - into the same field, so one field answers "where may this be mounted" whatever the answer is - `inst-co-derive`
-3. [x] - `p1` - Carry the authored children unchanged, and emit neither field when there is nothing to say: an absent children list means unconstrained, and an empty mount-point list would read as "may be mounted nowhere" - `inst-co-derive`
-4. [x] - `p1` - **IF** a children list names this component at a major it no longer ships - `inst-co-stale-major`
-   1. [x] - `p1` - Refuse, naming the overlay, the reference it holds and the identifier the component ships now. A reference carries the target's major, so moving a major is an edit to every overlay naming the component; dropping the derived mount point for the ones left behind would hide exactly the edit the move demands - `inst-co-stale-major`
+1. [x] - `p1` - Read every overlay in the kit and collect the ones whose accepted components name this component; those components are its mount points. Overlays, not compiled contracts: an overlay is the authored source, so the derivation is right even while a committed contract is stale, which is the state every recompile passes through - `inst-co-derive`
+2. [x] - `p1` - Merge the containers the overlay states outside the kit - where a typed reference has nothing to point at - into the same field, so one field answers "where may this be mounted" whatever the answer is - `inst-co-derive`
+3. [x] - `p1` - Emit the field only when there is something to say: an empty list would read as "may be mounted nowhere", and most of the kit is mounted anywhere - `inst-co-derive`
+4. [x] - `p1` - **IF** an accepted-components list names this component at a major it no longer ships - `inst-co-stale-major`
+   1. [x] - `p1` - Refuse, naming the overlay, the reference it holds and the identifier the component ships now. A reference carries the target's major, so moving a major is an edit to every overlay naming the component; dropping the filled mount point for the ones left behind would hide exactly the edit the move demands - `inst-co-stale-major`
+5. [x] - `p1` - Group the same overlays by the family token each one names, and fill a root's member list from the ones naming that family as a part. Refuse two roots for one family name, naming both - with two roots there is no single place a reader can ask what the family contains - and refuse a family with no root at all, naming the component whose membership points at nothing. A part carries its own membership and no member list: reading the family's whole shape is what the root is for - `inst-co-family`
 
-### Untyped Properties And Their Assumptions
+### Untyped Properties And The Statements About Them
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-untyped-props`
 
 **Input**: A compiled contract.
 
-**Output**: The properties that assert nothing, and the disagreements between them and the contract's own untyped-prop assumptions.
+**Output**: The properties that assert nothing, and the disagreements between them and the contract's own statements about a prop.
 
 **Steps**:
 1. [x] - `p1` - Give a property whose TypeScript type has no schema equivalent the checker's own printed type and the statement that the type system, not the schema, is what checks it - never an empty schema, which in a props contract reads as "anything, so probably the obvious thing" - `inst-up-describe`
 2. [x] - `p1` - List every property of the contract that asserts nothing about its value, whichever side of the API-versus-declared split it came from: what they have in common is the only thing that matters to a reader, that a validator will not catch a wrong value there - `inst-up-list`
-3. [x] - `p1` - Pair that list against the contract's untyped-prop assumptions both ways: a property nothing asserts and nothing explains is the gap an evaluation walked into, and an assumption naming a property the schema DOES constrain tells a reader something false about the contract in front of them - `inst-up-pair`
-4. [x] - `p1` - **RETURN** the disagreements for a caller to report rather than raising them: a missing assumption is a documentation gap, and a compile that refused it would make a component uncompilable until its prose caught up - `inst-up-pair`
+3. [x] - `p1` - Pair that list against the contract's untyped statements BOTH WAYS, keyed on what each statement is about: a property nothing asserts and nothing explains is the gap an evaluation walked into, and a statement naming a property the schema DOES constrain tells a reader something false about the contract in front of them. The subject is what makes the pairing possible at all - the statements about a prop are the family it is over, and the ones about an unexposed part, a container outside the kit or a behaviour are about things no property could carry - `inst-up-pair`
+4. [x] - `p1` - **RETURN** the disagreements for a caller to report rather than raising them: a missing statement is a documentation gap, and a compile that refused it would make a component uncompilable until its prose caught up - `inst-up-pair`
 
-### Unchecked Property Report
+### Prop Classification Report
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-props-classification`
 
@@ -323,28 +328,29 @@ This is what replaced closing the schema. A closed schema answered "invalid" to 
 6. [x] - `p1` - Build the vocabulary type identifier from its concept token - `inst-id-vocabulary-type`
 7. [x] - `p1` - **RETURN** the patterns that recognize each identifier shape - `inst-id-patterns`
 
-### Trait Schema Derivation
+### Meaning Schema Derivation
 
 - [x] `p2` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema`
 
-**Input**: The metamodel's field definitions.
+**Input**: Nothing but the vocabulary itself.
 
-**Output**: The vocabulary types the overlay is made of, and the trait schema the abstract base type carries, against which every contract's validator-read block is checked. How those types relate is the domain model in section 3.1 of the package DESIGN.
+**Output**: The vocabulary types the overlay is made of, the field-by-field definition of what an author may state, and the schema the abstract component type carries - against which every contract's meaning block is checked. How those types relate is the domain model in section 3.1 of the package DESIGN.
 
 **Steps**:
-1. [x] - `p1` - Build one type per concept the metamodel references, currently twelve - a rule against a use and the alternative outside the kit it may name, a composition and each of its two directions, a deprecation and the per-prop deprecation it holds, a coverage claim with its verdict and its assumptions, a family membership, an extension point - each with its own identifier - `inst-ts-vocabulary`
-   1. [x] - `p1` - State the child-composition kind that means "no children at all" as the only kind a list may hold, so a list cannot say both that nothing may appear inside a component and that something may - `inst-ts-children-exclusive`
+1. [x] - `p1` - Build one type per concept the vocabulary names, currently thirteen - a recommendation and the "don't" rule that holds one, what a component accepts inside it, a container outside the kit and the mount point that may be one, a deprecation and the per-prop deprecation it holds, an attestation, an untyped statement, a family membership, and one type each for the three growth surfaces - each with its own identifier - `inst-ts-vocabulary`
+   1. [x] - `p1` - Let the value that answers "what may appear inside" answer it alone: detail beside "unconstrained" or "nothing" would say both that nothing may appear inside a component and that something may, and detail is required beside "specified", which otherwise says nothing at all - `inst-ts-content-exclusive`
    2. [x] - `p1` - Define the non-component content kind in the type itself rather than in prose beside it: a string, a number, a fragment or a formatted inline element - never a kit component, which would be a reference instead - `inst-ts-vocabulary`
-   3. [x] - `p1` - Leave both directions of a composition optional. An absent children list means UNCONSTRAINED, which a layout component needs and cannot state by enumerating a kit it does not know or by claiming a content kind it does not require; a mount-point list is absent for most of the kit, which is mounted anywhere - `inst-ts-vocabulary`
-   4. [x] - `p1` - Give the mount-point list the same two branches an alternative to a "don't" has - a component reference, or the external form - so a mount point outside the kit is stated rather than approximated by the nearest component - `inst-ts-vocabulary`
-   5. [x] - `p1` - Require every assumption to carry a kind drawn from a closed list, and require the kind that is about one property to name that property: without a kind the field was a paragraph, and nothing could ask whether every property the schema cannot type has an entry - `inst-ts-vocabulary`
-   6. [x] - `p1` - State the props the kit does not advertise as prop-and-reason entries, both required: a bare name leaves every later reader to rediscover why the prop is gone, and the reason written beside the name is the reason a parallel assumption was carrying by hand. One of the two validator-read fields nothing else references, so it stays inline rather than becoming a type of its own - `inst-ts-withheld`
-2. [x] - `p1` - Take the metamodel's definitions of exactly the fields a validator reads - `inst-ts-fields`
-   1. [x] - `p1` - Include the one validator-read field the OVERLAY may not write, the host element's surface reference, and remove it from what an overlay may state: which element a component renders is a fact of its source. Its shape is still declared once, in the metamodel, like every other field here - `inst-ts-host`
-3. [x] - `p1` - State each of those fields as a reference to the type that owns its shape, so the trait schema and the metamodel resolve one definition rather than each carrying a copy - `inst-ts-ref`
+   3. [x] - `p1` - Require a recommendation to state what to use in the words a reader acts on, and let the kit component beside it be optional - its ABSENCE is the statement that the kit ships nothing for this case, which naming the nearest component as a stand-in hid - `inst-ts-vocabulary`
+   4. [x] - `p1` - Give a mount point the two branches "where may this be mounted" needs - a component reference or a container outside the kit - so a mount point the kit knows nothing about is stated rather than approximated by the nearest component - `inst-ts-vocabulary`
+   5. [x] - `p1` - Require every untyped statement to say what it is about, from a closed list, and require the one about a property to name that property while forbidding a name on any other: without a subject the field was a paragraph, and nothing could ask whether every property the schema cannot type has an entry - `inst-ts-vocabulary`
+   6. [x] - `p1` - Keep the three answers a contract can give apart, because they answer different questions: an attestation carries an outcome (verified, failed, or nobody looked), a prop carries a classification, and a comparison against a base reference carries a decision. One word each - `inst-ts-vocabulary`
+   7. [x] - `p1` - State the props the kit does not advertise as prop-and-reason entries, both required: a bare name leaves every later reader to rediscover why the prop is gone, and the reason written beside the name is the reason a parallel claim was carrying by hand. One of the fields nothing else references, so it stays inline rather than becoming a type of its own - `inst-ts-withheld`
+2. [x] - `p1` - Define every meaning field once, field by field, and hand the same definitions to both readers - the schema the abstract type carries and the schema an author is held to - so the two can never disagree about what a field looks like - `inst-ts-fields`
+   1. [x] - `p1` - Include the one field the OVERLAY may not write, the host element's surface reference, and leave it out of what an overlay may state: which element a component renders is a fact of its source - `inst-ts-host`
+3. [x] - `p1` - State each of those fields as a reference to the type that owns its shape, so a concept is defined once and every reader resolves the same definition - `inst-ts-ref`
 4. [x] - `p1` - Declare a field that HOLDS another type's identifier with all three of what it must resolve to, the value kind and the grammar of the identifier, because the type store removes the resolution annotation before validating and drops a branch left carrying nothing else - `inst-ts-id-value`
-5. [x] - `p1` - Give each field the metamodel does not require a null alternative and a null default, placed after the reference so the referenced type does not overwrite it, so the store finds a value for every declared trait - `inst-ts-nullable`
-6. [x] - `p1` - **RETURN** the trait schema - `inst-ts-return`
+5. [x] - `p1` - Give each field the vocabulary does not require a null alternative and a null default, placed after the reference so the referenced type does not overwrite it, so the store finds a value for every declared field - `inst-ts-nullable`
+6. [x] - `p1` - **RETURN** the schema the abstract type carries - `inst-ts-return`
 
 ### Freshness Comparison
 
@@ -437,7 +443,7 @@ The comparison above walks the contracts on disk and asks each one what it used 
    2. [x] - `p1` - Otherwise **RETURN** a pass reporting the removal as acknowledged, naming what disappeared - `inst-cr-decide`
 3. [x] - `p1` - Report those verdicts alongside the per-contract ones, so one run states both what changed and what is gone - `inst-cr-sweep`
 
-### Guard Scope And Verdicts
+### Guard Scope And Decisions
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-guard`
 
@@ -464,7 +470,7 @@ The comparison above walks the contracts on disk and asks each one what it used 
    1. [x] - `p1` - A covered directory must also ship its own conformance suite: the freshness comparison is asserted in two runs on purpose, and without the suite the second of them - the unit run of whoever changed the component - never happens - `inst-gd-suite`
 9. [x] - `p1` - **RETURN** the verdicts - `inst-gd-return`
 
-### Coverage Report
+### Enrollment Report
 
 - [x] `p2` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-enrollment`
 

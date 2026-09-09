@@ -1,5 +1,6 @@
 # Semantic overlay for AccordionItem - a part of the Accordion family, see
-# accordion.contract.yaml's `family` for how the four contracts relate.
+# accordion.contract.yaml's `family_membership` for how the four contracts
+# relate.
 component: accordion-item
 
 intent: One collapsible section of an Accordion, identified by a unique value.
@@ -8,17 +9,19 @@ typical_uses:
   - One entry in an Accordion's list of sections, wrapping a trigger and its panel
 
 dont_use_when:
-  - rule: A section that must always stay visible and never collapse
-    instead: gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.card.v1~ # Card
+  - situation: A section that must always stay visible and never collapse
+    instead:
+      target: Card
+      component: gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~
 
-# `parent` is not authored: the compiler derives it from every other
-# contract's `children`, so "an item goes inside an Accordion" is stated once,
-# by the root, and read back here.
-composition:
-  children:
-    kinds:
-      - gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_trigger.v1~ # AccordionTrigger
-      - gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_content.v1~ # AccordionContent
+# `mounted_in` is not authored: the compiler fills it from every other
+# contract's accepted components, so "an item goes inside an Accordion" is
+# stated once, by the root, and read back here.
+accepts:
+  content: specified
+  components:
+    - gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~ # AccordionTrigger
+    - gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_content.v1~ # AccordionContent
 
 invariants:
   - id: value-required-to-control-or-default-open
@@ -32,36 +35,39 @@ anti_patterns:
 
 deprecations: {}
 
-coverage:
-  a11y: verified # item disclosure state comes from Base UI
-  assumptions:
-    - kind: untyped_prop
-      prop: value
-      claim: value is an opaque identifier, typed `any` by Base UI
-      reason: >-
-        Base UI's Accordion.Item declares `value?: any` - it is compared by
-        identity against the root's `value`/`defaultValue` array and never
-        interpreted, so the primitive types it as anything. Strings are what
-        accordion.md uses, and what a reader should reach for.
-    - kind: untyped_prop
-      prop: onOpenChange
-      claim: onOpenChange is a callback, not a value
-      reason: >-
-        `(open: boolean, eventDetails) => void` - a function of Base UI's own
-        event-details object. No JSON Schema type covers a function.
-    - kind: untyped_prop
-      prop: render
-      claim: render replaces the item element with one the caller supplies
-      reason: >-
-        Base UI's render prop takes an element or a function of the item's
-        state; neither is expressible in JSON Schema.
-    - kind: untyped_prop
-      prop: style
-      claim: style accepts a function of the item's state as well as a plain style object
-      reason: >-
-        Base UI widens React's `CSSProperties` to
-        `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object`
-        would reject the function form.
+attestations:
+  a11y:
+    outcome: verified
+    by: Base UI's Accordion.Item - the item's own disclosure state and its wiring to the root
+
+untyped:
+  - about: prop
+    prop: value
+    claim: value is an opaque identifier, typed `any` by Base UI
+    reason: >-
+      Base UI's Accordion.Item declares `value?: any` - it is compared by
+      identity against the root's `value`/`defaultValue` array and never
+      interpreted, so the primitive types it as anything. Strings are what
+      accordion.md uses, and what a reader should reach for.
+  - about: prop
+    prop: onOpenChange
+    claim: onOpenChange is a callback, not a value
+    reason: >-
+      `(open: boolean, eventDetails) => void` - a function of Base UI's own
+      event-details object. No JSON Schema type covers a function.
+  - about: prop
+    prop: render
+    claim: render replaces the item element with one the caller supplies
+    reason: >-
+      Base UI's render prop takes an element or a function of the item's
+      state; neither is expressible in JSON Schema.
+  - about: prop
+    prop: style
+    claim: style accepts a function of the item's state as well as a plain style object
+    reason: >-
+      Base UI widens React's `CSSProperties` to
+      `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object`
+      would reject the function form.
 
 examples:
   good:
@@ -82,6 +88,6 @@ examples:
         writes the nearest Accordion root's state, so mounting it outside one
         renders nothing usable.
 
-family:
-  root: gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion.v1~ # Accordion
+family_membership:
+  name: accordion
   role: part

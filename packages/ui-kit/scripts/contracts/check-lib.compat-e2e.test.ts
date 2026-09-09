@@ -45,10 +45,10 @@ function schema(major: number, properties: Record<string, { type?: string; enum?
     $id: propsSchemaId(COMPONENT, major),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     type: 'object' as const,
-    allOf: [{ $ref: 'gts://gts.frontx.uikit.ui.component.v1~' }],
+    allOf: [{ $ref: 'gts://gts.frontx.uikit.base.component.v1~' }],
     properties,
     required,
-    unevaluatedProperties: { 'x-uikit-classification': 'unknown' } as const,
+    unevaluatedProperties: { 'x-uikit-classification': 'unchecked' } as const,
   };
 }
 
@@ -86,26 +86,26 @@ describe('decideCompat against a real GTS instance and real gts-ts compatibility
   it('fails when an enum value is removed from an own prop, major unchanged', () => {
     const old = schema(1, { variant: { type: 'string', enum: ['default', 'destructive'] } }, []);
     const fresh = schema(1, { variant: { type: 'string', enum: ['default'] } }, []);
-    expect(checkRealCompat(old, fresh).status).toBe('fail');
+    expect(checkRealCompat(old, fresh).decision).toBe('fail');
   });
 
   it('fails when an optional own prop becomes required, major unchanged', () => {
     const old = schema(1, { label: { type: 'string' } }, []);
     const fresh = schema(1, { label: { type: 'string' } }, ['label']);
-    expect(checkRealCompat(old, fresh).status).toBe('fail');
+    expect(checkRealCompat(old, fresh).decision).toBe('fail');
   });
 
   it('fails when a new required own prop is added, major unchanged', () => {
     const old = schema(1, { label: { type: 'string' } }, []);
     const fresh = schema(1, { label: { type: 'string' }, id: { type: 'string' } }, ['id']);
-    expect(checkRealCompat(old, fresh).status).toBe('fail');
+    expect(checkRealCompat(old, fresh).decision).toBe('fail');
   });
 
   it('fails when an own prop is renamed (old name gone, new name added)', () => {
     const old = schema(1, { iconName: { type: 'string' } }, []);
     const fresh = schema(1, { icon: { type: 'string' } }, []);
     const decision = checkRealCompat(old, fresh);
-    expect(decision.status).toBe('fail');
+    expect(decision.decision).toBe('fail');
     expect(decision.notes[0]).toContain('own prop "iconName" removed');
   });
 
@@ -113,14 +113,14 @@ describe('decideCompat against a real GTS instance and real gts-ts compatibility
     const old = schema(1, { variant: { type: 'string', enum: ['default', 'destructive'] } }, []);
     const fresh = schema(2, { variant: { type: 'string', enum: ['default'] } }, []);
     const decision = checkRealCompat(old, fresh);
-    expect(decision.status).toBe('pass');
+    expect(decision.decision).toBe('pass');
     expect(decision.notes[0]).toContain('v1 -> v2');
   });
 
   it('passes when nothing changed', () => {
     const old = schema(1, { label: { type: 'string' } }, []);
     const fresh = schema(1, { label: { type: 'string' } }, []);
-    expect(checkRealCompat(old, fresh).status).toBe('pass');
+    expect(checkRealCompat(old, fresh).decision).toBe('pass');
   });
 
   it('passes when a property that asserts nothing only gains prose naming its TypeScript type', () => {
@@ -133,7 +133,7 @@ describe('decideCompat against a real GTS instance and real gts-ts compatibility
     // contract would start refusing itself.
     const old = schema(1, { icon: {} }, []);
     const fresh = schema(1, { icon: { description: 'TS: ReactNode. Not expressible in JSON Schema, checked by tsc.' } }, []);
-    expect(checkRealCompat(old, fresh).status).toBe('pass');
+    expect(checkRealCompat(old, fresh).decision).toBe('pass');
   });
 });
 
@@ -186,13 +186,13 @@ describe('an own-props narrowing gts-ts calls compatible', () => {
     const old = schema(1, { tone: { type: 'string' } }, []);
     const fresh = schema(1, { tone: { type: 'string', enum: ['info', 'warning'] } }, []);
     const decision = checkRealCompat(old, fresh);
-    expect(decision.status).toBe('fail');
+    expect(decision.decision).toBe('fail');
     expect(decision.notes[0]).toContain('own prop "tone" enum constraint added');
   });
 
   it('accepts the same change with the contract major moved', () => {
     const old = schema(1, { tone: { type: 'string' } }, []);
     const fresh = schema(2, { tone: { type: 'string', enum: ['info', 'warning'] } }, []);
-    expect(checkRealCompat(old, fresh).status).toBe('pass');
+    expect(checkRealCompat(old, fresh).decision).toBe('pass');
   });
 });

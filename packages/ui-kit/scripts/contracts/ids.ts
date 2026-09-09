@@ -12,14 +12,6 @@
 // Fixed vendor.package prefix every kit-owned GTS type shares.
 export const VENDOR_PACKAGE = 'frontx.uikit';
 
-// The namespace every component type lives in - the abstract one every
-// contract derives from, and each component's own derived type. A GTS
-// segment is vendor.package.namespace.type.vMAJOR, so the namespace is what
-// says "this is a component of the kit's UI surface" and the type token is
-// the component itself: `frontx.uikit.ui.button.v1~`, not a repeated
-// `component` token, and no hierarchy word in front of it.
-export const UI_NAMESPACE = 'ui';
-
 // The contract major a component carries when its overlay states none - the
 // number a compatibility check requires a component to move when its props
 // schema stops being backward compatible with what shipped before.
@@ -50,7 +42,7 @@ export const METAMODEL_VERSION = '1.0.0';
 // which versions the field vocabulary a contract is compiled against.
 export const METAMODEL_TYPE_ID = `gts.${VENDOR_PACKAGE}.meta.component.v1`;
 
-// GTS type id of ui.component.json, the abstract parent every component
+// GTS type id of base.component.json, the abstract parent every component
 // props schema derives from. Fixed major, independent of a component's own
 // contract major: it is the root every component chains from, not any one
 // component's own contract.
@@ -61,7 +53,7 @@ export const METAMODEL_TYPE_ID = `gts.${VENDOR_PACKAGE}.meta.component.v1`;
 // prefix outright), so every reference value - an instance's props_schema,
 // a `dont_use_when` recommendation, an accepted component - is spelled bare,
 // and only schema keywords carry `gts://`.
-export const BASE_TYPE_ID_BARE = `gts.${VENDOR_PACKAGE}.${UI_NAMESPACE}.component.v1~`;
+export const BASE_TYPE_ID_BARE = `gts.${VENDOR_PACKAGE}.base.component.v1~`;
 export const BASE_TYPE_ID = `gts://${BASE_TYPE_ID_BARE}`;
 
 // Strips the `gts://` prefix off an id that carries it. One helper rather
@@ -147,7 +139,7 @@ export function gtsToken(component: string): string {
 // @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-identifiers:p2
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-props-schema
 export function componentTypeRef(component: string, major: number): string {
-  return `${BASE_TYPE_ID_BARE}${VENDOR_PACKAGE}.${UI_NAMESPACE}.${gtsToken(component)}.v${major}~`;
+  return `${BASE_TYPE_ID_BARE}${VENDOR_PACKAGE}.component.${gtsToken(component)}.v${major}~`;
 }
 
 // The same id in the URI form a JSON Schema `$id` has to carry.
@@ -161,7 +153,7 @@ export function propsSchemaId(component: string, major: number): string {
 // INSTANCE id does not.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-instance
 export function instanceId(component: string, major: number): string {
-  return `${METAMODEL_TYPE_ID}~${VENDOR_PACKAGE}.${UI_NAMESPACE}.${gtsToken(component)}.v${major}`;
+  return `${METAMODEL_TYPE_ID}~${VENDOR_PACKAGE}.component.${gtsToken(component)}.v${major}`;
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-instance
 
@@ -175,8 +167,8 @@ function escapeRegExp(text: string): string {
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-patterns
 
 // The segment shared by every place a component reference is spelled: the
-// vendor.package prefix, the UI namespace, the snake_case name, a version.
-// The id patterns below all chain onto this rather than restating it.
+// vendor.package prefix, `component`, the snake_case name, a version. The
+// id patterns below all chain onto this rather than restating it.
 // `captureName` wraps the name token in a capture group - the conformance
 // test needs the matched name back (to turn a dont_use_when recommendation
 // into a directory it can check exists); the metamodel's own pattern fields
@@ -184,7 +176,7 @@ function escapeRegExp(text: string): string {
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-patterns
 function componentSegmentPattern(captureName = false): string {
   const name = captureName ? '([a-z_][a-z0-9_]*)' : '[a-z_][a-z0-9_]*';
-  return `${escapeRegExp(`${VENDOR_PACKAGE}.${UI_NAMESPACE}`)}\\.${name}\\.v\\d+`;
+  return `${escapeRegExp(VENDOR_PACKAGE)}\\.component\\.${name}\\.v\\d+`;
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-patterns
 

@@ -1,0 +1,30 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.recommendation.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit recommendation",
+  "description": "Where a \"don't\" sends the reader instead. `target` is required and is what a person acts on, named as plainly as they will have to act on it. `component` is added when the kit ships one, so a resolver has an identifier to follow - and its absence is the honest statement that the kit ships nothing for this case, which naming the nearest kit component as a stand-in hid: that read to a resolver as a real recommendation and to an agent as an instruction to reach for the component the rule was written to steer it away from.",
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What to use instead, in the words a reader will act on - a component name, a primitive, the consuming application's own thing."
+    },
+    "component": {
+      "type": "string",
+      "pattern": "^gts\\.frontx\\.uikit\\.base\\.component\\.v1~frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
+      "x-gts-ref": "gts.frontx.uikit.base.component.v1~*",
+      "description": "GTS id of another kit component: the props schema derived from the abstract component type. `x-gts-ref` declares what it must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating.",
+      "$comment": "GTS tokens are snake_case; kit directories are kebab-case (navigation_menu -> navigation-menu)."
+    },
+    "note": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Why this is the answer, when `target` alone does not say it - typically why no kit component fits, and what the kit does offer for the neighbouring case."
+    }
+  },
+  "required": [
+    "target"
+  ],
+  "additionalProperties": false
+}

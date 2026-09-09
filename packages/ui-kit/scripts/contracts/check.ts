@@ -452,7 +452,7 @@ function checkCompatForUnit(
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-new
   if (oldRaw === undefined) {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-new-return
-    return { component, isNew: true, removed: false, status: 'pass', notes: [`${component}: new contract (absent at ${base})`] };
+    return { component, isNew: true, removed: false, decision: 'pass', notes: [`${component}: new contract (absent at ${base})`] };
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-new-return
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-new
@@ -562,7 +562,7 @@ function checkCompatForUnit(
   });
   const notes = decision.notes.map((note) => `${note}${renamedFromNote}`);
   if (comparison.note !== undefined) notes.push(comparison.note);
-  return { component, isNew: false, removed: false, status: decision.status, notes, basePath };
+  return { component, isNew: false, removed: false, decision: decision.decision, notes, basePath };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-decide
 }
 
@@ -597,7 +597,7 @@ export function runCompat(base: string, options: { json: boolean }, ctx: CheckCo
   });
   for (const removal of removals) {
     const decision = decideRemoval(removal);
-    results.push({ component: removal.stem, isNew: false, removed: true, status: decision.status, notes: decision.notes });
+    results.push({ component: removal.stem, isNew: false, removed: true, decision: decision.decision, notes: decision.notes });
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-removal:p1:inst-cr-sweep
 
@@ -608,7 +608,7 @@ export function runCompat(base: string, options: { json: boolean }, ctx: CheckCo
   }
 
   // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-compat-exit
-  const failed = results.some((result) => result.status === 'fail');
+  const failed = results.some((result) => result.decision === 'fail');
   // @cpt-end:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-compat-exit
 
   if (options.json) {
@@ -616,7 +616,7 @@ export function runCompat(base: string, options: { json: boolean }, ctx: CheckCo
   } else {
     for (const result of results) {
       const label =
-        result.status === 'fail' ? 'FAIL' : result.removed ? 'REMOVED' : result.isNew ? 'NEW' : 'PASS';
+        result.decision === 'fail' ? 'FAIL' : result.removed ? 'REMOVED' : result.isNew ? 'NEW' : 'PASS';
       ctx.log(`[${label}] ${result.notes.join(' ')}`);
     }
   }
@@ -676,9 +676,9 @@ export function runGuard(base: string, options: { json: boolean }, ctx: CheckCon
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
   const enrollmentChanged = touchesEnrollmentList(changedFiles);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
-  // An overlay's children list decides another component's derived parent, so
-  // an edit to any overlay can move a contract in a directory this change
-  // never touched.
+  // An overlay's accepted components decide another component's mount
+  // points, so an edit to any overlay can move a contract in a directory this
+  // change never touched.
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-overlay
   const overlayChanged = touchesAnyOverlay(changedFiles);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-overlay
@@ -732,7 +732,10 @@ export function runGuard(base: string, options: { json: boolean }, ctx: CheckCon
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-overlay
     if (overlayChanged) {
-      ctx.log('guard: an overlay changed - re-checking every enrolled component, because a children list decides another component\'s derived parent.');
+      ctx.log(
+        'guard: an overlay changed - re-checking every enrolled component, because one overlay\'s accepted components ' +
+          "decide another component's mount points.",
+      );
     }
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-overlay
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-deps

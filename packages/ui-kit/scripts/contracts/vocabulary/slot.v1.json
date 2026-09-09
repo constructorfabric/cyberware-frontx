@@ -1,0 +1,28 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.slot.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit slot",
+  "description": "A prop the consumer supplies whose type this schema cannot assert - a growth point declared at the component level instead of enumerating every prop a plugin author might touch (DataTable's `columns` accepts arbitrary third-party ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed).",
+  "type": "object",
+  "properties": {
+    "prop": {
+      "type": "string",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+      "description": "Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test."
+    },
+    "typed_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "prop",
+    "typed_by",
+    "description"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,26 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.attestation.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit attestation",
+  "description": "The answer to one claim a contract makes about itself, plus who or what established it. \"failed\" (looked at, does not hold) and \"unknown\" (nobody looked) are different answers and may not collapse into one. `by` is optional and names a role, a suite or a primitive's own behaviour - never a person: a \"verified\" nothing attributes is a claim a later reader cannot re-check.",
+  "type": "object",
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "verified",
+        "failed",
+        "unknown"
+      ]
+    },
+    "by": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What established the outcome: a test suite, a review, the behaviour the primitive underneath already guarantees. A role or an artifact, not a person."
+    }
+  },
+  "required": [
+    "outcome"
+  ],
+  "additionalProperties": false
+}

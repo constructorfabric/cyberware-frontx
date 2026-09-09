@@ -2,19 +2,12 @@
   "$id": "gts://gts.frontx.uikit.meta.component.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UiKit component metamodel",
-  "description": "Shape of a component contract INSTANCE. The contract is itself a GTS-typed value: every <component>.contract.instance.json validates against this type, so the metamodel is enforced by the same validator that enforces component props instead of by prose. The props schema the instance points at (props_schema) is a separate GTS type and is not described here.",
+  "description": "Shape of a component contract INSTANCE: a typed record naming the component's props schema and the surface of the host element it renders. Every <component>.contract.instance.json validates against this type, so the record's structure is enforced by the same validator that enforces component props instead of by prose. What the component MEANS is not here: it lives once, in the props schema's own x-gts-traits, and this document points at it rather than copying it. The props schema is a separate GTS type and is not described here either.",
   "type": "object",
-  "$defs": {
-    "invariant_id": {
-      "type": "string",
-      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
-      "description": "Stable kebab-case handle. Lint findings and evals cite it; never reused after removal."
-    }
-  },
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^gts\\.frontx\\.uikit\\.meta\\.component\\.v1~frontx\\.uikit\\.ui\\.[a-z_][a-z0-9_]*\\.v\\d+$",
+      "pattern": "^gts\\.frontx\\.uikit\\.meta\\.component\\.v1~frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+$",
       "description": "GTS instance id: this metamodel's type id, then the instance segment. The instance segment carries exactly 5 dot-tokens (frontx.uikit.component.<name>.v<n>)."
     },
     "gts_type": {
@@ -29,177 +22,14 @@
     "component": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*$",
-      "description": "Kit directory name under src/components/, or - for one export of a compound component (see `family`) - that export's own kebab-case stem, which shares the directory's name as a prefix (accordion-item lives in src/components/accordion/)."
+      "description": "Kit directory name under src/components/, or - for one export of a compound component - that export's own kebab-case stem, which shares the directory's name as a prefix (accordion-item lives in src/components/accordion/)."
     },
-    "intent": {
+    "props_schema": {
       "type": "string",
-      "minLength": 1,
-      "description": "One sentence, the selection-card headline: why the component exists."
-    },
-    "typical_uses": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      },
-      "maxItems": 3,
-      "description": "A handful of archetypal scenarios this component fits - not an exhaustive selection rule, and not claimed to be one. Capped at 3 so the field stays a fast read; the component's full API is the actual source of truth for what it can do."
-    },
-    "dont_use_when": {
-      "type": "array",
-      "items": {
-        "$ref": "gts://gts.frontx.uikit.vocabulary.dont_use_when_rule.v1~"
-      },
-      "minItems": 1,
-      "description": "A \"don't\" without an alternative leaves the agent with no next move, so `instead` is required, and it is either a reference to a kit component (not a display name - a name resolves to nothing) or the external form for a case the kit ships no component for. At least one entry is required for the same reason: a component with nothing it should not be used for would be a modeling gap, not a fact worth leaving unstated."
-    },
-    "composition": {
-      "$ref": "gts://gts.frontx.uikit.vocabulary.composition.v1~"
-    },
-    "invariants": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "$ref": "#/$defs/invariant_id"
-          },
-          "text": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "id",
-          "text"
-        ],
-        "additionalProperties": false
-      }
-    },
-    "anti_patterns": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "dont": {
-            "type": "string",
-            "minLength": 1
-          },
-          "instead": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "dont",
-          "instead"
-        ],
-        "additionalProperties": false
-      },
-      "$comment": "`instead` here is prose about this component's own API, not a component type ref - the fix stays inside the component."
-    },
-    "deprecations": {
-      "$ref": "gts://gts.frontx.uikit.vocabulary.deprecations.v1~"
-    },
-    "coverage": {
-      "$ref": "gts://gts.frontx.uikit.vocabulary.coverage.v1~"
-    },
-    "examples": {
-      "type": "object",
-      "properties": {
-        "good": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "title": {
-                "type": "string",
-                "minLength": 1
-              },
-              "code": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "required": [
-              "title",
-              "code"
-            ],
-            "additionalProperties": false
-          },
-          "minItems": 1
-        },
-        "bad": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "title": {
-                "type": "string",
-                "minLength": 1
-              },
-              "code": {
-                "type": "string",
-                "minLength": 1
-              },
-              "why": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "required": [
-              "title",
-              "code",
-              "why"
-            ],
-            "additionalProperties": false,
-            "$comment": "`why` is required: a counter-example without its reason teaches pattern-matching, not the rule."
-          },
-          "minItems": 1
-        }
-      },
-      "required": [
-        "good",
-        "bad"
-      ],
-      "additionalProperties": false
-    },
-    "family": {
-      "$ref": "gts://gts.frontx.uikit.vocabulary.family.v1~",
-      "description": "Absent entirely for a component with no family - Button, most of the kit."
-    },
-    "extension_points": {
-      "type": "array",
-      "description": "Growth points a consumer extends this component through, declared once at the component level instead of enumerating every plugin-shaped prop individually (DataTable's `columns` accepts arbitrary third-party ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed). Absent entirely for a component with no such surface - Button, Accordion, most of the kit.",
-      "items": {
-        "$ref": "gts://gts.frontx.uikit.vocabulary.extension_point.v1~"
-      },
-      "minItems": 1
-    },
-    "withheld": {
-      "type": "array",
-      "description": "Props of the primitive underneath that this kit does not advertise, so they are left out of the contract's own properties - each with the reason it is not advertised, because a bare name leaves every later reader to rediscover why the prop is gone. Every `prop` is checked against the extracted prop list - a name the primitive no longer declares fails the compile rather than withholding nothing - and may not name a prop the component declares itself, which would be the overlay asking the compiler to drop what the source states. Absent for a component that advertises everything it forwards, which is most of them.",
-      "items": {
-        "type": "object",
-        "properties": {
-          "prop": {
-            "type": "string",
-            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-            "description": "Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test."
-          },
-          "reason": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Why the kit does not advertise this prop: the component fact that makes offering it wrong, not a restatement of the name."
-          }
-        },
-        "required": [
-          "prop",
-          "reason"
-        ],
-        "additionalProperties": false
-      },
-      "minItems": 1
+      "pattern": "^gts\\.frontx\\.uikit\\.base\\.component\\.v1~frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
+      "x-gts-ref": "gts.frontx.uikit.base.component.v1~*",
+      "description": "GTS id of the props schema this instance is about: the compiled JSON Schema carrying axes, defaults, normative props and, in its x-gts-traits, everything the component means. A derived-type id - the abstract base component type, then the component's own segment - so the reference also asserts that the props schema really is a child of the base and not a lookalike.",
+      "$comment": "Two segments of 5 dot-tokens each after the fixed `gts.` scheme prefix - the shape gts-ts's Gts.parseSegment accepts (vendor.package.namespace.type.vMAJOR)."
     },
     "host_element": {
       "type": "string",
@@ -207,13 +37,6 @@
       "x-gts-ref": "gts.frontx.uikit.element.*",
       "description": "GTS id of the hand-written surface for the host element this component renders - what it forwards to that element. HELD as an id, not composed into the schema as a second parent: a contract derives from ONE type, the abstract component type, and a surface shared kit-wide by every component that renders the same element is not a second thing this component IS. Whoever needs the surface resolves it through this reference and applies it beside the contract; nothing in the props schema merges it in. `x-gts-ref` declares what the value must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating. Absent entirely for a component that renders no host element of its own - DataTable, which renders its Table internally.",
       "$comment": "The element token, not the tag: `dom_button` for a <button>, normalized by domElementToken - the same token the committed file under scripts/contracts/elements/ is named by, so the reference and the file name are one identity."
-    },
-    "props_schema": {
-      "type": "string",
-      "pattern": "^gts\\.frontx\\.uikit\\.ui\\.component\\.v1~frontx\\.uikit\\.ui\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
-      "x-gts-ref": "gts.frontx.uikit.ui.component.v1~*",
-      "description": "GTS id of the machine-owned half: the compiled JSON Schema carrying axes, defaults and normative props. Split so the semantic half stays readable and the props half stays a plain provider-safe schema. A derived-type id: the abstract component type, then the component's own segment, so the reference also asserts that the props schema really is a child of the abstract type and not a lookalike.",
-      "$comment": "Two segments of 5 dot-tokens each after the fixed `gts.` scheme prefix - the shape gts-ts's Gts.parseSegment accepts (vendor.package.namespace.type.vMAJOR)."
     }
   },
   "required": [
@@ -221,15 +44,6 @@
     "gts_type",
     "metamodel",
     "component",
-    "intent",
-    "typical_uses",
-    "dont_use_when",
-    "composition",
-    "invariants",
-    "anti_patterns",
-    "deprecations",
-    "coverage",
-    "examples",
     "props_schema"
   ],
   "additionalProperties": false

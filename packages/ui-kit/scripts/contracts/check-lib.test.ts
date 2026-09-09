@@ -202,18 +202,18 @@ describe('decideCompat', () => {
   const base = { component: 'button', oldMajor: 1, newMajor: 1, gtsBackwardCompatible: true, gtsBackwardErrors: [] };
 
   it('passes when nothing is incompatible', () => {
-    expect(decideCompat(base).status).toBe('pass');
+    expect(decideCompat(base).decision).toBe('pass');
   });
 
   it('fails a backward-incompatible schema change at an unchanged major', () => {
     const decision = decideCompat({ ...base, gtsBackwardCompatible: false, gtsBackwardErrors: ["Required property 'foo' removed in new schema"] });
-    expect(decision.status).toBe('fail');
+    expect(decision.decision).toBe('fail');
     expect(decision.notes[0]).toContain('unchanged');
   });
 
   it('passes a backward-incompatible schema change when the major moved, with a note', () => {
     const decision = decideCompat({ ...base, newMajor: 2, gtsBackwardCompatible: false, gtsBackwardErrors: ['type changed'] });
-    expect(decision.status).toBe('pass');
+    expect(decision.decision).toBe('pass');
     expect(decision.notes[0]).toContain('v1 -> v2');
   });
 
@@ -222,7 +222,7 @@ describe('decideCompat', () => {
       ...base,
       elementSurfaceDiff: { added: [], removed: ['form'], narrowed: [], compatible: false },
     });
-    expect(decision.status).toBe('fail');
+    expect(decision.decision).toBe('fail');
     expect(decision.notes[0]).toContain('element surface: prop "form" removed');
   });
 
@@ -231,13 +231,13 @@ describe('decideCompat', () => {
       ...base,
       ownPropsDiff: { removedProps: [], newlyRequiredProps: ['id'], narrowedProps: [], movedToForwardedSurface: [], compatible: false },
     });
-    expect(decision.status).toBe('fail');
+    expect(decision.decision).toBe('fail');
     expect(decision.notes[0]).toContain('own prop "id" became required');
   });
 });
 
 describe('extractContractMajor / synthesizeVersionedId', () => {
-  const id = 'gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.button.v1~';
+  const id = 'gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~';
 
   it('reads the major off the trailing version segment', () => {
     expect(extractContractMajor(id)).toBe(1);
@@ -245,7 +245,7 @@ describe('extractContractMajor / synthesizeVersionedId', () => {
 
   it('synthesizes a distinct, still-major-1 id by inserting a minor before the trailing tilde', () => {
     const synthetic = synthesizeVersionedId(id, 0);
-    expect(synthetic).toBe('gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.button.v1.0~');
+    expect(synthetic).toBe('gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1.0~');
     expect(extractContractMajor(synthetic)).toBe(1);
   });
 
@@ -334,7 +334,7 @@ describe('touchesSharedContractTooling', () => {
       'scripts/contracts/extract.ts',
       'scripts/contracts/ids.ts',
       'scripts/contracts/ui-component.meta.json',
-      'scripts/contracts/ui.component.json',
+      'scripts/contracts/base.component.json',
     ]) {
       expect(touchesSharedContractTooling([file])).toBe(true);
     }
@@ -381,13 +381,13 @@ describe('touchesSharedContractTooling', () => {
 
 describe('resolveRenameSource', () => {
   const baseContracts = [
-    { path: 'src/components/accordion/accordion-item.contract.json', id: 'gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v1~', stem: 'accordion-item' },
+    { path: 'src/components/accordion/accordion-item.contract.json', id: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~', stem: 'accordion-item' },
   ];
 
   it('prefers gits own rename detection when it named a source path', () => {
     const source = resolveRenameSource({
       currentPath: 'src/components/accordion/accordion-part.contract.json',
-      currentId: 'gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_part.v1~',
+      currentId: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_part.v1~',
       currentStem: 'accordion-part',
       renamedFrom: 'src/components/accordion/accordion-item.contract.json',
       baseContracts,
@@ -398,7 +398,7 @@ describe('resolveRenameSource', () => {
   it('falls back to matching by $id when git named no rename source', () => {
     const source = resolveRenameSource({
       currentPath: 'src/components/accordion-part/accordion-item.contract.json',
-      currentId: 'gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v1~',
+      currentId: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~',
       currentStem: 'accordion-item',
       baseContracts,
     });
@@ -408,7 +408,7 @@ describe('resolveRenameSource', () => {
   it('falls back to matching by stem when neither rename detection nor $id matched', () => {
     const source = resolveRenameSource({
       currentPath: 'src/components/accordion-v2/accordion-item.contract.json',
-      currentId: 'gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v2~',
+      currentId: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v2~',
       currentStem: 'accordion-item',
       baseContracts,
     });
@@ -418,7 +418,7 @@ describe('resolveRenameSource', () => {
   it('is undefined when nothing at the base ref matches by any signal - genuinely new', () => {
     const source = resolveRenameSource({
       currentPath: 'src/components/data-table/data-table.contract.json',
-      currentId: 'gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.data_table.v1~',
+      currentId: 'gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.data_table.v1~',
       currentStem: 'data-table',
       baseContracts,
     });
@@ -516,12 +516,12 @@ describe('classifyProps', () => {
   it('counts a contract prop, an element attribute and a pattern match as known', () => {
     const report = classifyProps({ variant: 'ghost', title: 'x', 'aria-label': 'y', onClick: () => {} }, contract, elementSurface);
     expect(report.known).toEqual(['aria-label', 'onClick', 'title', 'variant']);
-    expect(report.unknown).toEqual([]);
+    expect(report.unchecked).toEqual([]);
   });
 
-  it('reports a name nothing accounts for as unknown, not as an error', () => {
+  it('reports a name nothing accounts for as unchecked, not as an error', () => {
     const report = classifyProps({ tooltip: 'x' }, contract, elementSurface);
-    expect(report.unknown).toEqual(['tooltip']);
+    expect(report.unchecked).toEqual(['tooltip']);
     expect(report.nearMiss).toEqual([]);
   });
 
@@ -537,10 +537,10 @@ describe('classifyProps', () => {
     }
   });
 
-  it('leaves a two-edit miss unknown - a guess that far off is noise', () => {
+  it('leaves a two-edit miss unchecked - a guess that far off is noise', () => {
     const report = classifyProps({ varant: 'ghost', vrient: 'ghost' }, contract, elementSurface);
     expect(report.nearMiss.map((entry) => entry.prop)).toEqual(['varant']);
-    expect(report.unknown).toEqual(['varant', 'vrient']);
+    expect(report.unchecked).toEqual(['varant', 'vrient']);
   });
 
   it('decides a near miss of a contract prop before a surface pattern can claim the name', () => {
@@ -550,28 +550,28 @@ describe('classifyProps', () => {
     const handlers = { properties: { onValueChange: {}, variant: {} } };
     const report = classifyProps({ onValuechange: () => {} }, handlers, elementSurface);
     expect(report.known).toEqual([]);
-    expect(report.unknown).toEqual(['onValuechange']);
+    expect(report.unchecked).toEqual(['onValuechange']);
     expect(report.nearMiss).toEqual([{ prop: 'onValuechange', probably: 'onValueChange' }]);
   });
 
   it('still counts a pattern match no contract prop is one edit from as known', () => {
     const report = classifyProps({ onFocus: () => {}, 'data-testid': 'x' }, contract, elementSurface);
     expect(report.known).toEqual(['data-testid', 'onFocus']);
-    expect(report.unknown).toEqual([]);
+    expect(report.unchecked).toEqual([]);
   });
 
   it('does not treat a near-miss of an element attribute as a near miss', () => {
     // A typo in a DOM attribute is React's business; reporting it here would
     // make the report noisier than the closure it replaced.
     const report = classifyProps({ titl: 'x' }, contract, elementSurface);
-    expect(report.unknown).toEqual(['titl']);
+    expect(report.unchecked).toEqual(['titl']);
     expect(report.nearMiss).toEqual([]);
   });
 
   it('works with no element surface at all - a component that forwards nothing', () => {
     const report = classifyProps({ variant: 'ghost', className: 'x' }, contract);
     expect(report.known).toEqual(['variant']);
-    expect(report.unknown).toEqual(['className']);
+    expect(report.unchecked).toEqual(['className']);
   });
 });
 

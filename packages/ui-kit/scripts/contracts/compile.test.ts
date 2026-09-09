@@ -21,8 +21,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildBaseSchema,
+  buildFamilyRoster,
   buildGtsTraitsSchema,
   buildMetamodel,
+  buildOverlaySchema,
   buildPropsAndRequired,
   buildVocabularyTypes,
   describeUntypeableProperty,
@@ -159,7 +161,7 @@ describe('describeUntypeableProperty', () => {
 });
 
 
-describe('the vocabulary the base type and the metamodel reference', () => {
+describe('the vocabulary the base type references', () => {
   const builtIds = new Set(buildVocabularyTypes().map((type) => String(type.$id)));
 
   function gtsRefs(node: unknown, found: string[] = []): string[] {
@@ -177,11 +179,16 @@ describe('the vocabulary the base type and the metamodel reference', () => {
   }
 
   it('is complete: every reference resolves to a type the builder writes', () => {
-    // A field added to the x-gts-traits-schema or the metamodel naming a type
-    // nobody builds would fail at validation time with "Unresolvable trait
-    // schema reference", far from the edit that caused it. This is that
-    // failure moved to the build.
-    const referenced = new Set([...gtsRefs(buildBaseSchema()), ...gtsRefs(buildMetamodel()), ...gtsRefs(buildVocabularyTypes())]);
+    // A field added to the x-gts-traits-schema, the overlay schema or the
+    // metamodel naming a type nobody builds would fail at validation time
+    // with "Unresolvable trait schema reference", far from the edit that
+    // caused it. This is that failure moved to the build.
+    const referenced = new Set([
+      ...gtsRefs(buildBaseSchema()),
+      ...gtsRefs(buildMetamodel()),
+      ...gtsRefs(buildOverlaySchema()),
+      ...gtsRefs(buildVocabularyTypes()),
+    ]);
     expect([...referenced].filter((ref) => !builtIds.has(ref))).toEqual([]);
   });
 
@@ -191,7 +198,7 @@ describe('the vocabulary the base type and the metamodel reference', () => {
     // position of the `$ref` key, so a `type` written before it is
     // overwritten by the referenced type's own `object` and `family: null`
     // silently stops validating for every component that omits the field.
-    const family = (buildGtsTraitsSchema().properties as Record<string, Record<string, unknown>>).family;
+    const family = (buildGtsTraitsSchema().properties as Record<string, Record<string, unknown>>).family_membership;
     expect(Object.keys(family)[0]).toBe('$ref');
     expect(family.type).toEqual(['object', 'null']);
     expect(family.default).toBeNull();
@@ -212,5 +219,43 @@ describe('a boolean cva axis', () => {
 
   it('leaves a string axis a string enum with its own default', () => {
     expect(properties.emphasis).toEqual({ type: 'string', enum: ['low', 'high'], default: 'low' });
+  });
+});
+
+describe('who belongs to one family', () => {
+  const root = { ref: 'root-ref', stem: 'accordion', membership: { name: 'accordion', role: 'root' as const } };
+  const item = { ref: 'item-ref', stem: 'accordion-item', membership: { name: 'accordion', role: 'part' as const } };
+  const trigger = { ref: 'trigger-ref', stem: 'accordion-trigger', membership: { name: 'accordion', role: 'part' as const } };
+  const stranger = { ref: 'button-ref', stem: 'button', membership: undefined };
+
+  it('collects the root and its parts by the token every member names', () => {
+    // Membership is one statement each member makes about itself, so the
+    // family's whole shape is a group-by over those statements - which is what
+    // makes a root's `members` derivable instead of authored.
+    expect(buildFamilyRoster('accordion', [trigger, stranger, root, item])).toEqual({
+      name: 'accordion',
+      root: 'root-ref',
+      parts: ['item-ref', 'trigger-ref'],
+    });
+  });
+
+  it('refuses two roots for one family name, naming both', () => {
+    // The rule that makes the derivation well-defined at all: with two roots
+    // there is no single place a reader can ask what the family contains, and
+    // which one won would depend on the order a directory listing came back
+    // in.
+    const second = { ref: 'other-ref', stem: 'accordion-panel', membership: { name: 'accordion', role: 'root' as const } };
+    expect(() => buildFamilyRoster('accordion', [root, item, second])).toThrow(/two roots.*accordion.*accordion-panel/s);
+  });
+
+  it('answers with no root for a family nobody roots', () => {
+    // Reported rather than thrown here: the refusal belongs to the component
+    // being compiled (compileFamilyMembership), which can name itself in the
+    // message; this function only says what it found.
+    expect(buildFamilyRoster('accordion', [item, trigger])).toEqual({ name: 'accordion', root: undefined, parts: ['item-ref', 'trigger-ref'] });
+  });
+
+  it('is empty for a family name nothing names', () => {
+    expect(buildFamilyRoster('carousel', [root, item, stranger])).toEqual({ name: 'carousel', root: undefined, parts: [] });
   });
 });

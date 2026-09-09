@@ -1,11 +1,11 @@
 {
-  "$id": "gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_content.v1~",
+  "$id": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_content.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UiKit AccordionContent",
   "type": "object",
   "allOf": [
     {
-      "$ref": "gts://gts.frontx.uikit.ui.component.v1~"
+      "$ref": "gts://gts.frontx.uikit.base.component.v1~"
     }
   ],
   "properties": {
@@ -27,13 +27,34 @@
   },
   "required": [],
   "unevaluatedProperties": {
-    "x-uikit-classification": "unknown"
+    "x-uikit-classification": "unchecked"
   },
   "x-uikit": {
     "metamodel": "1.0.0",
+    "slots": {},
+    "variant_sources": [],
+    "cannot_extract": []
+  },
+  "x-gts-traits": {
     "intent": "The height-animated panel revealed when its AccordionItem is open.",
     "typical_uses": [
       "The single body/detail child of an AccordionItem, shown when it is open"
+    ],
+    "dont_use_when": [
+      {
+        "situation": "Content that must stay visible regardless of any item's open state",
+        "instead": {
+          "target": "Card",
+          "component": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~"
+        }
+      }
+    ],
+    "accepts": {
+      "content": "specified",
+      "text": true
+    },
+    "mounted_in": [
+      "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
     ],
     "invariants": [
       {
@@ -45,6 +66,32 @@
       {
         "dont": "Rely on the panel's content being mounted while its item is closed",
         "instead": "Set `keepMounted` on the Accordion root if closed-panel content must stay in the DOM (e.g. for in-page search); otherwise assume it unmounts"
+      }
+    ],
+    "deprecations": {},
+    "attestations": {
+      "a11y": {
+        "outcome": "verified",
+        "by": "Base UI's Accordion.Panel - panel visibility and the hiddenUntilFound wiring"
+      }
+    },
+    "untyped": [
+      {
+        "about": "behaviour",
+        "claim": "keepMounted and hiddenUntilFound are usually set on the Accordion root, not per panel",
+        "reason": "Base UI accepts both on the panel as well, and this contract lists them because the panel really does take them; accordion.md documents them on the root, which is where one setting covers every panel of one accordion. Setting them here overrides that root setting for this panel alone."
+      },
+      {
+        "about": "prop",
+        "prop": "render",
+        "claim": "render replaces the panel element with one the caller supplies",
+        "reason": "Base UI's render prop takes an element or a function of the panel's state; neither is expressible in JSON Schema. The panel is the element Base UI writes `--accordion-panel-height` on, so a replaced element still has to be the one the height animation measures."
+      },
+      {
+        "about": "prop",
+        "prop": "style",
+        "claim": "style accepts a function of the panel's state as well as a plain style object",
+        "reason": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
       }
     ],
     "examples": {
@@ -62,54 +109,8 @@
         }
       ]
     },
-    "slots": {},
-    "variant_sources": [],
-    "cannot_extract": []
-  },
-  "x-gts-traits": {
-    "dont_use_when": [
-      {
-        "rule": "Content that must stay visible regardless of any item's open state",
-        "instead": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.card.v1~"
-      }
-    ],
-    "composition": {
-      "children": {
-        "kinds": [
-          "text"
-        ]
-      },
-      "parent": {
-        "kinds": [
-          "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v1~"
-        ]
-      }
-    },
-    "deprecations": {},
-    "coverage": {
-      "a11y": "verified",
-      "assumptions": [
-        {
-          "kind": "behaviour",
-          "claim": "keepMounted and hiddenUntilFound are usually set on the Accordion root, not per panel",
-          "reason": "Base UI accepts both on the panel as well, and this contract lists them because the panel really does take them; accordion.md documents them on the root, which is where one setting covers every panel of one accordion. Setting them here overrides that root setting for this panel alone."
-        },
-        {
-          "kind": "untyped_prop",
-          "prop": "render",
-          "claim": "render replaces the panel element with one the caller supplies",
-          "reason": "Base UI's render prop takes an element or a function of the panel's state; neither is expressible in JSON Schema. The panel is the element Base UI writes `--accordion-panel-height` on, so a replaced element still has to be the one the height animation measures."
-        },
-        {
-          "kind": "untyped_prop",
-          "prop": "style",
-          "claim": "style accepts a function of the panel's state as well as a plain style object",
-          "reason": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
-        }
-      ]
-    },
-    "family": {
-      "root": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion.v1~",
+    "family_membership": {
+      "name": "accordion",
       "role": "part"
     },
     "host_element": "gts.frontx.uikit.element.dom_div.v1~"

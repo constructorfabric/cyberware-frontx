@@ -1,0 +1,24 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.outside_mount.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit outside mount",
+  "description": "A mount point outside the kit: the one entry in `mounted_in` an overlay writes, because there is no contract to derive it from. Both halves are required - the container is what a reader acts on, and the note is why no kit component fits, which is the whole reason this shape exists rather than the nearest component standing in for one.",
+  "type": "object",
+  "properties": {
+    "container": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Where the component is mounted, named as plainly as the reader will have to act on it - the kit ships no component for it, so there is no id to resolve."
+    },
+    "note": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Why the mount point is outside the kit, and what that container hands the component - a live instance, a render callback's arguments."
+    }
+  },
+  "required": [
+    "container",
+    "note"
+  ],
+  "additionalProperties": false
+}

@@ -356,7 +356,7 @@ export interface CompatDecisionInput {
 }
 
 export interface CompatDecision {
-  status: 'pass' | 'fail';
+  decision: 'pass' | 'fail';
   notes: string[];
 }
 
@@ -390,7 +390,7 @@ export function decideCompat(input: CompatDecisionInput): CompatDecision {
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass
   if (!incompatible) {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass-return
-    return { status: 'pass', notes: [`${component}: backward compatible`, ...moved] };
+    return { decision: 'pass', notes: [`${component}: backward compatible`, ...moved] };
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass-return
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass
@@ -410,7 +410,7 @@ export function decideCompat(input: CompatDecisionInput): CompatDecision {
   if (newMajor > oldMajor) {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-major-return
     return {
-      status: 'pass',
+      decision: 'pass',
       notes: [`${component}: backward-incompatible, but the contract major moved v${oldMajor} -> v${newMajor}: ${reasons.join('; ')}`, ...moved],
     };
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-major-return
@@ -419,7 +419,7 @@ export function decideCompat(input: CompatDecisionInput): CompatDecision {
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-fail
   return {
-    status: 'fail',
+    decision: 'fail',
     notes: [`${component}: backward-incompatible at contract major v${oldMajor} (unchanged) - ${reasons.join('; ')}`, ...moved],
   };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-fail
@@ -484,7 +484,7 @@ const CONTRACTS_TOOLING_PREFIX = 'scripts/contracts/';
 // circular, since check.ts is what performs that check), its unit tests,
 // and prose. Everything else directly under scripts/contracts/ (compile.ts,
 // extract.ts, ids.ts, freshness.ts, testing.ts, check-lib.ts,
-// ui.component.json, ui-component.meta.json, every committed element
+// base.component.json, ui-component.meta.json, every committed element
 // surface) participates in producing or comparing EVERY enrolled component's
 // compiled output, so a change to any of it invalidates the "only the
 // touched directory needs re-checking" assumption mapChangedFilesToComponents
@@ -543,13 +543,13 @@ export function touchesEnrollmentList(changedFiles: string[]): boolean {
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-widen-allowlist
 
-// A third widening signal, and the one the derived `parent` made necessary: a
-// component's allowed mount points are computed from every OTHER overlay's
-// `composition.children`, so editing one overlay's children list changes the
-// compiled contract of whatever component that list names - a component in a
-// different directory, which no change-set mapping would put in scope. The
-// guard would then report the edited directory as fresh and never look at the
-// contract the edit actually moved.
+// A third widening signal, and the one the filled `mounted_in` made
+// necessary: a component's mount points are computed from every OTHER
+// overlay's `accepts.components`, so editing one overlay's accepted list
+// changes the compiled contract of whatever component that list names - a
+// component in a different directory, which no change-set mapping would put
+// in scope. The guard would then report the edited directory as fresh and
+// never look at the contract the edit actually moved.
 //
 // Its own signal rather than a widening of touchesSharedContractTooling, for
 // the same reason the allowlist has one: the two reasons stay distinguishable
@@ -671,14 +671,14 @@ export function findRemovedContracts(input: {
 export function decideRemoval(removal: ContractRemoval): CompatDecision {
   if (removal.acknowledged) {
     return {
-      status: 'pass',
+      decision: 'pass',
       notes: [
         `${removal.stem}: contract removed (${removal.path} at the base ref) - "${removal.directory}" is no longer in enrolled.json, so the removal is acknowledged`,
       ],
     };
   }
   return {
-    status: 'fail',
+    decision: 'fail',
     notes: [
       `${removal.stem}: contract removed (${removal.path} at the base ref) while "${removal.directory}" is still listed in enrolled.json - a removed contract resolves to nothing for a consumer holding it; drop the enrolled.json entry to acknowledge the removal, or restore the contract`,
     ],
@@ -860,7 +860,7 @@ export interface DirectoryExportEnrollment {
 // attribute, a prop of a primitive part nobody has described) - and only the
 // first is a mistake. Splitting them needs a comparison the schema cannot
 // make: `variannt` is an error because `variant` exists, while `tooltip` is
-// merely unknown. So the schema admits everything and annotates the
+// merely unchecked. So the schema admits everything and annotates the
 // classification (compile.ts's OPEN_UNEVALUATED), and this is where the
 // classification is decided.
 //
@@ -885,8 +885,8 @@ export interface PropsClassification {
   known: string[];
   // Accounted for by nothing. Not an error on its own: the schema admits it
   // and says so.
-  unknown: string[];
-  // The subset of `unknown` within one edit of a prop the CONTRACT declares
+  unchecked: string[];
+  // The subset of `unchecked` within one edit of a prop the CONTRACT declares
   // - the kit's own API, not the DOM surface underneath it, because a
   // near-miss of `className` is a typo in a DOM attribute and a near-miss of
   // `variant` is a typo in the thing this contract exists to describe. Each
@@ -929,7 +929,7 @@ export function classifyProps(
   const declared = new Set(contractProps);
 
   const known: string[] = [];
-  const unknown: string[] = [];
+  const unchecked: string[] = [];
   const nearMiss: { prop: string; probably: string }[] = [];
 
   for (const name of Object.keys(props).sort()) {
@@ -946,7 +946,7 @@ export function classifyProps(
     // contract this report exists to protect.
     const probably = contractProps.filter((candidate) => editDistance(name, candidate) === 1).sort()[0];
     if (probably !== undefined) {
-      unknown.push(name);
+      unchecked.push(name);
       nearMiss.push({ prop: name, probably });
       continue;
     }
@@ -955,10 +955,10 @@ export function classifyProps(
       known.push(name);
       continue;
     }
-    unknown.push(name);
+    unchecked.push(name);
   }
 
-  return { known, unknown, nearMiss };
+  return { known, unchecked, nearMiss };
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-classify
 
@@ -967,7 +967,7 @@ export function classifyProps(
 // surfaces are hand-written, and their completeness is deliberately
 // unverified: nobody enumerates React's attributes for an element, so an
 // attribute the file does not name is not an error - it is a prop that
-// reaches a consumer as unknown instead of as known. What was missing was
+// reaches a consumer as unchecked instead of as known. What was missing was
 // any way to SEE that set, which is what this is: a report the enrollment
 // command prints and no exit code is derived from.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-enrollment:p2:inst-en-forwarded

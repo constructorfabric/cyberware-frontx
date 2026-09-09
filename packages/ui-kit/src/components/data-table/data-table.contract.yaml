@@ -2,13 +2,12 @@
 #
 # Two contracts live in this directory (see data-table-sort-button.contract.yaml
 # for the other): DataTable and DataTableSortButton are two independent
-# top-level exports, not a compound family like Accordion's root/parts - so
-# neither sets `family`. Every OTHER export of this file
+# top-level exports, not a compound family like Accordion's root and parts - so
+# neither states a family. Every OTHER export of this file
 # (dataTableColumnHelper, dataTableFeatures, dataTableSelectionColumn,
-# DataTableSelectionColumnLabels) is a function or type, not a React
-# component - the extractor does not generate a contract for them at all
-# (see PILOT-NOTES.md's "coverage counting" note), and three of them show up
-# here instead, as `extension_points`.
+# DataTableSelectionColumnLabels) is a function or a type, not a React
+# component - the extractor generates no contract for them at all, and three of
+# them show up here instead, as `companions`.
 component: data-table
 
 intent: Render tabular data with sorting, optional row selection, and pagination from one columns/data pair.
@@ -19,16 +18,18 @@ typical_uses:
   - Paged results the user steps through instead of scrolling one long list
 
 dont_use_when:
-  - rule: Static markup with no sorting, selection or pagination need
-    instead: gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.table.v1~ # Table
+  - situation: Static markup with no sorting, selection or pagination need
+    instead:
+      target: Table
+      component: gts.frontx.uikit.base.component.v1~frontx.uikit.component.table.v1~
 
-composition:
-  # DataTable takes no children at all - not even text: DataTableProps has no
-  # `children` field, and the component renders Table/TableHeader/TableBody
-  # internally from `columns`/`data`. "text" would claim a slot that does not
-  # exist, so this is "none", not an empty or omitted composition.
-  children:
-    kinds: [none]
+# DataTable takes no children at all - not even text: DataTableProps has no
+# `children` field, and the component renders Table/TableHeader/TableBody
+# internally from `columns`/`data`. "text" would claim a slot that does not
+# exist, and an absent statement would read as unconstrained, so `content` is
+# "nothing" and carries no detail beside it.
+accepts:
+  content: nothing
 
 invariants:
   - id: columns-and-data-share-row-type
@@ -58,63 +59,65 @@ anti_patterns:
 
 deprecations: {}
 
-coverage:
-  a11y: unknown
-  rtl: unknown
-  assumptions:
-    - kind: behaviour
-      claim: sorting, row-selection and pagination state are internal, not props
-      reason: >-
-        `sorting`/`rowSelection`/`pagination` are component-owned useState,
-        never lifted to DataTableProps, so there is no way to preset or
-        control them - "DataTable is sortable/selectable/paginated" is
-        discoverable only from `columns`' own fields and
-        `enableRowSelection`. A consumer needing controlled state builds
-        against `useTable` directly (see the dataTableFeatures extension
-        point).
-    - kind: untyped_prop
-      prop: columns
-      claim: columns is an array of @tanstack/react-table ColumnDef objects, generic over TData
-      reason: >-
-        ColumnDef carries function-valued fields (header/cell render
-        functions among them) from a third-party package this contract does
-        not own, and it is generic over the row type - a type parameter has
-        no JSON Schema representation either. Declared as an extension_point
-        rather than enumerated.
-    - kind: untyped_prop
-      prop: data
-      claim: data is an array of the caller's own row type
-      reason: >-
-        `TData[]` - a generic type parameter, so there is no shape to assert
-        without a concrete consumer. It must be the same `TData` the
-        `columns` were built for; that pairing is a call-site type error, not
-        something this schema can check.
-    - kind: untyped_prop
-      prop: selectionSummary
-      claim: selectionSummary is a function prop, not data
-      reason: >-
-        `(selected, total) => ReactNode` has no JSON Schema representation;
-        it is a function returning a plurals-aware sentence, not a value
-        this schema can assert shape against.
-    - kind: untyped_prop
-      prop: emptyMessage
-      claim: emptyMessage is a React node, not a string
-      reason: >-
-        `ReactNode` - an element, a string or a fragment, all valid and
-        indistinguishable to JSON Schema. It replaces the whole
-        "no results" row body, so an element is the usual case.
-    - kind: untyped_prop
-      prop: previousLabel
-      claim: previousLabel is a React node, not a string
-      reason: >-
-        `ReactNode`, so an icon or an element is as valid as a string. It is
-        the pagination button's own label, which is why it is a node rather
-        than a translated string this component would have to own.
-    - kind: untyped_prop
-      prop: nextLabel
-      claim: nextLabel is a React node, not a string
-      reason: >-
-        `ReactNode`, same as previousLabel above and for the same reason.
+attestations:
+  a11y:
+    outcome: unknown
+  rtl:
+    outcome: unknown
+
+untyped:
+  - about: behaviour
+    claim: sorting, row-selection and pagination state are internal, not props
+    reason: >-
+      `sorting`/`rowSelection`/`pagination` are component-owned useState,
+      never lifted to DataTableProps, so there is no way to preset or
+      control them - "DataTable is sortable/selectable/paginated" is
+      discoverable only from `columns`' own fields and
+      `enableRowSelection`. A consumer needing controlled state builds
+      against `useTable` directly (see the dataTableFeatures companion).
+  - about: prop
+    prop: columns
+    claim: columns is an array of @tanstack/react-table ColumnDef objects, generic over TData
+    reason: >-
+      ColumnDef carries function-valued fields (header/cell render
+      functions among them) from a third-party package this contract does
+      not own, and it is generic over the row type - a type parameter has
+      no JSON Schema representation either. Declared as a slot rather than
+      enumerated.
+  - about: prop
+    prop: data
+    claim: data is an array of the caller's own row type
+    reason: >-
+      `TData[]` - a generic type parameter, so there is no shape to assert
+      without a concrete consumer. It must be the same `TData` the
+      `columns` were built for; that pairing is a call-site type error, not
+      something this schema can check.
+  - about: prop
+    prop: selectionSummary
+    claim: selectionSummary is a function prop, not data
+    reason: >-
+      `(selected, total) => ReactNode` has no JSON Schema representation;
+      it is a function returning a plurals-aware sentence, not a value
+      this schema can assert shape against.
+  - about: prop
+    prop: emptyMessage
+    claim: emptyMessage is a React node, not a string
+    reason: >-
+      `ReactNode` - an element, a string or a fragment, all valid and
+      indistinguishable to JSON Schema. It replaces the whole
+      "no results" row body, so an element is the usual case.
+  - about: prop
+    prop: previousLabel
+    claim: previousLabel is a React node, not a string
+    reason: >-
+      `ReactNode`, so an icon or an element is as valid as a string. It is
+      the pagination button's own label, which is why it is a node rather
+      than a translated string this component would have to own.
+  - about: prop
+    prop: nextLabel
+    claim: nextLabel is a React node, not a string
+    reason: >-
+      `ReactNode`, same as previousLabel above and for the same reason.
 
 examples:
   good:
@@ -139,28 +142,38 @@ examples:
         flag and the column are independent opt-ins, and this omits the
         second one.
 
-extension_points:
-  - name: columns
-    kind: prop
+# The prop a consumer fills whose type this schema cannot assert.
+slots:
+  - prop: columns
+    typed_by: '@tanstack/react-table ColumnDef<DataTableFeatures, TData>'
     description: >-
       Column definitions - what data each column reads, how its header and
       cells render, and whether it participates in sorting. The one required
       way to shape what DataTable renders.
-    typed_by: '@tanstack/react-table ColumnDef<DataTableFeatures, TData>'
-  - name: dataTableColumnHelper
-    kind: helper
-    description: A createColumnHelper pre-bound to DataTableFeatures - the one column helper every DataTable column def should be built with.
+
+# What a consumer turns on, and the prop that turns it on.
+capabilities:
+  - name: row_selection
+    enabled_by: enableRowSelection
+    typed_by: '@tanstack/react-table rowSelectionFeature, one of the three features dataTableFeatures registers'
+    description: >-
+      Rows become selectable and the footer reports "N of M row(s) selected".
+      The checkbox column is a separate opt-in: it appears only when `columns`
+      also includes one built with `dataTableSelectionColumn()`.
+
+# The exports beside the component that a consumer builds its input with.
+companions:
+  - export: dataTableColumnHelper
     typed_by: '@tanstack/react-table createColumnHelper, pre-bound to DataTableFeatures'
-  - name: dataTableSelectionColumn
-    kind: helper
-    description: Ready-made row-selection column (checkbox header/cell) a consumer spreads into `columns` to opt into selectable rows.
+    description: A createColumnHelper pre-bound to DataTableFeatures - the one column helper every DataTable column def should be built with.
+  - export: dataTableSelectionColumn
     typed_by: 'returns @tanstack/react-table ColumnDef<DataTableFeatures, TData>'
-  - name: dataTableFeatures
-    kind: feature
+    description: Ready-made row-selection column (checkbox header/cell) a consumer spreads into `columns` to opt into selectable rows.
+  - export: dataTableFeatures
+    typed_by: '@tanstack/react-table tableFeatures({ rowSelectionFeature, rowSortingFeature, rowPaginationFeature, ... })'
     description: >-
       The fixed TanStack Table v9 feature set DataTable registers - row
-      selection, row sorting, row pagination. Not itself configurable per
-      instance; a consumer needing a different feature set (filtering,
-      column visibility, grouping, ...) builds directly against `useTable`
-      instead (see data-table.md's Escape hatch).
-    typed_by: '@tanstack/react-table tableFeatures({ rowSelectionFeature, rowSortingFeature, rowPaginationFeature, ... })'
+      selection, row sorting, row pagination. Not configurable per instance;
+      a consumer needing a different feature set (filtering, column
+      visibility, grouping, ...) builds directly against `useTable` with this
+      set as the starting point (see data-table.md's Escape hatch).

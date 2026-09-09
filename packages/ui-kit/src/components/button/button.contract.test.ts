@@ -21,6 +21,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addContractTypes,
+  ANNOTATION_KEYWORDS,
   assertOverlayReferencesRealProps,
   assertValidatesAgainst,
   BASE_TYPE_ID,
@@ -30,7 +31,6 @@ import {
   compileContract,
   compileInstance,
   compilePropsValidator,
-  isExternalAlternative,
   loadBaseSchema,
   loadElementSurface,
   OPEN_UNEVALUATED,
@@ -76,6 +76,9 @@ applyContractTestTimeout();
 assertContractFreshness('button');
 
 const contract = compileContract('button');
+// Everything Button MEANS, read where it is emitted: once, in the contract's
+// own x-gts-traits. The instance names this contract and repeats none of it.
+const meaning = contract['x-gts-traits'];
 const instance = compileInstance('button');
 const baseSchema = loadBaseSchema();
 // The element Button renders, and the hand-written type for it - shared with
@@ -140,7 +143,7 @@ describe('button contract conformance', () => {
     for (const prop of Object.keys(contract['x-gts-traits'].deprecations.props ?? {})) {
       expect(known, `deprecated prop "${prop}" is not a real prop`).toContain(prop);
     }
-    const iconsVia = contract['x-gts-traits'].composition.children?.icons_via;
+    const iconsVia = contract['x-gts-traits'].accepts.icons_via;
     if (iconsVia !== undefined) {
       expect(known).toContain(iconsVia);
     }
@@ -155,15 +158,15 @@ describe('button contract conformance', () => {
     expect(parsed.ok, parsed.error).toBe(true);
     // Two segments: the parent type, then this component's own. Each carries
     // 5 dot-tokens (vendor.package.namespace.type.vMAJOR) - the token count
-    // Gts.parseSegment enforces, and the reason the abstract type is
-    // `...ui.component.v1~` rather than the one-token-shorter
+    // Gts.parseSegment enforces, and the reason the base type is
+    // `...base.component.v1~` rather than the one-token-shorter
     // `...component.v1~`, which parses as "Too few tokens". `ui` is the
     // namespace both segments share; the type token is `component` for the
     // abstract parent and the component's own name for the derived type, so
     // neither repeats the word `component` nor carries a hierarchy word.
     expect(parsed.segments.map((segment) => segment.segment)).toEqual([
-      'frontx.uikit.ui.component.v1~',
-      'frontx.uikit.ui.button.v1~',
+      'frontx.uikit.base.component.v1~',
+      'frontx.uikit.component.button.v1~',
     ]);
     for (const segment of parsed.segments) {
       expect(segment.isType, `${segment.segment} is not a type segment`).toBe(true);
@@ -174,7 +177,7 @@ describe('button contract conformance', () => {
     // Chained id and schema body must agree on the parent: gts-ts reads the
     // FIRST $ref in allOf as the parent (store.findParentRef), and the id is
     // that parent's id plus this component's segment. Whether the COMMITTED
-    // ui.component.json's own $id equals BASE_TYPE_ID is N5's concern, not
+    // base.component.json's own $id equals BASE_TYPE_ID is N5's concern, not
     // this test's: assertContractFreshness's baseSchemaDiff (testing.ts)
     // already checks that centrally, byte-for-byte against buildBaseSchema(),
     // for every component that calls it - a second, narrower literal check
@@ -202,7 +205,7 @@ describe('button contract conformance', () => {
     // `properties`, so it would reject every forwarded attribute the moment a
     // validator composed the host element's surface in beside the contract.
     expect(contract.unevaluatedProperties).toEqual(OPEN_UNEVALUATED);
-    expect(contract.unevaluatedProperties[CLASSIFICATION_KEY]).toBe('unknown');
+    expect(contract.unevaluatedProperties[CLASSIFICATION_KEY]).toBe('unchecked');
     expect(contract).not.toHaveProperty('additionalProperties');
   });
 
@@ -313,10 +316,10 @@ describe('button props validation', () => {
     const validate = compileValidator();
     expect(validate({ type: 'sumbit' })).toBe(false);
     const contractAlone = new Ajv2020();
-    contractAlone.addKeyword({ keyword: 'x-uikit' });
-    contractAlone.addKeyword({ keyword: 'x-gts-traits' });
-    contractAlone.addKeyword({ keyword: 'x-gts-traits-schema' });
-    contractAlone.addKeyword({ keyword: CLASSIFICATION_KEY });
+    // The kit's own annotations, declared the one way every other Ajv
+    // instance here declares them (compile.ts's ANNOTATION_KEYWORDS), so a
+    // keyword added to that list does not have to be remembered again here.
+    for (const keyword of ANNOTATION_KEYWORDS) contractAlone.addKeyword({ keyword });
     contractAlone.addSchema(baseSchema);
     expect(contractAlone.compile(contract)({ type: 'sumbit' })).toBe(true);
   });
@@ -340,7 +343,7 @@ describe('the props-classification report', () => {
   // What replaced closure. The schema admits every name; this is where a name
   // gets a classification, and it is the one that can make the distinction Ajv
   // cannot: a near-miss of a kit prop is an error, an unrecognized name is
-  // merely unknown.
+  // merely unchecked.
   const surface = elementSurface as { properties?: Record<string, unknown>; patternProperties?: Record<string, unknown> };
 
   it('counts a kit prop, a forwarded attribute and a pattern match as known', () => {
@@ -350,22 +353,22 @@ describe('the props-classification report', () => {
       surface,
     );
     expect(report.known).toEqual(['aria-label', 'data-testid', 'disabled', 'nativeButton', 'onClick', 'variant']);
-    expect(report.unknown).toEqual([]);
+    expect(report.unchecked).toEqual([]);
     expect(report.nearMiss).toEqual([]);
   });
 
   it('upgrades a one-edit miss of a kit prop to a near miss, naming what it is probably meant to be', () => {
     const report = classifyProps({ variannt: 'ghost' }, contract, surface);
-    expect(report.unknown).toEqual(['variannt']);
+    expect(report.unchecked).toEqual(['variannt']);
     expect(report.nearMiss).toEqual([{ prop: 'variannt', probably: 'variant' }]);
   });
 
-  it('leaves an unrecognized name unknown rather than calling it an error', () => {
+  it('leaves an unrecognized name unchecked rather than calling it an error', () => {
     // `tooltip` is not one edit from any prop Button declares. The honest
     // answer is that nothing here checks it - which is a report, not a
     // refusal, and the distinction the open schema exists to preserve.
     const report = classifyProps({ tooltip: 'Delete' }, contract, surface);
-    expect(report.unknown).toEqual(['tooltip']);
+    expect(report.unchecked).toEqual(['tooltip']);
     expect(report.nearMiss).toEqual([]);
   });
 
@@ -378,18 +381,18 @@ describe('the props-classification report', () => {
     const nearOwn = classifyProps({ classNam: 'x' }, contract, surface);
     expect(nearOwn.nearMiss).toEqual([{ prop: 'classNam', probably: 'className' }]);
     const nearElement = classifyProps({ titl: 'x' }, contract, surface);
-    expect(nearElement.unknown).toEqual(['titl']);
+    expect(nearElement.unchecked).toEqual(['titl']);
     expect(nearElement.nearMiss).toEqual([]);
   });
 
-  it('treats a withheld prop as unknown, because the kit does not offer it', () => {
+  it('treats a withheld prop as unchecked, because the kit does not offer it', () => {
     // Accordion's root withholds `orientation`; Button withholds nothing, so this
     // checks the mechanism on the contract that has one - a withheld prop is
-    // not in `properties`, so it lands in `unknown` exactly like any other
+    // not in `properties`, so it lands in `unchecked` exactly like any other
     // name the contract does not account for.
     const accordion = compileContract('accordion');
     const report = classifyProps({ orientation: 'horizontal' }, accordion, undefined);
-    expect(report.unknown).toEqual(['orientation']);
+    expect(report.unchecked).toEqual(['orientation']);
   });
 });
 
@@ -401,12 +404,17 @@ const validOverlay: Overlay = {
   component: 'button',
   intent: 'Trigger a single action in the current context.',
   typical_uses: ['A one-off action with an immediate effect'],
-  dont_use_when: [{ rule: 'Navigation between routes or pages', instead: 'gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.navigation_menu.v1~' }],
-  composition: { children: { kinds: ['text'] } },
+  dont_use_when: [
+    {
+      situation: 'Navigation between routes or pages',
+      instead: { target: 'NavigationMenu', component: 'gts.frontx.uikit.base.component.v1~frontx.uikit.component.navigation_menu.v1~' },
+    },
+  ],
+  accepts: { content: 'specified', text: true },
   invariants: [],
   anti_patterns: [],
   deprecations: {},
-  coverage: {},
+  attestations: {},
   examples: {
     good: [{ title: 'Minimal use', code: '<Button />' }],
     bad: [{ title: 'Minimal misuse', code: '<Button />', why: 'placeholder reason' }],
@@ -424,26 +432,25 @@ describe('overlay and extraction safety', () => {
     expect(() => parseOverlay('button', withUnknownKey)).toThrow('button');
   });
 
-  it('accepts an alternative that lives outside the kit', () => {
-    // The widened `instead`: a rule whose honest answer is "not a component
-    // of this kit" no longer has to name the nearest kit component to
-    // satisfy a required ref. `note` is optional, so the minimal form is
-    // what this checks.
-    const external = {
+  it('accepts a recommendation the kit ships no component for', () => {
+    // `component` is optional and its ABSENCE is the statement: a rule whose
+    // honest answer is "not a component of this kit" no longer has to name the
+    // nearest kit component to satisfy a required reference.
+    const outside = {
       ...validOverlay,
-      dont_use_when: [{ rule: 'Navigation between routes or pages', instead: { external: "the consumer app's link component" } }],
+      dont_use_when: [{ situation: 'Navigation between routes or pages', instead: { target: "the consuming app's link component" } }],
     };
-    expect(parseOverlay('button', external)).toEqual(external);
+    expect(parseOverlay('button', outside)).toEqual(outside);
   });
 
-  it('rejects an external alternative that does not say what to use', () => {
+  it('rejects a recommendation that does not say what to use', () => {
     // A `note` alone is a reason with no next move - the same gap a "don't"
     // without an "instead" leaves, one level down.
     const reasonOnly = {
       ...validOverlay,
-      dont_use_when: [{ rule: 'Navigation between routes or pages', instead: { note: 'the kit ships no Link component' } }],
+      dont_use_when: [{ situation: 'Navigation between routes or pages', instead: { note: 'the kit ships no Link component' } }],
     };
-    expect(() => parseOverlay('button', reasonOnly)).toThrow(/external/);
+    expect(() => parseOverlay('button', reasonOnly)).toThrow(/target/);
   });
 
   it('rejects an overlay that restates a machine-owned field, by name', () => {
@@ -546,14 +553,14 @@ describe('overlay and extraction safety', () => {
     );
   });
 
-  it('rejects an overlay whose composition.children.icons_via references a prop that does not exist', () => {
+  it('rejects an overlay whose accepts.icons_via references a prop that does not exist', () => {
     const staleOverlay: Overlay = {
       ...validOverlay,
-      composition: { children: { kinds: ['text'], icons_via: 'ghostIcon' } },
+      accepts: { content: 'specified', text: true, icons_via: 'ghostIcon' },
     };
     const extraction = syntheticExtraction([]);
     expect(() => assertOverlayReferencesRealProps('button', staleOverlay, extraction)).toThrow(
-      /composition\.children\.icons_via references "ghostIcon"/,
+      /accepts\.icons_via references "ghostIcon"/,
     );
   });
 
@@ -578,15 +585,53 @@ describe('overlay and extraction safety', () => {
     expect(buildMetamodel().properties).not.toHaveProperty('major');
   });
 
-  it('rejects an overlay that writes composition.parent, pointing at mounts_in', () => {
-    // Derived from every other contract's children, so an authored copy is
-    // the second writable statement of one fact - the shape that let a part
-    // name a parent whose children did not name it back.
-    const authoredParent = {
+  it('rejects an overlay that writes a component reference in mounted_in, pointing at what fills it', () => {
+    // Filled from every other contract's accepted components, so an authored
+    // copy is a second writable statement of one fact - the shape that let a
+    // part name a parent whose own accepted list did not name it back.
+    const authoredMount = {
       ...validOverlay,
-      composition: { children: { kinds: ['text'] }, parent: { kinds: ['gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.card.v1~'] } },
+      mounted_in: ['gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~'],
     };
-    expect(() => parseOverlay('button', authoredParent)).toThrow(/composition\.parent.*mounts_in/s);
+    expect(() => parseOverlay('button', authoredMount)).toThrow(/mounted_in.*FILLS.*accepts\.components/s);
+  });
+
+  it('rejects an overlay that writes a container outside the kit with no reason', () => {
+    // Both halves of an outside mount are required: the container is what a
+    // reader acts on, and the note is why no kit component fits - which is the
+    // whole reason the shape exists rather than the nearest component standing
+    // in for one.
+    const containerOnly = { ...validOverlay, mounted_in: [{ container: "a column's header render function" }] };
+    expect(() => parseOverlay('button', containerOnly)).toThrow(/note/);
+  });
+
+  it('rejects an overlay that writes a family root\'s member list', () => {
+    // Filled on the root from every contract naming the same family as a
+    // part: membership is one statement each member makes about itself.
+    const authoredMembers = {
+      ...validOverlay,
+      family_membership: {
+        name: 'button',
+        role: 'root',
+        members: ['gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~'],
+      },
+    };
+    expect(() => parseOverlay('button', authoredMembers)).toThrow(/family_membership\.members.*FILLS/s);
+  });
+
+  it('rejects accepted components or text without content: specified', () => {
+    // The one contradiction the vocabulary refuses outright: `content` already
+    // answered the question for `unconstrained` and `nothing`, so detail
+    // beside either says both that nothing may appear inside and that
+    // something may.
+    for (const accepts of [
+      { content: 'nothing', text: true },
+      { content: 'unconstrained', components: ['gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~'] },
+    ]) {
+      expect(() => parseOverlay('button', { ...validOverlay, accepts }), JSON.stringify(accepts)).toThrow(/accepts/);
+    }
+    // And the mirror: `specified` with no detail says nothing at all.
+    expect(() => parseOverlay('button', { ...validOverlay, accepts: { content: 'specified' } })).toThrow(/accepts/);
   });
 
   it('rejects a withheld name the primitive underneath does not declare', () => {
@@ -608,30 +653,37 @@ describe('overlay and extraction safety', () => {
     expect(() => assertOverlayReferencesRealProps('button', stale, extraction)).toThrow(/declares itself/);
   });
 
-  it('rejects an untyped_prop assumption naming a prop that does not exist', () => {
+  it('rejects an untyped statement naming a prop that does not exist', () => {
     const stale: Overlay = {
       ...validOverlay,
-      coverage: {
-        assumptions: [{ kind: 'untyped_prop', prop: 'ghostIcon', claim: 'placeholder', reason: 'placeholder' }],
-      },
+      untyped: [{ about: 'prop', prop: 'ghostIcon', claim: 'placeholder', reason: 'placeholder' }],
     };
     const extraction = syntheticExtraction([]);
     expect(() => assertOverlayReferencesRealProps('button', stale, extraction)).toThrow(
-      /untyped_prop assumption references "ghostIcon"/,
+      /untyped statement references the prop "ghostIcon"/,
     );
   });
 
-  it('rejects an untyped_prop assumption that names no prop at all', () => {
-    // The metamodel's own if/then makes `prop` required for this kind, so
+  it('rejects an untyped statement about a prop that names no prop at all', () => {
+    // The vocabulary's own if/then makes `prop` required for this subject, so
     // this is the belt to that braces: an overlay bypassing the schema (a
     // test fixture, a future caller building an Overlay by hand) still fails
-    // rather than producing an assumption nothing can be paired with.
-    const stale = {
+    // rather than producing a statement nothing can be paired with.
+    const stale: Overlay = {
       ...validOverlay,
-      coverage: { assumptions: [{ kind: 'untyped_prop' as const, claim: 'placeholder', reason: 'placeholder' }] },
+      untyped: [{ about: 'prop', claim: 'placeholder', reason: 'placeholder' }],
     };
     const extraction = syntheticExtraction([]);
     expect(() => assertOverlayReferencesRealProps('button', stale, extraction)).toThrow(/names no prop/);
+  });
+
+  it('rejects an untyped statement about anything else that names a prop', () => {
+    // The mirror of the rule above, enforced by the vocabulary: a claim about
+    // internal state or an unexposed part is not about a property, so naming
+    // one would make it pair-checkable against a property that has nothing to
+    // do with it.
+    const stale = { ...validOverlay, untyped: [{ about: 'behaviour', prop: 'icon', claim: 'placeholder', reason: 'placeholder' }] };
+    expect(() => parseOverlay('button', stale)).toThrow(/untyped/);
   });
 });
 
@@ -691,26 +743,23 @@ describe('button contract instance', () => {
     expect(instance.props_schema).toBe(bareGtsId(contract.$id));
   });
 
-  it("carries the navigation rule's alternative as an external one, in the instance and in the validator-read block", () => {
+  it("recommends something outside the kit for the navigation rule, and names no component for it", () => {
     // The kit ships no Link component. While `instead` could only be a
-    // component ref, this rule pointed at NavigationMenu as a stand-in, and
-    // agents reading the contract opened NavigationMenu for a single link -
-    // a resolver had no way to tell a real recommendation from a placeholder.
-    const navigation = instance.dont_use_when.find((entry) => entry.rule === 'Navigation between routes or pages');
-    if (navigation === undefined || !isExternalAlternative(navigation.instead)) {
-      throw new Error("Button's navigation rule no longer names an alternative outside the kit");
-    }
-    expect(navigation.instead.external).toMatch(/link component/);
-    // The same entry reaches the half a validator reads, not only the
-    // instance a catalog reads.
-    expect(contract['x-gts-traits'].dont_use_when).toContainEqual(navigation);
+    // component reference, this rule pointed at NavigationMenu as a stand-in,
+    // and agents reading the contract opened NavigationMenu for a single link
+    // - a resolver had no way to tell a real recommendation from a
+    // placeholder. The absence of `component` is now that statement.
+    const navigation = meaning.dont_use_when.find((entry) => entry.situation === 'Navigation between routes or pages');
+    if (navigation === undefined) throw new Error("Button's navigation rule is gone");
+    expect(navigation.instead.target).toMatch(/link component/);
+    expect(navigation.instead.component).toBeUndefined();
   });
 
   it('every good example is syntactically valid TSX', () => {
     // Syntax only. Real CI runs these through a tsc program against the kit's
     // own declarations, which also catches a prop that does not exist or has
     // the wrong type; that needs the built .d.ts, so the demo stops at parse.
-    for (const { title, code } of instance.examples.good) {
+    for (const { title, code } of meaning.examples.good) {
       const { diagnostics } = ts.transpileModule(code, {
         fileName: 'example.tsx',
         reportDiagnostics: true,
@@ -722,8 +771,8 @@ describe('button contract instance', () => {
   });
 
   it('every bad example says why it is bad', () => {
-    expect(instance.examples.bad.length).toBeGreaterThan(0);
-    for (const { title, why } of instance.examples.bad) {
+    expect(meaning.examples.bad.length).toBeGreaterThan(0);
+    for (const { title, why } of meaning.examples.bad) {
       expect(why.trim(), `bad example "${title}" has no reason`).not.toBe('');
     }
   });
@@ -803,7 +852,7 @@ describe('button contract in a GTS store', () => {
   });
 
   it('the abstract component type alone never resolves its own x-gts-traits-schema - a leaf must supply the values', () => {
-    // ui.component.json declares x-gts-traits-schema but carries no
+    // base.component.json declares x-gts-traits-schema but carries no
     // x-gts-traits of its own: it is the abstract parent, not a component.
     // Validated by itself (no derived contract in the chain to supply real
     // values), GtsStore.validateSchemaTraits' "unresolved trait property"
@@ -811,7 +860,7 @@ describe('button contract in a GTS store', () => {
     // deprecations, coverage) with neither a value nor a default, and fails.
     // Asserted here on purpose, not silently dropped from the loop above: a
     // component's OWN contract is the only place those values can come
-    // from, which "validates x-gts-traits against ui.component.json's
+    // from, which "validates x-gts-traits against base.component.json's
     // x-gts-traits-schema" below proves for the case that matters.
     const gts = new GTS();
     gts.register(baseSchema);
@@ -866,7 +915,7 @@ describe('button contract in a GTS store', () => {
     expect(result.error).toContain('Unresolvable trait schema reference');
   });
 
-  it("validates x-gts-traits against ui.component.json's x-gts-traits-schema", () => {
+  it("validates x-gts-traits against base.component.json's x-gts-traits-schema", () => {
     // validateContractTraits (testing.ts) documents which gts-ts API this
     // goes through: GTS.validateEntity, which for a derived schema like this
     // one calls both GtsStore.validateSchemaAgainstParent (whose last step
@@ -887,7 +936,7 @@ describe('button contract in a GTS store', () => {
       ...contract,
       'x-gts-traits': {
         ...contract['x-gts-traits'],
-        dont_use_when: [{ rule: 'placeholder', instead: 'not-a-gts-id' }],
+        dont_use_when: [{ situation: 'placeholder', instead: { target: 'anything', component: 'not-a-gts-id' } }],
       },
     };
     const result = validateContractTraits(corrupted);

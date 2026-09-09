@@ -1,11 +1,11 @@
 {
-  "$id": "gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_trigger.v1~",
+  "$id": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UiKit AccordionTrigger",
   "type": "object",
   "allOf": [
     {
-      "$ref": "gts://gts.frontx.uikit.ui.component.v1~"
+      "$ref": "gts://gts.frontx.uikit.base.component.v1~"
     }
   ],
   "properties": {
@@ -24,13 +24,34 @@
   },
   "required": [],
   "unevaluatedProperties": {
-    "x-uikit-classification": "unknown"
+    "x-uikit-classification": "unchecked"
   },
   "x-uikit": {
     "metamodel": "1.0.0",
+    "slots": {},
+    "variant_sources": [],
+    "cannot_extract": []
+  },
+  "x-gts-traits": {
     "intent": "The clickable header that expands or collapses its AccordionItem.",
     "typical_uses": [
       "The single header/summary child of an AccordionItem"
+    ],
+    "dont_use_when": [
+      {
+        "situation": "A standalone button with no AccordionItem to expand or collapse",
+        "instead": {
+          "target": "Button",
+          "component": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~"
+        }
+      }
+    ],
+    "accepts": {
+      "content": "specified",
+      "text": true
+    },
+    "mounted_in": [
+      "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
     ],
     "invariants": [
       {
@@ -42,6 +63,32 @@
       {
         "dont": "Pass an icon element through children expecting it before the chevron",
         "instead": "Children are the trigger's text label only; the chevron is fixed and always trailing"
+      }
+    ],
+    "deprecations": {},
+    "attestations": {
+      "a11y": {
+        "outcome": "verified",
+        "by": "Base UI's Accordion.Header and Accordion.Trigger - focus handling and the aria-expanded/aria-controls wiring"
+      }
+    },
+    "untyped": [
+      {
+        "about": "unexposed_part",
+        "claim": "AccordionTrigger wraps two Base UI parts, Header and Trigger",
+        "reason": "The kit's AccordionTrigger composes Base UI's Accordion.Header (a plain wrapper, not separately exposed by the kit) around Accordion.Trigger into one exported component; this contract describes the exported surface, not the two-part internal composition, so Header's own props are not part of it."
+      },
+      {
+        "about": "prop",
+        "prop": "render",
+        "claim": "render replaces the trigger element with one the caller supplies",
+        "reason": "Base UI's render prop takes an element or a function of the trigger's state; neither is expressible in JSON Schema. The trailing chevron is rendered as a child, so it survives a replaced element."
+      },
+      {
+        "about": "prop",
+        "prop": "style",
+        "claim": "style accepts a function of the trigger's state as well as a plain style object",
+        "reason": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
       }
     ],
     "examples": {
@@ -59,54 +106,8 @@
         }
       ]
     },
-    "slots": {},
-    "variant_sources": [],
-    "cannot_extract": []
-  },
-  "x-gts-traits": {
-    "dont_use_when": [
-      {
-        "rule": "A standalone button with no AccordionItem to expand or collapse",
-        "instead": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.button.v1~"
-      }
-    ],
-    "composition": {
-      "children": {
-        "kinds": [
-          "text"
-        ]
-      },
-      "parent": {
-        "kinds": [
-          "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion_item.v1~"
-        ]
-      }
-    },
-    "deprecations": {},
-    "coverage": {
-      "a11y": "verified",
-      "assumptions": [
-        {
-          "kind": "unexposed_part",
-          "claim": "AccordionTrigger wraps two Base UI parts, Header and Trigger",
-          "reason": "The kit's AccordionTrigger composes Base UI's Accordion.Header (a plain wrapper, not separately exposed by the kit) around Accordion.Trigger into one exported component; this contract describes the exported surface, not the two-part internal composition, so Header's own props are not part of it."
-        },
-        {
-          "kind": "untyped_prop",
-          "prop": "render",
-          "claim": "render replaces the trigger element with one the caller supplies",
-          "reason": "Base UI's render prop takes an element or a function of the trigger's state; neither is expressible in JSON Schema. The trailing chevron is rendered as a child, so it survives a replaced element."
-        },
-        {
-          "kind": "untyped_prop",
-          "prop": "style",
-          "claim": "style accepts a function of the trigger's state as well as a plain style object",
-          "reason": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
-        }
-      ]
-    },
-    "family": {
-      "root": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.accordion.v1~",
+    "family_membership": {
+      "name": "accordion",
       "role": "part"
     },
     "host_element": "gts.frontx.uikit.element.dom_button.v1~"

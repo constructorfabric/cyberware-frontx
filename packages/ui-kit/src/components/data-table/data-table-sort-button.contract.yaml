@@ -3,8 +3,8 @@
 # part of DataTable the way AccordionItem is a part of Accordion: it is
 # mounted inside a column's `header` render function, which TanStack Table
 # owns, not a kit component with its own contract - so its mount point is
-# stated in `composition.mounts_in` below, the external form the typed
-# `parent` reference has nothing to hold.
+# stated in `mounted_in` below as a container outside the kit, which is the
+# one entry in that field an overlay writes.
 component: data-table-sort-button
 
 intent: A sortable column's header button, toggling that column's sort state and showing its current direction.
@@ -13,27 +13,30 @@ typical_uses:
   - The header render function of a sortable column in a DataTable
 
 dont_use_when:
-  - rule: A standalone action button with no column to sort
-    instead: gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.button.v1~ # Button
+  - situation: A standalone action button with no column to sort
+    instead:
+      target: Button
+      component: gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~
 
-composition:
-  children:
-    kinds: [text]
-    # `children` is the button's own label (e.g. "Email") - the trailing
-    # sort-direction arrow is fixed and always rendered alongside it, the
-    # same way AccordionTrigger's chevron is never part of children.
-  # The typed `parent` field covers kit-to-kit nesting only, and it is derived
-  # from other contracts' children rather than authored; a mount point that is
-  # not a kit component takes this form and is merged into `parent`.
-  mounts_in:
-    - external: >-
-        a column's `header` render function -
-        `header: ({ column }) => <DataTableSortButton column={column} />`
-      note: >-
-        TanStack Table's `header` is a plain function prop on `ColumnDef`,
-        not a kit component, so there is no component this could reference.
-        It is also where the live `column` instance comes from: outside that
-        call there is nothing to pass.
+accepts:
+  content: specified
+  # `text` is the button's own label (e.g. "Email") - the trailing
+  # sort-direction arrow is fixed and always rendered alongside it, the
+  # same way AccordionTrigger's chevron is never part of children.
+  text: true
+
+# The component references in `mounted_in` are filled from every other
+# contract's accepted components; a container OUTSIDE the kit has no contract
+# to fill it from, so it is authored here.
+mounted_in:
+  - container: >-
+      a column's `header` render function -
+      `header: ({ column }) => <DataTableSortButton column={column} />`
+    note: >-
+      TanStack Table's `header` is a plain function prop on `ColumnDef`,
+      not a kit component, so there is no component this could reference.
+      It is also where the live `column` instance comes from: outside that
+      call there is nothing to pass.
 
 invariants:
   - id: requires-a-real-column-instance
@@ -49,42 +52,44 @@ anti_patterns:
 
 deprecations: {}
 
-coverage:
-  a11y: unknown
-  assumptions:
-    - kind: untyped_prop
-      prop: column
-      claim: column is a live @tanstack/react-table Column instance, generic over TData and TValue
-      reason: >-
-        `Column<DataTableFeatures, TData, TValue>` carries methods
-        (`toggleSorting`, `getIsSorted`) and internal state, not a
-        serializable shape, and two of its three type arguments are the
-        caller's own type parameters - neither a live object nor a generic
-        has a JSON Schema representation. It is handed in by TanStack
-        Table's own render call; a consumer never constructs one.
-    - kind: untyped_prop
-      prop: children
-      claim: children is a React node - the column's label
-      reason: >-
-        `ReactNode`, so an element is as valid as a string. Required, because
-        a sort button with no label is a button whose only content is a
-        direction arrow.
-    - kind: unexposed_part
-      claim: DataTableSortButton composes the kit's own Button internally
-      reason: >-
-        It renders a `<Button variant="ghost" size="sm">` around its own
-        label and a trailing sort-arrow icon - this is internal composition
-        (JSX in DataTableSortButton's own render body), not a props-type
-        heritage relationship, so none of Button's own props reach this
-        contract: DataTableSortButtonProps declares
-        `column`/`children`/`className` itself and extends nothing.
-    - kind: external_mount
-      claim: its only real mount point is a column's header render function, which has no contract of its own
-      reason: >-
-        TanStack Table's `header: ({ column }) => ...` is a plain function
-        prop on `ColumnDef`, not a kit component, so `composition.mounts_in`
-        above states it in the external form rather than referencing a
-        component that does not exist.
+attestations:
+  a11y:
+    outcome: unknown
+
+untyped:
+  - about: prop
+    prop: column
+    claim: column is a live @tanstack/react-table Column instance, generic over TData and TValue
+    reason: >-
+      `Column<DataTableFeatures, TData, TValue>` carries methods
+      (`toggleSorting`, `getIsSorted`) and internal state, not a
+      serializable shape, and two of its three type arguments are the
+      caller's own type parameters - neither a live object nor a generic
+      has a JSON Schema representation. It is handed in by TanStack
+      Table's own render call; a consumer never constructs one.
+  - about: prop
+    prop: children
+    claim: children is a React node - the column's label
+    reason: >-
+      `ReactNode`, so an element is as valid as a string. Required, because
+      a sort button with no label is a button whose only content is a
+      direction arrow.
+  - about: unexposed_part
+    claim: DataTableSortButton composes the kit's own Button internally
+    reason: >-
+      It renders a `<Button variant="ghost" size="sm">` around its own
+      label and a trailing sort-arrow icon - this is internal composition
+      (JSX in DataTableSortButton's own render body), not a props-type
+      heritage relationship, so none of Button's own props reach this
+      contract: DataTableSortButtonProps declares
+      `column`/`children`/`className` itself and extends nothing.
+  - about: outside_mount
+    claim: its only real mount point is a column's header render function, which has no contract of its own
+    reason: >-
+      TanStack Table's `header: ({ column }) => ...` is a plain function
+      prop on `ColumnDef`, not a kit component, so `mounted_in` above
+      states it as a container outside the kit rather than referencing a
+      component that does not exist.
 
 examples:
   good:

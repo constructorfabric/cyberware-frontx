@@ -1,6 +1,6 @@
 // Conformance for both DataTable contracts (DataTable, DataTableSortButton)
 // - one file because they share a directory and the interesting assertions
-// (extension points, no host element, non-component exports correctly
+// (growth surfaces, no host element, non-component exports correctly
 // excluded from enrollment) are about the directory as a whole, not either
 // contract in isolation. See button.contract.test.ts for the per-component
 // conformance shape assertContractFreshness reuses.
@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addContractTypes,
+  buildGtsTraitsSchema,
   buildMetamodel,
   compileContract,
   compileInstance,
@@ -44,11 +45,18 @@ for (const stem of STEMS) assertContractFreshness(DIRECTORY, stem);
 interface CompiledUnit {
   stem: string;
   contract: CompiledContract;
+  // Everything the component means, read where it is emitted: once, in the
+  // contract's own x-gts-traits. The instance names the contract and repeats
+  // none of it.
+  meaning: CompiledContract['x-gts-traits'];
   instance: ContractInstance;
 }
 
 const units: Record<string, CompiledUnit> = Object.fromEntries(
-  STEMS.map((stem) => [stem, { stem, contract: compileContract(DIRECTORY, stem), instance: compileInstance(DIRECTORY, stem) }]),
+  STEMS.map((stem) => {
+    const contract = compileContract(DIRECTORY, stem);
+    return [stem, { stem, contract, meaning: contract['x-gts-traits'], instance: compileInstance(DIRECTORY, stem) }];
+  }),
 );
 const metaSchema = buildMetamodel();
 const baseSchema = loadBaseSchema();
@@ -69,28 +77,31 @@ describe('data-table: metamodel validity', () => {
     }
   });
 
-  it('refuses a children list that pairs "none" with another kind', () => {
-    // DataTable is the one component that says "none": it renders its Table
-    // internally, so nothing may be placed inside it. Any other kind says
-    // something may - a list holding both states both, and the vocabulary
-    // used to accept it as an ordinary two-element array.
-    const ajv = new Ajv2020();
-    addContractTypes(ajv);
-    const validate = ajv.compile(metaSchema);
-    const { instance } = units[DIRECTORY];
-    const contradictory = {
-      ...instance,
-      composition: {
-        ...instance.composition,
-        children: { ...instance.composition.children, kinds: ['none', componentTypeRef('button', 1)] },
-      },
-    };
-    expect(validate(contradictory)).toBe(false);
+  it('says outright that nothing may appear inside DataTable', () => {
+    // DataTable is the one component that says "nothing": it renders its
+    // Table internally from columns/data, so `text` would claim a slot that
+    // does not exist and an absent statement would read as unconstrained.
+    expect(units[DIRECTORY].meaning.accepts).toEqual({ content: 'nothing' });
   });
 
-  it('neither contract sets family - two independent exports, not a compound family', () => {
-    for (const { stem, instance } of Object.values(units)) {
-      expect(instance.family, stem).toBeUndefined();
+  it('refuses accepted detail beside a content that already answered the question', () => {
+    // `content: nothing` says nothing may appear inside; accepted components
+    // beside it would say something may. The vocabulary refuses the pair
+    // rather than leaving a reader to resolve the contradiction.
+    const ajv = new Ajv2020();
+    addContractTypes(ajv);
+    const validate = ajv.compile(buildGtsTraitsSchema());
+    const { meaning } = units[DIRECTORY];
+    const contradictory = {
+      ...meaning,
+      accepts: { content: 'nothing', components: [componentTypeRef('button', 1)] },
+    };
+    expect(validate(JSON.parse(JSON.stringify(contradictory)))).toBe(false);
+  });
+
+  it('neither contract states a family - two independent exports, not a compound family', () => {
+    for (const { stem, meaning } of Object.values(units)) {
+      expect(meaning.family_membership, stem).toBeUndefined();
     }
   });
 });
@@ -161,52 +172,77 @@ describe('data-table: no forwarded surface for either contract', () => {
   });
 });
 
-describe('data-table: extension points', () => {
-  it("DataTable's extension_points names columns, dataTableColumnHelper, dataTableSelectionColumn and dataTableFeatures", () => {
-    const points = units[DIRECTORY].instance.extension_points ?? [];
-    const byName = new Map(points.map((p) => [p.name, p]));
-    expect(byName.get('columns')?.kind).toBe('prop');
-    expect(byName.get('columns')?.typed_by).toContain('ColumnDef');
-    expect(byName.get('dataTableColumnHelper')?.kind).toBe('helper');
-    expect(byName.get('dataTableSelectionColumn')?.kind).toBe('helper');
-    expect(byName.get('dataTableFeatures')?.kind).toBe('feature');
+describe('data-table: growth surfaces', () => {
+  it("declares columns as the slot a consumer fills", () => {
+    const slots = units[DIRECTORY].meaning.slots ?? [];
+    expect(slots.map((slot) => slot.prop)).toEqual(['columns']);
+    expect(slots[0].typed_by).toContain('ColumnDef');
   });
 
-  it('DataTableSortButton declares no extension_points of its own', () => {
-    expect(units['data-table-sort-button'].instance.extension_points).toBeUndefined();
+  it('declares row selection as a capability, with the prop that turns it on', () => {
+    // The one behaviour a consumer switches on: `enableRowSelection` makes
+    // rows selectable, and the checkbox column is a separate opt-in - which is
+    // why the capability names the prop rather than a type.
+    const capabilities = units[DIRECTORY].meaning.capabilities ?? [];
+    expect(capabilities.map((capability) => capability.name)).toEqual(['row_selection']);
+    expect(capabilities[0].enabled_by).toBe('enableRowSelection');
+  });
+
+  it('declares the three exports a consumer builds its input with as companions', () => {
+    // Every other export of data-table.tsx that is not a React component: the
+    // extractor generates no contract for them, and each is something a
+    // consumer imports rather than a prop it passes.
+    const companions = units[DIRECTORY].meaning.companions ?? [];
+    expect(companions.map((companion) => companion.export).sort()).toEqual([
+      'dataTableColumnHelper',
+      'dataTableFeatures',
+      'dataTableSelectionColumn',
+    ]);
+  });
+
+  it('DataTableSortButton declares no growth surface of its own', () => {
+    const { meaning } = units['data-table-sort-button'];
+    expect(meaning.slots).toBeUndefined();
+    expect(meaning.capabilities).toBeUndefined();
+    expect(meaning.companions).toBeUndefined();
   });
 });
 
-describe('data-table: coverage.assumptions carry a kind', () => {
+describe('data-table: what the schema cannot assert', () => {
   it("DataTable names every prop the schema cannot type, and its internal state as behaviour", () => {
-    const assumptions = units[DIRECTORY].instance.coverage.assumptions ?? [];
-    const untyped = assumptions.filter((a) => a.kind === 'untyped_prop').map((a) => a.prop);
+    const untyped = units[DIRECTORY].meaning.untyped ?? [];
+    const props = untyped.filter((entry) => entry.about === 'prop').map((entry) => entry.prop);
     for (const prop of ['columns', 'data', 'emptyMessage', 'nextLabel', 'previousLabel', 'selectionSummary']) {
-      expect(untyped, prop).toContain(prop);
+      expect(props, prop).toContain(prop);
     }
     // The one claim that is NOT about a prop: sorting, selection and
     // pagination state never reach DataTableProps at all, so there is no
-    // property for an untyped_prop assumption to name - which is exactly
-    // what the kind distinction buys.
-    expect(assumptions.some((a) => a.kind === 'behaviour' && /internal, not props/.test(a.claim))).toBe(true);
+    // property for a statement about a prop to name - which is exactly what
+    // the subject distinction buys.
+    expect(untyped.some((entry) => entry.about === 'behaviour' && /internal, not props/.test(entry.claim))).toBe(true);
   });
 
-  it("DataTableSortButton states its mount point outside the kit, in mounts_in and as external_mount", () => {
-    const { instance } = units['data-table-sort-button'];
-    const assumptions = instance.coverage.assumptions ?? [];
-    expect(assumptions.some((a) => a.kind === 'external_mount')).toBe(true);
-    expect(assumptions.some((a) => a.kind === 'unexposed_part' && /composes the kit's own Button/.test(a.claim))).toBe(true);
-    expect(assumptions.filter((a) => a.kind === 'untyped_prop').map((a) => a.prop).sort()).toEqual(['children', 'column']);
-    // The typed composition field covers kit-to-kit nesting only: a column's
-    // `header` render function is a TanStack Table prop, not a kit
-    // component, so the mount point takes the external form and is merged
-    // into the derived `parent` rather than naming a component that does not
+  it("DataTableSortButton states its mount point outside the kit, in mounted_in and as an untyped statement", () => {
+    const { meaning } = units['data-table-sort-button'];
+    const untyped = meaning.untyped ?? [];
+    expect(untyped.some((entry) => entry.about === 'outside_mount')).toBe(true);
+    expect(untyped.some((entry) => entry.about === 'unexposed_part' && /composes the kit's own Button/.test(entry.claim))).toBe(true);
+    expect(
+      untyped
+        .filter((entry) => entry.about === 'prop')
+        .map((entry) => entry.prop)
+        .sort(),
+    ).toEqual(['children', 'column']);
+    // A component reference covers kit-to-kit nesting only, and it is FILLED
+    // rather than authored: a column's `header` render function is a TanStack
+    // Table prop, not a kit component, so the mount point is stated as a
+    // container outside the kit instead of naming a component that does not
     // exist.
-    const kinds = instance.composition.parent?.kinds ?? [];
-    expect(kinds.length).toBe(1);
-    const [mount] = kinds;
-    if (typeof mount === 'string') throw new Error('expected the external form, got a component reference');
-    expect(mount.external).toContain('header');
+    const mounts = meaning.mounted_in ?? [];
+    expect(mounts.length).toBe(1);
+    const [mount] = mounts;
+    if (typeof mount === 'string') throw new Error('expected a container outside the kit, got a component reference');
+    expect(mount.container).toContain('header');
     expect(mount.note).toContain('ColumnDef');
   });
 });
@@ -239,7 +275,7 @@ describe('data-table in a GTS store', () => {
     expect(result.error).toContain('Parent schema not found');
   });
 
-  it("every contract's x-gts-traits validates against ui.component.json's x-gts-traits-schema", () => {
+  it("every contract's x-gts-traits validates against base.component.json's x-gts-traits-schema", () => {
     // See button.contract.test.ts for which gts-ts API this goes through
     // and why validateContractTraits (testing.ts) round-trips the contract
     // through JSON first. Real here: DataTable sets extension_points but not
@@ -258,7 +294,7 @@ describe('data-table in a GTS store', () => {
       ...original,
       'x-gts-traits': {
         ...original['x-gts-traits'],
-        dont_use_when: [{ rule: 'placeholder', instead: 'not-a-gts-id' }],
+        dont_use_when: [{ situation: 'placeholder', instead: { target: 'anything', component: 'not-a-gts-id' } }],
       },
     };
     const result = validateContractTraits(corrupted);

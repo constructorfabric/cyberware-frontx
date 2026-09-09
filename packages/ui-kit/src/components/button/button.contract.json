@@ -1,11 +1,11 @@
 {
-  "$id": "gts://gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.button.v1~",
+  "$id": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UiKit Button",
   "type": "object",
   "allOf": [
     {
-      "$ref": "gts://gts.frontx.uikit.ui.component.v1~"
+      "$ref": "gts://gts.frontx.uikit.base.component.v1~"
     }
   ],
   "properties": {
@@ -54,15 +54,48 @@
   },
   "required": [],
   "unevaluatedProperties": {
-    "x-uikit-classification": "unknown"
+    "x-uikit-classification": "unchecked"
   },
   "x-uikit": {
     "metamodel": "1.0.0",
+    "slots": {
+      "icon": {
+        "typeText": "ReactNode",
+        "optional": true
+      }
+    },
+    "variant_sources": [
+      "VariantProps<typeof buttonVariants>"
+    ],
+    "cannot_extract": []
+  },
+  "x-gts-traits": {
     "intent": "Trigger a single action in the current context.",
     "typical_uses": [
       "A one-off action with an immediate effect (submit, confirm, open a dialog)",
       "An icon-only action that has an accessible name (pass aria-label)"
     ],
+    "dont_use_when": [
+      {
+        "situation": "Navigation between routes or pages",
+        "instead": {
+          "target": "the consuming application's own link component (a plain anchor when it has none)",
+          "note": "This kit ships no Link component, and no kit component is a substitute for one: navigation belongs to the app's own router. An action that must read as a button while it navigates stays on Button, rendered over a real anchor - `render={<a href=\"...\" />}` with `nativeButton={false}`."
+        }
+      },
+      {
+        "situation": "Toggling a persistent on/off state",
+        "instead": {
+          "target": "Switch",
+          "component": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.switch.v1~"
+        }
+      }
+    ],
+    "accepts": {
+      "content": "specified",
+      "text": true,
+      "icons_via": "icon"
+    },
     "invariants": [
       {
         "id": "icon-only-needs-label",
@@ -81,6 +114,36 @@
       {
         "dont": "Pass an icon element through children",
         "instead": "Use the `icon` prop"
+      }
+    ],
+    "deprecations": {},
+    "attestations": {
+      "a11y": {
+        "outcome": "verified",
+        "by": "Base UI's own Button primitive plus this contract's loading invariant, exercised by button.test.tsx"
+      },
+      "rtl": {
+        "outcome": "unknown"
+      }
+    },
+    "untyped": [
+      {
+        "about": "prop",
+        "prop": "icon",
+        "claim": "icon is a React node, not a value",
+        "reason": "`ReactNode` has no JSON Schema representation - an element, a string, a fragment and `false` are all valid and only tsc can tell them from a mistake. The slot exists so the icon gets sized, spaced, hidden while `loading` and marked decorative; what may go in it is \"anything React renders\", which is the whole assertion."
+      },
+      {
+        "about": "prop",
+        "prop": "render",
+        "claim": "render replaces the rendered element with one the caller supplies",
+        "reason": "Base UI's render prop takes an element or a function of the button's own state, so its type is a union of a React element and a callback - neither expressible in JSON Schema. It is what makes `render={<a href=\"...\" />}` with `nativeButton={false}` the way to keep an action reading as a button while it navigates."
+      },
+      {
+        "about": "prop",
+        "prop": "style",
+        "claim": "style accepts a function of the button's state as well as a plain style object",
+        "reason": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)` so a caller can style off the primitive's own state. A JSON Schema `object` would reject the function form, so nothing is asserted; the kit's own styling goes through `variant`/`size` and CSS Modules, not through this."
       }
     ],
     "examples": {
@@ -104,64 +167,6 @@
           "title": "Spinner rendered by hand",
           "code": "<Button disabled={saving}>{saving && <Spinner />}Save</Button>",
           "why": "`loading` exists for this: it keeps the button's width, keeps the accessible name and reports `aria-busy` while staying focusable. A native `disabled` blurs the button the instant it lands, so the busy state is announced to nobody."
-        }
-      ]
-    },
-    "slots": {
-      "icon": {
-        "typeText": "ReactNode",
-        "optional": true
-      }
-    },
-    "variant_sources": [
-      "VariantProps<typeof buttonVariants>"
-    ],
-    "cannot_extract": []
-  },
-  "x-gts-traits": {
-    "dont_use_when": [
-      {
-        "rule": "Navigation between routes or pages",
-        "instead": {
-          "external": "the consumer app's link component (a plain anchor when the app has none)",
-          "note": "This kit ships no Link component, and no kit component is a substitute for one: navigation belongs to the app's own router. An action that must read as a button while it navigates stays on Button, rendered over a real anchor - `render={<a href=\"...\" />}` with `nativeButton={false}`."
-        }
-      },
-      {
-        "rule": "Toggling a persistent on/off state",
-        "instead": "gts.frontx.uikit.ui.component.v1~frontx.uikit.ui.switch.v1~"
-      }
-    ],
-    "composition": {
-      "children": {
-        "kinds": [
-          "text"
-        ],
-        "icons_via": "icon"
-      }
-    },
-    "deprecations": {},
-    "coverage": {
-      "a11y": "verified",
-      "rtl": "unknown",
-      "assumptions": [
-        {
-          "kind": "untyped_prop",
-          "prop": "icon",
-          "claim": "icon is a React node, not a value",
-          "reason": "`ReactNode` has no JSON Schema representation - an element, a string, a fragment and `false` are all valid and only tsc can tell them from a mistake. The slot exists so the icon gets sized, spaced, hidden while `loading` and marked decorative; what may go in it is \"anything React renders\", which is the whole assertion."
-        },
-        {
-          "kind": "untyped_prop",
-          "prop": "render",
-          "claim": "render replaces the rendered element with one the caller supplies",
-          "reason": "Base UI's render prop takes an element or a function of the button's own state, so its type is a union of a React element and a callback - neither expressible in JSON Schema. It is what makes `render={<a href=\"...\" />}` with `nativeButton={false}` the way to keep an action reading as a button while it navigates."
-        },
-        {
-          "kind": "untyped_prop",
-          "prop": "style",
-          "claim": "style accepts a function of the button's state as well as a plain style object",
-          "reason": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)` so a caller can style off the primitive's own state. A JSON Schema `object` would reject the function form, so nothing is asserted; the kit's own styling goes through `variant`/`size` and CSS Modules, not through this."
         }
       ]
     },

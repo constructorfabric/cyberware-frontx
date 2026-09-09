@@ -11,7 +11,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { GTS, type ValidationResult } from '@globaltypesystem/gts-ts';
+import { GTS, isValidGtsID, type ValidationResult } from '@globaltypesystem/gts-ts';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -20,18 +20,19 @@ import {
   buildVocabularyTypes,
   compileContract,
   compileInstance,
+  familyRoster,
   findUntypedPropMismatches,
   hostElementRef,
-  isExternalAlternative,
+  isOutsideMount,
   loadBaseSchema,
   loadElementSurfaces,
   registerContractTypes,
   type CompiledContract,
-  type ContractInstance,
 } from './compile';
 import {
   bareGtsId,
   componentTypeRefPattern,
+  METAMODEL_TYPE_ID,
   elementTypeIdPattern,
   elementTypeRefPattern,
   vocabularyTypeIdPattern,
@@ -136,26 +137,27 @@ export function resolveComponentRef(ref: string): ResolvedComponentRef {
 
 // Every component identifier one contract holds, with the field that holds
 // it, so a failure names which statement is wrong rather than only which id.
-// The content kinds `text` and `none` are values of the same field, not
-// references, and are skipped; so is an external alternative, whichever field
-// carries it - a `don't` rule's, or a mount point outside the kit.
-export function componentRefsIn(instance: ContractInstance): { field: string; ref: string }[] {
+// A family's own name is a token rather than a reference and is not one; nor
+// is a container outside the kit, which is an object precisely because there
+// is nothing to resolve.
+export function componentRefsIn(contract: CompiledContract): { field: string; ref: string }[] {
+  const meaning = contract['x-gts-traits'];
   const refs: { field: string; ref: string }[] = [];
-  for (const [index, entry] of instance.dont_use_when.entries()) {
-    if (typeof entry.instead === 'string') refs.push({ field: `dont_use_when[${index}].instead`, ref: entry.instead });
+  for (const [index, entry] of meaning.dont_use_when.entries()) {
+    const component = entry.instead.component;
+    if (component !== undefined) refs.push({ field: `dont_use_when[${index}].instead.component`, ref: component });
   }
-  for (const kind of instance.composition.children?.kinds ?? []) {
-    if (kind !== 'text' && kind !== 'none') refs.push({ field: 'composition.children.kinds', ref: kind });
+  for (const accepted of meaning.accepts.components ?? []) {
+    refs.push({ field: 'accepts.components', ref: accepted });
   }
-  // A derived parent is a kit reference; a mount point outside the kit is the
-  // external object form, which is an object precisely because there is
-  // nothing to resolve - skipped here the same way an external alternative is.
-  for (const kind of instance.composition.parent?.kinds ?? []) {
-    if (!isExternalAlternative(kind)) refs.push({ field: 'composition.parent.kinds', ref: kind });
+  // A filled mount point is a kit reference; a container outside the kit is
+  // the authored object form - skipped here the same way a recommendation
+  // with no component is.
+  for (const entry of meaning.mounted_in ?? []) {
+    if (!isOutsideMount(entry)) refs.push({ field: 'mounted_in', ref: entry });
   }
-  if (instance.family) {
-    refs.push({ field: 'family.root', ref: instance.family.root });
-    for (const part of instance.family.parts ?? []) refs.push({ field: 'family.parts', ref: part });
+  for (const member of meaning.family_membership?.members ?? []) {
+    refs.push({ field: 'family_membership.members', ref: member });
   }
   return refs;
 }
@@ -261,12 +263,34 @@ export function assertContractFreshness(directory: string, exportStem: string = 
         expect(String(type.$id), `${String(type.$id)} is not a grammatical vocabulary type id`).toMatch(pattern);
       }
     });
+
+    it('carries only identifiers the type system itself accepts', () => {
+      // The kit's own patterns say what an identifier looks like to THIS
+      // harness; this asks gts-ts. A segment needs five dot-tokens
+      // (vendor.package.namespace.type.vMAJOR), which is a rule no local
+      // pattern restates - and the one an id that dropped a token would break
+      // without any pattern here noticing.
+      const contract = compileContract(directory, exportStem);
+      const instance = compileInstance(directory, exportStem);
+      const ids = [
+        BASE_TYPE_ID,
+        `${METAMODEL_TYPE_ID}~`,
+        contract.$id,
+        instance.id,
+        instance.props_schema,
+        ...(instance.host_element === undefined ? [] : [instance.host_element]),
+        ...buildVocabularyTypes().map((type) => String(type.$id)),
+        ...loadElementSurfaces().map((surface) => String(surface.$id)),
+      ];
+      for (const id of ids) {
+        expect(isValidGtsID(bareGtsId(id)), `${id} is not a valid GTS identifier`).toBe(true);
+      }
+    });
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-base
 
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-refs
     it('every component reference resolves to a component the kit ships, at the major that component ships', () => {
-      const instance = compileInstance(directory, exportStem);
-      for (const { field, ref } of componentRefsIn(instance)) {
+      for (const { field, ref } of componentRefsIn(compileContract(directory, exportStem))) {
         const target = resolveComponentRef(ref);
         if (target.contractId !== undefined) {
           // Full identifier, not just the name: a component that moved its
@@ -283,52 +307,76 @@ export function assertContractFreshness(directory: string, exportStem: string = 
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-refs
 
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-untyped
-    it('pairs every property that asserts nothing with an untyped_prop assumption, both ways', () => {
+    it('pairs every property that asserts nothing with an untyped statement about it, both ways', () => {
       // The gap this closes was measured, not imagined: an evaluation pointed
       // an agent at three properties that asserted nothing and it reported
       // they took plain strings. A property Ajv will not check has to say
       // what its TypeScript type is AND be acknowledged as unverifiable, and
-      // an assumption naming a property the contract does constrain tells a
+      // a statement naming a property the contract does constrain tells a
       // reader something false about the contract in front of them.
       const problems = findUntypedPropMismatches(compileContract(directory, exportStem));
-      expect(problems, `${exportStem}: untyped_prop assumptions and unasserted properties disagree:\n${problems.join('\n')}`).toEqual(
+      expect(problems, `${exportStem}: untyped statements and unasserted properties disagree:\n${problems.join('\n')}`).toEqual(
         [],
       );
     });
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-untyped
 
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-parent
-    it('derives every parent from a contract whose own children name this component back', () => {
-      // With `parent` derived there is no pair to disagree, which is the
-      // point - so what is asserted is the derivation itself: each kit parent
-      // must be a component that really does list this one as a child, and a
-      // part of a family may only be mounted inside its own family, or the
-      // parts are independently mountable and the family is not one.
-      const instance = compileInstance(directory, exportStem);
-      const self = bareGtsId(String(compileContract(directory, exportStem).$id));
-      // The family's WHOLE membership, read off the root: a part's own
-      // `family` names the root and nothing else (a part does not restate its
-      // siblings), so the set a part may be mounted inside has to come from
-      // the root's `parts` list, not from the part's own record.
+    it('fills every mount point from a contract whose own accepts.components name this component back', () => {
+      // With the component references FILLED there is no pair to disagree,
+      // which is the point - so what is asserted is the derivation itself:
+      // each kit mount point must be a component that really does accept this
+      // one inside it, and a part of a family may only be mounted inside its
+      // own family, or the parts are independently mountable and the family
+      // is not one.
+      const contract = compileContract(directory, exportStem);
+      const meaning = contract['x-gts-traits'];
+      const self = bareGtsId(String(contract.$id));
+      // The family's WHOLE membership, read off the roster rather than off
+      // this component's own record: a part states its membership and nothing
+      // else, so the set it may be mounted inside is the root plus every
+      // other part naming the same family.
       let familyMembers: Set<string> | undefined;
-      if (instance.family !== undefined) {
-        const root = resolveComponentRef(instance.family.root);
-        const rootInstance = compileInstance(root.directory, root.stem);
-        familyMembers = new Set([instance.family.root, ...(rootInstance.family?.parts ?? [])]);
+      const membership = meaning.family_membership;
+      if (membership !== undefined) {
+        const roster = familyRoster(membership.name);
+        familyMembers = new Set([...(roster.root === undefined ? [] : [roster.root]), ...roster.parts]);
       }
-      for (const kind of instance.composition.parent?.kinds ?? []) {
-        if (isExternalAlternative(kind)) continue;
-        const parent = resolveComponentRef(kind);
-        const parentInstance = compileInstance(parent.directory, parent.stem);
+      for (const entry of meaning.mounted_in ?? []) {
+        if (isOutsideMount(entry)) continue;
+        const container = resolveComponentRef(entry);
+        const containerMeaning = compileContract(container.directory, container.stem)['x-gts-traits'];
         expect(
-          parentInstance.composition.children?.kinds ?? [],
-          `${exportStem}: derived parent "${kind}" does not name it as a child`,
+          containerMeaning.accepts.components ?? [],
+          `${exportStem}: filled mount point "${entry}" does not accept it inside`,
         ).toContain(self);
         if (familyMembers !== undefined) {
-          expect(familyMembers.has(kind), `${exportStem}: derived parent "${kind}" is not a member of its family`).toBe(true);
+          expect(familyMembers.has(entry), `${exportStem}: filled mount point "${entry}" is not a member of its family`).toBe(true);
         }
       }
     });
+
+    it('states its own family membership, and only a root carries the member list', () => {
+      // The two halves of the membership rule, on the component in front of
+      // us: a part names the family and nothing else, and a root's `members`
+      // is exactly the roster every other member produces - which is what
+      // makes "one root per family" a fact about the kit rather than about
+      // whichever overlay was read first.
+      const contract = compileContract(directory, exportStem);
+      const membership = contract['x-gts-traits'].family_membership;
+      if (membership === undefined) return;
+      const roster = familyRoster(membership.name);
+      const self = bareGtsId(String(contract.$id));
+      if (membership.role === 'part') {
+        expect(membership.members, `${exportStem}: a part carries no member list`).toBeUndefined();
+        expect(roster.parts, `${exportStem}: the family roster does not list it as a part`).toContain(self);
+        expect(roster.root, `${exportStem}: family "${membership.name}" has no root`).toBeDefined();
+        return;
+      }
+      expect(roster.root, `${exportStem}: the family roster names a different root`).toBe(self);
+      expect(membership.members, `${exportStem}: a root's members are the roster's parts`).toEqual(roster.parts);
+    });
+
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-parent
 
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-element
@@ -339,6 +387,19 @@ export function assertContractFreshness(directory: string, exportStem: string = 
       // the contract HOLDS - checked below - not a parent it derives from.
       const contract = compileContract(directory, exportStem);
       expect(contract.allOf, `${exportStem}: a contract derives from one type`).toEqual([{ $ref: BASE_TYPE_ID }]);
+    });
+
+    it('leaves the abstract marker on the type nothing instantiates, and only there', () => {
+      // The abstract type declares no properties, so a props object validated
+      // against it would pass whatever it carried - which is exactly why
+      // nothing ever validates against it, and why it says so. A derived
+      // contract IS instantiated, by every props object a consumer passes, so
+      // the marker on one would be false.
+      expect(loadBaseSchema()['x-gts-abstract'], 'the abstract component type states that it is abstract').toBe(true);
+      const contract = compileContract(directory, exportStem);
+      expect(contract, `${exportStem}: a component's own contract is instantiated by every props object`).not.toHaveProperty(
+        'x-gts-abstract',
+      );
     });
 
     it('resolves the host-element surface it names to a committed file in the grammar', () => {
@@ -397,7 +458,7 @@ export function assertContractFreshness(directory: string, exportStem: string = 
   });
 }
 
-// Registers ui.component.json plus a JSON-round-tripped copy of a compiled
+// Registers base.component.json plus a JSON-round-tripped copy of a compiled
 // contract into a fresh GTS store and returns GTS.validateEntity's result
 // for that contract's own $id.
 //
@@ -413,7 +474,7 @@ export function assertContractFreshness(directory: string, exportStem: string = 
 //
 // Round-tripped through JSON rather than passed as the in-memory
 // CompiledContract object compileContract returns: an overlay field left
-// unset (family, extension_points) is genuinely ABSENT as a JSON Schema
+// unset (family_membership, slots) is genuinely ABSENT as a JSON Schema
 // property once JSON.stringify drops it (the shape the committed
 // <name>.contract.json - "the canonical contract every consumer reads",
 // per compile.ts's own header comment - actually carries), not merely
@@ -426,7 +487,7 @@ export function assertContractFreshness(directory: string, exportStem: string = 
 // anything the day a future refactor made pickFields omit unset keys
 // instead of assigning them undefined.
 //
-// Only ui.component.json and the contract are registered: gts-ts resolves
+// Only base.component.json and the contract are registered: gts-ts resolves
 // a schema's x-gts-traits chain from the GTS ID's OWN dot-token segments
 // (GtsStore.buildSchemaChain), not by dereferencing any $ref, so neither the
 // host element's surface nor any other component's contract is ever consulted

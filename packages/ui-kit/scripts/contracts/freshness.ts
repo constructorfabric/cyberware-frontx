@@ -40,8 +40,8 @@ export interface FreshnessReport {
   // own - this catches the day something edits one without the other. Scoped
   // to declared props on purpose: an API prop of the primitive underneath can
   // also assert nothing, and its type lives in its own description plus an
-  // untyped_prop assumption rather than in x-uikit.slots, which is the kit's
-  // own slotted props and nothing else.
+  // untyped statement about that prop rather than in x-uikit.slots, which is
+  // the kit's own slotted props and nothing else.
   slotSchemaMismatches: string[];
   // The schemas that belong to no single component - the abstract component type,
   // the metamodel, and each vocabulary type the two of them reference -
@@ -82,7 +82,7 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-artifacts
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-base
   const sharedSchemaDiffs: Record<string, string[]> = {
-    'ui.component.json': jsonDiff(loadBaseSchema(), buildBaseSchema()),
+    'base.component.json': jsonDiff(loadBaseSchema(), buildBaseSchema()),
     'ui-component.meta.json': jsonDiff(readJsonIfExists(join(CONTRACTS_DIR, 'ui-component.meta.json')), buildMetamodel()),
   };
   // The union of what the builder produces and what the directory holds, not
