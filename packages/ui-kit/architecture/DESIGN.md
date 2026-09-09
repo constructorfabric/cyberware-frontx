@@ -235,15 +235,17 @@ the type system's own reference validator does not follow a reference into
 another type, and most referenced components ship no contract yet, so the
 directory is what says the kit ships that component at all.
 
-Five meaning fields are not vocabulary types and stay inline: `invariants`,
-`anti_patterns` and `examples` are prose a validator reads only for shape,
-`withheld` is a list of prop-and-reason entries - the prop the kit does not
-advertise and why it does not - and `host_element` is a single
-identifier-valued field read by four checks. None of the five is referenced by
-any other type, so a type of its own would buy nothing. `host_element` is also
-the one field of the block an overlay may not write - which element a
-component renders is a fact of its source - so the compiler supplies it, and
-it is absent for a component that renders no host element of its own.
+A meaning field whose shape another type owns references that type; the rest
+stay inline, because nothing else references them and a type of their own
+would buy nothing. Inline are `intent` and `typical_uses`, the two fields a
+selection card is read from; `invariants`, `anti_patterns` and `examples`,
+prose a validator reads only for shape; `withheld`, a list of prop-and-reason
+entries naming the prop the kit does not advertise and why it does not; and
+`host_element`, a single identifier-valued field read by four checks.
+`host_element` is also the one field of the block an overlay may not write -
+which element a component renders is a fact of its source - so the compiler
+supplies it, and it is absent for a component that renders no host element of
+its own.
 
 A component's derived type is left open rather than closed: its
 `unevaluatedProperties` carries the annotation `x-uikit-classification:
@@ -323,7 +325,7 @@ classDiagram
 |------|------------|-------------|-------------------|
 | Component contract | the abstract component type, and the element type for its host element as an identifier it holds | exactly one abstract parent, zero or one element type | the compiler builds it; the extraction owns the prop facts, the overlay author the meaning |
 | Metamodel instance | the metamodel type, the component contract, the same element type its contract names | exactly one of each of the first two, zero or one element type | the compiler |
-| Abstract component type | each of the eleven field-level vocabulary types | one each | the builder of the schema it carries |
+| Abstract component type | one field-level vocabulary type per meaning field whose shape that type owns | one each | the builder of the schema it carries |
 | Metamodel type | nothing; it describes a record of identifiers | one | the metamodel builder |
 | Element type | nothing; component contracts and their instances hold its identifier | one type per element kind, referenced by one or more contracts - a committed file no contract names fails a described component's conformance suite | hand-written; whoever adds an element kind decides what that element accepts |
 | dont_use_when_rule | a recommendation | exactly one per rule; at least one rule per contract | the overlay author |

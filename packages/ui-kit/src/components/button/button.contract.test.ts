@@ -808,6 +808,24 @@ describe('a component reference names one contract major', () => {
   });
 });
 
+// The x-gts-traits fields base.component.json requires of every contract,
+// read out of the committed schema: a test that restated the list would go
+// on asserting a field the schema no longer names.
+function requiredTraitFields(schema: Record<string, unknown>): string[] {
+  const traitsSchema = schema['x-gts-traits-schema'];
+  if (!isRecord(traitsSchema)) return [];
+  const required = traitsSchema.required;
+  return isStringArray(required) ? required : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
 describe('button contract in a GTS store', () => {
   // Ajv above checks the schema as a schema. This checks it as a GTS type:
   // registering a schema is silent about whether its parent exists, so the
@@ -856,18 +874,23 @@ describe('button contract in a GTS store', () => {
     // x-gts-traits of its own: it is the abstract parent, not a component.
     // Validated by itself (no derived contract in the chain to supply real
     // values), GtsStore.validateSchemaTraits' "unresolved trait property"
-    // check finds every required x-gts-traits field (dont_use_when, composition,
-    // deprecations, coverage) with neither a value nor a default, and fails.
+    // check finds the required x-gts-traits fields with neither a value nor a
+    // default, and fails. Which fields those are is read out of the schema
+    // rather than listed here, so adding or dropping a required field cannot
+    // leave this test asserting a field the schema stopped naming.
     // Asserted here on purpose, not silently dropped from the loop above: a
     // component's OWN contract is the only place those values can come
     // from, which "validates x-gts-traits against base.component.json's
     // x-gts-traits-schema" below proves for the case that matters.
+    const required = requiredTraitFields(baseSchema);
+    expect(required.length).toBeGreaterThan(0);
     const gts = new GTS();
     gts.register(baseSchema);
     registerContractTypes((entity) => gts.register(entity));
     const result = gts.validateEntity(bareGtsId(BASE_TYPE_ID));
     expect(result.ok).toBe(false);
     expect(result.error).toContain('required property');
+    expect(required.some((field) => result.error?.includes(field))).toBe(true);
   });
 
   it("fails when the contract the instance's props_schema names is absent from the registry", () => {

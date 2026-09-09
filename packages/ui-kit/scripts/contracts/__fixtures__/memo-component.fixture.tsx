@@ -3,7 +3,7 @@
 // directly, which is exactly the shape isReactComponentCandidate's old
 // arrow/function-expression-only check missed: the export would have been
 // silently read as "not component-shaped," undercounting check.ts's own
-// coverage report. forwardRef gets the same unwrap through the same
+// enrollment report. forwardRef gets the same unwrap through the same
 // unwrapComponentInitializer helper - covered once here since both wrappers
 // share one code path (see extract.ts's isReactWrapperCall).
 import { memo } from 'react';

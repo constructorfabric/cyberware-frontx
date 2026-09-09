@@ -62,8 +62,8 @@ This PRD uses the root PRD's vocabulary ([root PRD §1.4](../../../architecture/
 | Token | A named appearance value the kit defines once and every component's styling consumes; the unit of rebranding. |
 | Component contract | A machine-readable description of one component: its meaning, stated by hand, joined to the prop facts read out of its TypeScript. |
 | Overlay | The hand-authored half of a contract. It carries meaning only and may not restate a fact the compiler can read from the code. |
-| Described component | A component the kit has opted into contract coverage for. An undescribed component is not a defect; coverage is incremental. |
-| Passthrough surface | The attributes React declares for the element a component renders, forwarded rather than declared. One statement per element kind, shared by every component that renders it. A prop the primitive library declares for its own part is not part of this: that is the wrapping component's own API. |
+| Described component | A component the kit has enrolled into contract enforcement. An undescribed component is not a defect; enrollment is incremental. |
+| Host-element surface | The attributes React declares for the element a component renders, forwarded rather than declared. One statement per element kind, shared by every component that renders it. A prop the primitive library declares for its own part is not part of this: that is the wrapping component's own API. |
 
 ## 2. Actors
 
@@ -119,7 +119,7 @@ Inside this repository the package additionally carries the contract tooling: a 
 - The client-boundary classification of the published components.
 - The agent-facing documentation shipped inside the package: the index and one usage document per component.
 - Consumer-side acceptance of the published artifact across the bundlers and module resolutions consumers use.
-- The agent knowledge layer: the component contract, its compiler, its per-component conformance suites, and the freshness, compatibility and coverage checks over it.
+- The agent knowledge layer: the component contract, its compiler, its per-component conformance suites, and the freshness, compatibility and enrollment checks over it.
 
 ### 4.2 Out of Scope
 
@@ -127,7 +127,7 @@ Inside this repository the package additionally carries the contract tooling: a 
 - Application domain content, data access and back-end integration.
 - Design-process capability - producing a theme, generating an interface, reviewing one against the kit - which belongs to template territory rather than to a published library.
 - Composition-level artifacts above a single component, such as reusable screen blocks and their catalogue.
-- The consumer of the unchecked-prop verdict: the plan validator or lint that reads a component's props before anything renders and acts on the report belongs to whatever runs that check, not to this package, which owns the rule and the report only.
+- The consumer of the unchecked-prop classification: the plan validator or lint that reads a component's props before anything renders and acts on the report belongs to whatever runs that check, not to this package, which owns the rule and the report only.
 - Visual-regression testing and automated accessibility auditing of consuming applications.
 
 ## 5. Functional Requirements
@@ -236,15 +236,15 @@ The system **MUST** refuse a hand-authored overlay that restates a fact the comp
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-fr-contract-unchecked-prop-report`
 
-The system **MUST** leave a described component's contract open to a prop nothing in it evaluates, carrying the verdict on such a prop as an annotation rather than rejecting it, and **MUST** provide the report that classifies a set of props against a contract: which the contract accounts for, which nothing accounts for, and which of the latter is one edit from a prop the contract declares.
+The system **MUST** leave a described component's contract open to a prop nothing in it evaluates, carrying the classification of such a prop as an annotation rather than rejecting it, and **MUST** provide the report that classifies a set of props against a contract: which the contract accounts for, which nothing accounts for, and which of the latter is one edit from a prop the contract declares.
 
 **Threshold**: A prop no part of a contract evaluates validates rather than failing; the harness's report names that prop as unchecked, and names a name one edit from a prop the contract declares as a probable misspelling of it, in preference to any pattern that would otherwise admit it.
 
-**Rationale**: A closed schema answered "invalid" to a misspelled kit prop and to a name this harness has not classified - a new React attribute, a prop of a primitive part nobody has described - and only the first is a mistake. Telling them apart needs a comparison a schema cannot make, so the schema admits the value and the harness owns the verdict.
+**Rationale**: A closed schema answered "invalid" to a misspelled kit prop and to a name this harness has not classified - a new React attribute, a prop of a primitive part nobody has described - and only the first is a mistake. Telling them apart needs a comparison a schema cannot make, so the schema admits the value and the harness owns the classification.
 
 **Actors**: `cpt-frontx-ui-kit-actor-ai-agent`, `cpt-frontx-ui-kit-actor-kit-developer`
 
-**Status**: The report is built and is the harness's own. Its intended consumer - a plan validator or a lint that reads a component's props before anything renders and acts on the verdict - is out of scope for this package.
+**Status**: The report is built and is the harness's own. Its intended consumer - a plan validator or a lint that reads a component's props before anything renders and acts on the classification - is out of scope for this package.
 
 #### A described component's contract matches its code
 
@@ -270,15 +270,15 @@ The system **MUST** compare a described component's contract against the same co
 
 **Actors**: `cpt-frontx-ui-kit-actor-continuous-integration`
 
-#### Coverage grows by opt-in
+#### Enrollment grows by opt-in
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-fr-contract-incremental-coverage`
 
-The system **MUST** apply contract enforcement only to components explicitly opted into coverage, **MUST** report kit-wide coverage without failing on it, and **MUST** re-check every covered component when any input that can change what a covered component compiles to changes.
+The system **MUST** apply contract enforcement only to components explicitly enrolled, **MUST** report kit-wide enrollment without failing on it, and **MUST** re-check every enrolled component when any input that can change what an enrolled component compiles to changes.
 
-**Threshold**: A change touching an undescribed component passes; a coverage report never sets a non-zero exit; a change to any input a compiled contract depends on - the compiler, the extractor, the shared schemas, the freshness comparison and the comparison logic those depend on, the file that decides which components are covered, any overlay whose allowed children decide another component's mount points, and the dependency versions the checker's printed type text comes from - re-checks every covered component rather than only the touched ones.
+**Threshold**: A change touching an undescribed component passes; an enrollment report never sets a non-zero exit; a change to any input a compiled contract depends on - the compiler, the extractor, the shared schemas, the freshness comparison and the comparison logic those depend on, the file that decides which components are enrolled, any overlay whose allowed children decide another component's mount points, and the dependency versions the checker's printed type text comes from - re-checks every enrolled component rather than only the touched ones.
 
-**Rationale**: A gate switched on across a whole kit starts almost entirely red and is switched off within a week. Scoping it to the change under review lets coverage expand as a by-product of ordinary work.
+**Rationale**: A gate switched on across a whole kit starts almost entirely red and is switched off within a week. Scoping it to the change under review lets the enrolled set expand as a by-product of ordinary work.
 
 **Actors**: `cpt-frontx-ui-kit-actor-continuous-integration`, `cpt-frontx-ui-kit-actor-kit-developer`
 
@@ -314,7 +314,7 @@ The system **MUST** make a described component's contract readable from an insta
 
 The system **MUST** be able to compare a described component's contracts against the contracts of a published version of the package, and **MUST** run that comparison before a release is tagged.
 
-**Threshold**: A compatibility run names a published version as its comparison source, reads that version's shipped contracts, and reports the verdict an upgrading consumer would experience; the release job runs it before tagging.
+**Threshold**: A compatibility run names a published version as its comparison source, reads that version's shipped contracts, and reports the decision an upgrading consumer would experience; the release job runs it before tagging.
 
 **Rationale**: The comparison against a reference in this repository answers what a change did since a branch point. A consumer upgrading from one release to the next holds no such reference, and the development branch can carry several unreleased contract changes at once, so a set of individually-passing changes does not add up to a passing release. Depends on the contracts reaching the published artifact at all.
 
@@ -342,7 +342,7 @@ The system **MUST** keep a consumer's build free of the code and the styles of c
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-nfr-gate-adoptability`
 
-The system **MUST** scope contract enforcement to the components a change touches, and **MUST NOT** derive a build failure from kit-wide coverage.
+The system **MUST** scope contract enforcement to the components a change touches, and **MUST NOT** derive a build failure from kit-wide enrollment.
 
 **Threshold**: The number of components without contracts never affects an exit code.
 
@@ -415,7 +415,7 @@ None owned here. The package is distributed under the root PRD's package-registr
 **Main Flow**:
 1. The Kit Developer authors the component's overlay, stating meaning only (`cpt-frontx-ui-kit-fr-contract-single-fact-owner`).
 2. The Kit Developer compiles the contract, which joins the overlay to the facts read from the component's TypeScript (`cpt-frontx-ui-kit-fr-component-contract`).
-3. The Kit Developer opts the component into coverage and commits the compiled artifacts alongside the source.
+3. The Kit Developer enrolls the component and commits the compiled artifacts alongside the source.
 4. The Kit Developer later changes the component; the conformance suite fails until the artifacts are recompiled (`cpt-frontx-ui-kit-fr-contract-freshness`).
 5. Continuous integration compares the changed contract against the base reference and reports whether the change is backward compatible (`cpt-frontx-ui-kit-fr-contract-compatibility`).
 
@@ -425,7 +425,7 @@ None owned here. The package is distributed under the root PRD's package-registr
 **Alternative Flows**:
 - **Overlay restates a machine-owned fact**: the compile is refused naming the field; nothing is written.
 - **Incompatible change with the contract major moved**: the comparison passes and names the move and every reason.
-- **Component is not opted into coverage**: the change passes with the component reported as not yet requiring a contract.
+- **Component is not enrolled**: the change passes with the component reported as not yet requiring a contract.
 
 #### AI Agent composes a screen from the kit
 
@@ -462,9 +462,9 @@ None owned here. The package is distributed under the root PRD's package-registr
 - [x] A prop a described component's contract does not evaluate validates and is reported as unchecked, and a name one edit from a prop that contract declares is reported as a probable misspelling of it - verifiable via `cpt-frontx-ui-kit-fr-contract-unchecked-prop-report`.
 - [x] A change leaving a described component's committed contract unequal to a fresh compile is refused, naming the regeneration command - verifiable via `cpt-frontx-ui-kit-fr-contract-freshness`.
 - [x] A backward-incompatible contract difference is refused at an unchanged contract major and accepted once the major moves, naming every reason in both cases - verifiable via `cpt-frontx-ui-kit-fr-contract-compatibility`.
-- [x] A change touching an undescribed component passes, kit-wide coverage never sets a non-zero exit, and a change to the shared contract tooling re-checks every covered component - verifiable via `cpt-frontx-ui-kit-fr-contract-incremental-coverage` and `cpt-frontx-ui-kit-nfr-gate-adoptability`.
+- [x] A change touching an undescribed component passes, kit-wide enrollment never sets a non-zero exit, and a change to the shared contract tooling re-checks every enrolled component - verifiable via `cpt-frontx-ui-kit-fr-contract-incremental-coverage` and `cpt-frontx-ui-kit-nfr-gate-adoptability`.
 - [ ] A consuming project can read a described component's contract from its install - verifiable via `cpt-frontx-ui-kit-fr-contract-distribution`.
-- [ ] A release is gated by a compatibility verdict computed against the previously published version, not only against a reference in this repository - verifiable via `cpt-frontx-ui-kit-fr-contract-release-compatibility`.
+- [ ] A release is gated by a compatibility decision computed against the previously published version, not only against a reference in this repository - verifiable via `cpt-frontx-ui-kit-fr-contract-release-compatibility`.
 - [ ] The package ships a validating Constructor Studio kit manifest whose resources carry the reserved prefix - verifiable via `cpt-frontx-ui-kit-fr-agent-resource-manifest`.
 
 ## 10. Dependencies
@@ -484,15 +484,15 @@ None owned here. The package is distributed under the root PRD's package-registr
 - A consuming application owns its React version and its bundler; the package adapts to the consumer rather than the reverse.
 - A component's variant axes and props are declared in its own TypeScript, which is what makes them extractable. A component that hides them behind an indirection the compiler cannot follow is a component the kit must change, not a case for restating the facts by hand.
 - The components the compiler must describe are built on the primitive family it recognizes, so it can tell that family's props for a part - the component's own API - from React's attributes for the element underneath. A component built on a different primitive family is new work on the compiler.
-- Coverage is expected to grow with ordinary work rather than through a dedicated campaign.
+- The enrolled set is expected to grow with ordinary work rather than through a dedicated campaign.
 
 ## 12. Risks
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Description cost outweighs its value for components whose props resist machine representation. | Coverage stalls on exactly the complex components where description would help most. | The contract records what could not be represented instead of pretending completeness, so the gap is visible rather than silently absorbed; coverage stays opt-in so a costly component does not block the rest. |
+| Description cost outweighs its value for components whose props resist machine representation. | Enrollment stalls on exactly the complex components where description would help most. | The contract records what could not be represented instead of pretending completeness, so the gap is visible rather than silently absorbed; enrollment stays opt-in so a costly component does not block the rest. |
 | The compiler recognizes only some primitive families, so a component built on another cannot be described at all. | Parts of the kit are structurally out of reach of the knowledge layer. | The limit is stated in this PRD's assumptions and the compiler refuses loudly rather than emitting a contract with an invented surface. Extending it is design work on the compiler, not configuration. |
 | Contracts stay inside the repository, so the check that matters to a product cannot run in the product. | The knowledge layer guards the kit's own changes but not an agent's output in a consuming project. | Recorded as `cpt-frontx-ui-kit-fr-contract-distribution`, unbuilt and marked as such rather than implied by the layer's existence. |
 | The kit's own prose documentation drifts from the component set it describes. | An agent reads a description that does not match the installed surface. | The documentation guard holds every exported component to having an indexed document; the drift risk that remains is in the prose bodies, which no check reads. |
-| The vendor namespace the contract identifiers are built on is not settled: a shorter form and a form carrying a design segment were both proposed and neither was chosen. | Every committed contract, instance and passthrough surface carries the namespace in its own identifier, so the migration cost rises with every component described. | The namespace lives in one constant, so the change itself stays a one-line edit. The decision is to be taken before coverage grows past the pilot components, which is the point at which the rewrite stops being cheap. |
+| The vendor namespace the contract identifiers are built on is not settled: a shorter form and a form carrying a design segment were both proposed and neither was chosen. | Every committed contract, instance and host-element surface carries the namespace in its own identifier, so the migration cost rises with every component described. | The namespace lives in one constant, so the change itself stays a one-line edit. The decision is to be taken before the enrolled set grows past the pilot components, which is the point at which the rewrite stops being cheap. |
 | Whether a type-system runtime is expected to act on the meaning fields, or only to validate and store them, is unanswered. | If a runtime acts on them, the fields currently held as prose have to move into the validator-read half, changing every compiled contract's shape. | The two halves are produced from one routing map rather than two hand-maintained lists, so the move is a change to that map and a recompile. The trigger is the answer to that question in the ecosystem's type-substrate decision. |

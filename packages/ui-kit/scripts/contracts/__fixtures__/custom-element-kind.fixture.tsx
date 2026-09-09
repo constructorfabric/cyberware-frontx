@@ -1,7 +1,7 @@
 // Fixture for extract.test.ts (M2): ComponentProps<'tag'> with a hyphenated
 // custom element tag name - a normal pattern (a component wrapping
 // <my-custom-element>). The element kind reaches an identifier and a file
-// name through domPassthroughToken, and a tag's hyphen would otherwise leak
+// name through domElementToken, and a tag's hyphen would otherwise leak
 // into a token grammar that is snake_case everywhere else - a real GTS id
 // grammar violation with nothing to catch it before this fixture existed.
 //

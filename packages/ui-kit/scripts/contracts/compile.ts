@@ -1574,7 +1574,7 @@ export const buildGtsTraitsSchema = memoizeSchema((): Record<string, unknown> =>
   return {
     type: 'object',
     description:
-      "Everything asserted about a component: what GTS.validateEntity checks a contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from the abstract component type down to the component's own contract). Every field here is a claim somebody made - the overlay author for all but three, the compiler for the component references in `mounted_in`, a family root's `members` and `host_element`, each of which it fills from another author's assertion or from the source itself. What the SOURCE says lives in x-uikit instead, which no validator reads. Eleven of the fields are a REFERENCE to the vocabulary type that owns the concept (gts.frontx.uikit.vocabulary.*), so that concept is defined once, in one place, for both this schema and the metamodel; `invariants`, `anti_patterns`, `examples`, `withheld` and `host_element` stay inline, because nothing else references them. `host_element` is the one field an overlay may not write: which element a component renders is a fact of its source. additionalProperties: false so an unknown key fails GTS.validateEntity by name instead of vanishing silently.",
+      "Everything asserted about a component: what GTS.validateEntity checks a contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from the abstract component type down to the component's own contract). Every field here is a claim somebody made - the overlay author for all but three, the compiler for the component references in `mounted_in`, a family root's `members` and `host_element`, each of which it fills from another author's assertion or from the source itself. What the SOURCE says lives in x-uikit instead, which no validator reads. A field whose shape another type owns is a REFERENCE to that vocabulary type (gts.frontx.uikit.vocabulary.*), so the concept is defined once, in one place, for both this schema and the metamodel; the rest stay inline, because nothing else references them. `host_element` is the one field an overlay may not write: which element a component renders is a fact of its source. additionalProperties: false so an unknown key fails GTS.validateEntity by name instead of vanishing silently.",
     properties,
     // Only the fields the overlay itself always requires (buildMetamodel's
     // own `required` list) are required here too - everything else is
@@ -1598,7 +1598,7 @@ export const buildBaseSchema = memoizeSchema((): Record<string, unknown> => ({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: 'UiKit component',
     description:
-      "The ONE type every kit component's props schema derives from, and the only one: a contract has a single parent, which is what its chained $id says, and the surface of the host element it renders is a reference it holds rather than a second parent. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which the hand-written surface for each host element declares, because a type shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. `x-gts-abstract` says outright that it is never instantiated: no props object is ever validated against this type, only against a component's own derived one. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, everything asserted about a component, which GTS.validateEntity checks the component's own x-gts-traits against. Eleven of its fields are references to the types that own each concept (gts.frontx.uikit.vocabulary.*) rather than inline definitions; five - invariants, anti_patterns, examples, withheld and host_element - the validator reads but nothing else references, so they stay inline. See the domain model in the package DESIGN for how they relate.",
+      "The ONE type every kit component's props schema derives from, and the only one: a contract has a single parent, which is what its chained $id says, and the surface of the host element it renders is a reference it holds rather than a second parent. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which the hand-written surface for each host element declares, because a type shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. `x-gts-abstract` says outright that it is never instantiated: no props object is ever validated against this type, only against a component's own derived one. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, everything asserted about a component, which GTS.validateEntity checks the component's own x-gts-traits against. A field whose shape another type owns is a reference to that type (gts.frontx.uikit.vocabulary.*) rather than an inline definition; the rest - intent, typical_uses, invariants, anti_patterns, examples, withheld and host_element - the validator reads but nothing else references, so they stay inline. See the domain model in the package DESIGN for how they relate.",
     type: 'object',
     // Never instantiated: a props object is validated against a COMPONENT's
     // derived type, never against this one, which declares no properties at
@@ -2298,8 +2298,8 @@ export function assertOverlayReferencesRealProps(component: string, overlay: Ove
 // which is the state every recompile passes through. No TypeScript program is
 // built - this is a directory listing and a YAML parse per described
 // component.
-// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-composition:p1
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-composition:p1:inst-co-derive
+// @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-structure-derivation:p1
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-structure-derivation:p1:inst-co-derive
 export function deriveMountPoints(directory: string, exportStem: string): string[] {
   const self = componentTypeRef(exportStem, contractMajor(directory, exportStem));
   const selfToken = gtsToken(exportStem);
@@ -2321,7 +2321,7 @@ export function deriveMountPoints(directory: string, exportStem: string): string
       // away. Matched by name and refused: moving a major is an edit to every
       // overlay naming the component, and dropping the filled mount point for
       // the ones left behind would hide exactly the edit the move demands.
-      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-composition:p1:inst-co-stale-major
+      // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-structure-derivation:p1:inst-co-stale-major
       const named = refPattern.exec(accepted);
       if (named !== null && named[1] === selfToken) {
         throw new Error(
@@ -2330,7 +2330,7 @@ export function deriveMountPoints(directory: string, exportStem: string): string
             `overlay that names the component`,
         );
       }
-      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-composition:p1:inst-co-stale-major
+      // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-structure-derivation:p1:inst-co-stale-major
     }
   }
   return mountPoints.sort();
@@ -2345,7 +2345,7 @@ export function compileMountedIn(directory: string, exportStem: string, overlay:
   const points: MountPoint[] = [...deriveMountPoints(directory, exportStem), ...authored];
   return points.length > 0 ? points : undefined;
 }
-// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-composition:p1:inst-co-derive
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-structure-derivation:p1:inst-co-derive
 
 // Every overlay the kit ships, read once per caller: the directory it lives
 // in, its own stem, and the parsed document. Two derivations walk this - a
@@ -2372,7 +2372,7 @@ function eachOverlay(): { directory: string; stem: string; overlay: Overlay }[] 
 // one root per family name, and no family without one - can be exercised
 // without writing an overlay; familyRoster below applies it to what the kit
 // ships.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-composition:p1:inst-co-family
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-structure-derivation:p1:inst-co-family
 export interface FamilyRoster {
   name: string;
   root?: string;
@@ -2437,7 +2437,7 @@ export function compileFamilyMembership(exportStem: string, overlay: Overlay): F
   }
   return { name: membership.name, role: 'root', members: roster.parts };
 }
-// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-composition:p1:inst-co-family
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-structure-derivation:p1:inst-co-family
 
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1
 // @cpt-dod:cpt-frontx-ui-kit-dod-component-contracts-compilation:p1

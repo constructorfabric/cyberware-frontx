@@ -280,7 +280,7 @@ describe('extractComponent: bare union type in heritage position (N2)', () => {
 });
 
 describe('extractComponent: a hyphenated element tag reaches a snake_case token (M2)', () => {
-  const PASSTHROUGH_ID_PATTERN = new RegExp(elementTypeIdPattern());
+  const ELEMENT_ID_PATTERN = new RegExp(elementTypeIdPattern());
 
   it("keeps the tag as the element kind and normalizes it only where an identifier needs it", () => {
     // Two different things, deliberately: the element kind is the real tag
@@ -289,7 +289,7 @@ describe('extractComponent: a hyphenated element tag reaches a snake_case token 
     const [widget] = extractComponent(fixture('custom-element-kind.fixture.tsx'));
     expect(widget.elementKind).toBe('my-custom-element');
     expect(domElementToken(widget.elementKind!)).toBe('dom_my_custom_element');
-    expect(elementTypeId(domElementToken(widget.elementKind!))).toMatch(PASSTHROUGH_ID_PATTERN);
+    expect(elementTypeId(domElementToken(widget.elementKind!))).toMatch(ELEMENT_ID_PATTERN);
   });
 });
 

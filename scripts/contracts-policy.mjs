@@ -103,7 +103,7 @@ export function runCli(options = {}) {
   }
 
   // Never gates the build on its own exit code - `contracts:enrollment` itself
-  // never calls process.exit(1) (see check.ts's runCoverage), so this is
+  // never calls process.exit(1) (see check.ts's runEnrollment), so this is
   // belt-and-braces against a future change to that contract, not a real
   // branch this policy expects to take today.
   runner.run('contracts:enrollment', []);

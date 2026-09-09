@@ -18,7 +18,7 @@
   - [Contract Compilation](#contract-compilation)
   - [Metamodel Instance Assembly](#metamodel-instance-assembly)
   - [Host Element Surface](#host-element-surface)
-  - [Composition Derivation](#composition-derivation)
+  - [Structure derivation](#structure-derivation)
   - [Untyped Properties And The Statements About Them](#untyped-properties-and-the-statements-about-them)
   - [Prop Classification Report](#prop-classification-report)
   - [Contract Identifier Construction](#contract-identifier-construction)
@@ -259,9 +259,9 @@ Two properties of a hand-written set are worth stating, because one is checked a
 4. [x] - `p1` - Resolve the surface a contract NAMES through the reference it holds - one reader for every check that needs it, rather than each check walking the schema body its own way - and answer "none" for a contract that names no surface - `inst-es-compose`
    1. [x] - `p1` - Compose the two at the point of validation: the contract and that surface applied to the same props object, so what the surface asserts about an attribute it types is still asserted - by the reader that resolved the reference rather than by the contract's own body. A reader that never looks the surface up gets the open classification instead, which is the honest answer for a reader that never asked - `inst-es-compose`
 
-### Composition Derivation
+### Structure derivation
 
-- [x] `p1` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-composition`
+- [x] `p1` - **ID**: `cpt-frontx-ui-kit-algo-component-contracts-structure-derivation`
 
 **Input**: The artifact stem being compiled, and its admitted overlay.
 
@@ -552,14 +552,14 @@ The system **MUST** compile an admitted overlay and an extraction into a props s
 - `cpt-frontx-ui-kit-algo-component-contracts-compilation`
 - `cpt-frontx-ui-kit-algo-component-contracts-instance`
 - `cpt-frontx-ui-kit-algo-component-contracts-element-surface`
-- `cpt-frontx-ui-kit-algo-component-contracts-composition`
+- `cpt-frontx-ui-kit-algo-component-contracts-structure-derivation`
 - `cpt-frontx-ui-kit-algo-component-contracts-untyped-props`
 - `cpt-frontx-ui-kit-algo-component-contracts-props-classification`
 
 **Constraints**: `cpt-frontx-ui-kit-constraint-contracts-repository-only`
 
 **Touches**:
-- Entities: `Contract`, `Metamodel instance`, `Passthrough type`
+- Entities: `Contract`, `Metamodel instance`, `Element type`
 
 ### Contracts Are Named In The Type System's Grammar
 
@@ -571,13 +571,13 @@ The system **MUST** construct every contract, instance, host-element-surface and
 - `cpt-frontx-ui-kit-algo-component-contracts-identifiers`
 
 **Touches**:
-- Entities: `Contract`, `Metamodel instance`, `Passthrough type`
+- Entities: `Contract`, `Metamodel instance`, `Element type`
 
 ### The Validator-Read Block Is Derived, Not Restated
 
 - [x] `p1` - **ID**: `cpt-frontx-ui-kit-dod-component-contracts-gts-traits-schema`
 
-The system **MUST** express the meaning vocabulary as one type per concept, each with its own identifier, and **MUST** define every meaning field ONCE and hand the same definitions to both readers - the schema the abstract component type carries and the schema an author is held to - rather than maintaining a second copy of them, so the two can never disagree about what a field looks like. It **MUST** make the one mechanical adjustment the type store requires, an optional field given a null alternative and default placed so the referenced type cannot overwrite it, without changing the shape a component that sets those fields must satisfy. Where a field holds the identifier of another type, the declaration **MUST** carry both the reference and the grammar that rejects a malformed identifier, because the type store removes the reference annotation before validating and a declaration left with nothing else in it stops constraining the value at all. Where one value of a field settles the question every other value leaves open - "what may appear inside this component" answered as unconstrained or as nothing - the vocabulary **MUST** refuse detail beside it, so a contract cannot say both that nothing may appear inside and that something may, and **MUST** require detail beside the value that answers nothing on its own. Every value a field admits **MUST** be defined in the type that admits it, including what "text" means, so a reader never has to find the definition elsewhere. Where a component may be mounted **MUST** be optional, because most of the kit is mounted anywhere; and a statement about what the schema cannot assert **MUST** say what it is about, from a closed list, with the one about a property naming that property and no other carrying a name, so a family of such claims can be checked against the contract instead of read one at a time. The three answers a contract gives **MUST** stay three: an attestation carries an outcome, a prop carries a classification, a comparison carries a decision. The fields nothing else references - the props the kit does not advertise, the invariants, the anti-patterns, the examples and the host element's surface reference - stay inline rather than becoming types of their own; the first **MUST** pair every name with the reason it is not advertised. The host element's surface reference is the one field of that block an overlay **MUST NOT** write, because which element a component renders is a fact of its source, and it **MUST** resolve for a component that renders none - which is what the null alternative and default are for.
+The system **MUST** express the meaning vocabulary as one type per concept, each with its own identifier, and **MUST** define every meaning field ONCE and hand the same definitions to both readers - the schema the abstract component type carries and the schema an author is held to - rather than maintaining a second copy of them, so the two can never disagree about what a field looks like. It **MUST** make the one mechanical adjustment the type store requires, an optional field given a null alternative and default placed so the referenced type cannot overwrite it, without changing the shape a component that sets those fields must satisfy. Where a field holds the identifier of another type, the declaration **MUST** carry both the reference and the grammar that rejects a malformed identifier, because the type store removes the reference annotation before validating and a declaration left with nothing else in it stops constraining the value at all. Where one value of a field settles the question every other value leaves open - "what may appear inside this component" answered as unconstrained or as nothing - the vocabulary **MUST** refuse detail beside it, so a contract cannot say both that nothing may appear inside and that something may, and **MUST** require detail beside the value that answers nothing on its own. Every value a field admits **MUST** be defined in the type that admits it, including what "text" means, so a reader never has to find the definition elsewhere. Where a component may be mounted **MUST** be optional, because most of the kit is mounted anywhere; and a statement about what the schema cannot assert **MUST** say what it is about, from a closed list, with the one about a property naming that property and no other carrying a name, so a family of such claims can be checked against the contract instead of read one at a time. The three answers a contract gives **MUST** stay three: an attestation carries an outcome, a prop carries a classification, a comparison carries a decision. The fields nothing else references - what the component is for, its typical uses, the invariants, the anti-patterns, the examples, the props the kit does not advertise and the host element's surface reference - stay inline rather than becoming types of their own; the props the kit does not advertise **MUST** pair every name with the reason it is not advertised. The host element's surface reference is the one field of that block an overlay **MUST NOT** write, because which element a component renders is a fact of its source, and it **MUST** resolve for a component that renders none - which is what the null alternative and default are for.
 
 **Implements**:
 - `cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema`
@@ -595,7 +595,7 @@ The system **MUST** compare a component's committed contract and metamodel insta
 - `cpt-frontx-ui-kit-algo-component-contracts-freshness`
 
 **Touches**:
-- Entities: `Contract`, `Metamodel instance`, `Passthrough type`
+- Entities: `Contract`, `Metamodel instance`, `Element type`
 
 ### Each Described Component Carries Its Own Conformance Suite
 
@@ -622,7 +622,7 @@ The system **MUST** decide a contract's backward compatibility from three signal
 - `cpt-frontx-ui-kit-flow-component-contracts-guard-change`
 
 **Touches**:
-- Entities: `Contract`, `Passthrough type`
+- Entities: `Contract`, `Element type`
 
 ### Enforcement Is Scoped To The Change
 
