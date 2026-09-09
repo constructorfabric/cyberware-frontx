@@ -144,10 +144,18 @@ export interface RegisteredTemplateEntry {
   description?: string;
   // The RECORDED declaration on the entry (`project-state/types.ts`'s
   // `TemplateEntry.excludedSubtrees`) — read straight off the project state
-  // document, never re-resolved from a manifest, so a developer can see what
-  // a `delete` would preserve without reading `.frontx/project.json` by
-  // hand. Omitted, never `[]`, for a document written before this field
-  // existed.
+  // document, never re-resolved from a manifest, so a developer can see this
+  // one component of what a `delete` would preserve without reading
+  // `.frontx/project.json` by hand. NOT the complete answer: `delete`
+  // resolves a name's declared exclusions as the UNION of this RECORDED
+  // value and the template's CURRENT manifest declaration
+  // (`cpt-frontx-algo-cli-scaffolding-delete-plan`'s own `inst-dp-union-
+  // declared-exclusions`), so a manifest edited after registration can
+  // still add ground this field alone does not name — `delete --dry-run`'s
+  // own `toPreserve` (and its `exclusionsDrift`, when the two sources
+  // disagree) is the authoritative report of what a deletion would actually
+  // preserve, this field is only the recorded half of it. Omitted, never
+  // `[]`, for a document written before this field existed.
   excludedSubtrees?: string[];
 }
 

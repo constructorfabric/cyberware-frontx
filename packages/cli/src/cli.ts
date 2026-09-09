@@ -241,6 +241,12 @@ export function usageText(): string {
     'template name already registered under the current project, the target or',
     'targets to apply it to. assemble/apply/seed all accept the identical shape.',
     '',
+    'Environment:',
+    '  FRONTX_INVENTORY_ROOT  Where installed template content and its index live.',
+    '                         Defaults to ~/.frontx/inventory. A relative value is',
+    '                         resolved against the working directory.',
+    '  GITHUB_TOKEN           Sent when fetching a template from a GitHub origin.',
+    '',
   ].join('\n');
 }
 
@@ -517,6 +523,13 @@ function createInteractiveDeletionConfirm(): ConfirmDeletionFn {
   return async function confirmDeletion(plan): Promise<'confirmed' | 'declined'> {
     await writeInteractiveLineOrEscalate(`Would delete:\n${plan.toDelete.map((p) => `  ${p}`).join('\n') || '  (nothing)'}\n`);
     await writeInteractiveLineOrEscalate(`Would preserve:\n${plan.toPreserve.map((p) => `  ${p}`).join('\n') || '  (nothing)'}\n`);
+    if (plan.exclusionsDrift) {
+      await writeInteractiveLineOrEscalate(
+        `Note: the owning template's current manifest and its recorded declaration disagree on excludedSubtrees ` +
+          `— current: ${plan.exclusionsDrift.current.join(', ') || '(none)'}; recorded: ` +
+          `${plan.exclusionsDrift.recorded.join(', ') || '(none)'}. Both are honoured above.\n`,
+      );
+    }
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     try {
       const answer = await askWithDefaultOnEndOfInput(rl, `Delete "${plan.target}"? [y/N] `);
@@ -807,6 +820,14 @@ function renderUnregisterOutcome(result: UnregisterOutcome, jsonMode: boolean): 
       ? { exitCode: exitCodeForError(result.code), stdout: JSON.stringify(err(result.code, result.message, result.details)) }
       : { exitCode: exitCodeForError(result.code), stderr: result.message };
   }
+  if ('outcome' in result && result.outcome === 'orphan-dropped') {
+    const data = { name: result.name, outcome: 'orphan-dropped' as const, orphanedTargets: result.orphanedTargets };
+    const text =
+      `Unregistered template "${result.name}" — its origin could no longer be resolved and no excludedSubtrees ` +
+      `was ever recorded, so no deletion plan could ever be computed for it. Every file under its target(s) ` +
+      `(${result.orphanedTargets.join(', ')}) is left untouched on disk; only the registration was removed.`;
+    return jsonMode ? { exitCode: EXIT_SUCCESS, stdout: JSON.stringify(ok(data)) } : { exitCode: EXIT_SUCCESS, stdout: text };
+  }
   return jsonMode
     ? { exitCode: EXIT_SUCCESS, stdout: JSON.stringify(ok({ name: result.name })) }
     : { exitCode: EXIT_SUCCESS, stdout: `Unregistered template "${result.name}".` };
@@ -973,16 +994,37 @@ function renderDeleteOutcome(result: DeleteOutcome, jsonMode: boolean): CommandO
       : { exitCode: exitCodeForError(result.code), stderr: result.message };
   }
   const listText = (label: string, paths: string[]): string => `${label}:\n${paths.map((p) => `  ${p}`).join('\n') || '  (nothing)'}`;
+  // Rendered identically wherever a plan reaches an outcome — a dry run, a
+  // decline, or a completed deletion — since the drift fact belongs to the
+  // computed plan, not to which of the three outcomes it happened to reach.
+  const driftText = (exclusionsDrift: { current: string[]; recorded: string[] } | undefined): string =>
+    exclusionsDrift
+      ? `\nNote: the owning template's current manifest and its recorded declaration disagree on ` +
+        `excludedSubtrees — current: ${exclusionsDrift.current.join(', ') || '(none)'}; recorded: ` +
+        `${exclusionsDrift.recorded.join(', ') || '(none)'}. Both are honoured above.`
+      : '';
   if (result.outcome === 'dry-run') {
-    const data = { target: result.target, toDelete: result.toDelete, toPreserve: result.toPreserve };
-    const text = `Dry run for "${result.target}"\n${listText('Would delete', result.toDelete)}\n${listText('Would preserve', result.toPreserve)}`;
+    const data = {
+      target: result.target,
+      toDelete: result.toDelete,
+      toPreserve: result.toPreserve,
+      ...(result.exclusionsDrift ? { exclusionsDrift: result.exclusionsDrift } : {}),
+    };
+    const text =
+      `Dry run for "${result.target}"\n${listText('Would delete', result.toDelete)}\n${listText('Would preserve', result.toPreserve)}` +
+      driftText(result.exclusionsDrift);
     return jsonMode ? { exitCode: EXIT_SUCCESS, stdout: JSON.stringify(ok(data)) } : { exitCode: EXIT_SUCCESS, stdout: text };
   }
   if (result.outcome === 'declined') {
-    const data = { target: result.target, toDelete: result.toDelete, toPreserve: result.toPreserve };
+    const data = {
+      target: result.target,
+      toDelete: result.toDelete,
+      toPreserve: result.toPreserve,
+      ...(result.exclusionsDrift ? { exclusionsDrift: result.exclusionsDrift } : {}),
+    };
     return jsonMode
       ? { exitCode: EXIT_SUCCESS, stdout: JSON.stringify(ok(data)) }
-      : { exitCode: EXIT_SUCCESS, stdout: `Deletion of "${result.target}" declined; nothing was deleted.` };
+      : { exitCode: EXIT_SUCCESS, stdout: `Deletion of "${result.target}" declined; nothing was deleted.${driftText(result.exclusionsDrift)}` };
   }
   // `aiBundleResidue` is present ONLY when the deletion itself succeeded and
   // was recorded, but the CLI-owned `.frontx/ai/<name>/` bundle could not be
@@ -994,6 +1036,7 @@ function renderDeleteOutcome(result: DeleteOutcome, jsonMode: boolean): CommandO
     target: result.target,
     toDelete: result.toDelete,
     toPreserve: result.toPreserve,
+    ...(result.exclusionsDrift ? { exclusionsDrift: result.exclusionsDrift } : {}),
     templateName: result.templateName,
     wasLastTarget: result.wasLastTarget,
     ...(result.aiBundleResidue !== undefined ? { aiBundleResidue: result.aiBundleResidue } : {}),
@@ -1006,7 +1049,7 @@ function renderDeleteOutcome(result: DeleteOutcome, jsonMode: boolean): CommandO
     ? { exitCode: EXIT_SUCCESS, stdout: JSON.stringify(ok(data)) }
     : {
         exitCode: EXIT_SUCCESS,
-        stdout: `Deleted "${result.target}" (${result.toDelete.length} path(s) removed).${residueNote}`,
+        stdout: `Deleted "${result.target}" (${result.toDelete.length} path(s) removed).${residueNote}${driftText(result.exclusionsDrift)}`,
       };
 }
 
@@ -1023,10 +1066,21 @@ function renderUpgradeOutcome(result: UpgradeCommandOutcome, jsonMode: boolean):
       : { exitCode: exitCodeForError(result.code), stderr: result.message };
   }
   if (result.outcome === 'noop') {
-    const data = { outcome: result.outcome, at: result.at };
+    const data = {
+      outcome: result.outcome,
+      at: result.at,
+      ...(result.recordedExclusions !== undefined ? { recordedExclusions: result.recordedExclusions } : {}),
+    };
+    // "Nothing to do" only when nothing WAS done: a no-op that recorded the
+    // declaration a legacy entry was missing says so instead.
+    const text =
+      result.recordedExclusions === undefined
+        ? `Already at "${result.at.origin}" (version ${result.at.version}); nothing to do.`
+        : `Already at "${result.at.origin}" (version ${result.at.version}); recorded its declared excludedSubtrees, ` +
+          `which the entry was missing.`;
     return jsonMode
       ? { exitCode: EXIT_SUCCESS, stdout: JSON.stringify(ok(data)) }
-      : { exitCode: EXIT_SUCCESS, stdout: `Already at "${result.at.origin}" (version ${result.at.version}); nothing to do.` };
+      : { exitCode: EXIT_SUCCESS, stdout: text };
   }
   if (result.outcome === 'declined') {
     const data = { outcome: result.outcome, plan: renderReviewablePlan(result.plan) };
@@ -1521,10 +1575,17 @@ export async function runCommand(command: KnownCommand, args: string[], deps: Cl
       const repoRoot = process.cwd();
       // @cpt-end:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-invoke
       // @cpt-begin:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-run-algorithm
-      const result = await unregisterTemplate(name, repoRoot, deps.readProjectStateFn, deps.writeProjectStateFn);
+      const result = await unregisterTemplate(name, repoRoot, deps.readProjectStateFn, deps.writeProjectStateFn, {
+        repoRoot,
+        inventory: deps.inventory,
+        readFileFn: deps.readFileFn,
+        canonicalizeFn: deps.createCanonicalizeTargetFn(repoRoot),
+      });
       // @cpt-end:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-run-algorithm
       // @cpt-begin:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-if-not-registered
       // @cpt-begin:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-return-not-registered
+      // @cpt-begin:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-if-orphan-dropped
+      // @cpt-begin:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-return-orphan-dropped
       // @cpt-begin:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-if-targets
       // @cpt-begin:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-return-targets
       // @cpt-begin:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-else
@@ -1534,6 +1595,8 @@ export async function runCommand(command: KnownCommand, args: string[], deps: Cl
       // @cpt-end:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-else
       // @cpt-end:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-return-targets
       // @cpt-end:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-if-targets
+      // @cpt-end:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-return-orphan-dropped
+      // @cpt-end:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-if-orphan-dropped
       // @cpt-end:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-return-not-registered
       // @cpt-end:cpt-frontx-flow-composed-provenance-unregister-template:p1:inst-unreg-if-not-registered
     }

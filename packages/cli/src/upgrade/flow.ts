@@ -63,7 +63,12 @@ import type {
 } from './types';
 
 export type UpgradeFlowOutcome =
-  | { ok: true; outcome: 'noop'; at: OriginVersion }
+  // `recordedExclusions` is present only when this no-op WROTE the
+  // document — a legacy entry acquiring the field it was missing. A no-op for
+  // the `{origin, version}` pair is not a no-op for the document, and an
+  // outcome that says "nothing to do" after a write is not a description a
+  // caller can act on.
+  | { ok: true; outcome: 'noop'; at: OriginVersion; recordedExclusions?: string[] }
   | { ok: true; outcome: 'declined'; plan: UpgradePlan }
   | { ok: true; outcome: 'success'; plan: UpgradePlan; reclaimedTempPaths: string[] }
   | UpgradeRefusal;
@@ -343,6 +348,7 @@ async function driveUpgrade(name: string, deriveCandidate: DeriveCandidateFn, de
     // applies to `register --replace` landing on the same origin. `entry`
     // is the SAME already-read baseline this call read once above at
     // `inst-read-provenance`/`inst-rst-invoke`; never re-read.
+    let recordedExclusions: string[] | undefined;
     if (entry.excludedSubtrees === undefined) {
       const repaired: TemplateEntry = { ...entry, excludedSubtrees: validated.excludedSubtrees };
       // @cpt-begin:cpt-frontx-flow-upgrade-changeset-review-approval:p1:inst-record-noop-exclusions
@@ -358,10 +364,11 @@ async function driveUpgrade(name: string, deriveCandidate: DeriveCandidateFn, de
       if (!written.ok) {
         return { ok: false, code: 'PROJECT_INVALID', message: written.message };
       }
+      recordedExclusions = validated.excludedSubtrees;
     }
     // @cpt-end:cpt-frontx-flow-upgrade-changeset-restore:p1:inst-rst-if-noop-missing-exclusions
     // @cpt-end:cpt-frontx-flow-upgrade-changeset-review-approval:p1:inst-if-noop-missing-exclusions
-    return { ok: true, outcome: 'noop', at: validated.at };
+    return { ok: true, outcome: 'noop', at: validated.at, ...(recordedExclusions !== undefined ? { recordedExclusions } : {}) };
   }
   // @cpt-end:cpt-frontx-state-upgrade-changeset-lifecycle:p1:inst-st-read-to-noop
 

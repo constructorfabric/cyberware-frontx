@@ -2,7 +2,6 @@
 // @cpt-algo:cpt-frontx-algo-composed-provenance-project-state-io:p1
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, symlink, writeFile, chmod, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -21,10 +20,8 @@ import {
   PathUnreadableError,
   ProjectStateUnreadableError,
 } from '../fs-project-io';
+import { makeFifo, fifosAvailable } from '../../__tests__/support/fifo';
 
-function makeFifo(fifoPath: string): void {
-  execFileSync('mkfifo', [fifoPath]);
-}
 
 // Real-fs coverage for the two adapters behind the content self-containment
 // algorithm's seams: `ListPayloadFilesFn` (enumerates the whole candidate
@@ -399,7 +396,7 @@ describe('createFsReadFileFn', () => {
     await expect(readFile(filePath)).resolves.toBe('{"name":"widget"}');
   });
 
-  it('throws NotRegularFileError, rather than hanging, when the path is a FIFO', async () => {
+  it.skipIf(!fifosAvailable())('throws NotRegularFileError, rather than hanging, when the path is a FIFO', async () => {
     const dir = await makeRoot();
     const fifoPath = path.join(dir, 'frontx-template.json');
     makeFifo(fifoPath);
@@ -487,7 +484,7 @@ describe('createFsReadProjectFileFn', () => {
     await expect(readProjectFile(dirPath)).resolves.toBeNull();
   });
 
-  it('throws NotRegularFileError, rather than hanging, when the path is a FIFO', async () => {
+  it.skipIf(!fifosAvailable())('throws NotRegularFileError, rather than hanging, when the path is a FIFO', async () => {
     const dir = await makeRoot();
     const fifoPath = path.join(dir, 'scratch.json');
     makeFifo(fifoPath);
@@ -529,7 +526,7 @@ describe('createFsReadProjectStateFn / createFsWriteProjectStateFn', () => {
   // `parseProjectStateDocument` failure), rather than the previously
   // undocumented `CONTENT_CONFLICT` a bare `NotRegularFileError` collapsed
   // into at the CLI's own top-level catch.
-  it('wraps a FIFO at the document path in ProjectStateUnreadableError (never hangs)', async () => {
+  it.skipIf(!fifosAvailable())('wraps a FIFO at the document path in ProjectStateUnreadableError (never hangs)', async () => {
     const dir = await makeRepo();
     const location = path.join(dir, '.frontx', 'project.json');
     await mkdir(path.dirname(location), { recursive: true });
@@ -816,7 +813,7 @@ describe('firstNonDirectoryComponentOf', () => {
     expect(firstNonDirectoryComponentOf(target)).toBe(blockingFile);
   });
 
-  it('reports a FIFO as the blocker', async () => {
+  it.skipIf(!fifosAvailable())('reports a FIFO as the blocker', async () => {
     const dir = await makeBase();
     const fifoPath = path.join(dir, 'blocking-fifo');
     makeFifo(fifoPath);

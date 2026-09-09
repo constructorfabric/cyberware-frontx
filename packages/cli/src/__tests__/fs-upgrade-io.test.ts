@@ -10,7 +10,6 @@
 // it either, matching the seam's own contract that a special file's content
 // is never read.
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile, readFile, symlink, lstat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -21,6 +20,7 @@ import {
   ReservedTempPathOccupiedError,
 } from '../adapters/fs-upgrade-io';
 import { RESERVED_TEMP_SUFFIX } from '../paths/reserved-temp-name';
+import { makeFifo, fifosAvailable } from './support/fifo';
 
 let root: string | undefined;
 
@@ -31,12 +31,9 @@ afterEach(async () => {
   }
 });
 
-function makeFifo(fifoPath: string): void {
-  execFileSync('mkfifo', [fifoPath]);
-}
 
 describe('createFsReadDiskEntryFn — a real special file (FIFO)', () => {
-  it('reports a FIFO as {kind: "special"}, never as "directory", without ever opening it', async () => {
+  it.skipIf(!fifosAvailable())('reports a FIFO as {kind: "special"}, never as "directory", without ever opening it', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'frontx-upgrade-special-'));
     const fifoPath = path.join(root, 'pipe');
     makeFifo(fifoPath);
@@ -50,7 +47,7 @@ describe('createFsReadDiskEntryFn — a real special file (FIFO)', () => {
     expect(entry).toEqual({ kind: 'special' });
   });
 
-  it('reports a FIFO standing in for an ancestor directory as "special", never as "directory"', async () => {
+  it.skipIf(!fifosAvailable())('reports a FIFO standing in for an ancestor directory as "special", never as "directory"', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'frontx-upgrade-special-'));
     const fifoPath = path.join(root, 'pipe');
     makeFifo(fifoPath);
@@ -118,7 +115,7 @@ describe('createFsWriteDiskFileFn — exclusive-create backstop on a reserved te
 });
 
 describe('createFsListDiskFilesFn — a FIFO inside the walked directory', () => {
-  it('silently omits a FIFO from the enumerated regular files, without recursing into it or throwing', async () => {
+  it.skipIf(!fifosAvailable())('silently omits a FIFO from the enumerated regular files, without recursing into it or throwing', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'frontx-upgrade-special-list-'));
     await writeFile(path.join(root, 'a.txt'), 'A', 'utf-8');
     makeFifo(path.join(root, 'pipe'));

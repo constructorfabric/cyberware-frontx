@@ -14,16 +14,20 @@
 //
 // Two distinct fixes are pinned here:
 //   - An unreadable CURRENT manifest (a FIFO, `chmod 000`, ...) must refuse
-//     rather than silently widen `toDelete` — but, per the resolution order
-//     `cpt-frontx-algo-cli-scaffolding-delete-plan` now fixes (CURRENT
-//     manifest, then RECORDED value, then refuse), it is caught internally
-//     and falls back to a RECORDED declaration first: it refuses ONLY when
-//     the owning template's project-state entry ALSO carries no recorded
-//     `excludedSubtrees`. The refusal message no longer distinguishes WHICH
-//     disk shape blocked the read (a FIFO vs. a permission refusal) — both
-//     fold into the same "current manifest could not be read" fact, since
-//     what matters to the caller is that neither source could supply a
-//     declaration, not why the first one failed.
+//     rather than silently widen `toDelete` — but, per the UNION
+//     `cpt-frontx-algo-cli-scaffolding-delete-plan` now fixes (the CURRENT
+//     manifest's declaration and the RECORDED value are both consulted and
+//     unioned, never one overriding the other), an unreadable CURRENT
+//     manifest is caught internally and falls back to a RECORDED
+//     declaration alone: it refuses ONLY when the owning template's
+//     project-state entry ALSO carries no recorded `excludedSubtrees`. The
+//     refusal message no longer distinguishes WHICH disk shape blocked the
+//     read (a FIFO vs. a permission refusal) — both fold into the same
+//     "current manifest could not be read" fact, since what matters to the
+//     caller is that neither source could supply a declaration, not why the
+//     first one failed. It DOES distinguish that from a CONFIRMED-absent
+//     origin (below), since only the latter names `unregister`, never
+//     `register --replace`, as the remedy.
 //   - A genuinely ABSENT manifest, or an origin that can no longer be
 //     proven to stay inside the project root, must now ALSO refuse when the
 //     owning template's project-state entry carries no RECORDED
@@ -31,9 +35,12 @@
 //     (`inst-dp-if-manifest-absent`, now retired) let a developer's own
 //     `excludedSubtrees`-protected file land in `toDelete` under `ok:true`
 //     the moment a vendored `path:` origin folder was removed, which is the
-//     ORDINARY lifecycle of that folder, not an exotic failure.
+//     ORDINARY lifecycle of that folder, not an exotic failure. Since there
+//     is nothing left to re-register in this state, the refusal instead
+//     names `unregister <name>` — the escape built for exactly this
+//     unusable-orphan state (`cpt-frontx-algo-composed-provenance-
+//     unregister`'s own `inst-cpunreg-if-orphan`).
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile, readFile, symlink, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -50,6 +57,7 @@ import {
   createFsReadProjectStateFn,
   createFsWriteProjectStateFn,
 } from '../adapters/fs-project-io';
+import { makeFifo, fifosAvailable } from './support/fifo';
 
 let root: string | undefined;
 
@@ -60,9 +68,6 @@ afterEach(async () => {
   }
 });
 
-function makeFifo(fifoPath: string): void {
-  execFileSync('mkfifo', [fifoPath]);
-}
 
 const noInventory: DeletePlanInventoryPort = { lookup: () => undefined };
 
@@ -91,7 +96,7 @@ function realDeps(repoRoot: string) {
 }
 
 describe('deleteTarget — owning template manifest unreadable (real filesystem)', () => {
-  it('refuses CONTENT_CONFLICT on --dry-run AND --yes when the manifest is a FIFO and no excludedSubtrees is recorded, leaving the developer\'s excluded file untouched on disk', async () => {
+  it.skipIf(!fifosAvailable())('refuses CONTENT_CONFLICT on --dry-run AND --yes when the manifest is a FIFO and no excludedSubtrees is recorded, leaving the developer\'s excluded file untouched on disk', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'frontx-delete-manifest-fifo-'));
 
     // A locally-registered template declaring `userland/` excluded, applied
@@ -178,7 +183,7 @@ describe('deleteTarget — owning template manifest unreadable (real filesystem)
   // FIFO, here) no longer blocks `delete` outright once the owning
   // template's project-state entry carries a RECORDED `excludedSubtrees` —
   // the plan is computed from the recorded value instead of refusing.
-  it('falls back to a RECORDED excludedSubtrees and succeeds when the CURRENT manifest is a FIFO', async () => {
+  it.skipIf(!fifosAvailable())('falls back to a RECORDED excludedSubtrees and succeeds when the CURRENT manifest is a FIFO', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'frontx-delete-manifest-fifo-recorded-'));
 
     await mkdir(path.join(root, 'vendor', 'app-template'), { recursive: true });
@@ -298,8 +303,11 @@ describe('deleteTarget — owning template manifest unreadable (real filesystem)
   // vendored `path:` origin folder is transient by design and its removal
   // is the ORDINARY lifecycle, not an exotic failure, so folding it to `[]`
   // silently widened `toDelete` to include the developer's own
-  // `excludedSubtrees`-protected file. It now REFUSES instead, exactly like
-  // the unreadable case above, naming the remedy (re-register the origin).
+  // `excludedSubtrees`-protected file. It now REFUSES instead, naming
+  // `unregister` — not `register --replace` — as the remedy: unlike the
+  // unreadable case above, the origin here is confirmed genuinely gone, so
+  // there is nothing left to re-register, and `unregister` is the one
+  // command built to drop an entry this permanently unusable.
   it('refuses when the manifest is genuinely absent and no excludedSubtrees is recorded, leaving the developer\'s excluded file untouched', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'frontx-delete-manifest-absent-'));
 
@@ -336,6 +344,10 @@ describe('deleteTarget — owning template manifest unreadable (real filesystem)
     );
 
     expect(dryRunResult).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
+    if (!dryRunResult.ok) {
+      expect(dryRunResult.message).toContain('unregister appTemplate');
+      expect(dryRunResult.message).not.toContain('--replace');
+    }
 
     const survived = await readFile(path.join(root, 't', 'userland', 'mine.txt'), 'utf-8');
     expect(survived).toBe('DEVELOPER-OWNED — must survive');
@@ -399,7 +411,9 @@ describe('deleteTarget — owning template manifest unreadable (real filesystem)
   // No recorded declaration AND the origin cannot be resolved at all — an
   // escaping symlink standing where the origin folder is expected, so
   // `canonicalizeFn` returns `null` for it. Must refuse exactly like a
-  // genuinely absent manifest, never widen.
+  // genuinely absent manifest, never widen — and, since this is the
+  // confirmed-absent case rather than the merely-unreadable one, the named
+  // remedy is `unregister`, not `register --replace`.
   it('refuses when no excludedSubtrees is recorded and the origin folder is an escaping symlink', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'frontx-delete-escaping-origin-'));
     const outside = await mkdtemp(path.join(tmpdir(), 'frontx-delete-escaping-origin-outside-'));
@@ -438,6 +452,10 @@ describe('deleteTarget — owning template manifest unreadable (real filesystem)
       );
 
       expect(dryRunResult).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
+      if (!dryRunResult.ok) {
+        expect(dryRunResult.message).toContain('unregister appTemplate');
+        expect(dryRunResult.message).not.toContain('--replace');
+      }
 
       const survived = await readFile(path.join(root, 't', 'userland', 'mine.txt'), 'utf-8');
       expect(survived).toBe('DEVELOPER-OWNED — must survive');

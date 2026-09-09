@@ -79,6 +79,12 @@ export type ConfirmDeletionFn = (plan: {
   target: string;
   toDelete: string[];
   toPreserve: string[];
+  // Carried through so an interactive confirmation can tell a developer
+  // that the owning template's CURRENT manifest and its RECORDED
+  // declaration disagree — see `scaffold/delete-plan.ts`'s own
+  // `DeletionPlanResult.exclusionsDrift` doc comment for what this means
+  // and when it is present. Absent whenever the plan reports no drift.
+  exclusionsDrift?: { current: string[]; recorded: string[] };
 }) => Promise<'confirmed' | 'declined'>;
 
 export interface DeleteCommandFlags {
@@ -91,14 +97,29 @@ export type DeleteOutcome =
   // Two SEPARATE variants (never one variant with `outcome: 'dry-run' |
   // 'declined'`) so a caller narrowing on `outcome` gets ordinary
   // discriminated-union exhaustiveness checking on this field.
-  | { ok: true; outcome: 'dry-run'; target: string; toDelete: string[]; toPreserve: string[] }
-  | { ok: true; outcome: 'declined'; target: string; toDelete: string[]; toPreserve: string[] }
+  | {
+      ok: true;
+      outcome: 'dry-run';
+      target: string;
+      toDelete: string[];
+      toPreserve: string[];
+      exclusionsDrift?: { current: string[]; recorded: string[] };
+    }
+  | {
+      ok: true;
+      outcome: 'declined';
+      target: string;
+      toDelete: string[];
+      toPreserve: string[];
+      exclusionsDrift?: { current: string[]; recorded: string[] };
+    }
   | {
       ok: true;
       outcome: 'deleted';
       target: string;
       toDelete: string[];
       toPreserve: string[];
+      exclusionsDrift?: { current: string[]; recorded: string[] };
       templateName: string;
       // Whether this deletion just emptied `templateName`'s `targets[]`
       // array — correctly detected regardless of whether an AI-bundle
@@ -135,6 +156,15 @@ type PlanOutcome =
 // filesystem path an internal error object happens to carry.
 function toProjectRelativePath(repoRoot: string, absolutePath: string): string {
   return path.relative(repoRoot, absolutePath).split(path.sep).join('/');
+}
+
+// Spreads a computed plan's `exclusionsDrift` onto an outcome/details object
+// only when the plan actually carries one — the same "absent, never an
+// empty key" discipline `scaffold/delete-plan.ts`'s own doc comment states
+// for the field, kept in exactly one place rather than repeated at each of
+// this module's four return sites that report a plan.
+function driftField(plan: DeletionPlanResult & { ok: true }): { exclusionsDrift: { current: string[]; recorded: string[] } } | Record<string, never> {
+  return plan.exclusionsDrift ? { exclusionsDrift: plan.exclusionsDrift } : {};
 }
 
 
@@ -370,7 +400,14 @@ export async function deleteTarget(
   if (flags.dryRun) {
     // @cpt-end:cpt-frontx-state-cli-scaffolding-delete-op:p1:inst-do-plan-pending
     // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-dry-run
-    return { ok: true, outcome: 'dry-run', target: initial.target, toDelete: initial.plan.toDelete, toPreserve: initial.plan.toPreserve };
+    return {
+      ok: true,
+      outcome: 'dry-run',
+      target: initial.target,
+      toDelete: initial.plan.toDelete,
+      toPreserve: initial.plan.toPreserve,
+      ...driftField(initial.plan),
+    };
     // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-dry-run
   }
   // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-if-dry-run
@@ -391,7 +428,12 @@ export async function deleteTarget(
         message:
           `Deleting "${initial.target}" requires confirmation. Re-issue this exact command with --yes after ` +
           'obtaining authorization out of band; nothing has been deleted.',
-        details: { target: initial.target, toDelete: initial.plan.toDelete, toPreserve: initial.plan.toPreserve },
+        details: {
+          target: initial.target,
+          toDelete: initial.plan.toDelete,
+          toPreserve: initial.plan.toPreserve,
+          ...driftField(initial.plan),
+        },
       };
       // @cpt-end:cpt-frontx-state-cli-scaffolding-delete-op:p1:inst-do-pending-declined
       // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-confirmation-required
@@ -410,7 +452,12 @@ export async function deleteTarget(
   } else {
     // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-else-interactive
     // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-prompt
-    const decision = await confirmDeletionFn({ target: initial.target, toDelete: initial.plan.toDelete, toPreserve: initial.plan.toPreserve });
+    const decision = await confirmDeletionFn({
+      target: initial.target,
+      toDelete: initial.plan.toDelete,
+      toPreserve: initial.plan.toPreserve,
+      ...driftField(initial.plan),
+    });
     // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-prompt
 
     // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-if-declined
@@ -418,7 +465,14 @@ export async function deleteTarget(
     if (decision === 'declined') {
       // @cpt-end:cpt-frontx-state-cli-scaffolding-delete-op:p1:inst-do-pending-declined
       // @cpt-begin:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-declined
-      return { ok: true, outcome: 'declined', target: initial.target, toDelete: initial.plan.toDelete, toPreserve: initial.plan.toPreserve };
+      return {
+        ok: true,
+        outcome: 'declined',
+        target: initial.target,
+        toDelete: initial.plan.toDelete,
+        toPreserve: initial.plan.toPreserve,
+        ...driftField(initial.plan),
+      };
       // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-return-declined
     }
     // @cpt-end:cpt-frontx-flow-cli-scaffolding-delete-target:p1:inst-del-if-declined
@@ -536,6 +590,7 @@ export async function deleteTarget(
     target: final.target,
     toDelete: final.plan.toDelete,
     toPreserve: final.plan.toPreserve,
+    ...driftField(final.plan),
     templateName: ownerName,
     wasLastTarget,
     ...(aiBundleResidue ? { aiBundleResidue } : {}),

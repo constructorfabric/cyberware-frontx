@@ -14,7 +14,6 @@
 // "present but unreadable" fact without depending on `chmod`, which a
 // root-run test process would not be blocked by.
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -24,6 +23,7 @@ import type { UniformApplyInventoryPort } from '../scaffold/assembler';
 import type { ProjectStateDocument, ReadProjectStateFn } from '../project-state/types';
 import { createFsCanonicalizeTargetFn, createFsPathExistsFn, createFsReadFileFn, createFsReadProjectStateFn } from '../adapters/fs-project-io';
 import { createFsListDiskFilesFn } from '../adapters/fs-upgrade-io';
+import { makeFifo, fifosAvailable } from './support/fifo';
 
 let root: string | undefined;
 
@@ -34,9 +34,6 @@ afterEach(async () => {
   }
 });
 
-function makeFifo(fifoPath: string): void {
-  execFileSync('mkfifo', [fifoPath]);
-}
 
 function manifest(name: string): Record<string, unknown> {
   return { name, version: '1.0.0', excludedSubtrees: [], description: `Fixture template "${name}"` };
@@ -94,7 +91,7 @@ async function setup(repoRoot: string, bManifestReadable: boolean): Promise<{ de
 }
 
 describe('resolveAndCheckBatch — per-template independence of an unrelated unreadable manifest (real filesystem)', () => {
-  it('stages a NEW target for @x/a while @x/b\'s manifest is a FIFO, instead of blocking on it', async () => {
+  it.skipIf(!fifosAvailable())('stages a NEW target for @x/a while @x/b\'s manifest is a FIFO, instead of blocking on it', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'frontx-assemble-other-unreadable-'));
     const { deps, readProjectStateFn } = await setup(root, false);
 

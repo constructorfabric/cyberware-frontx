@@ -1,22 +1,29 @@
 // @cpt-algo:cpt-frontx-algo-cli-scaffolding-delete-plan:p1
 // @cpt-flow:cpt-frontx-flow-cli-scaffolding-assemble-preview:p1
 //
-// Real-filesystem coverage for defect-2: `delete` and `assemble` must agree
-// on a registered name's declared `excludedSubtrees` whenever the CURRENT
-// manifest is readable. Reproduced live before this fix: register with
-// `excludedSubtrees: ["userland/"]`, apply at `.`, then edit the vendored
-// manifest to declare `["other/"]` instead —
+// Real-filesystem coverage for two, now-superseded, defects in how `delete`
+// resolves a registered name's declared `excludedSubtrees`:
 //
-//   frontx delete . --dry-run --json  => toDelete ["a.txt","other/o.txt"]
-//                                         toPreserve [..."userland/"...]
-//   frontx assemble ...               => exclusionRoots [..."other/"...]
+//   - An EARLIER round made the RECORDED value win unconditionally, so a
+//     developer who edited the vendored manifest after registration watched
+//     `delete` honour the STALE recorded list while `assemble` (which always
+//     reads the CURRENT manifest) read the edited one — a file the CURRENT
+//     manifest declared protected was deleted on the strength of that
+//     disagreement.
+//   - The round that fixed THAT made the CURRENT manifest win instead,
+//     which mirrored the identical hazard in the other direction: NARROWING
+//     the vendored manifest after `apply` (`excludedSubtrees: ["userland/"]`
+//     down to `["other/"]`) let `delete` sweep a developer's OWN
+//     `userland/`-protected file into `toDelete`, since the stale RECORDED
+//     protection was simply discarded rather than honoured.
 //
-// `delete` honoured the STALE recorded list and deleted `other/o.txt`,
-// which the CURRENT manifest declares protected; `assemble` honoured the
-// current one. This suite proves both now read from the SAME source (the
-// current manifest, when it is readable): `other/o.txt` — the file the
-// CURRENT declaration protects — survives a computed deletion plan, and
-// `assemble`'s own staged exclusion list names the identical ground.
+// This suite pins the fix current at HEAD: `delete`'s own plan resolves the
+// declared exclusions as the UNION of the CURRENT manifest and the RECORDED
+// value, so narrowing the manifest can never un-protect ground the recorded
+// declaration already protected, while `assemble` (unaffected by this fix,
+// by design — it materializes what the manifest says TODAY, a different
+// question) still reads the CURRENT manifest alone and reports the drift
+// between the two sources on the plan itself.
 import path from 'node:path';
 import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -63,7 +70,7 @@ const noInventory: DeletePlanInventoryPort & UniformApplyInventoryPort = {
 };
 
 describe('delete and assemble agreeing on an edited manifest\'s declared excludedSubtrees (real filesystem)', () => {
-  it('protects the CURRENT manifest\'s declared ground in both a computed deletion plan and a staged assemble batch', async () => {
+  it('unions the CURRENT manifest\'s declared ground with the RECORDED one in a computed deletion plan, while a staged assemble batch still reads the CURRENT manifest alone', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'frontx-edited-manifest-agree-'));
 
     await mkdir(path.join(root, 'vendor-a'), { recursive: true });
@@ -95,10 +102,13 @@ describe('delete and assemble agreeing on an edited manifest\'s declared exclude
 
     const canonicalizeFn = createFsCanonicalizeTargetFn(root);
 
-    // `delete`'s computed plan: `other/o.txt` — the CURRENT manifest's own
-    // protected ground — survives; `userland/mine.txt` no longer does, since
-    // the CURRENT declaration no longer names it (the stale RECORDED value
-    // is no longer authoritative once the current manifest is readable).
+    // `delete`'s computed plan: BOTH `other/o.txt` (the CURRENT manifest's
+    // own declared ground) and `userland/mine.txt` (the RECORDED
+    // declaration's ground) survive — the union protects whichever source
+    // named it, so narrowing the manifest away from `userland/` can never
+    // un-protect the developer's own file there. Only `a.txt`, named by
+    // neither source, is deleted. The two sources disagree (`other/` vs.
+    // `userland/`), so the plan also reports that drift.
     const plan = await computeDeletionPlan(
       't',
       root,
@@ -111,10 +121,12 @@ describe('delete and assemble agreeing on an edited manifest\'s declared exclude
     );
     expect(plan.ok).toBe(true);
     if (!plan.ok) return;
-    expect(plan.toDelete).toContain('t/a.txt');
-    expect(plan.toDelete).toContain('t/userland/mine.txt');
+    expect(plan.toDelete).toEqual(['t/a.txt']);
+    expect(plan.toDelete).not.toContain('t/userland/mine.txt');
     expect(plan.toDelete).not.toContain('t/other/o.txt');
     expect(plan.toPreserve).toContain('t/other/');
+    expect(plan.toPreserve).toContain('t/userland/');
+    expect(plan.exclusionsDrift).toEqual({ current: ['other/'], recorded: ['userland/'] });
 
     // `assemble`'s own staged batch reads the IDENTICAL current manifest —
     // its declared `excludedSubtrees` names the same ground `delete` just

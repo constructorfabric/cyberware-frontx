@@ -887,6 +887,14 @@ export function createFsCanonicalizeTargetFn(projectRoot: string): CanonicalizeT
   // to the OS temp directory on whichever call happens to ask first.
   isVolumeCaseInsensitive(realRoot);
   return function canonicalizeTarget(rawTarget: string): string | null {
+    // A leading `~` reaches this function only when the SHELL did not expand
+    // it — quoted, or a shell that does not expand it at all. Resolved
+    // literally it names a directory called `~` inside the project, which
+    // `apply` then creates and reports as an ordinary success: the developer
+    // asked for their home directory and got a stray `~/` in their repo.
+    // Refused instead, since no legitimate target is spelled this way.
+    const firstSegment = rawTarget.replace(/\\/g, '/').split('/')[0];
+    if (firstSegment === '~') return null;
     const lexicalCandidate = path.resolve(realRoot, rawTarget);
     const resolved = resolveNearestExistingAncestor(lexicalCandidate);
     if (resolved === null) return null;

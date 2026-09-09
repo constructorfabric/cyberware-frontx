@@ -32,7 +32,6 @@
 // below exercises that exact branch; a socket would take the identical path
 // through identical code, so it carries no separate test.
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile, readFile, symlink, lstat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -48,6 +47,7 @@ import {
   createFsUnlinkDiskFileFn,
   createFsListDiskFilesFn,
 } from '../adapters/fs-upgrade-io';
+import { makeFifo, fifosAvailable } from './support/fifo';
 
 let repoRoot: string | undefined;
 let outsideRoot: string | undefined;
@@ -63,9 +63,6 @@ afterEach(async () => {
   }
 });
 
-function makeFifo(fifoPath: string): void {
-  execFileSync('mkfifo', [fifoPath]);
-}
 
 /** Real `CommitDeps`, every disk seam backed by the genuine `fs-upgrade-io.ts`
  * adapters against `root`; only the project-state store and the two
@@ -144,7 +141,11 @@ async function plantAtTempPath(
   }
 }
 
-const SHAPES: Shape[] = ['directory', 'fifo', 'dangling-symlink', 'symlink-inside', 'symlink-outside'];
+// `'fifo'` drops out where FIFOs cannot be created at all, so the matrix
+// runs everywhere rather than failing on its first case.
+const SHAPES: Shape[] = (['directory', 'fifo', 'dangling-symlink', 'symlink-inside', 'symlink-outside'] as Shape[]).filter(
+  (shape) => shape !== 'fifo' || fifosAvailable(),
+);
 
 describe('commitUpgrade against a real filesystem — a foreign entry already occupying a reserved temp path', () => {
   for (const shape of SHAPES) {

@@ -20,6 +20,15 @@
 // `deleteTarget` directly against the REAL `fs-project-io.ts` adapters, the
 // only way to prove the recorded value actually lands in
 // `.frontx/project.json` and that a SUBSEQUENT `delete` then honours it.
+//
+// A LATER round changed which remedy `delete`'s own refusal names for this
+// exact state (origin confirmed absent, no recorded declaration): since
+// `register --replace` cannot succeed while the origin is gone (step 2
+// below still proves that), the refusal now names `unregister <name>`
+// instead — the escape that command was given for precisely this orphaned
+// state. This suite still drives the origin-restoration recovery path
+// (steps 3-5) to prove it independently keeps working, even though it is no
+// longer the FIRST remedy a developer reading the refusal is pointed to.
 import path from 'node:path';
 import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -118,8 +127,11 @@ describe('legacy excludedSubtrees recovery — register --replace and delete aga
     const fns = realFns(root);
 
     // 1. `delete .` refuses: neither the current manifest (origin gone) nor
-    //    a recorded declaration can establish what to exclude. The remedy
-    //    names `register ... --replace`.
+    //    a recorded declaration can establish what to exclude. The origin is
+    //    confirmed genuinely absent (not merely unreadable), so the remedy
+    //    named is `unregister`, not `register ... --replace` — that origin
+    //    cannot be re-registered while it is gone (step 2 below still proves
+    //    that independently).
     const firstDelete = await deleteTarget(
       '.',
       root,
@@ -137,7 +149,8 @@ describe('legacy excludedSubtrees recovery — register --replace and delete aga
     );
     expect(firstDelete).toMatchObject({ ok: false, code: 'CONTENT_CONFLICT' });
     if (!firstDelete.ok) {
-      expect(firstDelete.message).toContain('register path:vendor-a --replace');
+      expect(firstDelete.message).toContain('unregister @x/a');
+      expect(firstDelete.message).not.toContain('--replace');
     }
 
     // 2. Following the named remedy while the origin is STILL gone refuses

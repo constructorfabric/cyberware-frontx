@@ -114,19 +114,22 @@ Applying a registered template to a target (`apply`), computing and checking own
 
 **Success Scenarios**:
 - Developer unregisters a name whose `targets` array is empty: the entry is removed from `.frontx/project.json`.
+- Developer unregisters a name whose `targets` array is non-empty, but the entry is an unusable orphan — its origin can no longer be resolved at all and it carries no recorded `excludedSubtrees` either, so none of its targets could ever be reconciled into a deletion plan: the entry is removed from `.frontx/project.json` anyway, naming every target it carried, and every one of those targets' files is left exactly as it was on disk — only the registration is forgotten. This is the developer's way out of a name `delete` can never finish for (`cpt-frontx-algo-cli-scaffolding-delete-plan`'s own refusal, for this exact state, now names this command as the remedy instead of a re-registration that cannot succeed either).
 
 **Error Scenarios**:
 - The name has no entry in `.frontx/project.json`: the CLI refuses (`TEMPLATE_NOT_REGISTERED`).
-- The name's `targets` array is non-empty: the CLI refuses with `TARGETS_EXIST`, listing every target still depending on the name, and directs the developer to `delete` each target first; the entry is preserved.
+- The name's `targets` array is non-empty, and the entry is NOT the unusable-orphan state above — its origin still resolves, or it carries a recorded `excludedSubtrees` a deletion plan could still be computed from, or its origin is merely temporarily unreadable rather than confirmed gone: the CLI refuses with `TARGETS_EXIST`, listing every target still depending on the name, and directs the developer to `delete` each target first; the entry is preserved.
 
 **Steps**:
 1. [x] - `p1` - Developer invokes `unregister <name>` - `inst-unreg-invoke`
 2. [x] - `p1` - The CLI invokes the unregister algorithm (`cpt-frontx-algo-composed-provenance-unregister`) - `inst-unreg-run-algorithm`
 3. [x] - `p1` - **IF** the algorithm reports the name is not registered - `inst-unreg-if-not-registered`
    1. [x] - `p1` - **RETURN** `TEMPLATE_NOT_REGISTERED` to the developer - `inst-unreg-return-not-registered`
-4. [x] - `p1` - **IF** the algorithm reports a non-empty `targets` array - `inst-unreg-if-targets`
+4. [x] - `p1` - **IF** the algorithm reports the orphan-dropped outcome - `inst-unreg-if-orphan-dropped`
+   1. [x] - `p1` - **RETURN** success to the developer, naming every target the dropped entry carried and stating plainly that their files are untouched on disk — only the registration was removed - `inst-unreg-return-orphan-dropped`
+5. [x] - `p1` - **IF** the algorithm reports a non-empty `targets` array (and no orphan-drop above) - `inst-unreg-if-targets`
    1. [x] - `p1` - **RETURN** `TARGETS_EXIST` naming every dependent target; entry preserved - `inst-unreg-return-targets`
-5. [x] - `p1` - **ELSE** - `inst-unreg-else`
+6. [x] - `p1` - **ELSE** - `inst-unreg-else`
    1. [x] - `p1` - **RETURN** success; the entry is removed - `inst-unreg-return-success`
 
 ### Add a Project-Owned Root
@@ -300,7 +303,7 @@ Applying a registered template to a target (`apply`), computing and checking own
    1. [x] - `p1` - **IF** the resolved origin is the same immutable value (remote) or the same path (local) as the existing entry's `origin` - `inst-cpreg-if-same-origin`
       1. [x] - `p1` - **IF** the existing entry carries no RECORDED `excludedSubtrees` (a legacy entry from before that field existed) - `inst-cpreg-if-noop-missing-exclusions`
          1. [x] - `p1` - Write the existing entry back unchanged except for `excludedSubtrees`, set to the resolved manifest's own declared list read above (`inst-cpreg-read-manifest`) — a no-op for the `{origin, version}` pair is NOT a no-op for a document missing a field this algorithm writes: the entry otherwise stays exactly as recorded, including its `targets` and any `previous` pair. The outcome reported is its OWN, distinct from the no-op below: the document was written, and an envelope saying nothing happened after a write is not a description a caller can act on - `inst-cpreg-write-noop-exclusions`
-      2. [x] - `p1` - **RETURN** a no-op; the entry is otherwise unchanged - `inst-cpreg-return-noop`
+      2. [x] - `p1` - **RETURN** a no-op; the entry is otherwise unchanged. This is the branch that wrote NOTHING — the branch above, which recorded a missing `excludedSubtrees`, returns its own distinct outcome - `inst-cpreg-return-noop`
    2. [x] - `p1` - **IF** `--replace` was not given - `inst-cpreg-if-no-replace`
       1. [x] - `p1` - **RETURN** `REGISTRATION_CONFLICT` naming the currently registered origin and the requested one; entry preserved - `inst-cpreg-return-origin-conflict`
    3. [x] - `p1` - **IF** `--replace` was given but the existing entry's `targets` array is non-empty - `inst-cpreg-if-replace-applied`
@@ -315,7 +318,7 @@ Applying a registered template to a target (`apply`), computing and checking own
 
 **Input**: A template `name`.
 
-**Output**: A removed entry, a `TARGETS_EXIST` refusal naming every dependent target, or `TEMPLATE_NOT_REGISTERED`.
+**Output**: A removed entry, an orphan-dropped success naming every target the entry carried (files untouched), a `TARGETS_EXIST` refusal naming every dependent target, or `TEMPLATE_NOT_REGISTERED`.
 
 **Steps**:
 1. [x] - `p1` - Accept the `name` argument - `inst-cpunreg-accept`
@@ -323,7 +326,10 @@ Applying a registered template to a target (`apply`), computing and checking own
 3. [x] - `p1` - **IF** `templates[name]` does not exist - `inst-cpunreg-if-absent`
    1. [x] - `p1` - **RETURN** `TEMPLATE_NOT_REGISTERED` - `inst-cpunreg-return-not-registered`
 4. [x] - `p1` - **IF** `templates[name].targets` is non-empty - `inst-cpunreg-if-targets`
-   1. [x] - `p1` - **RETURN** `TARGETS_EXIST` listing every target in `targets`; entry preserved - `inst-cpunreg-return-targets`
+   1. [x] - `p1` - **IF** the entry is an unusable orphan: its origin can no longer be resolved AT ALL — probed the identical way `cpt-frontx-algo-cli-scaffolding-delete-plan` probes a template's CURRENT manifest, confirming a clean absence (the origin folder is gone, or the local inventory holds no entry for it) rather than a merely UNREADABLE origin (a FIFO, a permission refusal, ...), which is NOT this condition and leaves the ordinary refusal below in force — AND `templates[name]` carries no RECORDED `excludedSubtrees` either, so NEITHER source that a deletion plan could ever draw on is available and none of this name's targets can be reconciled into one by any route - `inst-cpunreg-if-orphan`
+      1. [x] - `p1` - Remove `templates[name]` from the document and write it; every target's files are left untouched on disk — only the registration is forgotten, never a target's ground - `inst-cpunreg-write-orphan-removed`
+      2. [x] - `p1` - **RETURN** success naming every target the entry carried as `orphanedTargets`, distinct from the ordinary empty-`targets` success, so a caller can see exactly which targets remain on disk with no registration record left for them - `inst-cpunreg-return-orphan-dropped`
+   2. [x] - `p1` - **ELSE RETURN** `TARGETS_EXIST` listing every target in `targets`; entry preserved - `inst-cpunreg-return-targets`
 5. [x] - `p1` - **ELSE** - `inst-cpunreg-else`
    1. [x] - `p1` - Remove `templates[name]` from the document and write it - `inst-cpunreg-write-removed`
    2. [x] - `p1` - **RETURN** success - `inst-cpunreg-return-success`
@@ -385,6 +391,7 @@ Applying a registered template to a target (`apply`), computing and checking own
 5. [x] - `p1` - **FROM** REGISTERED_APPLIED **TO** REGISTERED_APPLIED **WHEN** `apply` records another target for this name, or `upgrade` (owned by `cpt-frontx-feature-upgrade-changeset`) commits a new `origin`/`version` for this name while `targets` remains non-empty - `inst-rl-applied-to-applied`
 6. [x] - `p1` - **FROM** REGISTERED_APPLIED **TO** REGISTERED_EMPTY **WHEN** `delete` (owned by `cpt-frontx-feature-cli-scaffolding`) removes this name's last remaining target - `inst-rl-applied-to-empty`
 7. [x] - `p1` - **FROM** REGISTERED_APPLIED **TO** REGISTERED_APPLIED **WHEN** `unregister` is attempted while `targets` is non-empty — the attempt is refused and the state does not change - `inst-rl-applied-unregister-refused`
+8. [x] - `p1` - **FROM** REGISTERED_APPLIED **TO** UNREGISTERED **WHEN** `unregister` is attempted while `targets` is non-empty, but the entry is an unusable orphan — its origin can no longer be resolved at all AND no `excludedSubtrees` was ever recorded, so none of its targets can ever be reconciled into a deletion plan by any route (`cpt-frontx-algo-cli-scaffolding-delete-plan`'s own `inst-dp-else-refuse-unestablished` would refuse every one of them, forever); the entry is dropped and its targets' files are left untouched on disk — only this ONE verified state takes this transition instead of #7's refusal, never a name whose origin is merely temporarily unreadable - `inst-rl-applied-orphan-unregistered`
 
 ### Project-Owned Root Lifecycle
 
@@ -419,7 +426,7 @@ The system **MUST** implement atomic read and write of exactly one repository-lo
 
 - [x] `p1` - **ID**: `cpt-frontx-dod-composed-provenance-registration`
 
-The system **MUST** implement `register <origin>` — resolving and installing the origin through the shared resolver when needed, pinning a remote origin to the exact immutable commit or package version the fetch settled on (a local `path:` origin recorded as given), validating the manifest's `name`, `version`, and required non-empty `description`, and writing or confirming `templates[name]` — idempotent on a repeated identical origin, refused on a different origin without `--replace`, and refusing `--replace` itself unless `targets` is empty. The system **MUST** implement `unregister <name>`, refusing while `targets` is non-empty and listing every dependent target (`target`).
+The system **MUST** implement `register <origin>` — resolving and installing the origin through the shared resolver when needed, pinning a remote origin to the exact immutable commit or package version the fetch settled on (a local `path:` origin recorded as given), validating the manifest's `name`, `version`, and required non-empty `description`, and writing or confirming `templates[name]` — idempotent on a repeated identical origin, refused on a different origin without `--replace`, and refusing `--replace` itself unless `targets` is empty. The system **MUST** implement `unregister <name>`, refusing while `targets` is non-empty and listing every dependent target — EXCEPT for one verified state: an entry whose origin can no longer be resolved AT ALL and which carries no RECORDED `excludedSubtrees` either, so none of its targets could ever be reconciled into a deletion plan by any route (`cpt-frontx-algo-cli-scaffolding-delete-plan`); for that state alone, `unregister` **MUST** drop the entry instead, leaving every target's files untouched on disk, and **MUST NOT** extend this exception to an origin that is merely temporarily unreadable rather than confirmed absent (`target`).
 
 **Implements**:
 - `cpt-frontx-flow-composed-provenance-register-template`
@@ -494,7 +501,7 @@ The system **MUST** implement `validate --project`, checking the project state d
 - [x] A document holding a `templates[name]` entry with no `previous` field is structurally valid, and `validate --project` PASSes on it without reporting the absence — true both for a name never upgraded and for one whose upgrade or restore history a later `register --replace` cleared; when a `previous: {origin, version}` is present, its absence or presence is likewise never itself a `validate --project` finding.
 - [x] `register --replace` against a name carrying a `previous` entry clears it as part of the same write that replaces `origin` and `version`, so the new lineage starts with no preceding pair; `unregister` removes any `previous` entry along with the rest of the name's entry.
 - [x] A resolved manifest missing `name`, `version`, or a non-empty `description` fails registration with `INVALID_MANIFEST`, naming the missing or empty field, with no entry written.
-- [x] `unregister` on a name with a non-empty `targets` array is refused with `TARGETS_EXIST` and lists every target named; the same call on a name with an empty array removes the entry.
+- [x] `unregister` on a name with a non-empty `targets` array is refused with `TARGETS_EXIST` and lists every target named; the same call on a name with an empty array removes the entry. The one exception: a non-empty `targets` array on an entry that is an unusable orphan — its origin confirmed genuinely unresolvable AND no `excludedSubtrees` ever recorded, so none of its targets could ever be reconciled into a deletion plan (`cpt-frontx-algo-cli-scaffolding-delete-plan`) — removes the entry anyway, naming every target it carried and leaving every one of their files untouched on disk; an origin that is merely temporarily unreadable, rather than confirmed absent, does NOT qualify and still refuses `TARGETS_EXIST`.
 - [x] `unregister` on a name with no entry returns `TEMPLATE_NOT_REGISTERED`.
 - [x] `ownership add` on a path that does not exist is refused with `INVALID_PATH`; on a path coincident with or an ancestor of an applied target it is refused with `TARGET_CONFLICT`; otherwise the path is appended to `projectOwnedRoots` with no file created, moved, or deleted, and a repeated `add` of the same path is a no-op.
 - [x] `ownership remove` removes a path from `projectOwnedRoots` (or no-ops if absent) without touching any file.
@@ -503,5 +510,7 @@ The system **MUST** implement `validate --project`, checking the project state d
 - [x] `validate --project` returns `PROJECT_INVALID` for a malformed document or a malformed/duplicated `targets[]` entry, `VERSION_MISMATCH` for a name whose resolvable manifest version differs from its recorded version, `ORIGIN_UNAVAILABLE` for a name whose origin no longer resolves, `TARGET_CONFLICT` for an ownership-geometry conflict among recorded targets (reusing the Conflict Checker's geometry, not a redefinition of it), and `INVALID_PATH` for a `projectOwnedRoots` entry no longer present on disk.
 - [x] Every `RETURN`-level refusal in this feature's flows and algorithms names a code from the shared error-code vocabulary (`cpt-frontx-adr-cli-machine-readable-output`).
 - [x] A simulated interrupted write to `.frontx/project.json` (via the temp-file-plus-rename mechanism) leaves the repository holding the prior valid document, never a partially-merged one and never no document where one previously existed.
+- [x] `register`/`register --replace` resolving the SAME origin against an entry carrying no recorded `excludedSubtrees` writes that field and reports an outcome distinct from the no-op that wrote nothing. (`target`)
+- [x] `unregister` drops an entry whose origin can no longer be resolved AND which carries no recorded declaration, even with a non-empty `targets[]`, naming the targets it orphaned and leaving every file on disk; it still refuses `TARGETS_EXIST` for a name whose origin resolves, and for one whose manifest is merely unreadable rather than absent. (`target`)
 - [x] `cfs --json validate --artifact packages/cli/architecture/features/composed-provenance/FEATURE.md --skip-code` returns PASS.
 - [x] `cfs --json validate-toc packages/cli/architecture/features/composed-provenance/FEATURE.md` returns PASS.

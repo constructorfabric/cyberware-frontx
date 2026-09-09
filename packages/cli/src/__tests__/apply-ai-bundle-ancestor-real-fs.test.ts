@@ -25,7 +25,6 @@
 // handled correctly before this fix (`clearBundleDestination`) — pinned here
 // so it cannot regress.
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile, readFile, readdir, symlink, lstat } from 'node:fs/promises';
 import { readdirSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -45,6 +44,7 @@ import {
 import { createFsListDiskFilesFn } from '../adapters/fs-upgrade-io';
 import { createFsReadInstalledContentFn } from '../adapters/fs-existing-content';
 import { createFsBundleExistsFn, createFsCopyBundleFn, createFsRemoveBundleFn } from '../adapters/fs-ai-bundle';
+import { makeFifo, fifosAvailable } from './support/fifo';
 
 let root: string | undefined;
 
@@ -55,9 +55,6 @@ afterEach(async () => {
   }
 });
 
-function makeFifo(fifoPath: string): void {
-  execFileSync('mkfifo', [fifoPath]);
-}
 
 function manifest(name: string): Record<string, unknown> {
   return { name, version: '1.0.0', excludedSubtrees: [], description: `Fixture template "${name}"` };
@@ -153,7 +150,7 @@ describe('apply — AI-extension bundle materialization over a blocked scope com
     expect(scopeStat.isDirectory()).toBe(true);
   });
 
-  it('reclaims a FIFO standing at the scope component and still materializes the bundle', async () => {
+  it.skipIf(!fifosAvailable())('reclaims a FIFO standing at the scope component and still materializes the bundle', async () => {
     root = await mkdtemp(path.join(tmpdir(), 'frontx-aib-ancestor-fifo-'));
     await setupTemplate(root);
     await mkdir(path.join(root, 'app'), { recursive: true });

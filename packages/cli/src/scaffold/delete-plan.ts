@@ -89,6 +89,22 @@ export type DeletionPlanResult =
       // intermediate step, and the caller (`commands/delete.ts`) needs to
       // know which template's `targets[]` entry to remove `<target>` from.
       templateName: string;
+      // Present ONLY when the owning template's CURRENT manifest and its
+      // RECORDED project-state declaration were BOTH established and they
+      // name different sets of `excludedSubtrees` (`inst-dp-if-exclusions-
+      // drift`) — the two sources this plan's own `declaredExclusions`
+      // unions (`inst-dp-union-declared-exclusions`) disagreeing with each
+      // other. Surfaced on the plan's own reported shape, not buried in a
+      // comment, so a developer confirming a deletion computed from the
+      // union can see THAT the manifest and the record disagree and WHICH
+      // entries came from which — the union already protects both sides'
+      // ground either way, but silently unioning two disagreeing sources
+      // would hide a fact worth a developer's attention (a vendored
+      // manifest edited after registration without ever re-registering, or
+      // a stale record nobody refreshed). Absent, never an empty object,
+      // when either source could not be established at all (nothing to
+      // compare) or when both agree.
+      exclusionsDrift?: { current: string[]; recorded: string[] };
     }
   | { ok: false; code: ErrorCode; message: string; details?: Record<string, unknown> };
 
@@ -162,24 +178,28 @@ export async function computeDeletionPlan(
   const ownerEntry = document.templates[ownerName];
 
   // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-compute-ownership
-  // The owning template's declared `excludedSubtrees` — ONE resolution
-  // order, used by every consumer of this fact: (1) the template's CURRENT
-  // manifest, when it can be read and is contract-valid, wins; (2)
-  // otherwise the RECORDED value on the entry (`project-state/types.ts`'s
-  // `TemplateEntry.excludedSubtrees`, populated at register/upgrade time),
-  // when present; (3) otherwise refuse. This keeps `delete` agreeing with
-  // `assemble`/`apply` (which always resolve the CURRENT manifest fresh)
-  // whenever the manifest is readable, while still tolerating a vendored
-  // `path:` origin folder's ORDINARY removal (`QUICK_START` §4 vendors it
-  // into the project, and a developer may remove it once applied) once a
-  // recorded value exists to fall back to — the fix a prior round already
-  // made for that case. Preferring the recorded value UNCONDITIONALLY (the
-  // prior order) let `delete` and `assemble` disagree the moment a
-  // developer edited the vendored manifest after registration: `delete`
-  // kept honoring the stale recorded list while `assemble` read the
-  // edited one, and the developer's own file went on the strength of that
-  // disagreement.
-  let declaredExclusions: string[] | undefined;
+  // The owning template's declared `excludedSubtrees` — resolved from BOTH
+  // available sources and UNIONED, never one overriding the other. Two
+  // earlier orders were each tried and each mirrored the hazard the other
+  // one fixed: "recorded always wins" let a vanished origin widen the plan
+  // (a legacy entry's recorded value never updated once the manifest could
+  // no longer be read), and "current always wins" let a developer NARROW
+  // the vendored manifest after `apply` and un-protect ground the RECORDED
+  // declaration protected when the template was applied (confirmed live:
+  // register with `excludedSubtrees: ["userland/"]`, apply, then narrow the
+  // manifest to `[]` — a subsequent `delete` swept the developer's own
+  // `userland/` file into `toDelete`). The union is safe in both
+  // directions: a narrowed manifest can never un-protect ground the
+  // recorded declaration already protected, and a vanished origin (nothing
+  // for the CURRENT source to supply) can never widen the plan beyond what
+  // the RECORDED declaration allows. `apply`/`assemble`/`ownership` are
+  // deliberately NOT changed to match — they materialize what the manifest
+  // says TODAY, a different question from what a deletion may safely
+  // remove, and over-preserving in a deletion is the safe direction (a
+  // preserved file is named in the list the developer confirms, while a
+  // deleted one is gone).
+  let currentDeclaredExclusions: string[] | undefined;
+  const recordedDeclaredExclusions: string[] | undefined = ownerEntry.excludedSubtrees;
 
   // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-resolve-current-manifest
   // Any reason the CURRENT manifest cannot supply a declaration — genuinely
@@ -188,9 +208,17 @@ export async function computeDeletionPlan(
   // longer be proven to stay inside the project root — is caught here
   // rather than left to propagate: none of those honestly says "there is no
   // usable declaration at all", only that THIS source could not supply one,
-  // so the decision belongs to the recorded-value fallback below, never to
-  // a thrown exception this step used to let escape uncaught.
+  // so the decision belongs to the RECORDED source instead, never to a
+  // thrown exception this step used to let escape uncaught. `originConfirmed
+  // Absent` distinguishes the two DIFFERENT reasons the call below can fail
+  // to supply content — a clean `undefined` return (the origin folder is
+  // genuinely gone, or the inventory holds no entry for it) versus a THROW
+  // (something real stands there but is not a regular file) — because only
+  // the refusal below's remedy depends on which one happened: re-registering
+  // an origin that is merely unreadable can still repair the entry, but
+  // re-registering one that no longer resolves at all cannot.
   let currentManifestContent: string | undefined;
+  let originConfirmedAbsent = false;
   try {
     currentManifestContent = await resolveRegisteredManifestContent(ownerName, ownerEntry.origin, {
       repoRoot,
@@ -198,6 +226,7 @@ export async function computeDeletionPlan(
       readFileFn,
       canonicalizeFn,
     });
+    if (currentManifestContent === undefined) originConfirmedAbsent = true;
   } catch {
     currentManifestContent = undefined;
   }
@@ -207,37 +236,66 @@ export async function computeDeletionPlan(
   if (currentManifestContent !== undefined) {
     const manifestResult = readManifestFromContent(currentManifestContent);
     if (manifestResult.ok) {
-      declaredExclusions = manifestResult.manifest.excludedSubtrees;
+      currentDeclaredExclusions = manifestResult.manifest.excludedSubtrees;
     }
   }
   // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-current-manifest-valid
 
-  // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-else-if-recorded-exclusions
-  if (declaredExclusions === undefined && ownerEntry.excludedSubtrees !== undefined) {
-    declaredExclusions = ownerEntry.excludedSubtrees;
-  }
-  // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-else-if-recorded-exclusions
+  // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-read-recorded-declaration
+  // Read unconditionally, never gated on whether the CURRENT source above
+  // supplied one — the whole point of the union below is that NEITHER
+  // source alone decides; `recordedDeclaredExclusions` was already assigned
+  // from `ownerEntry.excludedSubtrees` above this step's own read, since
+  // that value needs no computation of its own, only a name.
+  // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-read-recorded-declaration
 
   // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-else-refuse-unestablished
-  if (declaredExclusions === undefined) {
+  if (currentDeclaredExclusions === undefined && recordedDeclaredExclusions === undefined) {
     // Neither source could establish a declaration: the current manifest
     // could not be read (or no longer validates against the four-field
     // contract) AND no declaration was recorded at registration/upgrade.
     // Refused rather than folded to `[]` — a plan computed from an
     // exclusion set silently emptied by an inconclusive answer would state
-    // a blast radius nobody verified.
+    // a blast radius nobody verified. The remedy named is whichever one can
+    // actually run: an origin confirmed genuinely absent cannot be
+    // re-registered (there is nothing left to resolve), so this entry's
+    // `targets[]` can never yield a computable deletion plan by ANY route
+    // short of forgetting the registration — `unregister` is built to allow
+    // exactly that for exactly this state (`cpt-frontx-algo-composed-
+    // provenance-unregister`'s own orphan-drop clause). An origin that is
+    // merely unreadable (a FIFO, a permission refusal, ...) may still be
+    // fixed and re-registered, so that remedy is named instead.
+    const message = originConfirmedAbsent
+      ? `Aborted — "${ownerName}"'s declared excludedSubtrees could not be established: its origin can no ` +
+        'longer be resolved at all (its origin folder is gone, or its installed content is no longer in the ' +
+        'local inventory), and no declaration was recorded at registration, so re-registering it cannot help ' +
+        `either. Run "frontx unregister ${ownerName}" to drop this unusable registration instead — every file ` +
+        'on disk is left untouched, only the registration is removed; nothing deleted.'
+      : `Aborted — "${ownerName}"'s declared excludedSubtrees could not be established: its current origin ` +
+        'manifest could not be read (or no longer validates against the four-field contract), and no ' +
+        `declaration was recorded at registration. Re-register it ("frontx register ${ownerEntry.origin} ` +
+        '--replace") so the declaration is recorded; nothing deleted.';
     return {
       ok: false,
       code: 'CONTENT_CONFLICT',
-      message:
-        `Aborted — "${ownerName}"'s declared excludedSubtrees could not be established: its current origin ` +
-        'manifest could not be read (or no longer validates against the four-field contract), and no declaration ' +
-        `was recorded at registration. Re-register it ("frontx register ${ownerEntry.origin} --replace") so the ` +
-        'declaration is recorded; nothing deleted.',
+      message,
       details: { target, templateName: ownerName, origin: ownerEntry.origin },
     };
   }
   // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-else-refuse-unestablished
+
+  // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-union-declared-exclusions
+  const declaredExclusions = dedupeStrings([...(recordedDeclaredExclusions ?? []), ...(currentDeclaredExclusions ?? [])]);
+  // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-union-declared-exclusions
+
+  // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-exclusions-drift
+  const exclusionsDrift: { current: string[]; recorded: string[] } | undefined =
+    currentDeclaredExclusions !== undefined &&
+    recordedDeclaredExclusions !== undefined &&
+    !sameStringSet(currentDeclaredExclusions, recordedDeclaredExclusions)
+      ? { current: dedupeStrings(currentDeclaredExclusions), recorded: dedupeStrings(recordedDeclaredExclusions) }
+      : undefined;
+  // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-if-exclusions-drift
 
   const localOriginFolder = deriveLocalOriginFolder(ownerEntry.origin, canonicalizeFn);
   const exclusionRoots = computeExclusionRoots({
@@ -345,8 +403,30 @@ export async function computeDeletionPlan(
   // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-set-delete
 
   // @cpt-begin:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-return-plan
-  return { ok: true, toDelete, toPreserve, templateName: ownerName };
+  return { ok: true, toDelete, toPreserve, templateName: ownerName, ...(exclusionsDrift ? { exclusionsDrift } : {}) };
   // @cpt-end:cpt-frontx-algo-cli-scaffolding-delete-plan:p1:inst-dp-return-plan
+}
+
+// Deduplicates and sorts a declared-`excludedSubtrees` list — used both to
+// build the union `declaredExclusions` from two possibly-overlapping
+// sources (`inst-dp-union-declared-exclusions`) and to normalize each side
+// of an `exclusionsDrift` report (`inst-dp-if-exclusions-drift`) so a
+// caller compares two canonical lists rather than two arbitrarily-ordered
+// ones. Order-insensitive by design: `excludedSubtrees` is a set of
+// declared roots, and two manifests spelling the identical set in a
+// different order are not a drift worth reporting.
+function dedupeStrings(values: readonly string[]): string[] {
+  return Array.from(new Set(values)).sort();
+}
+
+// Set equality for two `excludedSubtrees` declarations, ignoring order and
+// duplicates — the comparison `inst-dp-if-exclusions-drift` needs to decide
+// whether the CURRENT and RECORDED sources actually disagree, as opposed to
+// merely being spelled in a different order.
+function sameStringSet(a: readonly string[], b: readonly string[]): boolean {
+  const left = dedupeStrings(a);
+  const right = dedupeStrings(b);
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 // One entry per preserved GROUND, not per reason it survives. The same

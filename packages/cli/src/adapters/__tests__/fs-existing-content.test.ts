@@ -17,19 +17,16 @@
 //      `identicalFiles` — closing the hole that let `apply --adopt-existing`
 //      write straight through an aliasing symlink.
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFsReadExistingContentFn, createFsReadInstalledContentFn } from '../fs-existing-content';
 import { reconcileExistingContent, DIRECTORY_CONTENT_MARKER, SPECIAL_CONTENT_MARKER } from '../../scaffold/existing-content';
+import { makeFifo, fifosAvailable } from '../../__tests__/support/fifo';
 
 // `mkfifo` has no Node.js API — shelled out to the real command, present on
 // every POSIX platform this package targets (macOS/Linux CI). Windows is not
 // this suite's concern (a FIFO is a POSIX concept).
-function makeFifo(absolutePath: string): void {
-  execFileSync('mkfifo', [absolutePath]);
-}
 
 describe('createFsReadExistingContentFn (symlinks)', () => {
   let repoRoot: string;
@@ -143,7 +140,7 @@ describe('createFsReadExistingContentFn (symlinks)', () => {
   // stdout, no stderr, and no exit. Proving the call RETURNS is the point of
   // this test: if the fix regressed, this test would time out rather than
   // fail cleanly.
-  it('reports a FIFO inside the target as an uncomparable entry, and the call returns rather than hanging', async () => {
+  it.skipIf(!fifosAvailable())('reports a FIFO inside the target as an uncomparable entry, and the call returns rather than hanging', async () => {
     const dir = await makeRepo();
     await mkdir(path.join(dir, 'app'), { recursive: true });
     makeFifo(path.join(dir, 'app', 'pipe'));
@@ -157,7 +154,7 @@ describe('createFsReadExistingContentFn (symlinks)', () => {
   // A FIFO standing exactly AT the target itself — `blockingComponentOf`'s
   // own concern, distinct from the walk above. Before this fix, a FIFO here
   // fell through to `fs.readFileSync`, which blocks identically.
-  it('reports a FIFO standing at the target itself as the blocking component, and the call returns', async () => {
+  it.skipIf(!fifosAvailable())('reports a FIFO standing at the target itself as the blocking component, and the call returns', async () => {
     const dir = await makeRepo();
     await mkdir(path.join(dir, 'app'), { recursive: true });
     makeFifo(path.join(dir, 'app', 'pipe'));
