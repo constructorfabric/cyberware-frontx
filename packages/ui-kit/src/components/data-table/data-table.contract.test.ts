@@ -278,7 +278,7 @@ describe('data-table in a GTS store', () => {
   it("every contract's x-gts-traits validates against base.component.json's x-gts-traits-schema", () => {
     // See button.contract.test.ts for which gts-ts API this goes through
     // and why validateContractTraits (testing.ts) round-trips the contract
-    // through JSON first. Real here: DataTable sets extension_points but not
+    // through JSON first. Real here: DataTable declares growth surfaces but no
     // family, DataTableSortButton sets neither - between the two contracts,
     // every optional x-gts-traits absence shape this directory can produce is
     // exercised.

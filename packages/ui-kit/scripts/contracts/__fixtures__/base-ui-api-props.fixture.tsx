@@ -7,7 +7,7 @@
 // `render` for the button, `multiple` and `value` for the accordion root)
 // alongside React's own attributes for the element underneath. Both resolve a
 // host element through the same BaseUIComponentProps generic - `button` and
-// `div` - and that element decides which hand-written passthrough type the
+// `div` - and that element decides which hand-written element surface the
 // contract names, while the part's own props reach the contract's
 // properties. Two components wrapping the same primitive legitimately share
 // the same element surface, which is the point: React's attributes for a

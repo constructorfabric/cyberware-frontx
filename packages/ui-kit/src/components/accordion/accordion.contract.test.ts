@@ -296,7 +296,7 @@ describe('accordion family in a GTS store', () => {
     // (GTS.validateEntity) and why the registration round-trips through
     // JSON first (validateContractTraits, testing.ts) - real here because
     // three of these four contracts (item, trigger, content) omit `family`
-    // and all four omit `extension_points`, which is exactly the "genuinely
+    // and all four omit every growth surface, which is exactly the "genuinely
     // absent, not merely undefined" case that round-trip matters for.
     for (const { stem, contract } of Object.values(units)) {
       const result = validateContractTraits(contract);

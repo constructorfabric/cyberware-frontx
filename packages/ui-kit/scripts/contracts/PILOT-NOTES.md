@@ -11,6 +11,12 @@ the domain model - the diagram and the relationship table - lives in section
 numbered instructions the code carries markers into live in the feature spec
 (`packages/ui-kit/architecture/features/component-contracts/FEATURE.md`).
 
+Each section is written in the vocabulary that was in force when its
+observation was made, so a field or a type named below may not be the name the
+harness carries now. The last section, "The vocabulary described the harness,
+not the component", holds the map from every retired name to its current one -
+one place to read it rather than a parenthesis on every mention.
+
 ## A prop of the primitive is the component's API, not forwarded surface
 
 **Observed.** Every prop declared outside the component's own file was filed
@@ -1235,7 +1241,7 @@ here."
 
 The merge was also buying less than it looked like. A forwarded attribute
 already passes through the derived type's openness - `unevaluatedProperties`
-carries the annotated open schema `{ "x-uikit-verdict": "unchecked" }`, so a
+carries the annotated open schema `{ "x-uikit-classification": "unchecked" }`, so a
 prop nothing evaluates is admitted and reported rather than rejected - not
 through the second `allOf` branch. What the branch did add was the surface's
 own assertions on the attributes it types (`type` on a `<button>` is one of
@@ -1256,13 +1262,13 @@ by nothing. Props validation composes at the point of use -
 the contract - so the assertions the merge used to contribute are still made,
 by the reader that asked for them rather than by the artifact.
 
-**Where the reference lives, and why there.** In `x-gts-traits`, as a trait
-field, not as a top-level `x-uikit-host` annotation. `x-gts-traits` is the
-half of the overlay a validator reads and `GTS.validateEntity` checks against
-the base type's `x-gts-traits-schema`; `x-uikit` is prose with no validator on
-the other end. The host element is read by four checks, so it belongs in the
-half that is checked - and its shape is then declared once, in the metamodel,
-the way every other trait field is. On the instance it is a top-level field
+**Where the reference lives, and why there.** In `x-gts-traits`, not as a
+top-level `x-uikit-host` annotation. `x-gts-traits` is the block
+`GTS.validateEntity` checks against the abstract type's
+`x-gts-traits-schema`; `x-uikit` carries what the extraction read out of the
+source, which no validator checks. The host element is read by four checks, so
+it belongs in the block that is checked - and its shape is then declared once,
+beside every other field of that block. On the instance it is a top-level field
 beside `props_schema`, which makes it the second reference gts-ts resolves
 against the registry itself: `XGtsRefValidator` walks instance properties, so
 an instance naming a surface no committed file declares now fails by name,
@@ -1272,13 +1278,105 @@ The value is spelled the way every other reference here is: a string with
 `type` and `pattern` beside `x-gts-ref`, because `GtsStore.normalizeSchema`
 strips `x-gts-ref` before any validator sees the schema and would drop a
 branch left with nothing else in it. `x-gts-ref` states what the value must
-resolve to (`gts.frontx.uikit.passthrough.*`), the pattern is what rejects a
+resolve to (`gts.frontx.uikit.element.*`), the pattern is what rejects a
 malformed one.
 
 **What the compiler owns.** `host_element` is the one trait field an overlay
 may not write - which element a component renders is a fact of its source -
-so it is listed as machine-owned (`MACHINE_TRAIT_FIELDS`), removed from the
-overlay schema, and nullable in the trait schema for the same reason `family`
-is: `GtsStore.validateSchemaTraits` demands a value or a default for every
+so it is listed as compiler-written (`COMPILER_WRITTEN_TRAITS`), removed from
+the overlay schema, and nullable in the schema the abstract type carries for
+the same reason a family membership is: `GtsStore.validateSchemaTraits` demands a value or a default for every
 declared property, and DataTable renders its Table internally and names no
 surface at all.
+
+## The vocabulary described the harness, not the component
+
+**Observed.** The type-system maintainer's review of the overlay vocabulary
+read it as a reader would and found the words pointing at the tooling rather
+than at the component. A "don't" carried an `instead` that was either a GTS id
+or an object with an `external` key - two shapes for one recommendation, and
+the object form named the case by what the KIT lacks rather than by what the
+reader should do. `composition` bundled three things a reader asks separately:
+what may nest inside, where the component may be mounted, and how icons get
+in. `coverage` mixed one-word claims with a list of `assumptions` whose `kind`
+was doing the work the field name should have done, and the word itself
+collided with test coverage. `extension_points` folded a prop, a helper export
+and a feature set behind one `kind` enum, so a reader had to filter a list to
+learn any one of the three. `passthrough` named a mechanism (props pass
+through) where the concept is a thing (the attribute surface of a host
+element); `trait` named the carrier (`x-gts-traits`) rather than the content;
+`covered.json` and its report shared a word with the coverage tools. And one
+word, "verdict", was doing three unrelated jobs: the answer to a
+self-assessment claim, the classification of a prop nothing evaluates, and the
+result of a compatibility comparison.
+
+Worse than any single word: every meaning field was emitted TWICE, into the
+contract's annotation blocks and again as top-level fields of the metamodel
+instance, with nothing but the compiler keeping the two copies equal.
+
+**Changed.** Name the domain concept, put the tooling concern in an attribute:
+one word per concept, one concept per word. The retired names and their
+current ones:
+
+| Then | Now |
+|------|-----|
+| `gts.frontx.uikit.trait.<x>.v1~`, `types/trait.<x>.v1.json` | `gts.frontx.uikit.vocabulary.<x>.v1~`, `vocabulary/<x>.v1.json` |
+| `gts.frontx.uikit.passthrough.dom_button.v1~`, `passthrough/` | `gts.frontx.uikit.element.dom_button.v1~`, `elements/` |
+| `dont_use_when[].rule` | `dont_use_when[].situation` |
+| `dont_use_when[].instead` as an id or an `external_alternative` | `instead` as a `recommendation` (`target`, optional `component`, optional `note`) |
+| `composition.children.kinds` (refs, `text`, `none`) | `accepts` (`content`, `components`, `text`) |
+| `composition.children.icons_via` | `accepts.icons_via` |
+| `composition.mounts_in` plus the derived `composition.parent.kinds` | `mounted_in`, one field, filled refs beside authored `outside_mount` entries |
+| `family` (`root` ref, `role`, `parts`) | `family_membership` (`name` token, `role`, filled `members`) |
+| `coverage.<claim>: verified \| checked-no \| not-described` | `attestations.<claim>: { outcome: verified \| failed \| unknown, by? }` |
+| `coverage.assumptions[]` with `kind` | `untyped[]` with `about` |
+| assumption kinds `untyped_prop`, `hidden_part`, `external_mount` | `about` values `prop`, `unexposed_part`, `outside_mount` |
+| `extension_points[]` with `kind: prop \| helper \| feature` | `slots[]`, `companions[]`, `capabilities[]` |
+| `hidden[]` | `withheld[]` |
+| `x-uikit-verdict: unchecked` | `x-uikit-classification: unchecked` (the key, not the value) |
+| `covered.json`, "coverage report" | `enrolled.json`, "enrollment report" |
+| `CompatVerdict.status` | `CompatDecision.decision` |
+| titles "UiKit button contract", "UiKit component contract metamodel" | "UiKit Button", "UiKit component metamodel" |
+
+The three answers a contract gives stay three answers, because they answer
+different questions: an attestation carries an OUTCOME, a prop carries a
+CLASSIFICATION (`known`, `near_miss`, `unchecked`), a comparison against a base
+reference carries a DECISION. Only the shared word went.
+
+**One meaning document.** The instance is now a thin typed record - its own
+identity, the metamodel version, its props schema and its host element's
+surface - and every meaning field is emitted once, into the contract's
+`x-gts-traits`. The reasoning that settled it: a component's meaning is
+processing metadata OF THE TYPE, so a runtime that acts on it reads the type's
+own annotations, and an instance repeating it is one fact in two documents.
+`SEMANTIC_FIELD_TARGETS` stays a map with two possible targets rather than
+collapsing into a list, because it is the reversal point if that answer ever
+changes.
+
+**Two names that share a word, deliberately.** `slots` appears in both blocks:
+`x-uikit.slots` is every prop whose type no JSON Schema shape can express, as
+the extraction found it and with the checker's own printed type, while the
+authored `slots` are the subset the kit declares as extension surface, with
+the type a consumer has to satisfy. Same concept from the machine's side and
+the author's side, which is why one word carries both; a field routed to the
+wrong block would now be a type error at the routing map rather than one value
+silently winning over the other.
+
+**What the stress test withdrew.** The same review pushed six changes further
+than they went, and each was withdrawn by the maintainer's own stress test of
+it: dropping the abstract base type (the namespace slot is mandatory in the
+GTS grammar, so the shorter id is not an identifier at all, and "base" is a
+reasonable word for that slot); collapsing the three answers into one
+epistemic enum (they answer different questions); replacing an untyped
+statement's `about` with `expressed_in` (the both-ways pairing checks are
+keyed on what a statement is ABOUT, and `expressed_in` carried no load beside
+its authoring cost); computing a component's mount points lazily instead of
+materializing them (the normative reader holds one contract document with
+nothing else loaded); moving deprecations onto the props schema's own
+properties; and renaming `host_element`. Recorded because a withdrawn proposal
+is the cheapest thing to propose twice.
+
+**Effort.** Three commits: the words, the shapes, the documents. The harness's
+guarantees are unchanged - the same checks, the same pairing rules, the same
+compatibility signals, the same freshness comparison - and no version moved,
+because nothing outside this branch had consumed the previous names.
