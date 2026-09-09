@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef } from 'react';
 import type { ChildMfeBridge } from '@gears-frontx/react';
 import {
   FRONTX_SHARED_PROPERTY_THEME,
@@ -9,6 +9,8 @@ import {
 } from '@gears-frontx/react';
 import { Button, Card, CardContent, CardFooter, CardHeader, CardTitle, Skeleton } from '@gears-frontx/ui-kit';
 import { useScreenTranslations } from '../../shared/useScreenTranslations';
+import { useBridgeProperty } from '../../shared/useBridgeProperty';
+import { useHostDirection } from '../../shared/useHostDirection';
 import { kitThemeScopeFor } from '../../shared/kitThemeScope';
 import { AccountsApiService, type UpdateProfileVariables } from '../../api/AccountsApiService';
 import type { GetCurrentUserResponse } from '../../api/types';
@@ -33,13 +35,6 @@ const languageModules = import.meta.glob('./i18n/*.json') as Record<
   () => Promise<{ default: Record<string, string> }>
 >;
 
-const RTL_LANGUAGES = ['ar', 'he', 'fa', 'ur'];
-
-function readBridgeProperty(bridge: ChildMfeBridge, property: string, fallback: string): string {
-  const current = bridge.getProperty(property);
-  return current && typeof current.value === 'string' ? current.value : fallback;
-}
-
 /**
  * Profile Screen for the MFE remote.
  *
@@ -55,25 +50,9 @@ function readBridgeProperty(bridge: ChildMfeBridge, property: string, fallback: 
  */
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({ bridge }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  // Initial value read directly from the bridge's lazy useState initializer (runs once,
-  // synchronously, during the first render) instead of via setState in a mount effect —
-  // this avoids an extra render and the set-state-in-effect anti-pattern. The effect
-  // below only subscribes for subsequent property changes.
-  const [theme, setTheme] = useState<string>(() =>
-    readBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_THEME, 'default')
-  );
-  const [language, setLanguage] = useState<string>(() =>
-    readBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_LANGUAGE, 'en')
-  );
-  // The lazy initializers above run only on mount; if the host swaps the bridge
-  // instance, re-read its current properties during render ("adjusting state
-  // during render") — the subscription effect only delivers future changes.
-  const [prevBridge, setPrevBridge] = useState(bridge);
-  if (prevBridge !== bridge) {
-    setPrevBridge(bridge);
-    setTheme(readBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_THEME, 'default'));
-    setLanguage(readBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_LANGUAGE, 'en'));
-  }
+  const theme = useBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_THEME, 'default');
+  const language = useBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_LANGUAGE, 'en');
+  useHostDirection(containerRef, language);
 
   const service = apiRegistry.getService(AccountsApiService);
 
@@ -123,36 +102,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ bridge }) => {
     },
     [updateProfile]
   );
-
-  // Subscribe to theme and language domain properties
-  useEffect(() => {
-    const themeUnsubscribe = bridge.subscribeToProperty(FRONTX_SHARED_PROPERTY_THEME, (property) => {
-      if (typeof property.value === 'string') {
-        setTheme(property.value);
-      }
-    });
-
-    const languageUnsubscribe = bridge.subscribeToProperty(FRONTX_SHARED_PROPERTY_LANGUAGE, (property) => {
-      if (typeof property.value === 'string') {
-        setLanguage(property.value);
-      }
-    });
-
-    return () => {
-      themeUnsubscribe();
-      languageUnsubscribe();
-    };
-  }, [bridge]);
-
-  // Keep the Shadow DOM host's text direction in sync with the active language.
-  // An effect keyed by `language` (rather than logic inside the subscription
-  // callback) also covers the initial language, which never fires a callback.
-  useEffect(() => {
-    const rootNode = containerRef.current?.getRootNode();
-    if (rootNode && 'host' in rootNode) {
-      (rootNode.host as HTMLElement).dir = RTL_LANGUAGES.includes(language) ? 'rtl' : 'ltr';
-    }
-  }, [language]);
 
   const kitThemeScope = kitThemeScopeFor(theme);
 
