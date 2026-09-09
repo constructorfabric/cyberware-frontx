@@ -13,9 +13,5 @@
     "allowJs": true,
     "checkJs": true
   },
-  "include": ["scripts/**/*.ts", "scripts/**/*.mjs"],
-  // manual-auth-tests are run-by-hand demos that import
-  // @gears-frontx/framework — a template-shell package that is not
-  // resolvable from the ecosystem root (no path alias, not a workspace here).
-  "exclude": ["scripts/manual-auth-tests"]
+  "include": ["scripts/**/*.ts", "scripts/**/*.mjs"]
 }

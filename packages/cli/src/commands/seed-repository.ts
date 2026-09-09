@@ -94,9 +94,9 @@ export async function seedRepository(
   // Optional — defaults to "nothing already on disk", which is exactly what
   // a fresh seed target already is; a caller that has no reason to reconcile
   // with an existing file (e.g. a test fixture) can omit it.
-  // TODO(#489): make required once the template-mfe-harness branch merges —
-  // kept optional only because `__tests__/template-split.e2e.test.ts` (edited
-  // on that branch) calls this without supplying it.
+  // TODO(#489): make required once the pending #489 branch merges — kept
+  // optional only because `__tests__/template-split.e2e.test.ts` (edited on
+  // that branch) calls this without supplying it.
   readProjectFileFn: ReadProjectFileFn = async () => null,
 ): Promise<SeedRepositoryResult> {
   // @cpt-begin:cpt-frontx-flow-cli-scaffolding-seed-repository:p1:inst-seed-invoke

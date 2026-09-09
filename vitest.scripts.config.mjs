@@ -2,9 +2,8 @@
  * Vitest project for the repo-root `scripts/` toolchain.
  *
  * Everything else in this repo owns its own config: `packages/*` are npm
- * workspaces, and `template-shell/` is a standalone project. `scripts/` is
- * neither, so until this config existed no project claimed the runner,
- * version-policy, dependency-check and template-link tests and
+ * workspaces. `scripts/` is neither, so until this config existed no project
+ * claimed the runner, version-policy and dependency-check tests and
  * `npm run test:unit` walked straight past all of them (#483).
  *
  * `scripts/run-monorepo-unit-tests.mjs` drives this config as the `repo-scripts`

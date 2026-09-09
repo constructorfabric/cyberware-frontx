@@ -1,8 +1,0 @@
-{
-  "$id": "gts://gts.frontx.mfes.comm.shared_property.v1~frontx.mfes.comm.theme.v1~",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "allOf": [{ "$ref": "gts://gts.frontx.mfes.comm.shared_property.v1~" }],
-  "properties": {
-    "value": { "type": "string", "minLength": 1 }
-  }
-}

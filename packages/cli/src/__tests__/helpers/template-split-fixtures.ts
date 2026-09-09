@@ -1,13 +1,16 @@
-// TEST-ONLY — shared scaffolding for the issue #470 / phase 3 template-split
-// fixtures (`template-split.e2e.test.ts`, `template-split.pinning.test.ts`).
-// Carries NO `@cpt` marker and traces to NO FEATURE instruction, same as
+// TEST-ONLY — shared scaffolding for the multi-template e2e/pinning fixtures
+// (`template-split.e2e.test.ts`, `template-split.pinning.test.ts`). Carries
+// NO `@cpt` marker and traces to NO FEATURE instruction, same as
 // `adapters/__tests__/local-fetch.test.ts` (the pattern this module extends):
 // it introduces no new product behavior, only test-side plumbing around the
 // EXISTING `FetchFn` seam and the EXISTING install/seed/add commands.
 //
-// SSOT for the fixtures this module supports:
-// `.omc/plans/issue-470-boundary-design.md` §0 (facts F1-F18), §5 (risks),
-// §6 (fixture definitions).
+// The templates these fixtures install are small, self-contained, SYNTHETIC
+// fixtures checked in under `__tests__/fixtures/` — `fixture-shell/` (a
+// self-contained template that claims a root `package.json`) and
+// `fixture-overlay/` (an add-only overlay with NO `package.json` in its
+// ownership boundaries) — not the real product templates, which now live in
+// a separate repository.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -29,41 +32,30 @@ import type { ReadContentItemsFn, WriteFileFn } from '../../scaffold/types';
 import type { ReadProvenanceRecordsFn } from '../../scaffold/materialize';
 import type { ProvenanceWriteFn } from '../../provenance/types';
 
-// The real on-disk templates this repository ships post-split (issue #470
-// phase 2, already accepted) — the same fixture the P16 final done-gate
-// assembles OFFLINE via `createLocalFetchFn` (see `adapters/__tests__/local-fetch.test.ts`).
-// One level shallower than that file (`src/__tests__/helpers/` vs.
-// `src/adapters/__tests__/`), hence one fewer `../`.
-export const TEMPLATE_SHELL_DIR = path.resolve(__dirname, '../../../../../template-shell');
-export const TEMPLATE_MFE_DIR = path.resolve(__dirname, '../../../../../template-mfe');
+// The two small synthetic fixture templates checked in alongside this file —
+// see `__tests__/fixtures/fixture-shell/` and `__tests__/fixtures/fixture-overlay/`.
+export const FIXTURE_SHELL_DIR = path.resolve(__dirname, '../fixtures/fixture-shell');
+export const FIXTURE_OVERLAY_DIR = path.resolve(__dirname, '../fixtures/fixture-overlay');
 
 // The manifest-declared identity (`frontx-template.json`'s own `name` field)
-// for each real template — this IS the inventory/provenance identity post
+// for each fixture template — this IS the inventory/provenance identity post
 // manifest-declared-identity (cpt-frontx-adr-template-manifest-contract), NOT
-// the repo segment (`frontx-template-shell`/`frontx-template-mfe`) the
-// `local:` source-specs below name.
-export const TEMPLATE_SHELL_IDENTITY = '@gears-frontx/frontx-template-shell';
-export const TEMPLATE_MFE_IDENTITY = '@gears-frontx/frontx-template-mfe';
+// the repo segment (`fixture-shell`/`fixture-overlay`) the `local:`
+// source-specs below name. Kept deliberately distinct from the repo segment
+// so a caller that keyed lookups by the source-spec segment instead of the
+// manifest's declared identity would fail loudly rather than pass by
+// coincidence.
+export const FIXTURE_SHELL_IDENTITY = '@fixture/shell';
+export const FIXTURE_OVERLAY_IDENTITY = '@fixture/overlay';
 
 // Mirrors `adapters/local-fetch.ts`'s `DEFAULT_EXCLUDED_DIRS` exactly. The two
 // sets are restated rather than shared because this one is also the fixtures'
 // own real-file oracle, and a fixture that imported the value under test could
 // not detect the adapter dropping an entry from it.
 //
-// `.omc` and `.omo` are the agent session-state directories among them: both
-// can exist inside a template source tree during local development (confirmed
-// on this checkout: `template-shell/.omc/`,
-// `template-shell/src-app/mfe_packages/.omc/`, and `.omo/run-continuation/` at
-// the repository root, all untracked). Neither is template content, and left
-// unexcluded such a directory both (a) inflates the fixtures' "declared vs. real
-// files" oracle with unrelated noise, and (b) has the walk read live session
-// files that the agent session running these very tests can be rewriting
-// concurrently — a failure that reports as undeclared template content and does
-// not reproduce.
-//
 // Passed explicitly as `createLocalFetchFn`'s `excludedDirs` option (an existing
 // extension point, not a change to `local-fetch.ts`) wherever these fixtures
-// fetch from `TEMPLATE_SHELL_DIR`/`TEMPLATE_MFE_DIR`, and reused as the same
+// fetch from `FIXTURE_SHELL_DIR`/`FIXTURE_OVERLAY_DIR`, and reused as the same
 // exclusion set for the fixtures' own real-file listing so both sides of any
 // comparison agree on what "the template's files" means.
 export const EXCLUDED_DIRS = new Set([
@@ -99,8 +91,7 @@ export function readManifest(templateDir: string): TemplateManifest {
 /** Recursively lists every file under `root`, skipping `excludedDirs`,
  * returning repo-relative POSIX-joined paths (`path.join` is POSIX on this
  * checkout's darwin/CI runners — the N3 Windows-separator caveat is a
- * documented, deferred risk in the SSOT, not something this fixture set
- * re-litigates). */
+ * documented, deferred risk, not something this fixture set re-litigates). */
 export function listRealFiles(root: string, excludedDirs: Set<string> = EXCLUDED_DIRS, relativeDir = ''): string[] {
   // `relativeDir` accumulates across recursive calls below (each level appends
   // one more real directory-entry name via `path.join`), so by the time it
@@ -131,13 +122,13 @@ export function listRealFiles(root: string, excludedDirs: Set<string> = EXCLUDED
  * `pathWithinSubtree` the assembler calls rather than restating the rule: a
  * restated copy is an oracle that can agree with itself while disagreeing with
  * the code under test. Deliberately narrower than the real function: these
- * fixtures' two real manifests both declare `sharedFiles: []`, so shared-file
+ * fixtures' two manifests both declare `sharedFiles: []`, so shared-file
  * membership is out of scope here. */
 export function isPathWithinExclusiveSubtrees(relPath: string, exclusiveSubtrees: string[]): boolean {
   return exclusiveSubtrees.some((subtree) => pathWithinSubtree(relPath, subtree));
 }
 
-export interface ShellMfeHarness {
+export interface ShellOverlayHarness {
   inventory: TemplateInventory;
   inventoryRoot: string;
   lookupFn: (name: string) => InventoryEntry | undefined;
@@ -150,46 +141,42 @@ export interface ShellMfeHarness {
 }
 
 /**
- * Installs the two REAL on-disk templates (`frontx-template-shell`,
- * `frontx-template-mfe`) OFFLINE, via the same local-fetch + fs-backed
- * inventory adapters `adapters/__tests__/local-fetch.test.ts` uses for one
- * template — into a fresh inventory root, and returns every injected seam a
- * fixture needs to drive `seedRepository`/`addTemplate` against it.
+ * Installs the two synthetic fixture templates (`fixture-shell`,
+ * `fixture-overlay`) OFFLINE, via the same local-fetch + fs-backed inventory
+ * adapters `adapters/__tests__/local-fetch.test.ts` uses for one template —
+ * into a fresh inventory root, and returns every injected seam a fixture
+ * needs to drive `seedRepository`/`addTemplate` against it.
  *
  * Identity is the manifest's own declared `name`
- * (`@gears-frontx/frontx-template-shell`, `@gears-frontx/frontx-template-mfe`
- * — see `template-shell/frontx-template.json` and
- * `template-mfe/frontx-template.json`), NOT the repository segment
- * (`frontx-template-shell`/`frontx-template-mfe`) the `local:` source-spec
- * names below. This superseded the F2 assumption this comment used to make
- * (identity = repo segment) once manifest-declared identity landed
- * (cpt-frontx-adr-template-manifest-contract) — callers must key `lookupFn`
- * and any `seedRepository`/`addTemplate`/provenance assertions by the scoped
- * manifest name, not the bare source-spec segment. Throws on install
- * failure: these two installs are expected to always succeed against this
- * checkout's own shipped templates, so a failure here is a fixture-setup
- * bug, not a scenario under test.
+ * (`@fixture/shell`, `@fixture/overlay` — see `fixtures/fixture-shell/frontx-template.json`
+ * and `fixtures/fixture-overlay/frontx-template.json`), NOT the repo segment
+ * (`fixture-shell`/`fixture-overlay`) the `local:` source-specs below name —
+ * callers must key `lookupFn` and any `seedRepository`/`addTemplate`/provenance
+ * assertions by the scoped manifest name, not the bare source-spec segment.
+ * Throws on install failure: these two installs are expected to always
+ * succeed against these checked-in fixtures, so a failure here is a
+ * fixture-setup bug, not a scenario under test.
  */
-export async function setupShellAndMfeInventory(): Promise<ShellMfeHarness> {
+export async function setupShellAndOverlayInventory(): Promise<ShellOverlayHarness> {
   const inventoryRoot = makeTmpDir('frontx-split-inventory-');
   const inventory = new TemplateInventory(new FsInventoryIndex(inventoryRoot), new FsContentStore(inventoryRoot));
 
   const shellInstall = await installCommand(
-    'local:gears-frontx/frontx-template-shell@offline',
+    'local:fixture-org/fixture-shell@offline',
     inventory,
-    createLocalFetchFn(TEMPLATE_SHELL_DIR, { excludedDirs: EXCLUDED_DIRS }),
+    createLocalFetchFn(FIXTURE_SHELL_DIR, { excludedDirs: EXCLUDED_DIRS }),
   );
   if (!shellInstall.ok) {
-    throw new Error(`fixture setup: installing frontx-template-shell failed: ${shellInstall.message}`);
+    throw new Error(`fixture setup: installing fixture-shell failed: ${shellInstall.message}`);
   }
 
-  const mfeInstall = await installCommand(
-    'local:gears-frontx/frontx-template-mfe@offline',
+  const overlayInstall = await installCommand(
+    'local:fixture-org/fixture-overlay@offline',
     inventory,
-    createLocalFetchFn(TEMPLATE_MFE_DIR, { excludedDirs: EXCLUDED_DIRS }),
+    createLocalFetchFn(FIXTURE_OVERLAY_DIR, { excludedDirs: EXCLUDED_DIRS }),
   );
-  if (!mfeInstall.ok) {
-    throw new Error(`fixture setup: installing frontx-template-mfe failed: ${mfeInstall.message}`);
+  if (!overlayInstall.ok) {
+    throw new Error(`fixture setup: installing fixture-overlay failed: ${overlayInstall.message}`);
   }
 
   return {

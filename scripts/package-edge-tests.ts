@@ -35,8 +35,8 @@
  * (scripts/verify-guard-configs.ts), not this script.
  *
  * Replaces the former `sdk-layer-tests.ts`, which encoded the retired
- * SDK -> framework -> react chain over packages that emigrated to
- * `template-shell/` in #456.
+ * SDK -> framework -> react chain over packages that emigrated to the
+ * templates repository in #456.
  */
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -115,9 +115,9 @@ function log(message: string, color: keyof typeof colors = 'reset'): void {
 /**
  * Ecosystem packages live under two workspace roots — `packages/*` and
  * `internal/*` — so the directory comes from the shared map, never from a
- * hardcoded prefix. Template-side packages live in the self-contained
- * `template-shell/` tree and are deliberately absent from the map: the
- * ecosystem guard must not reach into template territory (see #456, #476).
+ * hardcoded prefix. Template-side packages live in the templates repository
+ * and are deliberately absent from the map: the ecosystem guard must not
+ * reach into template territory (see #456, #476).
  */
 function resolvePackageDir(pkgName: string): string {
   const dir = ECOSYSTEM_PACKAGE_DIRS[pkgName];

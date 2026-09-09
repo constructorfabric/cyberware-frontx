@@ -9,16 +9,15 @@ permissions:
 
 jobs:
   # ══════════════════════════════════════════════════════════════════════
-  # PART 1 — FrontX ecosystem packages (packages/*)
+  # FrontX ecosystem packages (packages/*)
   # Version-gated: a package publishes only when its package.json `version`
   # changed in this push. Ecosystem packages publish INDEPENDENTLY (F1
   # policy) — no layer/dependency ordering.
   #
-  # PART 1 IS A HARD PREREQUISITE OF THE SHELL TEMPLATE (#485): the template
-  # pins @gears-frontx/api, @gears-frontx/mfes and @gears-frontx/gts-plugin to
-  # exact registry versions, so a seeded project cannot install until this job
-  # has published them. Removing the temporary PART 2 (#469 item 5) must leave
-  # PART 1 in place.
+  # The templates that consume these packages (@gears-frontx/api,
+  # @gears-frontx/mfes, @gears-frontx/gts-plugin, ...) now live in their own
+  # repository with their own publish workflow; this job no longer needs to
+  # account for them.
   # ══════════════════════════════════════════════════════════════════════
   detect-ecosystem:
     runs-on: ubuntu-latest
@@ -42,10 +41,10 @@ jobs:
             pkg_json="${pkg_dir}package.json"
             [ -f "$pkg_json" ] || continue
 
-            # Private packages can never be published — skip them, as PART 2
-            # already does. Without this, a package that is private while it
-            # matures (ui-kit until its MVP set lands) enters the matrix on its
-            # first commit and fails the run on `npm publish`.
+            # Private packages can never be published — skip them. Without
+            # this, a package that is private while it matures (ui-kit until
+            # its MVP set lands) enters the matrix on its first commit and
+            # fails the run on `npm publish`.
             IS_PRIVATE=$(jq -r '.private // false' "$pkg_json")
             if [ "$IS_PRIVATE" = "true" ]; then continue; fi
 
@@ -76,7 +75,7 @@ jobs:
             #
             # mfes first, gts-plugin last, everything else in between: the two
             # ranks encode the one intra-ecosystem exact pin that exists, and
-            # `policy:template-pin-drift` is what keeps that pin honest, so a
+            # `policy:ecosystem-pin-drift` is what keeps that pin honest, so a
             # second such edge cannot appear here unnoticed.
             JSON_ARRAY=$(printf '%s\n' "${PACKAGES[@]}" | jq -sc '
               def publishRank:
@@ -195,207 +194,10 @@ jobs:
           else echo "skipped=$(printf '%s\n' "${SKIPPED_PACKAGES[@]}" | jq -sc '.')" >> $GITHUB_OUTPUT; fi
 
   # ══════════════════════════════════════════════════════════════════════
-  # PART 2 (TEMPORARY) — shell template + its subpackages
-  # Publishes @gears-frontx/frontx-template-shell and its publishable
-  # workspace subpackages (template-shell/packages/*), version-gated, in
-  # DEPENDENCY ORDER. MFE packages moved to template-mfe/ (issue #470) and
-  # are not published by this job; the mfe_packages glob below now matches
-  # nothing under template-shell and is kept as a defensive no-op.
-  #
-  # ⚠️  REMOVE THIS ENTIRE PART (both jobs) when the shell template is
-  #     extracted into its own repository; it will carry its own publish
-  #     workflow there.
-  # ══════════════════════════════════════════════════════════════════════
-  detect-template:
-    runs-on: ubuntu-latest
-    outputs:
-      packages: ${{ steps.detect.outputs.packages }}
-      has_changes: ${{ steps.detect.outputs.has_changes }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Detect version changes
-        id: detect
-        run: |
-          PACKAGES=()
-          BASE_COMMIT="${{ github.event.before }}"
-          echo "Comparing HEAD against pre-push state: $BASE_COMMIT"
-
-          # The template package itself + every workspace subpackage.
-          MANIFESTS=$(printf '%s\n' \
-            "template-shell/package.json" \
-            template-shell/packages/*/package.json \
-            template-shell/src-app/mfe_packages/*/package.json)
-
-          for pkg_json in $MANIFESTS; do
-            [ -f "$pkg_json" ] || continue
-
-            # Private packages can never be published — skip them.
-            IS_PRIVATE=$(jq -r '.private // false' "$pkg_json")
-            if [ "$IS_PRIVATE" = "true" ]; then continue; fi
-
-            if git diff "$BASE_COMMIT" --name-only | grep -q "^${pkg_json}$"; then
-              OLD_VERSION=$(git show "$BASE_COMMIT":"$pkg_json" 2>/dev/null | jq -r '.version' || echo "")
-              NEW_VERSION=$(jq -r '.version' "$pkg_json")
-              NPM_NAME=$(jq -r '.name' "$pkg_json")
-              PKG_PATH=$(dirname "$pkg_json")
-
-              if [ "$OLD_VERSION" != "$NEW_VERSION" ] && [ -n "$NEW_VERSION" ]; then
-                echo "Version change detected: $NPM_NAME $OLD_VERSION -> $NEW_VERSION"
-                PACKAGES+=("{\"name\":\"$NPM_NAME\",\"path\":\"$PKG_PATH\",\"version\":\"$NEW_VERSION\"}")
-              fi
-            fi
-          done
-
-          if [ ${#PACKAGES[@]} -eq 0 ]; then
-            echo "No template packages with version changes"
-            echo "packages=[]" >> $GITHUB_OUTPUT
-            echo "has_changes=false" >> $GITHUB_OUTPUT
-          else
-            JSON_ARRAY=$(printf '%s\n' "${PACKAGES[@]}" | jq -sc '.')
-            echo "packages=$JSON_ARRAY" >> $GITHUB_OUTPUT
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-          fi
-
-  publish-template:
-    # PART 1 is a hard prerequisite (#485): `npm ci` in template-shell resolves
-    # @gears-frontx/api, mfes and gts-plugin from the registry at exact pinned
-    # versions, so the ecosystem publish must have finished before the template
-    # installs. `!cancelled()` carries the case where no ecosystem version changed:
-    # publish-ecosystem is skipped, and a skipped `needs` job would otherwise skip
-    # this job outright instead of evaluating the result check below.
-    #
-    # detect-ecosystem is in `needs` for its result alone: a *failed* detect marks
-    # publish-ecosystem `skipped`, which is indistinguishable here from the benign
-    # "no version changed" skip — so without this the template would publish in a
-    # state where nobody established whether the pins are on the registry yet.
-    needs: [detect-template, detect-ecosystem, publish-ecosystem]
-    if: >-
-      !cancelled() &&
-      needs.detect-template.outputs.has_changes == 'true' &&
-      needs.detect-ecosystem.result == 'success' &&
-      (needs.publish-ecosystem.result == 'success' ||
-      needs.publish-ecosystem.result == 'skipped')
-    runs-on: ubuntu-latest
-    outputs:
-      published: ${{ steps.publish.outputs.published }}
-      skipped: ${{ steps.publish.outputs.skipped }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: '25.x'
-          registry-url: 'https://registry.npmjs.org'
-          cache: 'npm'
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      # Pre-publish sanity build of the ecosystem sources. The template itself no
-      # longer reads packages/*/dist — it installs @gears-frontx/api, mfes and
-      # gts-plugin from the registry at exact pinned versions (#485), which is why
-      # this job waits on publish-ecosystem instead.
-      - name: Sanity-build ecosystem sources (pre-publish check)
-        run: |
-          npm ci
-          npm run build:packages
-
-      - name: Install + build template
-        working-directory: template-shell
-        run: |
-          npm ci
-          npm run build:package
-          npm run build:packages
-
-      - name: Publish template packages
-        id: publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          PACKAGES='${{ needs.detect-template.outputs.packages }}'
-          PUBLISHED_PACKAGES=()
-          SKIPPED_PACKAGES=()
-
-          BRANCH="${GITHUB_REF#refs/heads/}"
-          get_npm_tag() {
-            local version="$1"
-            if [[ "$BRANCH" =~ ^release/v([0-9]+)$ ]]; then echo "v${BASH_REMATCH[1]}";
-            elif [[ "$BRANCH" == "develop" ]]; then echo "alpha";
-            elif [[ "$BRANCH" == "main" ]]; then
-              if [[ "$version" == *"-alpha"* ]]; then echo "alpha";
-              elif [[ "$version" == *"-rc"* ]]; then echo "next";
-              else echo "latest"; fi
-            elif [[ "$version" == *"-alpha"* ]]; then echo "alpha";
-            elif [[ "$version" == *"-beta"* ]]; then echo "beta";
-            elif [[ "$version" == *"-rc"* ]]; then echo "next";
-            else echo "latest"; fi
-          }
-
-          publish_with_retry() {
-            local tag="$1" max_attempts=3 attempt=1 delay=5
-            while [ $attempt -le $max_attempts ]; do
-              echo "Publish attempt $attempt of $max_attempts..."
-              if npm publish --access public --tag "$tag"; then return 0; fi
-              if [ $attempt -lt $max_attempts ]; then
-                echo "Attempt $attempt failed. Retrying in ${delay}s..."
-                sleep $delay; delay=$((delay * 2))
-              fi
-              attempt=$((attempt + 1))
-            done
-            echo "All $max_attempts attempts failed"; return 1
-          }
-
-          # Dependency order: leaf libs + the template lib first, then the
-          # packages that depend on them (framework → react → studio).
-          SORTED=$(echo "$PACKAGES" | jq -c 'sort_by(.name |
-            if . == "@gears-frontx/state" or . == "@gears-frontx/i18n" or . == "@gears-frontx/auth" or . == "@gears-frontx/frontx-template-shell" then 1
-            elif . == "@gears-frontx/framework" then 2
-            elif . == "@gears-frontx/react" then 3
-            elif . == "@gears-frontx/studio" then 4
-            else 5 end)')
-
-          echo "Publishing order:"
-          echo "$SORTED" | jq -r '.[] | "  - \(.name)@\(.version)"'
-
-          for row in $(echo "$SORTED" | jq -r '.[] | @base64'); do
-            _jq() { echo "${row}" | base64 --decode | jq -r "${1}"; }
-            NAME=$(_jq '.name'); PKG_PATH=$(_jq '.path'); VERSION=$(_jq '.version')
-
-            echo ""
-            echo "=========================================="
-            echo "Processing: $NAME@$VERSION"
-            echo "=========================================="
-
-            if npm view "$NAME@$VERSION" version 2>/dev/null; then
-              echo "SKIPPING: $NAME@$VERSION already exists on NPM"
-              SKIPPED_PACKAGES+=("{\"name\":\"$NAME\",\"version\":\"$VERSION\",\"reason\":\"already exists on NPM\"}")
-              continue
-            fi
-
-            NPM_TAG=$(get_npm_tag "$VERSION")
-            echo "Publishing $NAME@$VERSION with tag '$NPM_TAG'..."
-            ( cd "$PKG_PATH" && publish_with_retry "$NPM_TAG" ) || { echo "FAILED: $NAME@$VERSION"; exit 1; }
-
-            echo "SUCCESS: Published $NAME@$VERSION"
-            PUBLISHED_PACKAGES+=("{\"name\":\"$NAME\",\"version\":\"$VERSION\"}")
-          done
-
-          if [ ${#PUBLISHED_PACKAGES[@]} -eq 0 ]; then echo "published=[]" >> $GITHUB_OUTPUT;
-          else echo "published=$(printf '%s\n' "${PUBLISHED_PACKAGES[@]}" | jq -sc '.')" >> $GITHUB_OUTPUT; fi
-          if [ ${#SKIPPED_PACKAGES[@]} -eq 0 ]; then echo "skipped=[]" >> $GITHUB_OUTPUT;
-          else echo "skipped=$(printf '%s\n' "${SKIPPED_PACKAGES[@]}" | jq -sc '.')" >> $GITHUB_OUTPUT; fi
-
-  # ══════════════════════════════════════════════════════════════════════
   # Summary
   # ══════════════════════════════════════════════════════════════════════
   summary:
-    needs: [detect-ecosystem, publish-ecosystem, detect-template, publish-template]
+    needs: [detect-ecosystem, publish-ecosystem]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -432,9 +234,3 @@ jobs:
             "${{ needs.publish-ecosystem.result }}" \
             '${{ needs.publish-ecosystem.outputs.published }}' \
             '${{ needs.publish-ecosystem.outputs.skipped }}'
-
-          report "Shell template (temporary)" \
-            "${{ needs.detect-template.outputs.has_changes }}" \
-            "${{ needs.publish-template.result }}" \
-            '${{ needs.publish-template.outputs.published }}' \
-            '${{ needs.publish-template.outputs.skipped }}'

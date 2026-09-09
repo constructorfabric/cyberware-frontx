@@ -90,7 +90,7 @@ trap 'rm -rf "$WORKDIR"' EXIT
 
 # Pinned to the versions the monorepo itself resolves, so this acceptance check
 # reports on the kit and never reddens because Vite or React shipped a release.
-# Keep in step with the root package.json / template-shell pins.
+# Keep in step with the root package.json / consuming-template pins.
 REACT_VERSION="19.2.8"
 VITE_VERSION="6.4.3"
 PLUGIN_REACT_VERSION="4.3.4"

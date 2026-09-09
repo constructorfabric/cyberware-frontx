@@ -1,18 +1,18 @@
 // TEST-ONLY — this file carries NO `@cpt` marker and traces to NO FEATURE
 // instruction, same as `adapters/__tests__/local-fetch.test.ts`.
 //
-// Issue #470 / phase 3 — this file originally pinned two KNOWN,
-// ALREADY-EXISTING defects in the CLI's multi-template path, surfaced by the
-// boundary design for the template-shell/template-mfe split. SSOT:
-// `.omc/plans/issue-470-boundary-design.md` §5 (risks R5/B1), §6 (fixtures 7,
-// 9), §7 (deferred fixes — both were tracked as SEPARATE issues, out of
-// #470's own scope). Both are now fixed and their tests rewritten into
-// correctness assertions, per the "when the tracked fix lands" instruction
-// below: Fixture 9's provenance-truncation defect by issue #488 (see its
-// describe block), and Fixture 7's region-union truncation-on-`add` defect
-// by issue #487 (`scaffold/compose-shared-files.ts`'s carry-forward-from-disk
-// fix — see `cpt-frontx-dod-cli-scaffolding-preserve-applied-regions`,
-// `architecture/features/cli-scaffolding/FEATURE.md`).
+// This file originally pinned two KNOWN, ALREADY-EXISTING defects in the
+// CLI's multi-template path. Both are now fixed and their tests rewritten
+// into correctness assertions, per the "when the tracked fix lands"
+// instruction below: Fixture 9's provenance-truncation defect by issue #488
+// (see its describe block), and Fixture 7's region-union truncation-on-`add`
+// defect by issue #487 (`scaffold/compose-shared-files.ts`'s
+// carry-forward-from-disk fix — see
+// `cpt-frontx-dod-cli-scaffolding-preserve-applied-regions`,
+// `architecture/features/cli-scaffolding/FEATURE.md`). Fixture 9 also drives
+// the small synthetic `fixture-shell`/`fixture-overlay` templates checked in
+// under `__tests__/fixtures/` (the real product templates now live in a
+// separate repository).
 //
 // "Pinning" here means: assert TODAY's (defective) behavior on purpose, so a
 // silent regression-in-the-opposite-direction (the defect getting WORSE, or
@@ -45,24 +45,24 @@ import type { TemplateManifest } from '../manifest/types';
 import type { ContentItem, ReadContentItemsFn } from '../scaffold/types';
 import type { ReadProvenanceRecordsFn } from '../scaffold/materialize';
 import {
-  TEMPLATE_SHELL_DIR,
-  TEMPLATE_SHELL_IDENTITY,
-  TEMPLATE_MFE_IDENTITY,
+  FIXTURE_SHELL_DIR,
+  FIXTURE_SHELL_IDENTITY,
+  FIXTURE_OVERLAY_IDENTITY,
   EXCLUDED_DIRS,
   makeTmpDir,
   readManifest,
-  setupShellAndMfeInventory,
+  setupShellAndOverlayInventory,
 } from './helpers/template-split-fixtures';
-import type { ShellMfeHarness } from './helpers/template-split-fixtures';
+import type { ShellOverlayHarness } from './helpers/template-split-fixtures';
 
 // Same budget, and for the same reason, as `template-split.e2e.test.ts`: these
-// fixtures seed, add and upgrade against the real on-disk template trees, so
-// they cost seconds of filesystem work rather than the milliseconds vitest's 5s
-// default assumes.
+// fixtures seed, add and upgrade against real (if small) on-disk fixture
+// template trees, so they cost real filesystem work rather than the
+// milliseconds vitest's 5s default assumes.
 vi.setConfig({ testTimeout: 20_000 });
 
 let tmpDirs: string[] = [];
-let harness: ShellMfeHarness | undefined;
+let harness: ShellOverlayHarness | undefined;
 
 function trackedTmpDir(prefix: string): string {
   const dir = makeTmpDir(prefix);
@@ -268,11 +268,11 @@ describe('Fixture 9 (B1-fix, issue #488) — frontx upgrade preserves multi-reco
    * target dir so each `it` can inspect the corrupted result independently
    * (no shared mutable state between tests — order-independent by construction). */
   async function seedAddThenUpgrade(): Promise<{ targetDir: string; shellManifest: TemplateManifest }> {
-    harness = await setupShellAndMfeInventory();
+    harness = await setupShellAndOverlayInventory();
     const targetDir = trackedTmpDir('frontx-split-f9-target-');
 
     const seedResult = await seedRepository(
-      TEMPLATE_SHELL_IDENTITY,
+      FIXTURE_SHELL_IDENTITY,
       targetDir,
       harness.lookupFn,
       harness.readContentFn,
@@ -282,7 +282,7 @@ describe('Fixture 9 (B1-fix, issue #488) — frontx upgrade preserves multi-reco
     );
     expect(seedResult.ok).toBe(true);
     const addResult = await addTemplate(
-      TEMPLATE_MFE_IDENTITY,
+      FIXTURE_OVERLAY_IDENTITY,
       targetDir,
       harness.lookupFn,
       harness.listInstalledFn,
@@ -300,7 +300,7 @@ describe('Fixture 9 (B1-fix, issue #488) — frontx upgrade preserves multi-reco
     expect(Array.isArray(beforeUpgrade)).toBe(true);
     expect(beforeUpgrade).toHaveLength(2);
 
-    const shellManifest = readManifest(TEMPLATE_SHELL_DIR);
+    const shellManifest = readManifest(FIXTURE_SHELL_DIR);
 
     // `readProvenance` (F11) only ever resolves `records[0]` — the shell
     // record, since seed always writes first — so this is a same-version,
@@ -311,7 +311,7 @@ describe('Fixture 9 (B1-fix, issue #488) — frontx upgrade preserves multi-reco
     // is a separate, not-yet-made design decision — out of scope for #488.
     const upgradeResult = await upgradeChangeSetReviewApproval(targetDir, shellManifest.version, {
       readProvenance: createFsReadSingleProvenanceFn(),
-      fetchFn: createLocalFetchFn(TEMPLATE_SHELL_DIR, { excludedDirs: EXCLUDED_DIRS }),
+      fetchFn: createLocalFetchFn(FIXTURE_SHELL_DIR, { excludedDirs: EXCLUDED_DIRS }),
       readProjectFile: createFsReadProjectFileFn(),
       readContentItems: decodeBundleContentItems,
       writeProjectFile: createFsWriteProjectFileFn(),
@@ -334,11 +334,11 @@ describe('Fixture 9 (B1-fix, issue #488) — frontx upgrade preserves multi-reco
     expect(after).toHaveLength(2);
     // The mfe record's identity string must still be present — not merely
     // "the array has two entries", but genuinely the SAME record, untouched.
-    expect(afterRaw).toContain(TEMPLATE_MFE_IDENTITY);
+    expect(afterRaw).toContain(FIXTURE_OVERLAY_IDENTITY);
 
     const records = after as Array<{ templateIdentity: string; scaffoldedFromVersion: string }>;
-    const shellRecord = records.find((record) => record.templateIdentity === TEMPLATE_SHELL_IDENTITY);
-    const mfeRecord = records.find((record) => record.templateIdentity === TEMPLATE_MFE_IDENTITY);
+    const shellRecord = records.find((record) => record.templateIdentity === FIXTURE_SHELL_IDENTITY);
+    const mfeRecord = records.find((record) => record.templateIdentity === FIXTURE_OVERLAY_IDENTITY);
     expect(shellRecord).toBeDefined();
     expect(mfeRecord).toBeDefined();
     // The upgraded (shell) record reflects the target version this cycle

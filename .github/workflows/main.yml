@@ -45,9 +45,6 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
-    # MFE packages are template content — the template-validate job below
-    # installs and checks them.
-
     # Consumer packages (framework, react, studio, cli) resolve workspace deps
     # via their sibling packages' `dist/` types. A fresh `npm ci` has no dist,
     # so `type-check:packages:*` fails to resolve `@gears-frontx/*` imports.
@@ -106,58 +103,30 @@ jobs:
     - name: Run guard config verification
       run: npm run arch:guards
 
-    # #493: prepublish manifest+content validation (`frontx validate`) against
-    # every template at the repo root (a directory carrying
-    # `frontx-template.json`, ADR-0018 - not a `template-*` name guess) -
-    # nothing ran this command in CI before. Generic by construction: no
-    # template name is hardcoded here or in the script, which is why #470's
-    # split of `template-standard/` into `template-shell/` plus `template-mfe/`
-    # needed no change to either and both are now covered. BUILD ORDER: imports
-    # `@gears-frontx/cli` directly, so this must run after "Build workspace
-    # packages" above has produced `packages/cli/dist`.
-    - name: Validate template manifests (prepublish, content self-containment)
-      run: npm run validate:templates
-
     # #493: every site pinning an ecosystem package (`@gears-frontx/api`,
     # `mfes`, `gts-plugin`, #485/PR #492) to an exact registry version must
-    # still match that package's actual on-disk version - across every
-    # template's `package.json` files (found the same manifest-presence way)
-    # AND across the ecosystem's own manifests, since `packages/gts-plugin`
-    # pins `mfes` exactly. Catches a version bump to `packages/*` that missed
-    # a pinned site elsewhere. No build-order dependency: reads `package.json`
-    # files directly, not the built CLI.
-    - name: Check template ecosystem pin-drift
-      run: npm run policy:template-pin-drift
+    # still match that package's actual on-disk version - across this repo's
+    # own `packages/*` manifests, since `packages/gts-plugin` pins `mfes`
+    # exactly. Templates that pin these packages now live in their own repo
+    # with their own pin-drift coverage; this is the ecosystem-internal half
+    # of that check. No build-order dependency: reads `package.json` files
+    # directly.
+    - name: Check ecosystem pin-drift
+      run: npm run policy:ecosystem-pin-drift
 
     # #575, follow-up from #574 review: #574 changed `@gears-frontx/react`'s
-    # public API and shipped with no version bump, and neither policy check
-    # above would have caught it — both are CONSISTENCY checks (does the
-    # semver line make sense, do pins match the disk), not CHANGE checks (did
-    # a package with substantive changes bump). This diffs the PR branch
-    # against its merge base with the target branch and fails for any
-    # governed package — every `packages/*` artifact, plus `template-shell`
-    # itself and every `template-shell/packages/*` member (any non-`private`
-    # `@gears-frontx`-scoped package; `template-mfe` and its fixture apps are
-    # `private` and exempt) — whose `src/` (or package.json dependencies)
-    # changed without its own `version` changing — comparing actual ref
-    # content rather than the diff, so a version bumped then reverted within
-    # the same PR still fails. Pull-request-only: the merge base it needs is
-    # the PR's base branch, which only exists as `GITHUB_BASE_REF` on
-    # `pull_request` events.
+    # public API and shipped with no version bump, and the existing consistency
+    # checks (semver line internally sane, pins match disk) would not have
+    # caught it — neither is a CHANGE check. This diffs the PR branch against
+    # its merge base with the target branch and fails for any governed
+    # `packages/*` artifact whose `src/` (or package.json dependencies) changed
+    # without its own `version` changing — comparing actual ref content rather
+    # than the diff, so a version bumped then reverted within the same PR still
+    # fails. Pull-request-only: the merge base it needs is the PR's base
+    # branch, which only exists as `GITHUB_BASE_REF` on `pull_request` events.
     - name: Check version bump on substantive package change
       if: github.event_name == 'pull_request'
       run: npm run policy:version-bump-on-change
-
-    # #524: `npm install` reconciling an out-of-sync template lockfile drops
-    # the template's `file:.` self-link entry, writing a lockfile its own
-    # `npm ci` then rejects ("Missing: ... from lock file") — and reconciling
-    # is exactly what `npm ci`'s out-of-sync error tells the developer to do.
-    # This asserts every self-link a template's manifest declares still has
-    # its lockfile entry, so the failure names the vanished entry at commit
-    # time instead of surfacing as a generic `npm ci` red in template CI.
-    # No build-order dependency: reads the JSON files directly.
-    - name: Check template lockfile self-link entries
-      run: npm run policy:template-lockfile-selflink
 
     # #540: the import-boundary check ADR-0003's confirmation section promised.
     # The mfes barrel must not export concrete Default* implementations, and no
@@ -167,390 +136,6 @@ jobs:
     # No build-order dependency: reads source files directly.
     - name: Check mfes import boundary (ADR-0003)
       run: npm run policy:mfes-import-boundary
-
-    # #586: template and ui-kit design tokens are full CSS colors consumed as
-    # `var(--x)`, never shadcn-style HSL fragments consumed as
-    # `hsl(var(--x))` — a stale wrapper reads a full color where a fragment is
-    # expected and the style silently disappears (invalid at computed-value
-    # time), which lint, type-check, and jsdom tests all miss. Scope is
-    # template territory (manifest-presence discovery, same as the guards
-    # above); `packages/cli/templates/` keeps its self-consistent legacy
-    # vocabulary and is deliberately out of scope. No build-order dependency:
-    # reads source files directly.
-    - name: Check template token format (full-color vocabulary)
-      run: npm run policy:token-format
-
-    # The design-guardrails bundle routes guideline loading through the
-    # generated `reference-artifacts/guideline-index.json`, derived from each
-    # guideline's front matter (`scripts/generate-guideline-index.mjs`). The
-    # front matter is the source of truth; this asserts the checked-in index
-    # matches it, so a guideline edit cannot land without regenerating the
-    # index and a hand edit to the index cannot land at all.
-    - name: Check guideline index is generated from front matter
-      run: npm run policy:guideline-index
-
-  # The template-*/ trees carry their own arch:deps / lint / test:unit scripts,
-  # and nothing else in this workflow enters them — so without this job their
-  # checks are enforced only when someone runs them by hand, and they rot
-  # (#483).
-  #
-  # The template-shell/template-mfe split (#470) produced two kinds of
-  # template, and both need covering:
-  #   - self-contained (template-shell): root package.json and lockfile of its
-  #     own, validated standalone by the glob loop below, which deliberately
-  #     avoids hardcoding template names;
-  #   - add-only overlay (template-mfe): no root package.json, no tooling of
-  #     its own. It cannot be validated in place — its packages' file: links
-  #     resolve to template-mfe/packages/* (which does not exist), and their
-  #     vite/vitest configs import out of the shell. The only way to run their
-  #     checks is to compose the pair the way `frontx add` does and validate
-  #     the result, which the second step does.
-  template-validate:
-    name: Template Validate
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v5
-      with:
-        persist-credentials: false
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v5
-      with:
-        node-version: '25.x'
-        cache: 'npm'
-        cache-dependency-path: |
-          package-lock.json
-          template-*/package-lock.json
-
-    - name: Enable Corepack
-      run: corepack enable
-
-    # The templates pin @gears-frontx/* to exact registry versions (#485), so
-    # every template check below resolves published tarballs and NOT this repo's
-    # packages/. That is the point: this job validates what a seeded project
-    # actually installs, which is why a pin lagging the ecosystem surface has to
-    # fail here — that drift is what `dev:template:link` papers over locally,
-    # and papering over it in CI would leave a seeded project broken with
-    # nothing red to show it.
-    #
-    # This step is still required even though the pins no longer resolve here.
-    # The templates do not declare their whole toolchain: template-shell's
-    # eslint.config.js imports `typescript-eslint`, which is absent from its own
-    # devDependencies and resolves upward into the repo root's node_modules. Drop
-    # the root install and `npm run lint` below fails to load its config.
-    # Only the install is needed — no `build:packages`: with the pins on
-    # registry tarballs, nothing in this job reads the workspace packages'
-    # dist/ output.
-    #
-    # A seeded project standing on its own therefore cannot run that lint at all;
-    # what covers it here is the monorepo's tree, not the template's. Tracked as
-    # part of the templates' declared-toolchain gap, not something this job can
-    # fix by installing differently.
-    - name: Install ecosystem toolchain
-      run: npm ci
-
-    # Split the templates by what their manifests CLAIM, not by what happens to
-    # sit on disk. A template that declares "package.json" among its ownership
-    # boundaries owns its own tooling and is validated standalone; one that does
-    # not is an add-only overlay and is only meaningful composed onto a shell.
-    #
-    # Disk presence is the wrong test. #489 adds a root package.json to
-    # template-mfe as a monorepo-only build harness, deliberately absent from
-    # the manifest so it never ships into a seeded project. A plain `-f` check
-    # would route the overlay down the self-contained path and then fail on the
-    # arch:deps / lint / test:unit scripts a build harness has no reason to
-    # define. Reading the manifest keeps both halves correct without loosening
-    # those calls to --if-present, which would let a real template lose a script
-    # and go quietly unchecked — the failure this job exists to prevent.
-    - name: Classify templates
-      run: |
-        set -euo pipefail
-        node -e '
-          const fs = require("fs");
-          const selfContained = [], overlays = [];
-          for (const dir of fs.readdirSync(".").filter((d) => d.startsWith("template-")).sort()) {
-            if (!fs.existsSync(dir + "/frontx-template.json")) continue;
-            const b = JSON.parse(fs.readFileSync(dir + "/frontx-template.json", "utf8")).ownershipBoundaries || {};
-            // sharedFiles ownership (a region-union or exclusive merge into a file this
-            // template does not fully own) is not implemented below: classification only
-            // checks exclusiveSubtrees, and the composition step only copies
-            // exclusiveSubtrees — neither consults compose-shared-files.ts the way
-            // assembler.ts does. Refusing here turns "silently misclassified as
-            // self-contained" / "silently uncomposed" into a loud failure the day a
-            // manifest actually declares one, instead of half-implementing the contract
-            // for a case nothing exercises yet (both shipped manifests use `[]` today).
-            if ((b.sharedFiles || []).length) {
-              throw new Error(dir + " declares ownershipBoundaries.sharedFiles, which this job does not classify or compose — extend \"Classify templates\" and \"Validate shell + overlay composition\" to handle it before adding one");
-            }
-            const claims = b.exclusiveSubtrees || [];
-            (claims.includes("package.json") ? selfContained : overlays).push(dir);
-          }
-          if (!selfContained.length) throw new Error("no self-contained template found");
-          console.log("self-contained: " + selfContained.join(" "));
-          console.log("overlays: " + (overlays.join(" ") || "(none)"));
-          fs.appendFileSync(process.env.GITHUB_ENV,
-            `SELF_CONTAINED_TEMPLATES=${selfContained.join(" ")}\n` +
-            `OVERLAY_TEMPLATES=${overlays.join(" ")}\n`);
-        '
-
-    # Both template steps below run their installs from a copy placed OUTSIDE
-    # the checkout. Inside it, the repository root's node_modules (this job's
-    # own `npm ci` above) is an ancestor directory of the template, and Node's
-    # resolution walks up to it: a dependency the template's lockfile fails to
-    # install is still found there, and the template passes on a graph a
-    # standalone `frontx seed` never gets. That is how a shell lockfile whose
-    # ui-kit entry lacked @shadcn/react - a real runtime dependency of the
-    # pinned version - stayed green here while the composed a11y suite failed
-    # outside the monorepo (PR #586 review). node_modules is left behind on
-    # purpose: the copy installs from its own lockfile and nothing else.
-    - name: Validate self-contained templates
-      run: |
-        set -euo pipefail
-        for template in $SELF_CONTAINED_TEMPLATES; do
-          echo "==> Validating $template"
-          isolated="$RUNNER_TEMP/standalone-$(basename "$template")"
-          rm -rf "$isolated" && mkdir -p "$isolated"
-          tar -C "$template" --exclude=node_modules -cf - . | tar -C "$isolated" -xf -
-          (
-            cd "$isolated"
-            npm ci
-            # Full `build`, not just build:package/build:packages — it also
-            # chains build:mfes, generate:mfe-manifests and vite build, which
-            # nothing else in CI runs. It comes first so the later checks see
-            # the generated manifests.
-            npm run build
-            npm run type-check
-            npm run arch:deps
-            npm run lint
-            npm run test:unit
-          )
-        done
-
-    # Composes the overlays onto the shell and runs the shell's checks over the
-    # union — the tree a real `frontx seed shell && frontx add mfe` produces.
-    # This is what actually covers the MFE packages: the shell's eslint config
-    # has an src-app/mfe_packages/** block, its dependency-cruiser config has
-    # no-cross-mfe-imports, and its test:unit ends in
-    # `--workspaces --if-present` — all three are no-ops until the overlay lands.
-    # `build:mfes` and `type-check:mfe` cover them too, but only under the
-    # FRONTX_INCLUDE_TEMPLATE_EXAMPLES opt-in set on those steps below, since
-    # every package composed here is one the template ships as an example.
-    #
-    # Nothing in the manifests says which shell an overlay belongs to, so this
-    # requires exactly one self-contained template and composes every overlay
-    # onto it. The subtrees copied are read from each overlay's own
-    # exclusiveSubtrees, mirroring the assembler's ownership semantics
-    # (packages/cli/src/scaffold/assembler.ts) rather than guessing at paths.
-    - name: Validate shell + overlay composition
-      env:
-        # PULL REQUESTS ONLY: on a develop push, main.yml and publish-packages.yml
-        # start together, so for a few minutes the just-merged version is both
-        # unpublished and equal to the local one — substituting there would
-        # paper over a publish that failed or has not landed yet. See
-        # scripts/pin-unpublished-ecosystem-to-local-pack.mjs for the
-        # substitution criterion this enables.
-        FRONTX_SUBSTITUTE_UNPUBLISHED_PINS: ${{ github.event_name == 'pull_request' && '1' || '' }}
-      run: |
-        set -euo pipefail
-
-        # shellcheck disable=SC2086
-        set -- $SELF_CONTAINED_TEMPLATES
-        if [ "$#" -ne 1 ]; then
-          echo "::error::composition needs exactly one self-contained template, got: $*"
-          exit 1
-        fi
-        shell="$1"
-
-        if [ -z "${OVERLAY_TEMPLATES// /}" ]; then
-          echo "::error::no overlay templates found — this step would be a no-op"
-          exit 1
-        fi
-
-        # Every check below is a silent no-op if an overlay did not land —
-        # eslint just matches no files, test:unit finds no extra workspaces.
-        # That vacuous pass is the exact failure mode this job exists to
-        # catch, so each overlay's own contribution is counted as it lands,
-        # not folded into one total afterwards: a subtree that exists but
-        # holds no package.json (a docs-only directory, say) must not be
-        # hidden by another overlay's packages passing the count for
-        # everyone.
-        composed_total=0
-        for overlay in $OVERLAY_TEMPLATES; do
-          subtrees="$(node -e '
-            const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-            const s = m.ownershipBoundaries && m.ownershipBoundaries.exclusiveSubtrees;
-            if (!s || !s.length) {
-              console.error("no exclusiveSubtrees declared in " + process.argv[1]);
-              process.exit(1);
-            }
-            console.log(s.join("\n"));
-          ' "$overlay/frontx-template.json")"
-
-          overlay_count=0
-          overlay_has_pkg=0
-          while read -r subtree; do
-            [ -n "$subtree" ] || continue
-            # A declared subtree is usually a directory, but 0d22fe81 started
-            # declaring template-mfe's own README.md as its own
-            # exclusiveSubtree entry, alongside the four MFE package
-            # directories, once "the whole mfe_packages directory" stopped
-            # being one claim — so this branches on which the tree actually
-            # has, rather than assuming a directory the way `-d` alone did.
-            # Probed against the source subtree, not the copy landing in
-            # $shell below: a template like template-design-guardrails ships
-            # no root package.json (it's a docs/AI bundle) yet still owns an
-            # installable package subtree (src-app/verify_packages/*). Root
-            # package.json alone would misclassify it as manifest-only and
-            # skip the zero-count guard, so any subtree — file or directory —
-            # that contains a package.json counts as code-bearing.
-            if [ -n "$(find "$overlay/$subtree" -not -path '*/node_modules/*' \
-              -name package.json -print -quit 2>/dev/null)" ]; then
-              overlay_has_pkg=1
-            fi
-            if [ -d "$overlay/$subtree" ]; then
-              # The ground has to be free before anything is written, the way
-              # `refuseUnlessGroundFree` requires it of a real `frontx add`:
-              # every copy below is an overwrite, so a destination that already
-              # holds content means the shell and this overlay both claim it and
-              # the composition under test is not the one a developer would get.
-              # Asked before `mkdir -p`, which would otherwise create the very
-              # path being asked about.
-              if [ -e "$shell/${subtree%/}" ]; then
-                echo "::error::$overlay's exclusiveSubtree '$subtree' is already occupied in $shell"
-                exit 1
-              fi
-              echo "==> Overlaying $overlay/$subtree"
-              # Copy the *contents* into the destination: `cp -R src dest`
-              # nests under dest when dest already exists, which would bury
-              # the packages a level deeper than the count below looks.
-              mkdir -p "$shell/${subtree%/}"
-              cp -R "$overlay/$subtree/." "$shell/${subtree%/}/"
-            elif [ -f "$overlay/$subtree" ]; then
-              if [ -e "$shell/$subtree" ]; then
-                echo "::error::$overlay's exclusiveSubtree '$subtree' is already occupied in $shell"
-                exit 1
-              fi
-              echo "==> Overlaying $overlay/$subtree (file)"
-              mkdir -p "$shell/$(dirname "$subtree")"
-              cp "$overlay/$subtree" "$shell/$subtree"
-            else
-              # A declared subtree that isn't there means the manifest and
-              # the tree disagree.
-              echo "::error::$overlay declares exclusiveSubtree '$subtree', which does not exist"
-              exit 1
-            fi
-            # Each MFE ships a standalone package-lock.json whose file:
-            # targets point into template-mfe/packages/*, which does not
-            # exist. npm ignores nested locks inside a workspace, but drop
-            # them so nothing reads them — from the subtree just copied, not
-            # a hardcoded mfe_packages path. A no-op for a file subtree that
-            # isn't itself named package-lock.json.
-            find "$shell/${subtree%/}" -not -path '*/node_modules/*' \
-              -name package-lock.json -delete
-            # Counted from the subtree just copied, not a hardcoded
-            # `src-app/mfe_packages` path — the manifest already told us
-            # where this overlay's content landed. A no-op (0) for a file
-            # subtree that isn't itself package.json.
-            subtree_count="$(find "$shell/${subtree%/}" -not -path '*/node_modules/*' \
-              -name package.json 2>/dev/null | wc -l)"
-            overlay_count=$((overlay_count + subtree_count))
-          done <<< "$subtrees"
-
-          # A manifest-only overlay — none of its declared exclusiveSubtrees
-          # contains a package.json anywhere, root or nested — ships docs and
-          # an AI bundle, never an MFE package; zero packages is its correct
-          # contribution, not the vacuous pass the guard below catches for
-          # code overlays. An overlay whose subtrees do contain a
-          # package.json falls through to that guard even without one at its
-          # own template root.
-          if [ "$overlay_has_pkg" -eq 0 ]; then
-            echo "==> $overlay is manifest-only; composed without MFE packages (by design)"
-            continue
-          fi
-
-          if [ "$overlay_count" -eq 0 ]; then
-            echo "::error::$overlay's exclusiveSubtrees exist but contain no MFE package (no package.json found)"
-            exit 1
-          fi
-          echo "==> $overlay contributed $overlay_count MFE package(s)"
-          composed_total=$((composed_total + overlay_count))
-        done
-        echo "==> Composed $composed_total MFE package(s) into $shell"
-
-        # Captured before the `cd` below, because everything after it runs from
-        # $RUNNER_TEMP and still has to reach this checkout's scripts.
-        repo="$PWD"
-
-        # Out of the checkout before installing, for the reason given above
-        # the standalone step: an ancestor node_modules must not be able to
-        # supply what the composed lockfile does not.
-        composed="$RUNNER_TEMP/composed-$(basename "$shell")"
-        rm -rf "$composed" && mkdir -p "$composed"
-        tar -C "$shell" --exclude=node_modules -cf - . | tar -C "$composed" -xf -
-
-        # Pointed at the composed COPY: the tarballs are packed into it so every
-        # `file:` specifier stays a relative path inside it, not one climbing
-        # out of $RUNNER_TEMP. Run before `cd` because the script resolves
-        # this repo's packages/* from its own location.
-        #
-        # The trap makes the undo run even if `npm install` fails under
-        # `set -e`, which would otherwise skip the restore line below and leave
-        # the tree rewritten for whatever reads it next. Registered once the
-        # call above succeeds; `--restore` is a no-op if nothing was rewritten.
-        if [ -n "${FRONTX_SUBSTITUTE_UNPUBLISHED_PINS:-}" ]; then
-          node scripts/pin-unpublished-ecosystem-to-local-pack.mjs --tree "$composed"
-          # `|| true` is load-bearing, not defensive noise: bash carries the
-          # pre-trap exit status through an EXIT handler that ends successfully,
-          # but a handler whose LAST command fails overwrites it — measured both
-          # ways — so an unguarded restore could turn a green step red. Guarded,
-          # 0 stays 0 and a failing install stays failing, with no `$?` dance.
-          # It also means a restore failure on the red path cannot mask the
-          # install failure that is the actual finding.
-          trap 'node "$repo/scripts/pin-unpublished-ecosystem-to-local-pack.mjs" --tree "$composed" --restore || true' EXIT
-        fi
-
-        cd "$composed"
-        # npm install, not npm ci: the shell's committed lockfile is generated
-        # without the overlay, so it has no mfe_packages entries and `ci` would
-        # fail as out of sync. Re-installing after an `add` is the documented
-        # workflow (template-mfe/README.md).
-        npm install
-
-        # Must run before anything below reads these manifests as committed —
-        # see RESTORE_JOURNAL_NAME's docblock in the script for why.
-        if [ -n "${FRONTX_SUBSTITUTE_UNPUBLISHED_PINS:-}" ]; then
-          node "$repo/scripts/pin-unpublished-ecosystem-to-local-pack.mjs" --tree "$composed" --restore
-        fi
-
-        # FRONTX_INCLUDE_TEMPLATE_EXAMPLES=1 on both commands below, because every
-        # MFE package this job composes is one the template ships as an example
-        # and therefore declares `"templateExample": true`. Without the opt-in
-        # the three package scanners skip all four, `build:mfes` and
-        # `type-check:mfe` report an empty set and exit 0, and this job — the
-        # only CI path that compiles the overlaid MFEs at all — passes having
-        # compiled nothing. That vacuous pass is the failure mode this job
-        # exists to catch, so the examples are opted back in here. A seeded
-        # project wants the opposite default, which is why the flag lives in the
-        # environment rather than in the packages.
-        #
-        # `build` compiles the overlaid MFEs (build:mfes) and emits their
-        # manifests into the aggregate, which the standalone run has nothing to
-        # do.
-        FRONTX_INCLUDE_TEMPLATE_EXAMPLES=1 npm run build
-        # `type-check` ends in type-check:mfe, which reports "no MFE packages"
-        # in the standalone run above and spawns a child per composed package
-        # here. It runs after `build`: each package type-checks against the
-        # workspace packages' `dist/` types, so on an unbuilt tree every one of
-        # them fails to resolve its `@gears-frontx/*` imports.
-        FRONTX_INCLUDE_TEMPLATE_EXAMPLES=1 npm run type-check
-        # No opt-in needed below: these three reach the composed packages
-        # through eslint's own glob and npm's workspaces, not through the
-        # scanners the flag governs.
-        npm run arch:deps
-        npm run lint
-        npm run test:unit
 
   studio-validate:
     name: Studio Validate Artifacts
@@ -623,8 +208,9 @@ jobs:
       - name: Check spec coverage thresholds
         # Threshold rebased for the post-split ecosystem repo. The framework/
         # template split changed the scanned code: solution packages moved out
-        # to template-shell/, extracted core-substrate code (api/mfes/gts-plugin)
-        # moved in, and tooling scripts/ were removed from the scan. Extracted
+        # to the templates repository, extracted core-substrate code
+        # (api/mfes/gts-plugin) moved in, and tooling scripts/ were removed
+        # from the scan. Extracted
         # code + type/interface/glue lines cap fair @cpt marker density well
         # below the old 58 (even greenfield cli/kit top out ~50-56%). Current
         # honest coverage is ~41%; the bar sits just below it with headroom.

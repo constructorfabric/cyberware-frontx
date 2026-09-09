@@ -6,12 +6,8 @@
         "scripts/**/*.test.{mjs,ts}"
       ],
       "project": [
-        "scripts/**/*.{ts,mjs}",
-        "!scripts/manual-auth-tests/**"
+        "scripts/**/*.{ts,mjs}"
       ]
-    },
-    "packages/cli": {
-      "ignore": ["templates/**", "template-sources/**"]
     },
     "packages/cyber-pilot-kit-frontx": {
       "entry": ["skills/**/scripts/*.mjs"]
@@ -35,9 +31,8 @@
     "**/*.spec.{ts,tsx}",
     "**/dist/**",
     "**/node_modules/**",
-    "**/templates/**",
-    "**/template-sources/**",
-    "**/*.config.{ts,js,cjs,mjs}"
+    "**/*.config.{ts,js,cjs,mjs}",
+    "packages/cli/src/__tests__/fixtures/**"
   ],
   "ignoreBinaries": [
     "dot"

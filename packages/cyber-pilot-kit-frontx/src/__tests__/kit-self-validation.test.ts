@@ -7,7 +7,7 @@ import vm from 'node:vm';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parse as parseToml } from 'smol-toml';
-import { FORBIDDEN_BODY_NAMES, findForbiddenSolutionName, validateKitManifest } from '../validate-manifest.js';
+import { FORBIDDEN_BODY_PATTERNS, findForbiddenSolutionName, validateKitManifest } from '../validate-manifest.js';
 import { createFsResourceBodyReader } from '../resource-body-reader.js';
 import type { KitManifest, KitResourceEntry, ResourceBodyReader } from '../types.js';
 
@@ -142,7 +142,11 @@ describe('kit self-validation — shipped resource BODY scan (cpt-frontx-adr-sol
 
   // inst-scan-solution-content / inst-if-solution-content / inst-record-solution-violation —
   // regression test for the fixed ADR-0026 violation: AGENTS.md previously shipped with a body
-  // naming `frontx-template-standard`; manifest id/description alone never caught this.
+  // naming a concrete template package; manifest id/description alone never caught this. The
+  // scan is structural (any `template-<flavor>` compound, cpt-frontx-adr-solution-ai-content-placement)
+  // rather than keyed to a maintained name list — this repository is deliberately unaware of what
+  // templates the templates repository ships (cpt-frontx-adr-template-acquisition-and-location), so the
+  // fixture name below ("template-widgetkit") is fictional and stands in for any such identity.
   it('AGENTS.md-body leak naming a specific template → FAIL SOLUTION_SPECIFIC_CONTENT (caught by body scan, not by id/description scan)', () => {
     const leakingReader: ResourceBodyReader = {
       read(entry: KitResourceEntry): string[] {
@@ -153,7 +157,7 @@ describe('kit self-validation — shipped resource BODY scan (cpt-frontx-adr-sol
               '',
               '## Package Boundaries (always enforce)',
               '',
-              '- Template packages: `frontx-template-standard` and its sub-packages',
+              '- Template packages: `frontx-template-widgetkit` and its sub-packages',
             ].join('\n'),
           ];
         }
@@ -170,17 +174,17 @@ describe('kit self-validation — shipped resource BODY scan (cpt-frontx-adr-sol
     expect(result.status).toBe('FAIL');
     expect(
       result.violations.some(
-        (v) => v.code === 'SOLUTION_SPECIFIC_CONTENT' && v.message.includes('frontx-template-standard'),
+        (v) => v.code === 'SOLUTION_SPECIFIC_CONTENT' && v.message.includes('frontx-template-widgetkit'),
       ),
     ).toBe(true);
   });
 
-  // inst-scan-solution-content — the other explicitly-named leak case (bare "template-standard")
-  it('resource body naming "template-standard" (without frontx- prefix) → FAIL SOLUTION_SPECIFIC_CONTENT', () => {
+  // inst-scan-solution-content — the bare form of the same structural pattern (no frontx- prefix)
+  it('resource body naming a template package without a "frontx-" prefix → FAIL SOLUTION_SPECIFIC_CONTENT', () => {
     const leakingReader: ResourceBodyReader = {
       read(entry: KitResourceEntry): string[] {
         if (entry.id === 'frontx_guidelines') {
-          return ['## Template Territory\n\n`packages/template-standard/` is template territory.'];
+          return ['## Template Territory\n\n`packages/template-widgetkit/` is template territory.'];
         }
         return [''];
       },
@@ -190,12 +194,9 @@ describe('kit self-validation — shipped resource BODY scan (cpt-frontx-adr-sol
     expect(result.violations.some((v) => v.code === 'SOLUTION_SPECIFIC_CONTENT')).toBe(true);
   });
 
-  // inst-scan-solution-content — regression guard for the CURRENT identities after the
-  // issue #470 shell/mfe split. SPECIFIC_TEMPLATE_NAMES keeps the historical
-  // `frontx-template-standard`/`template-standard` entries (tested above) AND adds
-  // `frontx-template-shell`/`template-shell`/`frontx-template-mfe`/`template-mfe` —
-  // a leak naming either current product must be caught exactly like the legacy name.
-  it('AGENTS.md-body leak naming the current shell package "frontx-template-shell" → FAIL SOLUTION_SPECIFIC_CONTENT', () => {
+  // inst-scan-solution-content — a second, differently-named template package must be caught by
+  // the same structural pattern, proving the scan generalizes rather than matching one fixed name.
+  it('AGENTS.md-body leak naming a second, differently-shaped template package → FAIL SOLUTION_SPECIFIC_CONTENT', () => {
     const leakingReader: ResourceBodyReader = {
       read(entry: KitResourceEntry): string[] {
         if (entry.id === 'frontx_agents') {
@@ -205,7 +206,7 @@ describe('kit self-validation — shipped resource BODY scan (cpt-frontx-adr-sol
               '',
               '## Package Boundaries (always enforce)',
               '',
-              '- Template packages: `frontx-template-shell` and its sub-packages',
+              '- Template packages: `frontx-template-overlaykit` and its sub-packages',
             ].join('\n'),
           ];
         }
@@ -217,17 +218,17 @@ describe('kit self-validation — shipped resource BODY scan (cpt-frontx-adr-sol
     expect(result.status).toBe('FAIL');
     expect(
       result.violations.some(
-        (v) => v.code === 'SOLUTION_SPECIFIC_CONTENT' && v.message.includes('frontx-template-shell'),
+        (v) => v.code === 'SOLUTION_SPECIFIC_CONTENT' && v.message.includes('frontx-template-overlaykit'),
       ),
     ).toBe(true);
   });
 
-  // inst-scan-solution-content — mfe counterpart, bare form (no frontx- prefix)
-  it('resource body naming "template-mfe" (without frontx- prefix) → FAIL SOLUTION_SPECIFIC_CONTENT', () => {
+  // inst-scan-solution-content — bare-form counterpart of the second template package
+  it('resource body naming a second template package without a "frontx-" prefix → FAIL SOLUTION_SPECIFIC_CONTENT', () => {
     const leakingReader: ResourceBodyReader = {
       read(entry: KitResourceEntry): string[] {
         if (entry.id === 'frontx_guidelines') {
-          return ['## Template Territory\n\n`src-app/mfe_packages/` ships from `template-mfe/`.'];
+          return ['## Template Territory\n\n`src-app/mfe_packages/` ships from `template-overlaykit/`.'];
         }
         return [''];
       },
@@ -237,10 +238,9 @@ describe('kit self-validation — shipped resource BODY scan (cpt-frontx-adr-sol
     expect(result.violations.some((v) => v.code === 'SOLUTION_SPECIFIC_CONTENT')).toBe(true);
   });
 
-  // inst-scan-solution-content — the FRAMEWORK half of the body scan. Asserting
-  // that FORBIDDEN_BODY_NAMES contains the names proves the list; only feeding a
-  // body through the scan proves the behaviour. Without this case, dropping
-  // FRAMEWORK_NAMES from the scan leaves the whole suite green.
+  // inst-scan-solution-content — the FRAMEWORK half of the body scan. Feeding
+  // a body through the scan proves the behaviour directly. Without this case,
+  // dropping FRAMEWORK_NAMES from the scan leaves the whole suite green.
   it.each(['React', 'vue', 'Angular', 'svelte'])(
     'resource body naming the framework "%s" → FAIL SOLUTION_SPECIFIC_CONTENT',
     (framework) => {
@@ -425,13 +425,15 @@ describe('kit self-validation — routing and scaffolding entry points (cpt-fron
     expect(findForbiddenSolutionName(shippedBody(SCAFFOLDING_ID))).toBeUndefined();
   });
 
-  // Reads the exported list itself, so the scan above is known to be checking a
-  // non-empty set of real product names rather than passing because the list
-  // emptied out. This is the consumer the list is exported for.
-  it('scans against a non-empty forbidden-name list that includes the shipped template identities', () => {
-    expect(FORBIDDEN_BODY_NAMES.length).toBeGreaterThan(0);
-    expect(FORBIDDEN_BODY_NAMES).toContain('template-shell');
-    expect(FORBIDDEN_BODY_NAMES).toContain('react');
+  // Reads the exported pattern list itself, so the scan above is known to be
+  // checking a non-empty, non-trivial set of patterns rather than passing
+  // because the list emptied out. This is the consumer the list is exported
+  // for. Matched against synthetic strings, not real product names — this
+  // repository does not know what templates exist.
+  it('scans against a non-empty forbidden-pattern list that recognizes template package names and frameworks', () => {
+    expect(FORBIDDEN_BODY_PATTERNS.length).toBeGreaterThan(0);
+    expect(FORBIDDEN_BODY_PATTERNS.some((re) => re.test('template-widgetkit'))).toBe(true);
+    expect(FORBIDDEN_BODY_PATTERNS.some((re) => re.test('react'))).toBe(true);
   });
 
   it('names no concrete template, solution, or framework in the routing document', () => {

@@ -5,24 +5,22 @@
  * gts-plugin, api, cli, cyber-pilot-kit-frontx).
  *
  * The template-side packages (state, i18n, framework, react, auth, studio)
- * and the host app now live in the self-contained top-level
- * `template-shell/` (Phase 11 template-move; split from its MFE content into
- * the sibling `template-mfe/` in issue #470); its template-internal
- * layering/isolation rules moved into its own `.dependency-cruiser.cjs`.
- * Once template-shell is no longer an npm workspace of this repo,
- * ecosystem packages have no module-resolution path into it at all — the
- * forbid rules below enforce that boundary generically (by shape, not by
- * naming the template's path), so they keep working if the template's
- * location or identity changes.
+ * and the host app live in their own templates repository, which enforces
+ * its own template-internal layering/isolation rules in its own
+ * `.dependency-cruiser.cjs`. Since no template is an npm workspace of this
+ * repo, ecosystem packages have no module-resolution path into one at all —
+ * the forbid rules below enforce that boundary generically (by shape, not
+ * by naming any template's path), so they keep working regardless of a
+ * template's location or identity.
  */
 
 /**
  * A cross-package `@gears-frontx/*` import reaches dependency-cruiser under
  * three resolved shapes, and a `to` rule covering only one of them is a rule
  * that silently never fires. This is the same three-shape reasoning as
- * `internal/depcruise-config/layer-constants.cjs` and
- * `template-shell/.dependency-cruiser.cjs`; it is repeated here rather than
- * imported because this config must stay loadable with nothing built.
+ * `internal/depcruise-config/layer-constants.cjs` and each template's own
+ * `.dependency-cruiser.cjs`; it is repeated here rather than imported
+ * because this config must stay loadable with nothing built.
  *
  * 1. In-tree, symlink resolved: `preserveSymlinks` is false, so
  *    `@gears-frontx/api` resolves *through* the workspace symlink and then
@@ -205,10 +203,15 @@ module.exports = {
 
     // @cpt-begin:cpt-frontx-constraint-cli-template-independence:p17:inst-dep-cruiser-rule
     // Scoped to SHIPPED source only (packages/cli/src, excluding the
-    // auto-generated version registry). packages/cli/templates/ and
-    // packages/cli/template-sources/ are fixture/scratch dirs (NOT shipped —
-    // package.json "files": ["dist"]) that legitimately contain template
-    // names/content; they must never trip the CLI-1 boundary check.
+    // auto-generated version registry). The CLI ships zero bundled template
+    // content today (ADR-0016/0017: templates are resolved at runtime by
+    // source-spec), so this rule has nothing to carve an exception for.
+    //
+    // The synthetic fixtures under packages/cli/src/__tests__/fixtures/ sit
+    // inside this rule's `from` too (no `__tests__` carve-out here, unlike
+    // the API/telemetry rules above) and pass only because they import
+    // nothing — a fixture that ever needs an import to mirror a real
+    // template shape would need its own carve-out.
     {
       name: 'frontx-cli-1-no-bundled-template-content',
       severity: 'error',
@@ -344,11 +347,9 @@ module.exports = {
     exclude: {
       dynamic: true,
       // Only genuinely-not-ours trees are path-excluded, and none of them is a
-      // rule target: `packages/cli/templates` and `template-sources` are
-      // fixture/scratch dirs the CLI resolves at runtime rather than imports,
-      // `packages/mfes/mfes` is generated output, and `.claude/worktrees` are
-      // disposable agent-spawned repo checkouts.
-      path: 'packages/mfes/mfes|packages/cli/templates|packages/cli/template-sources|\\.claude',
+      // rule target: `packages/mfes/mfes` is generated output, and
+      // `.claude/worktrees` are disposable agent-spawned repo checkouts.
+      path: 'packages/mfes/mfes|\\.claude',
     },
     // Type-only imports are erased before emit, so without this a boundary
     // crossing written as `import type` is invisible to every rule above. The

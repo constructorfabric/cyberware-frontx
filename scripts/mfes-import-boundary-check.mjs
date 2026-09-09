@@ -9,39 +9,53 @@
  * orchestration, mediator, bridge wiring, state) — stay internal. The ADR's
  * confirmation section promised a continuous-integration check for that
  * boundary; #540 is what happens without one: the barrel quietly shipped
- * `DefaultMfeRegistry` and its siblings for months, and template-shell grew a
- * `new DefaultMfeRegistryFactory()` call nobody noticed.
+ * `DefaultMfeRegistry` and its siblings for months, and a consuming template
+ * grew a `new DefaultMfeRegistryFactory()` call nobody noticed.
  *
  * The forbidden set is a NAMING RULE, not a class list: every concrete default
  * implementation in the runtime is named `Default<Contract>` (or, for the
  * bridge factory, `<Contract>Default`), and the abstract contracts never carry
  * that affix. A static list of class names would be the same duplicated
  * knowledge this guard exists to prevent — a new `DefaultFooManager` would be
- * born unguarded. The rule guards both sides of the boundary:
+ * born unguarded. The rule guards both sides of the boundary, but this script
+ * now only reaches ONE of them - see the note on template territory below:
  *
  *  - THE BARREL: `packages/mfes/src/index.ts` must not export a binding that
  *    matches the concrete-implementation naming rule on EITHER side of an
  *    `as` alias, and must not use wildcard re-exports at all. This is the
  *    half that makes the drift structurally impossible to reintroduce,
- *    whether or not a consumer exists yet.
- *  - THE CONSUMERS: no file outside `packages/mfes` may import a
- *    concrete-implementation name from `@gears-frontx/mfes`, and no file may
- *    deep-import a subpath (`@gears-frontx/mfes/...`) at all — a deep import
- *    reaches past the barrel into exactly the internals the barrel exists to
- *    hide. Aliasing does not launder a name: the ORIGINAL binding is checked,
- *    not the local alias, and `import type` counts — a type-level dependency
- *    on a concrete class couples the consumer to its shape just the same.
+ *    whether or not a consumer exists yet. Enforced here, unconditionally,
+ *    regardless of where a consumer lives.
+ *  - THE CONSUMERS: no file in THIS repository outside `packages/mfes` -
+ *    every other `packages/*` package, `internal/*`, and the root itself -
+ *    may import a concrete-implementation name from `@gears-frontx/mfes`,
+ *    and no file may deep-import a subpath (`@gears-frontx/mfes/...`) at
+ *    all - a deep import reaches past the barrel into exactly the internals
+ *    the barrel exists to hide. Aliasing does not launder a name: the
+ *    ORIGINAL binding is checked, not the local alias, and `import type`
+ *    counts - a type-level dependency on a concrete class couples the
+ *    consumer to its shape just the same.
+ *
+ * Template territory is a consumer of `@gears-frontx/mfes` too, and the #540
+ * anecdote above is literally that consumer tripping this exact rule - but
+ * no template lives in this repository any more, so this script's walk
+ * (rooted here, at this repo) cannot reach it and enforces nothing there.
+ * That consumer-side half of the boundary is being ported into the
+ * templates repository as its own guard, scoped to that repository's own
+ * tree, rather than reached for from here.
  *
  * Zero scanned files is a hard failure, never a vacuous pass (same rule as
- * `template-pin-drift-check.mjs`): a walk that stops matching means the guard
+ * `ecosystem-pin-drift-check.mjs`): a walk that stops matching means the guard
  * is broken, and a human needs to see that as red.
  *
  * Why a script and not eslint `no-restricted-imports`/`no-restricted-exports`:
- * the root `eslint.config.js` deliberately ignores template territory
- * (`template-shell/**`, `template-mfe/**` — each ships its own config), so a
- * root-owned rule can never reach it; and even where a template does lint
- * itself, that config is a file the template is free to edit, not a place a
- * repo-wide boundary can durably live.
+ * both would still need the same NAMING-RULE reasoning this module already
+ * rejects doing any other way - `no-restricted-exports` names specific
+ * export identifiers, not a pattern every future `Default<Contract>` export
+ * matches without anyone adding it to a list, and `no-restricted-imports`
+ * has no notion of "the ORIGINAL binding behind this alias" or "this name
+ * used only as `import type`" - both of which this guard checks explicitly
+ * (see THE CONSUMERS above).
  *
  * CLI entry: `node scripts/mfes-import-boundary-check.mjs` (exit 0 on success).
  * Wired into `npm run policy:mfes-import-boundary` and
@@ -463,9 +477,9 @@ export function findConsumerFiles(rootDir) {
       if (entry.isDirectory()) {
         // Dot-directories are never consumer source, and `.claude/worktrees/*`
         // can hold a full second copy of this repo (see
-        // vitest.scripts.config.mjs) whose stale, pre-#540 template-shell
-        // coupling would otherwise fail a local guard run for reasons that
-        // have nothing to do with the working tree actually being checked.
+        // vitest.scripts.config.mjs) whose stale, pre-#540 consumer coupling
+        // would otherwise fail a local guard run for reasons that have
+        // nothing to do with the working tree actually being checked.
         if (entry.name.startsWith('.')) continue;
         if (SKIPPED_DIR_NAMES.has(entry.name)) continue;
         if (fullPath === mfesDir || fullPath === toolingDir) continue;

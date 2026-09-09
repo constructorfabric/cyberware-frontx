@@ -94,9 +94,9 @@ export async function addTemplate(
   // repository that already holds applied templates should always supply the
   // real adapter, or a recorded region-union block from an earlier apply
   // will not be found and carried forward.
-  // TODO(#489): make required once the template-mfe-harness branch merges —
-  // kept optional only because `__tests__/template-split.e2e.test.ts` (edited
-  // on that branch) calls this without supplying it.
+  // TODO(#489): make required once the pending #489 branch merges — kept
+  // optional only because `__tests__/template-split.e2e.test.ts` (edited on
+  // that branch) calls this without supplying it.
   readProjectFileFn: ReadProjectFileFn = async () => null,
 ): Promise<AddTemplateResult> {
   // @cpt-begin:cpt-frontx-flow-cli-scaffolding-add-template:p1:inst-add-invoke
