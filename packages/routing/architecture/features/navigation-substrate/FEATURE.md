@@ -122,7 +122,7 @@ User-facing interactions that start with an actor and describe the end-to-end fl
 
 ### Imperative Navigation Outside The UI Tree
 
-- [ ] `p1` - **ID**: `cpt-frontx-flow-routing-navigation-substrate-imperative-navigation`
+- [x] `p1` - **ID**: `cpt-frontx-flow-routing-navigation-substrate-imperative-navigation`
 
 **Actor**: `cpt-frontx-routing-actor-application-developer`
 
@@ -134,13 +134,13 @@ User-facing interactions that start with an actor and describe the end-to-end fl
 - A caller that constructs its own history instance instead of resolving the realm-shared one observes no change when another unit navigates, and produces no change any other unit observes when it navigates itself — the divergence this feature exists to prevent.
 
 **Steps**:
-1. [ ] - `p1` - Caller resolves the single navigation-history instance for the current realm (`cpt-frontx-algo-routing-navigation-substrate-singleton-resolution`) - `inst-resolve-instance`
-2. [ ] - `p1` - **IF** the caller needs to react to future navigation - `inst-branch-subscribe`
-   1. [ ] - `p1` - Caller registers a listener via `subscribe`, joining the instance's fan-out (`cpt-frontx-algo-routing-navigation-substrate-fanout-dispatch`) - `inst-subscribe`
-   2. [ ] - `p1` - Caller retains the returned unsubscribe function for later teardown - `inst-retain-unsubscribe`
-3. [ ] - `p1` - **IF** the caller also needs to act immediately — independently of step 2, and commonly alongside it, since a typical caller both reads or writes the URL once now and subscribes for later changes - `inst-branch-immediate`
-   1. [ ] - `p1` - Caller reads `location` for the current URL, or calls `push`/`replace`/`go` to change it - `inst-immediate-call`
-4. [ ] - `p1` - **RETURN** control to the caller; any subscribed listener across the realm is notified through the same fan-out the caller's own call reached - `inst-return`
+1. [x] - `p1` - Caller resolves the single navigation-history instance for the current realm (`cpt-frontx-algo-routing-navigation-substrate-singleton-resolution`) - `inst-resolve-instance`
+2. [x] - `p1` - **IF** the caller needs to react to future navigation - `inst-branch-subscribe`
+   1. [x] - `p1` - Caller registers a listener via `subscribe`, joining the instance's fan-out (`cpt-frontx-algo-routing-navigation-substrate-fanout-dispatch`) - `inst-subscribe`
+   2. [x] - `p1` - Caller retains the returned unsubscribe function for later teardown - `inst-retain-unsubscribe`
+3. [x] - `p1` - **IF** the caller also needs to act immediately — independently of step 2, and commonly alongside it, since a typical caller both reads or writes the URL once now and subscribes for later changes - `inst-branch-immediate`
+   1. [x] - `p1` - Caller reads `location` for the current URL, or calls `push`/`replace`/`go` to change it - `inst-immediate-call`
+4. [x] - `p1` - **RETURN** control to the caller; any subscribed listener across the realm is notified through the same fan-out the caller's own call reached - `inst-return`
 
 Which declared extension currently owns an entry the caller reads from `location` is not this flow's own concern: that resolution is the Route Ownership Signal's own public entry point, built on the grammar codec below rather than duplicated here (`cpt-frontx-feature-routing-route-ownership-signal`).
 
@@ -150,51 +150,51 @@ Internal system functions that do not interact with actors directly. All six are
 
 ### Realm-Global Singleton Resolution
 
-- [ ] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-singleton-resolution`
+- [x] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-singleton-resolution`
 
 **Input**: The calling realm's global object; a well-known key the package reserves on it, carrying the `NavigationHistory` contract's own version (e.g. `__frontx_routing_navigation_history_v1__`).
 
 **Output**: The single navigation-history instance for that realm and that contract version — freshly constructed on the first call for that version, reused on every later call from any independently bundled copy of this package built against the same contract version.
 
 **Steps**:
-1. [ ] - `p1` - Inspect the realm global for an existing instance stored under this package's version-carrying well-known key - `inst-peek-global`
-2. [ ] - `p1` - **IF** no instance is present under that key - `inst-if-absent`
-   1. [ ] - `p1` - Construct the navigation-history instance over the browser's own navigation-history API, registering its one underlying subscription against that API at this same construction moment — not deferred until a first caller subscribes, per `cpt-frontx-algo-routing-navigation-substrate-fanout-dispatch` — so `location` is live from the instant this instance exists, for a reader who never subscribes at all - `inst-construct-instance`
-   2. [ ] - `p1` - Store the instance on the realm global under the version-carrying well-known key, so the next caller — from this bundle or any other built against the same contract version — finds it already there - `inst-store-global`
-3. [ ] - `p1` - **ELSE** the instance already present is the one every earlier caller of this contract version in this realm is already holding - `inst-else-present`
-4. [ ] - `p1` - **RETURN** the realm-global instance - `inst-return-instance`
+1. [x] - `p1` - Inspect the realm global for an existing instance stored under this package's version-carrying well-known key - `inst-peek-global`
+2. [x] - `p1` - **IF** no instance is present under that key - `inst-if-absent`
+   1. [x] - `p1` - Construct the navigation-history instance over the browser's own navigation-history API, registering its one underlying subscription against that API at this same construction moment — not deferred until a first caller subscribes, per `cpt-frontx-algo-routing-navigation-substrate-fanout-dispatch` — so `location` is live from the instant this instance exists, for a reader who never subscribes at all - `inst-construct-instance`
+   2. [x] - `p1` - Store the instance on the realm global under the version-carrying well-known key, so the next caller — from this bundle or any other built against the same contract version — finds it already there - `inst-store-global`
+3. [x] - `p1` - **ELSE** the instance already present is the one every earlier caller of this contract version in this realm is already holding - `inst-else-present`
+4. [x] - `p1` - **RETURN** the realm-global instance - `inst-return-instance`
 
 **Rationale**: A realm-global key, not a module-scoped variable, is what makes the instance reachable across independently bundled copies of this package — each copy is its own module graph and cannot see another copy's module-scoped state, but every copy runs in the same realm and can see the same global. The key carries the `NavigationHistory` contract's own version rather than naming the package alone, so a copy built against an incompatible future or past contract version resolves under its own key and constructs its own instance instead of silently capturing and reusing one whose shape it cannot actually satisfy — trading a same-version sharing guarantee for a per-version instance instead of a single instance quietly used the wrong way (PRD §12 records this as a bounded risk: prevention holds within one contract version, and a cross-version mismatch yields one instance per version, without a detection mechanism of its own). Registering the underlying browser subscription at construction, rather than waiting for a first `subscribe` call, is what keeps `location` from being stale for a caller who only ever reads it (§2 permits reading without subscribing) — a lazily-registered subscription would leave `location` frozen at its construction-time value for exactly the callers who never subscribe. A version-carrying string key, held for the page's own lifetime with no retain/release discipline of its own, is deliberate rather than an omission: the browser's own history is itself page-lifetime by nature, so nothing needs releasing before the page itself goes away; retain/release exists for resources with their own teardown semantics, which a realm-global singleton with no teardown does not have; and a well-known key without the contract's own version folded in would not tell two incompatible copies apart in the first place, which is the entire reason the key carries a version at all.
 
 ### Fan-Out Subscription Dispatch
 
-- [ ] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-fanout-dispatch`
+- [x] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-fanout-dispatch`
 
 **Input**: A subscriber callback passed to `subscribe`; the singleton instance's own registry of subscribers; its one underlying subscription against the browser's navigation-history API, registered at instance construction (`cpt-frontx-algo-routing-navigation-substrate-singleton-resolution`), not deferred until a first subscriber arrives; and the instance's own `push` and `replace` calls.
 
 **Output**: The subscriber registered or removed; on a browser navigation-history change — which also covers a `go` call made through this instance, observed asynchronously through this same underlying subscription — *or* on a `push`/`replace` call made through this instance, every subscriber registered at the start of that dispatch round invoked once.
 
 **Steps**:
-1. [ ] - `p1` - Add the caller's callback to the instance's internal subscriber registry and return an unsubscribe function closed over that registry entry - `inst-add-subscriber`
-2. [ ] - `p1` - **WHEN** the one underlying browser navigation-history subscription fires — registered at instance construction rather than at a first `subscribe` call, this covers a navigation this instance did not dispatch directly at its own call site: a back/forward step, a `go` call issued through this instance (moving through history raises `popstate` only asynchronously, so `go` is observed here rather than dispatched directly in step 3), a third-party call that moves through existing history entries from outside this instance (e.g. `history.go`), or an observed third-party addition such as a fragment-only navigation — never a third-party `pushState`/`replaceState` call made outside this instance, which raises no event this subscription listens for, produces no notification at all, and so is not observed here or anywhere else in this instance (§1.5, Observed browser events) - `inst-when-underlying-fires`
-   1. [ ] - `p1` - Dispatch a round (`inst-dispatch-round`) - `inst-underlying-dispatch-round`
-3. [ ] - `p1` - **WHEN** this instance's own `push` or `replace` is called - `inst-when-own-navigation-call`
-   1. [ ] - `p1` - Dispatch a round (`inst-dispatch-round`) directly from the call itself, without waiting for or depending on a `popstate` event — a call made through `pushState`/`replaceState` never raises one, so step 2's browser subscription alone would never observe a navigation this instance performed itself; `go` is deliberately excluded from this direct path because, unlike `push`/`replace`, it does eventually raise `popstate`, and dispatching it synchronously here would notify subscribers before `location` reflects the browser's actual post-move state - `inst-own-call-dispatch-round`
-4. [ ] - `p1` - **Dispatch a round** (`inst-dispatch-round`, invoked by both step 2 and step 3) - `inst-dispatch-round`
-   1. [ ] - `p1` - Take a snapshot of the callbacks currently in the subscriber registry — this snapshot fixes which callbacks are eligible for this round, never which of them actually get invoked - `inst-snapshot-subscribers`
-   2. [ ] - `p1` - **FOR EACH** callback in that snapshot, in registration order - `inst-foreach-subscriber`
-      1. [ ] - `p1` - **IF** that callback is still present in the live subscriber registry at the moment this iteration reaches its slot — i.e., nothing has unsubscribed it since the snapshot was taken - `inst-if-still-live`
-         1. [ ] - `p1` - **TRY** invoke the callback with this instance's own notification payload for the triggering navigation - `inst-invoke-subscriber`
-         2. [ ] - `p1` - **CATCH** an error thrown by the callback - `inst-catch-subscriber-error`
-            1. [ ] - `p1` - Isolate the failing callback's error so it does not stop delivery to the remaining callbacks in the snapshot - `inst-isolate-error`
-      2. [ ] - `p1` - **ELSE** that callback was unsubscribed after the snapshot was taken but before this iteration reached its slot - `inst-else-unsubscribed-before-turn`
-         1. [ ] - `p1` - Skip it without invoking it — an unsubscribe always wins over a still-pending, not-yet-invoked slot in this round, even though the snapshot already fixed that slot as eligible - `inst-skip-unsubscribed-slot`
-   3. [ ] - `p1` - **IF** a callback unsubscribes during this round - `inst-if-unsubscribe-mid-round`
-      1. [ ] - `p1` - Remove it from the live subscriber registry immediately. The round in progress still finishes iterating the snapshot taken in step 4.1, so removing it mid-round does not corrupt this round's iteration; if the round has not yet reached that callback's own slot, step 4.2's liveness check skips invoking it when the iteration gets there, and if the round already invoked it earlier in this same round, that completed invocation is not undone - `inst-unsubscribe-mid-round-safe`
-   4. [ ] - `p1` - **IF** a callback triggers a new navigation during this round (reentrant navigation) - `inst-if-reentrant-navigation`
-      1. [ ] - `p1` - That navigation's own dispatch is deferred to a new, later round rather than folded into the round already in progress - `inst-reentrant-new-round`
-5. [ ] - `p1` - **WHEN** the caller invokes the returned unsubscribe function - `inst-when-unsubscribe`
-   1. [ ] - `p1` - Remove the callback from the subscriber registry - `inst-remove-subscriber`
+1. [x] - `p1` - Add the caller's callback to the instance's internal subscriber registry and return an unsubscribe function closed over that registry entry - `inst-add-subscriber`
+2. [x] - `p1` - **WHEN** the one underlying browser navigation-history subscription fires — registered at instance construction rather than at a first `subscribe` call, this covers a navigation this instance did not dispatch directly at its own call site: a back/forward step, a `go` call issued through this instance (moving through history raises `popstate` only asynchronously, so `go` is observed here rather than dispatched directly in step 3), a third-party call that moves through existing history entries from outside this instance (e.g. `history.go`), or an observed third-party addition such as a fragment-only navigation — never a third-party `pushState`/`replaceState` call made outside this instance, which raises no event this subscription listens for, produces no notification at all, and so is not observed here or anywhere else in this instance (§1.5, Observed browser events) - `inst-when-underlying-fires`
+   1. [x] - `p1` - Dispatch a round (`inst-dispatch-round`) - `inst-underlying-dispatch-round`
+3. [x] - `p1` - **WHEN** this instance's own `push` or `replace` is called - `inst-when-own-navigation-call`
+   1. [x] - `p1` - Dispatch a round (`inst-dispatch-round`) directly from the call itself, without waiting for or depending on a `popstate` event — a call made through `pushState`/`replaceState` never raises one, so step 2's browser subscription alone would never observe a navigation this instance performed itself; `go` is deliberately excluded from this direct path because, unlike `push`/`replace`, it does eventually raise `popstate`, and dispatching it synchronously here would notify subscribers before `location` reflects the browser's actual post-move state - `inst-own-call-dispatch-round`
+4. [x] - `p1` - **Dispatch a round** (`inst-dispatch-round`, invoked by both step 2 and step 3) - `inst-dispatch-round`
+   1. [x] - `p1` - Take a snapshot of the callbacks currently in the subscriber registry — this snapshot fixes which callbacks are eligible for this round, never which of them actually get invoked - `inst-snapshot-subscribers`
+   2. [x] - `p1` - **FOR EACH** callback in that snapshot, in registration order - `inst-foreach-subscriber`
+      1. [x] - `p1` - **IF** that callback is still present in the live subscriber registry at the moment this iteration reaches its slot — i.e., nothing has unsubscribed it since the snapshot was taken - `inst-if-still-live`
+         1. [x] - `p1` - **TRY** invoke the callback with this instance's own notification payload for the triggering navigation - `inst-invoke-subscriber`
+         2. [x] - `p1` - **CATCH** an error thrown by the callback - `inst-catch-subscriber-error`
+            1. [x] - `p1` - Isolate the failing callback's error so it does not stop delivery to the remaining callbacks in the snapshot - `inst-isolate-error`
+      2. [x] - `p1` - **ELSE** that callback was unsubscribed after the snapshot was taken but before this iteration reached its slot - `inst-else-unsubscribed-before-turn`
+         1. [x] - `p1` - Skip it without invoking it — an unsubscribe always wins over a still-pending, not-yet-invoked slot in this round, even though the snapshot already fixed that slot as eligible - `inst-skip-unsubscribed-slot`
+   3. [x] - `p1` - **IF** a callback unsubscribes during this round - `inst-if-unsubscribe-mid-round`
+      1. [x] - `p1` - Remove it from the live subscriber registry immediately. The round in progress still finishes iterating the snapshot taken in step 4.1, so removing it mid-round does not corrupt this round's iteration; if the round has not yet reached that callback's own slot, step 4.2's liveness check skips invoking it when the iteration gets there, and if the round already invoked it earlier in this same round, that completed invocation is not undone - `inst-unsubscribe-mid-round-safe`
+   4. [x] - `p1` - **IF** a callback triggers a new navigation during this round (reentrant navigation) - `inst-if-reentrant-navigation`
+      1. [x] - `p1` - That navigation's own dispatch is deferred to a new, later round rather than folded into the round already in progress - `inst-reentrant-new-round`
+5. [x] - `p1` - **WHEN** the caller invokes the returned unsubscribe function - `inst-when-unsubscribe`
+   1. [x] - `p1` - Remove the callback from the subscriber registry - `inst-remove-subscriber`
 
 **Rationale**: Exactly one subscription reaches the browser's navigation-history API regardless of how many listeners the realm accumulates, and that subscription lives from instance construction onward rather than from a first `subscribe` call, so every listener's fan-out — and every reader's `location` — traces back to that same single, already-live subscription. Dispatch has two triggers rather than one because the browser's own `popstate` event never fires for a `pushState`/`replaceState` call made through this same instance — without step 3's direct dispatch, this instance's own `push` and `replace` would be invisible to every subscriber, including the very Route Ownership Signal observer that depends on observing them. `go` deliberately stays out of that direct path: it does eventually raise `popstate`, only asynchronously, so folding it into step 3 would notify subscribers with a `location` that does not yet reflect the completed move — step 2's subscription, the same one back/forward relies on, is what observes `go` correctly. The snapshot-and-defer rules in step 4 are what make a listener free to unsubscribe or navigate from inside its own callback without corrupting the round it is currently part of: the snapshot fixes which callbacks are eligible for the round, but a callback's own release always wins over a still-pending, not-yet-invoked slot the snapshot reserved for it — an invocation already completed earlier in the same round is never undone, only one still pending is ever skipped.
 
@@ -318,7 +318,7 @@ Not applicable. The Navigation Substrate itself is stateless beyond the realm-gl
 
 ### Single Realm-Shared History With Fan-Out Subscription And URL Grammar Codec
 
-- [ ] `p1` - **ID**: `cpt-frontx-dod-routing-navigation-substrate-shared-history`
+- [x] `p1` - **ID**: `cpt-frontx-dod-routing-navigation-substrate-shared-history`
 
 The system **MUST** expose exactly one navigation-history instance per realm and per `NavigationHistory` contract version, resolved through a version-carrying realm-global key so that every independently bundled copy of this package built against the same contract version converges on the same instance, **MUST** register that instance's one underlying browser navigation-history subscription at construction rather than deferring it to a first `subscribe` call, **MUST** dispatch its fan-out both on that one underlying subscription — which also observes a `go` call made through this instance, asynchronously, the same way it observes back/forward — and directly from its own `push`/`replace` calls — since neither raises the `popstate` event the underlying subscription listens for — to every listener registered at the start of that dispatch round whose registration still stands at the moment the round reaches it — a listener that unsubscribes after the round's own snapshot was taken but before its own slot is reached is skipped rather than invoked — without letting one listener's error, or a listener that unsubscribes or navigates mid-round, corrupt delivery to the rest, and **MUST** expose the URL grammar codec: a parser that turns a URL into the shell subroute, the hash, and an ordered entry list — dropping a malformed entry with a warning, keeping the first occurrence of a duplicate extension under one domain key with a warning, and keeping the last value of a duplicate parameter name with a warning, never throwing — and a serializer that is that parser's own inverse for every entry it kept, for canonical input (a round-trip is byte-exact only when the input already used the canonical bare form for an empty parameter value, never for the explicit `k=` form, since the serializer always re-emits a bare name), throwing on a duplicate extension, a duplicate parameter name, or an invalid token, and emitting the bare shell subroute with no trailing `?` for zero entries — together with the name-validity, name-equality, and domain-key-composition functions every domain key and extension token in that grammar is checked against and composed through.
 
@@ -346,7 +346,7 @@ The system **MUST** expose exactly one navigation-history instance per realm and
 
 ### Imperative Navigation Surface Outside The UI Tree
 
-- [ ] `p1` - **ID**: `cpt-frontx-dod-routing-navigation-substrate-imperative-navigation`
+- [x] `p1` - **ID**: `cpt-frontx-dod-routing-navigation-substrate-imperative-navigation`
 
 The system **MUST** expose `push`, `replace`, `go`, `location`, and `subscribe` against the realm-shared navigation-history instance for use by a caller with no mounted router in its call path.
 
@@ -361,17 +361,17 @@ The system **MUST** expose `push`, `replace`, `go`, `location`, and `subscribe` 
 
 ## 6. Acceptance Criteria
 
-- [ ] A single navigation-history instance answers `push`/`replace`/`go`/`location`/`subscribe` for the host and for every independently bundled microfrontend registered in the same realm, resolved by a version-carrying realm-global key rather than a module-scoped singleton; a copy built against an incompatible contract version resolves its own instance under its own key instead of reusing this one.
-- [ ] The one underlying subscription against the browser's own navigation-history API is registered at instance construction, not deferred until a first `subscribe` call, so `location` is current for a reader who never subscribes at all.
-- [ ] Exactly one subscription is registered against the browser's own navigation-history API regardless of how many listeners subscribe through this instance; every listener is invoked on every navigation-history change.
-- [ ] A `push` or `replace` call made through this instance dispatches the same fan-out directly, without depending on a `popstate` event, since a same-instance call never raises one for either. A `go` call made through this instance is not dispatched directly; it is observed through the same underlying browser-history subscription used for back/forward, since a history move raises `popstate` only asynchronously.
-- [ ] A listener that throws during dispatch does not prevent delivery to the remaining listeners in the same fan-out round.
-- [ ] A listener that unsubscribes during a dispatch round does not corrupt that round's iteration and receives no further invocation from that round once unsubscribed — the round's snapshot fixes which listeners are eligible for it, but an unsubscribe always wins over a still-pending, not-yet-invoked slot in that same round, without undoing an invocation the round already completed; a listener that triggers a new navigation during a round has that navigation dispatched as a new, later round.
-- [ ] `push`, `replace`, `go`, `location`, and `subscribe` are usable from a caller with no mounted router in its call path.
-- [ ] The `NavigationHistory` contract's `location` shape (path, search, hash) and its subscriber-notification shape (a `location` plus a navigation kind distinguishing `push`, `replace`, and a third kind covering both a history move and an observed third-party addition such as fragment navigation) are as specified in §1.5, and are what the Engine Provider's own subscriber-notification translation (`cpt-frontx-feature-routing-engine-provider`) consumes as input.
-- [ ] By the time any subscriber callback executes for a dispatched round, `NavigationHistory`'s own `location` already reflects the navigation that triggered that round, for both dispatch paths in §3 alike, including a history move observed only asynchronously.
-- [ ] The Navigation Substrate's own module carries no import of a router engine or a UI-framework rendering primitive.
-- [ ] Parsing the pictured URL and serializing the resulting entry list, shell subroute, and hash back unchanged reproduces the original URL exactly (round-trip). An implementation **MUST** reproduce this example as one of its own acceptance scenarios:
+- [x] A single navigation-history instance answers `push`/`replace`/`go`/`location`/`subscribe` for the host and for every independently bundled microfrontend registered in the same realm, resolved by a version-carrying realm-global key rather than a module-scoped singleton; a copy built against an incompatible contract version resolves its own instance under its own key instead of reusing this one.
+- [x] The one underlying subscription against the browser's own navigation-history API is registered at instance construction, not deferred until a first `subscribe` call, so `location` is current for a reader who never subscribes at all.
+- [x] Exactly one subscription is registered against the browser's own navigation-history API regardless of how many listeners subscribe through this instance; every listener is invoked on every navigation-history change.
+- [x] A `push` or `replace` call made through this instance dispatches the same fan-out directly, without depending on a `popstate` event, since a same-instance call never raises one for either. A `go` call made through this instance is not dispatched directly; it is observed through the same underlying browser-history subscription used for back/forward, since a history move raises `popstate` only asynchronously.
+- [x] A listener that throws during dispatch does not prevent delivery to the remaining listeners in the same fan-out round.
+- [x] A listener that unsubscribes during a dispatch round does not corrupt that round's iteration and receives no further invocation from that round once unsubscribed — the round's snapshot fixes which listeners are eligible for it, but an unsubscribe always wins over a still-pending, not-yet-invoked slot in that same round, without undoing an invocation the round already completed; a listener that triggers a new navigation during a round has that navigation dispatched as a new, later round.
+- [x] `push`, `replace`, `go`, `location`, and `subscribe` are usable from a caller with no mounted router in its call path.
+- [x] The `NavigationHistory` contract's `location` shape (path, search, hash) and its subscriber-notification shape (a `location` plus a navigation kind distinguishing `push`, `replace`, and a third kind covering both a history move and an observed third-party addition such as fragment navigation) are as specified in §1.5, and are what the Engine Provider's own subscriber-notification translation (`cpt-frontx-feature-routing-engine-provider`) consumes as input.
+- [x] By the time any subscriber callback executes for a dispatched round, `NavigationHistory`'s own `location` already reflects the navigation that triggered that round, for both dispatch paths in §3 alike, including a history move observed only asynchronously.
+- [x] The Navigation Substrate's own module carries no import of a router engine or a UI-framework rendering primitive.
+- [x] Parsing the pictured URL and serializing the resulting entry list, shell subroute, and hash back unchanged reproduces the original URL exactly (round-trip). An implementation **MUST** reproduce this example as one of its own acceptance scenarios:
 
   ```
   /en?screen=dashboard;orientation=left
@@ -383,18 +383,18 @@ The system **MUST** expose `push`, `replace`, `go`, `location`, and `subscribe` 
   ```
 
   Written on one line, this is exactly the URL in the address bar; the line breaks are typographic.
-- [ ] A payload value containing `&`, `=`, and a space round-trips through parse then serialize unchanged, and the occupant reads its own decoded value correctly:
+- [x] A payload value containing `&`, `=`, and a space round-trips through parse then serialize unchanged, and the occupant reads its own decoded value correctly:
 
   ```
   /en?sheet=search;q=a%26b%3Dc%20d
   ```
 
   Parsing this URL yields the param `q` with value `a&b=c d`; serializing that entry list back produces the identical URL text, byte for byte.
-- [ ] Parsing a query string in which every domain is at zero occupants — an empty query string — and serializing the resulting empty entry list back reproduces the bare shell subroute alone, with no trailing `?`:
+- [x] Parsing a query string in which every domain is at zero occupants — an empty query string — and serializing the resulting empty entry list back reproduces the bare shell subroute alone, with no trailing `?`:
 
   ```
   /en
   ```
-- [ ] A malformed raw entry — no `=` between a candidate domain key and extension, a token outside the `name` alphabet, or a domain key with an even segment count, e.g. `/en?screen&a.b=x&widgets=line-a;range=7d` — is dropped from the parsed entry list with a warning citing its own raw text; here, `screen` has no `=` at all, and `a.b=x` is its own entry whose candidate domain key `a.b` has an even segment count (two), so both are dropped for that reason, while `widgets=line-a;range=7d` is kept and parsing does not throw.
-- [ ] A query string carrying the parameter `q` twice within one entry, e.g. `sheet=search;q=first;q=second`, parses to a single `q` param holding `second`, with a warning reporting the duplicate; serializing two params of the identical name within one entry throws rather than silently picking one.
-- [ ] A query string carrying the extension `line-a` twice under the same domain key, e.g. `widgets=line-a;range=7d&widgets=line-a;range=30d`, parses to one `widgets=line-a;range=7d` entry — the first occurrence — with a warning reporting the duplicate, and the second raw entry dropped; serializing two entries that share both the identical domain key and the identical extension throws rather than writing a duplicate.
+- [x] A malformed raw entry — no `=` between a candidate domain key and extension, a token outside the `name` alphabet, or a domain key with an even segment count, e.g. `/en?screen&a.b=x&widgets=line-a;range=7d` — is dropped from the parsed entry list with a warning citing its own raw text; here, `screen` has no `=` at all, and `a.b=x` is its own entry whose candidate domain key `a.b` has an even segment count (two), so both are dropped for that reason, while `widgets=line-a;range=7d` is kept and parsing does not throw.
+- [x] A query string carrying the parameter `q` twice within one entry, e.g. `sheet=search;q=first;q=second`, parses to a single `q` param holding `second`, with a warning reporting the duplicate; serializing two params of the identical name within one entry throws rather than silently picking one.
+- [x] A query string carrying the extension `line-a` twice under the same domain key, e.g. `widgets=line-a;range=7d&widgets=line-a;range=30d`, parses to one `widgets=line-a;range=7d` entry — the first occurrence — with a warning reporting the duplicate, and the second raw entry dropped; serializing two entries that share both the identical domain key and the identical extension throws rather than writing a duplicate.
