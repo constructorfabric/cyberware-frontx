@@ -15,6 +15,7 @@
 // ComponentExtraction: the whole point is that the type text a reader ends
 // up with is the checker's own printed type, so a hand-written typeText
 // would test the string formatting and nothing else.
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -27,12 +28,15 @@ import {
   buildOverlaySchema,
   buildPropsAndRequired,
   buildVocabularyTypes,
+  collectOverlays,
   describeUnexpressedType,
   loadElementSurface,
   loadElementSurfaces,
+  overlayFailuresMentioning,
   sharedAttributeConflicts,
 } from './compile';
 import { extractComponent } from './extract';
+import { gtsToken, VENDOR_PACKAGE } from './ids';
 import { applyContractTestTimeout } from './testing';
 
 // This suite builds a real TypeScript program through extractComponent -
@@ -285,5 +289,57 @@ describe('who belongs to one family', () => {
 
   it('is empty for a family name nothing names', () => {
     expect(buildFamilyRoster('carousel', [root, item, stranger])).toEqual({ name: 'carousel', root: undefined, parts: [] });
+  });
+});
+
+describe('collectOverlays / usableOverlays: a broken overlay is scoped by what it mentions', () => {
+  // The comment on collectOverlays says the point of taking sources as a
+  // pure argument is that this scoping can be exercised without writing a
+  // file into src/components - this is that exercise. "ghost" stands for a
+  // half-written overlay of an UNENROLLED component: real YAML errors are
+  // ordinary mid-edit noise, so the walk collects the failure instead of
+  // throwing from it, and only a derivation whose own reference the broken
+  // text happens to carry is the one usableOverlays can no longer answer.
+  const brokenPath = '/kit/src/components/ghost/ghost.contract.yaml';
+  const accordionNeedle = `${VENDOR_PACKAGE}.component.${gtsToken('accordion')}.v`;
+  const buttonNeedle = `${VENDOR_PACKAGE}.component.${gtsToken('button')}.v`;
+  // An unterminated flow sequence: real YAML, invalid the moment the `]`
+  // never lands - and its text still carries accordion's own reference
+  // token, because a WIP `accepts.components` entry is exactly the kind of
+  // edit that gets interrupted mid-line.
+  const broken = {
+    directory: 'ghost',
+    stem: 'ghost',
+    path: brokenPath,
+    text: `component: ghost\naccepts:\n  components: [gts://${accordionNeedle}1~\n`,
+  };
+  // The real, committed button overlay: parseOverlay validates a full
+  // component overlay against the overlay schema (intent, accepts,
+  // attestations and the rest), so a source has to be a whole valid overlay
+  // to land in `overlays` rather than in `failures` for an unrelated reason.
+  const button = {
+    directory: 'button',
+    stem: 'button',
+    path: '/kit/src/components/button/button.contract.yaml',
+    text: readFileSync(join(process.cwd(), 'src/components/button/button.contract.yaml'), 'utf8'),
+  };
+
+  it('collects the broken overlay as a failure instead of throwing, and still parses what does', () => {
+    const { overlays, failures } = collectOverlays([broken, button]);
+    expect(overlays).toEqual([{ directory: 'button', stem: 'button', overlay: expect.objectContaining({ component: 'button' }) }]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].path).toBe(brokenPath);
+  });
+
+  it("does not fail button's compile: button's own reference never appears in the broken text, so it is a warning, not a block", () => {
+    const { failures } = collectOverlays([broken, button]);
+    expect(overlayFailuresMentioning(failures, [buttonNeedle])).toEqual([]);
+  });
+
+  it("fails accordion's compile, because the broken file's own text names it, and the failure names the offending file", () => {
+    const { failures } = collectOverlays([broken, button]);
+    const blocking = overlayFailuresMentioning(failures, [accordionNeedle]);
+    expect(blocking).toHaveLength(1);
+    expect(blocking[0].path).toBe(brokenPath);
   });
 });

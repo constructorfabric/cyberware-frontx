@@ -504,6 +504,36 @@ describe('guard: a enrolled component with no conformance suite', () => {
   });
 });
 
+describe("guard/enrollment: a near miss in a contract's own examples", () => {
+  it('fails both, and each names the prop, the declared name it is one edit from, and the source', () => {
+    // The schema is open (unevaluatedProperties allowed), so `variannt`
+    // compiles clean and passes every other check - this is the one place
+    // classifyProps' near-miss detection is wired into an exit code, and it
+    // has to run through both entry points the guard and enrollment share.
+    const fixture = createFixture();
+    committedButtonKit(fixture);
+    fixture.write(
+      'src/components/button/button.contract.json',
+      contractJson('button', {
+        element: 'dom_button',
+        properties: { variant: { type: 'string' } },
+        examples: {
+          good: [{ title: 'ghost variant', code: '<Button variannt="ghost">Click</Button>' }],
+          bad: [],
+        },
+      }),
+    );
+
+    expect(runGuard('HEAD', { json: false }, fixture.context)).toBe(1);
+    expect(fixture.output()).toContain(
+      '[FAIL] button: "variannt" in examples.good "ghost variant" is one edit from "variant"',
+    );
+
+    expect(runEnrollment({ json: false }, fixture.context)).toBe(1);
+    expect(fixture.output()).toContain('"variannt" in examples.good "ghost variant" - probably "variant"');
+  });
+});
+
 describe('guard: a component dropped from the enrolled set', () => {
   it('reports the de-listing instead of letting it leave scope in silence', () => {
     // The new list alone takes the component out of scope with no line in

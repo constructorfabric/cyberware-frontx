@@ -36,5 +36,5 @@
       "description": "Any React event handler passes. React declares roughly 150 of them by literal name per element; a contract that named each one would restate React's own type definitions and go stale against them, and no kit fact lives in any single entry."
     }
   },
-  "$comment": "Intentionally NOT closed (no unevaluatedProperties/additionalProperties): a component's contract does not derive from this type, it HOLDS its id (x-gts-traits.host_element), and whoever needs the surface applies it beside the contract - so this schema cannot know what else applies to the same props object. A component's own derived type is what classifies a prop nothing here or there evaluates."
+  "$comment": "Intentionally NOT closed (no unevaluatedProperties/additionalProperties): a component's contract does not derive from this type, it HOLDS its id (x-gts-traits.forwards_to), and whoever needs the surface applies it beside the contract - so this schema cannot know what else applies to the same props object. A component's own derived type is what classifies a prop nothing here or there evaluates."
 }

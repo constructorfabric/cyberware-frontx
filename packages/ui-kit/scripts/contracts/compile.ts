@@ -2867,7 +2867,7 @@ export function compileContract(directory: string, exportStem: string = director
   let elementSurface: Record<string, unknown> | undefined;
   // The id of that surface, bare: an id-VALUED field holds an id, and gts-ts's
   // reference validator rejects the URI form outright (Gts.isValidGtsID).
-  let hostElement: string | undefined;
+  let forwardsToId: string | undefined;
   if (extraction.forwardedProps.length > 0) {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
     if (!extraction.elementKind) {
@@ -2887,7 +2887,7 @@ export function compileContract(directory: string, exportStem: string = director
     elementSurface = loadElementSurface(extraction.elementKind);
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
-    hostElement = forwardsTo(extraction);
+    forwardsToId = forwardsTo(extraction);
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
   }
 
@@ -2966,7 +2966,7 @@ export function compileContract(directory: string, exportStem: string = director
       mounted_in: compileMountedIn(directory, exportStem, overlay),
       family_membership: compileFamilyMembership(exportStem, overlay),
       // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
-      forwards_to: hostElement,
+      forwards_to: forwardsToId,
       // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
     },
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
