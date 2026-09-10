@@ -22,5 +22,11 @@ export abstract class MountManager {
   abstract preloadExtension(extensionId: string): Promise<void>;
   abstract mountExtension(extensionId: string, container: Element): Promise<ParentMfeBridge>;
   abstract unmountExtension(extensionId: string): Promise<void>;
+  /**
+   * Permanently release an extension's retained bridge pair and inbound
+   * link, on its permanent unregistration. Distinct from `unmountExtension`,
+   * which deactivates the bridge but keeps it (and its routing) in place.
+   */
+  abstract releaseExtension(extensionId: string): void;
   abstract setTheme(cssVars: Record<string, string>): void;
 }

@@ -17,9 +17,12 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  /* The mockups' Selection Control spec (frame 195:409): a 20px box. */
-  width: 1.25rem;
-  height: 1.25rem;
+  /* The mockups' Selection Control spec (frame 195:409): a 20px box. The
+   * drawn specimens bind that box to icon/size/md rather than restating the
+   * number, so the token is what this reads — the checkbox is glyph-sized
+   * by construction, and follows a consumer who retunes the icon scale. */
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
   padding: 0;
   border: var(--border-width) solid var(--input);
   /* Drawn at rx 5, between --radius-xs (4) and --radius-sm (6); snapped
@@ -68,7 +71,7 @@
 
 /* Base UI renders the root as a <span role="checkbox">, so :disabled can
  * never match — the stamped data-disabled attribute is the disabled state. */
-/* 0.42 per the mockups' disabled specimens. */
+/* disabled opacity: see input.module.css */
 .checkbox[data-disabled] {
   cursor: not-allowed;
   opacity: 0.42;

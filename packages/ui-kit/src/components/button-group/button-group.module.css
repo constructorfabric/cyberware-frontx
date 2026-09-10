@@ -1,0 +1,165 @@
+/*
+ * ButtonGroup styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ *
+ * Upstream joins arbitrary children by matching every child's own
+ * `data-slot` attribute with Tailwind sibling selectors — this kit drops
+ * `data-slot` everywhere (see card.tsx), so the joined-strip look below is
+ * reached through pure structural selectors (`:first-child`/`:last-child`/
+ * adjacent-sibling) instead: it works on ANY direct child (Button, Input,
+ * a Select trigger, plain text) with no marker attribute required.
+ *
+ * Every join rule below is deliberately written as a COMPOUND selector —
+ * `.group.orientationHorizontal > ...`, not a single `.group > ...` — so
+ * its specificity (0,2,0 or higher) reliably outranks a child's own
+ * single-class rules (button.module.css's `.button`/`.variantOutline`, each
+ * (0,1,0)) regardless of which stylesheet a consumer's bundler loads
+ * first. A tie in specificity would fall back to source order, which this
+ * file cannot control (it must not touch button.module.css to coordinate
+ * it) — so every override here is built to win outright instead.
+ *
+ * ONE child shape breaks the "target the direct child" rule above: Input's
+ * `icon`/`end` slots (input.tsx) wrap the real `<input>` in a presentational
+ * `<span>` (a replaced element can't host a slot via ::before/background),
+ * so the direct child the group sees is that span, not the bordered
+ * element. Reaching into input.module.css's own class names would couple
+ * this file to Input's internals (and break the "any direct child, no
+ * marker" contract for every OTHER child kind), so instead every rule that
+ * touches a border/radius/width is duplicated with a `:has(> input) >
+ * input` tail: still pure structure (an `<input>` is a native element name,
+ * not a component-owned class), and inert for every child that isn't a
+ * slotted Input (a plain Button/Select-trigger/text child has no `<input>`
+ * descendant to match).
+ */
+
+.group {
+  display: flex;
+  width: fit-content;
+  align-items: stretch;
+}
+
+/*
+ * Flex items receive z-index even with `position: static` (CSS Flexible
+ * Box Layout §2 — z-index applies to flex items regardless of position),
+ * so no `position: relative` is needed here the way a non-flex context
+ * would require — the focused child just needs to paint over its
+ * neighbors' overlapping border/ring, matching upstream's
+ * `*:focus-visible:z-10`.
+ *
+ * The second selector covers a slotted Input (see the file header): focus
+ * lands on the nested `<input>`, never on its wrapper span, so
+ * `:focus-visible` alone never matches the direct child there — `:has(...)`
+ * bubbles the descendant's focus state up to the child the group can
+ * actually raise.
+ */
+.group > *:focus-visible,
+.group > *:has(:focus-visible) {
+  z-index: 1;
+}
+
+.orientationHorizontal {
+  flex-direction: row;
+}
+
+.orientationVertical {
+  flex-direction: column;
+}
+
+/* An <input>/<textarea> direct child grows to fill the remaining space
+ * (upstream's `[&>input]:flex-1`) — every other child (Button, ButtonGroupText,
+ * a Select trigger) keeps its intrinsic width. The third selector is the
+ * slotted-Input case (see file header): the growing box is the wrapper
+ * span the group actually sees, not the `<input>` it wraps, which already
+ * fills the wrapper via its own `width: 100%` (input.module.css). */
+.group > input,
+.group > textarea,
+.group > *:has(> input) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Horizontal join: square every child's corners, then re-round only the
+ * two outer corners on the first/last child, and remove the leading
+ * border of every child but the first so adjoining borders don't double up.
+ * Each rule is paired with a `:has(> input) > input` tail (see file header)
+ * that applies the identical geometry one level deeper, for the one child
+ * shape whose own border/radius isn't on the direct child the group sees. */
+.group.orientationHorizontal > *,
+.group.orientationHorizontal > *:has(> input) > input {
+  border-radius: 0;
+}
+
+.group.orientationHorizontal > *:first-child,
+.group.orientationHorizontal > *:first-child:has(> input) > input {
+  border-start-start-radius: var(--radius-md);
+  border-end-start-radius: var(--radius-md);
+}
+
+.group.orientationHorizontal > *:last-child,
+.group.orientationHorizontal > *:last-child:has(> input) > input {
+  border-start-end-radius: var(--radius-md);
+  border-end-end-radius: var(--radius-md);
+}
+
+.group.orientationHorizontal > * + *,
+.group.orientationHorizontal > * + *:has(> input) > input {
+  border-inline-start-width: 0;
+}
+
+/* Vertical join: the same idea, rotated onto the block axis. */
+.group.orientationVertical > *,
+.group.orientationVertical > *:has(> input) > input {
+  border-radius: 0;
+}
+
+.group.orientationVertical > *:first-child,
+.group.orientationVertical > *:first-child:has(> input) > input {
+  border-start-start-radius: var(--radius-md);
+  border-start-end-radius: var(--radius-md);
+}
+
+.group.orientationVertical > *:last-child,
+.group.orientationVertical > *:last-child:has(> input) > input {
+  border-end-start-radius: var(--radius-md);
+  border-end-end-radius: var(--radius-md);
+}
+
+.group.orientationVertical > * + *,
+.group.orientationVertical > * + *:has(> input) > input {
+  border-block-start-width: 0;
+}
+
+.text {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  color: var(--muted-foreground);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  font-weight: var(--text-label-weight);
+  letter-spacing: var(--text-label-tracking);
+}
+
+.text svg {
+  pointer-events: none;
+}
+
+/*
+ * The divider inside a group is a short accent, not a full-bleed line — it
+ * shrinks to a hairline with a small margin instead of stretching edge to
+ * edge, matching upstream's `data-horizontal:mx-px ... data-vertical:my-px
+ * ...`. `.group > .separator[data-orientation=...]` (three simple
+ * selectors, (0,3,0)) reliably outranks separator.module.css's own
+ * `.separator[data-orientation=...]` rule ((0,2,0) there) regardless of
+ * which file a consumer's bundler loads first.
+ */
+.group > .separator[data-orientation='vertical'] {
+  height: auto;
+  margin-inline: var(--border-width);
+}
+
+.group > .separator[data-orientation='horizontal'] {
+  width: auto;
+  margin-block: var(--border-width);
+}

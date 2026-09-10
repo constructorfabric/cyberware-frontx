@@ -1,0 +1,74 @@
+{
+  "id": "design-contract",
+  "version": "0.1.0-alpha.1",
+  "status": "pilot",
+  "normativeLanguage": {
+    "MUST": "Required; violation is a blocker or major finding according to quality-gates.json.",
+    "MUST_NOT": "Prohibited; violation is a blocker or major finding according to quality-gates.json.",
+    "SHOULD": "Expected; an exception requires a recorded product or technical rationale.",
+    "MAY": "Optional and context-dependent."
+  },
+  "uiBase": {
+    "package": "@gears-frontx/ui-kit",
+    "observedVersion": "0.4.0-alpha.2",
+    "implementation": ["React 19", "Base UI", "CSS Modules", "CVA"],
+    "inventory": "The installed llms.txt is the component inventory and API reference; this bundle does not duplicate it.",
+    "naming": "Component names and composition patterns follow shadcn/ui conventions, so that familiar structure applies. Every component and API still comes from @gears-frontx/ui-kit; shadcn is not a dependency and must never be imported directly."
+  },
+  "compositionResponsibilities": [
+    "application shell and navigation",
+    "page headers and toolbars",
+    "form layouts and validation summaries",
+    "table filters, pagination, selection, and inspectors",
+    "dashboard widget grids and evidence drill-down",
+    "empty, error, restricted, loading, and partial states"
+  ],
+  "sourcePrecedence": [
+    "Approved product requirements and design references",
+    "Installed FrontX manifests and UI-kit documentation",
+    "Machine-readable contracts in this bundle",
+    "Guidelines in this bundle",
+    "Installed application behavior and existing screens",
+    "Local screen request",
+    "Model defaults"
+  ],
+  "contractFiles": {
+    "layout": "layout-contract.json",
+    "componentStates": "component-state-matrix.json",
+    "qualityGates": "quality-gates.json",
+    "reviewRubric": "review-rubric.json",
+    "researchSources": "source-registry.json"
+  },
+  "requiredQualities": [
+    "Primary user job and next action are evident",
+    "Installed components and semantic tokens are reused",
+    "Spacing follows the installed 4 px scale and the 8 px primary rhythm",
+    "Wide, medium and narrow transformations are declared",
+    "Applicable loading, empty, partial, error, restricted, pending and success states exist",
+    "Keyboard, focus, names, semantics, contrast, reflow and reduced motion are addressed",
+    "Typography, icons, color and motion form one coherent system",
+    "Dense data remains readable and has sorting, pagination, evidence and drill-down when applicable",
+    "Review findings cite a stable rule ID, location, impact and correction"
+  ],
+  "fallbackPolicy": {
+    "useWhen": "The installed product does not define an equivalent layout or composition rule. Token roles have no bundle fallback: derive a missing value from an installed token (for example via color-mix), or raise the gap with the UI-kit owner instead of inventing a value.",
+    "never": [
+      "Override an installed token with a bundle fallback",
+      "Copy an external design system visual theme",
+      "Create a second component, color, type, icon, radius or shadow system"
+    ]
+  },
+  "prohibited": [
+    "Duplicating a UI-kit component with ad-hoc markup",
+    "Hardcoding a visual value when a semantic token exists",
+    "Using color as the only status signal",
+    "Adding decorative cards, gradients, helper text or metrics to fill space",
+    "Inventing product features, permissions or destructive behavior",
+    "Overriding UI-kit internals",
+    "Representing responsive behavior as uniform scaling",
+    "Using motion without a functional purpose or reduced-motion behavior",
+    "Claiming automated, accessibility or visual validation that was not run"
+  ],
+  "reviewMode": "advisory",
+  "automatedTestingStage": "separate"
+}

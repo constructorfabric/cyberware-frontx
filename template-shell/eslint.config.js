@@ -8,11 +8,37 @@
  * `api`.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import unusedImports from 'eslint-plugin-unused-imports';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
+
+// Lint fragments contributed by installed verify packages
+// (src-app/verify_packages/*/eslint.config.mjs). The shell defines only the
+// convention — it names no template and no package; which rules arrive, if
+// any, is the installing template's business. A shell with no verify
+// packages lints without them instead of failing to resolve plugins it does
+// not carry. A fragment that IS present but fails to import fails the lint
+// run loudly — an installed-but-broken package is an error, not an absence.
+const verifyPackagesDir = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  'src-app',
+  'verify_packages'
+);
+const verifyLintConfigs = [];
+const verifyPackageEntries = fs.existsSync(verifyPackagesDir)
+  ? fs.readdirSync(verifyPackagesDir)
+  : [];
+for (const entry of verifyPackageEntries) {
+  const fragmentPath = path.join(verifyPackagesDir, entry, 'eslint.config.mjs');
+  if (!fs.existsSync(fragmentPath)) continue;
+  const fragment = await import(pathToFileURL(fragmentPath).href);
+  verifyLintConfigs.push(...fragment.default);
+}
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
@@ -34,6 +60,21 @@ export default [
   // Base JS + TypeScript
   js.configs.recommended,
   ...tseslint.configs.recommended,
+
+  // Plain .mjs files are Node-land tooling (build scripts, verify-package
+  // runners delivered by overlays). js.configs.recommended enables no-undef
+  // for them, and unlike TS files they get no globals from typescript-eslint,
+  // so without this block `console`/`process`/`fetch` all report as undefined.
+  {
+    files: ['**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
 
   // L0 BASE: Universal rules for all TS/TSX files
   {
@@ -85,6 +126,23 @@ export default [
     plugins: { 'react-hooks': reactHooks },
     rules: { ...reactHooks.configs.recommended.rules, 'react-hooks/exhaustive-deps': 'error' },
   },
+
+  // Rules delivered by verify packages (see the discovery loop above). The
+  // Studio panel's drag handle is a reasoned exception to jsx-a11y when a
+  // verify package supplies that plugin: onMouseDown starts a pointer-only
+  // panel drag, and the header's real controls (collapse button) are native
+  // and keyboard-reachable. It lives here rather than as an inline directive
+  // because the plugin is optional — a named directive errors when the rule
+  // is undefined, an unnamed one is an unused directive when it never fires.
+  ...verifyLintConfigs,
+  ...(verifyLintConfigs.some((c) => c.plugins?.['jsx-a11y'])
+    ? [
+        {
+          files: ['packages/studio/src/StudioPanel.tsx'],
+          rules: { 'jsx-a11y/no-static-element-interactions': 'off' },
+        },
+      ]
+    : []),
 
   // Additional ignores
   {

@@ -13,6 +13,11 @@
       "path": "workflows/add-mfe-package-workflow.md"
     },
     {
+      "id": "add-mfe-packages-parallel-workflow",
+      "category": "workflows",
+      "path": "workflows/add-mfe-packages-parallel.md"
+    },
+    {
       "id": "gts-id-conventions",
       "category": "guidelines",
       "path": "guidelines/gts-id-conventions.md"
@@ -26,6 +31,11 @@
       "id": "gts-id-patterns-reference",
       "category": "reference_artifacts",
       "path": "reference-artifacts/gts-id-patterns-reference.json"
+    },
+    {
+      "id": "ecosystem-api-quick-reference",
+      "category": "reference_artifacts",
+      "path": "reference-artifacts/ecosystem-api-quick-reference.md"
     }
   ]
 }

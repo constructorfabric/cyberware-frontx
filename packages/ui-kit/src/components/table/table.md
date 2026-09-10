@@ -90,6 +90,67 @@ scroll wrapper" above) — it does not stand between the table and its
 implicit roles, since a plain ancestor `div` has no effect on a
 descendant's own role.
 
+## Metrics and type
+
+Taken from the Studio Data Table frame:
+
+| Part | Drawn | Shipped |
+| --- | --- | --- |
+| Header bar height | 36px | `--control-height-md` |
+| Header label | JetBrains Mono 10/14, uppercase | the Mono role whole (`--font-mono`, `--text-mono-*`) + `text-transform: uppercase`, in `--subtle-foreground` |
+| Cell block padding | 12px | `--space-3` |
+| Cell inline padding | 16px | `--space-4` |
+| Row height (one line of text) | 40px | falls out of the padding (16 + 12 + 12); `--control-height-lg` is also pinned as a floor on `.tableCell` so an empty or sub-line cell cannot collapse the row — `height` on a table cell is a floor, not a cap |
+| Row height (row holding a 32px control) | 56px | falls out of the same padding (32 + 12 + 12) |
+| Row rule | 1px | `--border-width` `--border` |
+
+The header is the one place the table leaves Inter: its column labels are
+mono by design, and that carries through to a header rendered as a button
+(`DataTableSortButton` inherits it rather than imposing Button's own type).
+
+Re-measured 2026-08-20 against the frame's node geometry rather than against
+its rendered rows. Two earlier readings took the artifacts-root /
+artifacts-folder row (node 40001712:10911) at face value — 56px tall, one
+line of text, therefore 56px is the single-line row height — and pinned a
+56px floor on the cell to reproduce it. Walking that row's children shows
+56 is not a type measurement: the row holds a 32px Row-actions button at
+y=12 and a 28px readiness ring at y=14, so its height is
+`--control-height-sm` plus 12px of air a side. The 16px text line is the
+shortest thing in the box.
+
+The frame states its real block padding in the variants whose rows are
+type-driven, where no control sets the height, and every one lands on 8–12px:
+projects (40001450:5771) draws a 58px row with its text block at y=10..46;
+activity (40001454:5364) a 64px row at y=8..51; findings (40001453:6215) a
+72px row at y=10..56. `--space-3` is that padding on the token scale, and it
+reproduces the whole frame from one value instead of from a pinned number:
+one Meta line gives 16 + 24 = 40px, a 32px control gives 32 + 24 = 56px
+(artifacts-root exactly), two Meta lines give 32 + 24 = 56px against the
+projects/activity rows' 58/64.
+
+So the 56px row now falls out of the drawn control rather than being
+asserted. That is also what fixes the case the pinned floor hid: at
+`--space-4` the kit's own row-actions rows measured 65px against the frame's
+56 (32 + 16 + 16, plus the rule), and because a floor only ever grows a row
+it could not pull that overshoot back — the error stayed invisible while
+text-only rows sat at a coincidentally correct 56. 40px is kept as a floor
+because it is the type-driven height anyway, and it is `--control-height-lg`,
+which is also the height the frame draws every column resize handle at across
+all six variants (e.g. 40001452:6069, 40001450:5916) and the height of the
+projects header band.
+
+Cell type needs no reconciliation either: the frame sets every cell in
+Studio/Type/UI Secondary, which is Inter 12/16 — `--text-meta-*` exactly. An
+earlier note here recorded the drawn line as a hand-set 17 normalized up to
+the ramp's 16; the design context reports 16 outright.
+
+`density="compact"` drops the header to `--control-height-sm` and the cells'
+block padding to `--space-2`, taking a type-driven row to 32px. `height`
+resets to `auto` in the compact override — the default density's 40px floor
+would otherwise hold every compact row at the default height, since a floor
+only ever grows a row, never shrinks one. The frame draws no compact
+specimen, so that step is proportional rather than measured.
+
 ## Column widths
 
 There's no `width` prop — size a column the same way the upstream source's
@@ -105,30 +166,34 @@ wider than 100.
 
 `TableRow` reads plain `data-*` attributes for its state, forwarded like any
 other prop rather than driven by a kit-specific prop. Your own logic sets
-the attribute; the kit only paints it. Every row renders as the Studio Data
-Table's carded, ringed row unconditionally — the card shape (rounded
-corners, 1px ring, raised fill) is the primitive itself, not a composition
-layered on top of these hooks; the hooks below only change the ring's
-color/width or lift the fill, they don't turn carding on:
+the attribute; the kit only paints it.
 
-- `data-state="selected"` — a 2px `--primary` ring on a `--card-hover`
-  fill, for a row the user has selected (e.g. via a leading checkbox
-  column).
-- `data-state="stale"` — a 1px `--warning` ring, for a row whose data
+A row is flat: transparent at rest, packed against its neighbours, with a
+single full-bleed 1px `--border` rule under it and no corner radius, ring,
+or fill of its own. Every state below is expressed as a full-bleed tint on
+that shape — the drawn state language of the Studio Data Table:
+
+- `data-state="selected"` — a `--selection-subtle` tint, for a row the
+  user has selected (e.g. via a leading checkbox column).
+- `data-state="stale"` — a `--warning-soft` tint, for a row whose data
   needs attention (out-of-date sync, pending action).
-- `data-state="restricted"` — a 1px `--danger` ring, for a row the
+- `data-state="restricted"` — a `--danger-soft` tint, for a row the
   viewer lacks access to.
 - Hover, and any row containing a descendant that is *currently*
   `aria-expanded="true"` (e.g. a row-level disclosure toggle, only while
-  open — a collapsed toggle does not match) — the fill lifts to
-  `--card-hover`, an opaque surface one step up from the row's resting
-  `--surface-elevated` (not a translucent tint). A `data-state` ring holds
-  under hover; only the fill lifts.
+  open — a collapsed toggle does not match) — a `--muted` tint, one step
+  off both backdrops a table meets (`--surface` inside a card,
+  `--background` bare on the page). A `data-state` tint outranks hover, so
+  a selected row stays selected-colored under the pointer.
 
-The rings follow the Studio Data Table's drawn state language (colored
-border, not a tinted surface); they are assembled from the row's cells,
-so they only close into a rectangle when the row's cells are direct
-children (`TableCell`/`TableHead` — the normal case).
+Because rows carry no fill at rest, the surface behind the table shows
+through them — put a `Table` on a `Card`, on `DataTable`'s own card, or on
+the page, and it takes that surface without any per-row override.
+
+The rule under the last row of the table is dropped: below it sits either
+the container's own bottom border or a footer bar's top border, and a
+second line there would double it. A `<tfoot>` after the body still gets
+its separator, since the body is then no longer the last section.
 
 ## Props (kit level)
 

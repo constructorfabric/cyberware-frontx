@@ -4,7 +4,11 @@ import { Children, type ReactNode } from 'react';
 
 import styles from './button.module.css';
 
-const buttonVariants = cva(styles.button, {
+// Exported (upstream parity — shadcn/ui exports buttonVariants) so a
+// component that renders link/anchor markup styled like a button, but isn't
+// itself a Button (e.g. pagination's page links), can reuse the same class
+// map instead of hand-duplicating variant→class wiring.
+export const buttonVariants = cva(styles.button, {
   variants: {
     variant: {
       default: styles.variantDefault,

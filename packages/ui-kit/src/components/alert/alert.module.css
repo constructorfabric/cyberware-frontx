@@ -1,0 +1,112 @@
+/*
+ * Alert styles, translated from shadcn/ui base (registry/bases/base/ui/
+ * alert.tsx, style-vega.css's .cn-alert rules) to CSS Modules. Consumes
+ * only theme.css variables — no raw colors.
+ *
+ * Studio/Body sits on the root (Studio/Body — same 14px-to-ramp migration
+ * as Card's own translation, see card.module.css): AlertTitle inherits
+ * size/line-height/tracking from it and only overrides weight for
+ * emphasis; AlertDescription only overrides color. Neither re-declares the
+ * whole role.
+ */
+
+.alert {
+  display: grid;
+  /* Upstream's gap-0.5 (2px) has no scale step that small; --space-1 is
+     the nearest non-zero one and keeps the title visibly separated from
+     the description instead of collapsing flush against it (see theme.css's
+     "tokens win" snapping ruling). */
+  gap: var(--space-1);
+  border-radius: var(--radius-lg);
+  border: var(--border-width) solid var(--border);
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-body-tracking);
+}
+
+.variantDefault {
+  background-color: var(--card);
+  color: var(--card-foreground);
+}
+
+.variantDestructive {
+  background-color: var(--card);
+  color: var(--destructive);
+}
+
+/*
+ * Two-column grid once a leading icon is present: the icon sits in column
+ * 1 (spanning both rows below), title/description flow into column 2 —
+ * detected structurally (a direct svg child), the same idiom Card's
+ * cardHeader already uses for its action/description columns (see
+ * card.module.css / tokens.test.ts).
+ */
+.alert:has(> svg) {
+  grid-template-columns: auto 1fr;
+  /* Upstream gap-x-2.5 (10px) has no scale step; --space-2 matches
+     Button's own icon-to-label gap (button.module.css), the closest
+     existing precedent for an icon gutter in the kit. */
+  column-gap: var(--space-2);
+}
+
+.alert > svg {
+  grid-row: span 2 / span 2;
+  /* Nudges the icon down to optically center it against the title's
+     cap-height rather than the row's own top edge — geometry, not a
+     spacing-scale value, so left as a literal (dimensions/offsets aren't
+     guarded — see tokens.test.ts). */
+  translate: 0 2px;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+/*
+ * Only the title is forced into column 2 when an icon is present —
+ * matches upstream exactly (only `alert-title` carries a `col-start-2`
+ * override; `alert-description` doesn't need one because CSS Grid's
+ * auto-placement already skips the icon's row-spanning cell in column 1).
+ */
+.alert:has(> svg) .alertTitle {
+  grid-column-start: 2;
+}
+
+.alertTitle {
+  font-weight: var(--text-label-weight); /* upstream's font-medium (500) */
+}
+
+.alertDescription {
+  color: var(--muted-foreground);
+  text-wrap: balance;
+}
+
+@media (min-width: 768px) {
+  .alertDescription {
+    text-wrap: pretty;
+  }
+}
+
+.alertDescription p:not(:last-child) {
+  margin-bottom: var(--space-4);
+}
+
+.alert:has(> .alertAction) {
+  position: relative;
+  /*
+   * Reserves room for the absolutely positioned AlertAction so body text
+   * never runs under it. Upstream's pr-18 (72px) has no single scale step;
+   * expressed as a sum so the metric guard's var-only arithmetic still
+   * holds (see tokens.test.ts) instead of introducing a literal.
+   */
+  padding-right: calc(var(--space-8) + var(--space-8) + var(--space-2));
+}
+
+.alertAction {
+  position: absolute;
+  /* Upstream top-2.5/right-3 (10px/12px); snapped to the same --space-3
+     step for a symmetric corner inset rather than two different ones. */
+  top: var(--space-3);
+  right: var(--space-3);
+}

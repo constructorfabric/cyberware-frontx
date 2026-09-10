@@ -1,0 +1,104 @@
+/*
+ * Carousel styles, translated from shadcn/ui base (registry/bases/base/ui/
+ * carousel.tsx) to CSS Modules. Consumes only theme.css variables — no raw
+ * colors. Orientation is read off `data-orientation` (set by carousel.tsx
+ * from the `orientation` prop) rather than upstream's inline ternary
+ * classNames — same idiom as separator.module.css/button-group.module.css.
+ */
+
+.carousel {
+  position: relative;
+}
+
+/* The embla viewport: what actually clips and scrolls. Upstream's
+ * `overflow-hidden` on this exact wrapper (the element embla's own
+ * `carouselRef` attaches to) — never on `.content`, which is the track
+ * embla translates. */
+.viewport {
+  overflow: hidden;
+}
+
+.content {
+  display: flex;
+}
+
+/* Upstream's `-ml-4`/`-mt-4`: the track overhangs the viewport by one
+ * gap so each item's own leading `--space-4` padding (below) reads as an
+ * even inter-item gap instead of doubling up against the viewport edge. */
+.content[data-orientation='horizontal'] {
+  margin-inline-start: calc(-1 * var(--space-4));
+}
+
+.content[data-orientation='vertical'] {
+  flex-direction: column;
+  margin-block-start: calc(-1 * var(--space-4));
+}
+
+/*
+ * `box-sizing: border-box` — same per-module fix as tabs.module.css/
+ * card.module.css and most of the kit (the reset the kit lacks; see
+ * tabs.module.css's comment for the full rationale). Without it,
+ * `padding-inline-start`/`padding-block-start` below add on top of
+ * `flex-basis: 100%` under content-box instead of being absorbed within
+ * it, so the item (and the card filling it) overshoots the viewport's
+ * clip edge by one `--space-4` and its trailing border gets cut off by
+ * `.viewport`'s `overflow: hidden`.
+ */
+.item {
+  box-sizing: border-box;
+  min-width: 0;
+  flex-shrink: 0;
+  flex-grow: 0;
+  flex-basis: 100%;
+}
+
+.item[data-orientation='horizontal'] {
+  padding-inline-start: var(--space-4);
+}
+
+.item[data-orientation='vertical'] {
+  padding-block-start: var(--space-4);
+}
+
+.previous,
+.next {
+  position: absolute;
+  /* Upstream's `touch-manipulation`: suppresses the double-tap-to-zoom
+   * gesture delay on touch devices, so a tap registers immediately. */
+  touch-action: manipulation;
+}
+
+/*
+ * -3rem (upstream's `-left-12`/`-right-12`/`-top-12`/`-bottom-12`, 48px) is
+ * positioning geometry, not a themeable gap — like every other component's
+ * absolute-offset values, it is exempt from the token-scale guard (see
+ * tokens.test.ts: only padding/margin/gap/type metrics are guarded,
+ * dimensions and insets are not).
+ */
+.previous[data-orientation='horizontal'] {
+  top: 0;
+  bottom: 0;
+  left: -3rem;
+  margin-block: auto;
+}
+
+.next[data-orientation='horizontal'] {
+  top: 0;
+  bottom: 0;
+  right: -3rem;
+  margin-block: auto;
+}
+
+.previous[data-orientation='vertical'],
+.next[data-orientation='vertical'] {
+  left: 50%;
+  transform: translateX(-50%) rotate(90deg);
+}
+
+.previous[data-orientation='vertical'] {
+  top: -3rem;
+}
+
+.next[data-orientation='vertical'] {
+  bottom: -3rem;
+}

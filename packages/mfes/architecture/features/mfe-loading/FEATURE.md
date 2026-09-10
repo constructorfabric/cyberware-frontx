@@ -13,11 +13,13 @@
 - [3. Processes / Business Logic (CDSL)](#3-processes--business-logic-cdsl)
   - [Manifest-Driven Discovery](#manifest-driven-discovery)
   - [Lazy-Import ABI Resolution](#lazy-import-abi-resolution)
+  - [Per-Attempt Load Timeout](#per-attempt-load-timeout)
 - [4. States (CDSL)](#4-states-cdsl)
   - [MFE Load Lifecycle State Machine](#mfe-load-lifecycle-state-machine)
 - [5. Definitions of Done](#5-definitions-of-done)
   - [Manifest Fields Drive Discovery — No Remote-Entry Parsing](#manifest-fields-drive-discovery--no-remote-entry-parsing)
   - [Lazy-Import ABI Inherits Parent Load Bindings](#lazy-import-abi-inherits-parent-load-bindings)
+  - [Per-Attempt Load Timeout Budget](#per-attempt-load-timeout-budget)
 - [6. Acceptance Criteria](#6-acceptance-criteria)
 
 <!-- /toc -->
@@ -72,6 +74,8 @@ User-facing interactions that start with an actor (human or external system) and
 - Manifest is absent or malformed — load fails at MANIFEST_RESOLVED, entry transitions to LOAD_FAILED.
 - Expose chunk backing file is empty in the manifest — load fails at LOADING.
 - A lazy chunk's relative path cannot be resolved within the load's chunk set — lazy resolution fails and the load transitions to LOAD_FAILED.
+- A load attempt does not settle within the per-attempt timeout budget configured on the handler — that attempt fails with a diagnostic naming the entry and the elapsed budget, its abandoned in-flight work is left running, and any retry is raced against its own fresh budget.
+- A load attempt fails on a dependency cycle in the microfrontend's chunk graph or among its shared dependencies — the load fails on that attempt with the cycle diagnostic and is not retried, the outcome being identical on every attempt.
 
 **Steps**:
 1. [x] - `p1` - Registry receives the microfrontend entry with its manifest reference (`MfeEntry` with manifest field) and, at load start, resolves and caches the declared manifest — `inst-register-entry`
@@ -99,18 +103,18 @@ Internal system functions and procedures that do not interact with actors direct
 
 - [x] `p1` - **ID**: `cpt-frontx-algo-mfe-loading-manifest-discovery`
 
-**Input**: `MfeEntry` with a resolved `MfManifest` (fields: `metaData.publicPath`, `shared[]` in dependency order, `exposeAssets` per entry)
+**Input**: `MfeEntry` with a resolved `MfManifest` (fields: `metaData.publicPath`, `shared[]` in the manifest's published enumeration order, `exposeAssets` per entry)
 
-**Output**: asset base URL, expose chunk filename, stylesheet paths, ordered shared-dependency blob URLs
+**Output**: asset base URL, expose chunk filename, stylesheet paths, shared-dependency blob URLs
 
 **Steps**:
 1. [x] - `p1` - Read `manifest.metaData.publicPath` as the asset base URL for all chunk references in this MFE — `inst-md-read-public-path`
 2. [x] - `p1` - Read `exposeAssets.js.sync[0]` as the expose chunk filename; if empty, emit a load error — `inst-md-read-expose-chunk`
 3. [x] - `p1` - Read `exposeAssets.css.sync` and `exposeAssets.css.async` as the stylesheet asset paths — `inst-md-read-css`
-4. [x] - `p1` - **FOR EACH** entry in `manifest.shared[]` (leaves-first dependency order) — `inst-md-for-each-shared`
+4. [x] - `p1` - **FOR EACH** entry in `manifest.shared[]`, visited in the manifest's enumeration order, which fixes the sequence of visits and not the order in which the fetches are issued or completed (`cpt-frontx-adr-mfe-asset-discovery`) — `inst-md-for-each-shared`
    1. [x] - `p1` - Resolve `shared.chunkPath` against the asset base URL to form the standalone ESM fetch URL — `inst-md-resolve-chunk-path`
    2. [x] - `p1` - Fetch the standalone ESM source text for this shared dependency — `inst-md-fetch-shared-dep`
-   3. [x] - `p1` - Rewrite bare specifiers in the fetched source to the already-resolved blob URLs of earlier (already processed) shared dependencies — `inst-md-rewrite-specifiers`
+   3. [x] - `p1` - Rewrite bare specifiers in the fetched source to the already-resolved blob URLs of the shared dependencies it imports, in the leaves-first order the consumer derives from the fetched sources themselves (`cpt-frontx-algo-mfe-isolation-build-shared-dep-blob-urls`, step `inst-resolve-order`) — `inst-md-rewrite-specifiers`
    4. [x] - `p1` - Mint a blob URL for this shared dependency and record it in the per-load shared-dep blob URL map — `inst-md-mint-shared-blob`
 5. [ ] - `p1` - **RETURN** asset base URL, expose chunk filename, stylesheet paths, and the completed shared-dep blob URL map — `inst-md-return`
 
@@ -140,6 +144,30 @@ Internal system functions and procedures that do not interact with actors direct
 
 **Recorded debt — algorithms specified ahead of the runtime**: the unchecked steps in both algorithms stay unchecked on the same ground §4 records — where the behaviour exists in code at all, it lives under mfe-isolation's marked regions rather than under anchors of this feature's own.
 
+### Per-Attempt Load Timeout
+
+- [x] `p1` - **ID**: `cpt-frontx-algo-mfe-loading-attempt-timeout`
+
+**Input**: One load attempt in progress for an entry, and the timeout budget configured on the handler
+
+**Output**: The attempt's own outcome when it settles within the budget, or a diagnostic load error naming the entry and the elapsed budget; and, for a failed attempt, whether a further attempt may follow
+
+**Steps**:
+1. [x] - `p1` - Read the configured per-attempt timeout budget from the handler configuration — `inst-lto-read-budget`
+2. [x] - `p1` - **IF** the budget is absent or non-positive — `inst-lto-if-disabled`
+   1. [x] - `p1` - **RETURN** the attempt unraced, so a configured zero (the conventional "no timeout" idiom) or any other non-positive value disables the race instead of failing every attempt immediately — `inst-lto-return-unraced`
+3. [x] - `p1` - Race the attempt against the budget, so whichever settles first determines this attempt's outcome, and release the timer once either side settles — `inst-lto-race-attempt`
+4. [x] - `p1` - **IF** the budget elapses before the attempt settles — `inst-lto-if-elapsed`
+   1. [x] - `p1` - **RETURN** error — raise a load error naming the entry and the elapsed budget — `inst-lto-raise-timeout`
+   2. [x] - `p1` - Leave the abandoned attempt's in-flight work running: the race abandons the attempt's result, it does not cancel the work in progress, and anything that work goes on to produce stays subject to the retention invariant of `cpt-frontx-adr-mfe-load-isolation` — `inst-lto-no-cancel`
+   3. [x] - `p1` - Release the source-text cache entries the abandoned attempt was waiting on — both the per-chunk-URL entries (`cpt-frontx-algo-mfe-isolation-blob-url-chain`, step `inst-fetch-source`) and the per-shared-dependency-key entries (`cpt-frontx-algo-mfe-isolation-build-shared-dep-blob-urls`, step `inst-fetch-and-cache`) — so that a subsequent attempt issues its own fetch instead of resolving to the abandoned attempt's in-flight one; without this the timeout bounds a hung fetch without recovering from it, because every retry rejoins the same hung result and expires against its own budget in turn — `inst-lto-release-abandoned-source-text`
+   4. [x] - `p1` - Make each release identity-checked: remove an entry only while it still holds the very in-flight result the abandoned attempt was waiting on, and never one a concurrent load has since registered under the same key — the same discipline those steps already require of their eviction on rejection — `inst-lto-release-identity-checked`
+   5. [x] - `p1` - Treat releasing an entry as distinct from cancelling the work behind it: `inst-lto-no-cancel` continues to hold unchanged, and the accepted cost is that the abandoned fetch and the retry's own fetch may be in flight for the same source at once — the price of a retry that can actually succeed — `inst-lto-release-not-cancel`
+5. [x] - `p1` - Apply the budget to one attempt and not to the load as a whole: every retry of a failed attempt is raced against its own fresh budget, so a single load's worst-case wall clock is the budget multiplied by the number of attempts plus the backoff between them — `inst-lto-per-attempt-budget`
+6. [x] - `p1` - **IF** an attempt fails for a reason a repeat attempt cannot change — a dependency cycle detected while building the load's isolated module graph (`cpt-frontx-algo-mfe-isolation-blob-url-chain`, `inst-raise-ancestor-cycle` and `inst-raise-join-cycle`; `cpt-frontx-algo-mfe-isolation-build-shared-dep-blob-urls`, `inst-raise-shared-cycle`), which is a property of the microfrontend's build and is identical on every attempt — `inst-lto-if-deterministic-failure`
+   1. [x] - `p1` - **RETURN** that failure to the caller without a further attempt, so a deterministic refusal is not re-attempted: retrying it multiplies the source fetches and delays the same user-visible error by the backoff for no possible benefit — `inst-lto-no-retry-deterministic`
+7. [x] - `p1` - **RETURN** the attempt's own outcome when it settles within the budget — `inst-lto-return-attempt`
+
 ## 4. States (CDSL)
 
 ### MFE Load Lifecycle State Machine
@@ -165,7 +193,7 @@ Internal system functions and procedures that do not interact with actors direct
 
 - [x] `p1` - **ID**: `cpt-frontx-dod-mfe-loading-manifest-field-discovery`
 
-The system **MUST** derive every locating fact needed for a microfrontend load exclusively from the declared fields of the published manifest (`metaData.publicPath`, `exposeAssets.js.sync[0]`, `exposeAssets.css.sync`, `exposeAssets.css.async`, `shared[]`) without fetching or parsing a compiled remote-entry module. The `shared[]` array **MUST** be processed in declared dependency order (leaves first) so each shared dependency's blob URL is available before the dependents that reference it as a bare specifier are processed.
+The system **MUST** derive every locating fact needed for a microfrontend load exclusively from the declared fields of the published manifest (`metaData.publicPath`, `exposeAssets.js.sync[0]`, `exposeAssets.css.sync`, `exposeAssets.css.async`, `shared[]`) without fetching or parsing a compiled remote-entry module. The `shared[]` array's published order **MUST** be treated as an enumeration order only; the system **MUST** derive the leaves-first construction order from the fetched sources themselves, so each shared dependency's blob URL is available before the dependents that reference it as a bare specifier are processed.
 
 **Implements**:
 - `cpt-frontx-flow-mfe-loading-on-demand-load`
@@ -198,13 +226,36 @@ The system **MUST** resolve every `__frontx_lazy(path)` call emitted by the buil
 **Touches**:
 - Entities: `MfeEntry`
 
+### Per-Attempt Load Timeout Budget
+
+- [x] `p1` - **ID**: `cpt-frontx-dod-mfe-loading-attempt-timeout`
+
+The system **MUST** race every individual load attempt against the timeout budget configured on the handler, giving each retry of a failed attempt its own fresh budget rather than a share of the first attempt's. A budget that is absent or non-positive **MUST** disable the race entirely rather than expire immediately. An attempt that exceeds its budget **MUST** fail with a diagnostic load error naming the entry and the elapsed budget, and the abandoned attempt's in-flight work **MUST NOT** be treated as cancelled — anything it goes on to produce remains subject to the retention invariant of `cpt-frontx-adr-mfe-load-isolation`. On expiry the system **MUST** also release, under an identity check against the entry the abandoned attempt was waiting on, the source-text cache entries that attempt was awaiting, so a retry issues its own fetch rather than rejoining the abandoned one and expiring against the same stalled work. An attempt that fails for a reason a repeat attempt cannot change — a dependency cycle detected while building the load's isolated module graph — **MUST NOT** be retried, because every further attempt reaches the same refusal at the cost of the same fetches and the backoff between them.
+
+**Implements**:
+- `cpt-frontx-flow-mfe-loading-on-demand-load`
+- `cpt-frontx-algo-mfe-loading-attempt-timeout`
+
+**Addresses**:
+- `cpt-frontx-nfr-runtime-performance` — a bounded per-attempt budget keeps a stalled fetch from holding a load open indefinitely
+
+**Constraints**: none owned
+
+**Touches**:
+- Entities: `MfeEntry`
+
 ## 6. Acceptance Criteria
 
 - [x] When the registry triggers an on-demand load, the system reads `manifest.metaData.publicPath`, `exposeAssets.js.sync[0]`, `exposeAssets.css.sync/async`, and `manifest.shared[]` to locate and load the expose chunk without fetching or parsing a compiled remote-entry module.
-- [x] Shared dependencies declared in `manifest.shared[]` are processed in declared dependency order (leaves first), and each dependency's bare specifier is rewritten to its per-load blob URL before dependents that reference it are processed.
+- [x] Shared dependencies declared in `manifest.shared[]` are constructed in a leaves-first order the system derives from the fetched sources rather than from the manifest's enumeration order, and each dependency's bare specifier is rewritten to its per-load blob URL before dependents that reference it are processed.
 - [x] Each concurrent MFE load receives a distinct per-load `__frontx_lazy` resolver stub; a `__frontx_lazy(path)` call from load A routes to load A's resolver and not load B's.
 - [x] A lazy chunk resolved via `__frontx_lazy` inherits the parent load's shared-dependency blob URL map; the same shared dependency is not fetched or instantiated a second time within one load.
 - [x] Deferred resolution is preserved: a lazy chunk is fetched and its blob URL minted only when `__frontx_lazy(path)` is first exercised, not eagerly at parent-load time.
 - [x] A load whose manifest is missing or whose required fields are absent transitions to LOAD_FAILED and does not progress to LOADING.
 - [x] A lazy chunk whose relative path cannot be resolved within the load's known chunk set causes the load to transition to LOAD_FAILED with a diagnostic identifying the unresolvable path.
+- [x] Each load attempt is raced against the configured timeout budget; a retry of a failed attempt receives its own fresh budget rather than sharing the first attempt's.
+- [x] A configured timeout that is absent or non-positive disables the race, and the attempt settles on its own.
+- [ ] An attempt that fails on a dependency cycle is not retried: the load rejects with the cycle diagnostic after one attempt, issuing no further source fetches and waiting out no backoff.
+- [x] An attempt that exceeds its budget fails with a diagnostic naming the entry and the elapsed budget, while the abandoned attempt's in-flight work is left to run rather than cancelled.
+- [x] When an attempt whose source fetch never settles expires, the retry issues its own fetch for that source instead of resolving to the abandoned attempt's in-flight one, so a retry that can succeed does succeed; the release is identity-checked and therefore leaves untouched any entry a concurrent load registered under the same key after the abandoned attempt registered its own.
 - [x] The load lifecycle state machine transitions follow the sequence PENDING → MANIFEST_RESOLVED → LOADING → LOADED on the success path, and either PENDING → LOAD_FAILED or LOADING → LOAD_FAILED on error paths.

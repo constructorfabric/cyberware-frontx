@@ -16,9 +16,43 @@
   /* Grows with content where supported (Chromium 123+); a fixed min-height
    * plus the native resize handle everywhere else. */
   field-sizing: content;
-  min-height: 4rem;
+  /*
+   * Declared here (not just consumed) so tokens.test.ts's same-part local
+   * variable exemption applies - same reasoning as AspectRatio's --ratio:
+   * textarea.tsx sets this via inline style only when a consumer passes
+   * `rows`, but this default keeps the class self-contained (a min-height
+   * calc that resolves to the unset-`rows` floor) if it's ever read
+   * without that inline style attached.
+   */
+  --rows: 1;
+  /*
+   * The drawn Textarea specimens are 56px — one field row plus a line, which
+   * is exactly what the first `max()` argument says (--control-height-lg is
+   * the 40px Input shares). Written as that composition rather than a flat
+   * 3.5rem so the relationship survives a rebrand of either term: a
+   * consumer who retunes the control scale gets a textarea that still sits
+   * one line above their own field height.
+   *
+   * The second argument re-derives a `rows`-driven floor: `field-sizing:
+   * content` below makes the box grow with its own content, but per spec
+   * that mode drops the `rows`/`cols` attribute's sizing contribution
+   * entirely rather than treating it as a starting point - measured empty
+   * at `rows={8}`, the rendered height stayed the fixed 56px floor, same as
+   * `rows={2}`. `--rows` (set by the component only when a consumer passes
+   * `rows` - see textarea.tsx) reconstructs the same "N lines of text"
+   * floor field-sizing dropped; `var(--rows, 1)` resolves to 1 for every
+   * existing no-`rows` call site, so `max()` keeps picking the first
+   * argument there and nothing about the current 56px default moves.
+   */
+  min-height: max(
+    calc(var(--control-height-lg) + var(--space-4)),
+    calc(var(--rows, 1) * 1.5rem + 2 * var(--space-3) + 2 * var(--border-width))
+  );
   width: 100%;
-  padding: var(--space-2) var(--space-3);
+  /* --space-3 on BOTH axes, per the drawn specimens — Input's own 12px
+   * inset carried around the block edges too, since a multiline box has no
+   * fixed height to center a shallower padding against. */
+  padding: var(--space-3);
   border: var(--border-width) solid var(--input);
   border-radius: var(--radius-md);
   /* Fields sit raised, not transparent, per the Field spec (frame 193:433). */
@@ -48,6 +82,12 @@
     line-height: var(--text-label-line-height);
     font-weight: var(--text-body-weight);
     letter-spacing: var(--text-label-tracking);
+    /* Same `--rows` floor as the base rule, re-run against this
+     * breakpoint's own line-height so the two stay in lockstep. */
+    min-height: max(
+      calc(var(--control-height-lg) + var(--space-4)),
+      calc(var(--rows, 1) * var(--text-label-line-height) + 2 * var(--space-3) + 2 * var(--border-width))
+    );
   }
 }
 
@@ -73,7 +113,7 @@
   }
 }
 
-/* 0.42 per the mockups' disabled specimens — see input.module.css. */
+/* disabled opacity: see input.module.css */
 .textarea:disabled {
   cursor: not-allowed;
   opacity: 0.42;

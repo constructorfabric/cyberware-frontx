@@ -50,7 +50,7 @@ Everything downstream of that boundary follows the same discipline. Extension-do
 | `cpt-frontx-fr-ui-framework-agnostic` | Handler resolution matches an entry's declared base type through the injected type-system provider rather than a UI-framework-specific self-selection predicate, so the registry carries no assumption about which rendering technology a resolved handler wraps. |
 | `cpt-frontx-fr-mfe-type-validation` | Extension admission runs subset-rule contract matching against a domain's declared shared properties and supported actions, and handler resolution runs `typeSystem.isTypeOf` against the injected provider — both before an extension is placed into an extension domain, realizing default-deny admission. |
 | `cpt-frontx-fr-application-type-definitions` | The runtime exposes the `TypeSystemPlugin` port opaquely; application and template code registers its own schemas through the same injected provider the runtime calls for its own well-known infrastructure lifecycle actions, so the runtime never owns a schema of its own. |
-| `cpt-frontx-fr-mfe-host-communication` | The actions-chains mediator dispatches by a `(targetId, actionTypeId)` keyed registry with a per-target catch-all tier, recursive success/fallback chain execution, and in-flight tracking; a narrow parent–child capability bridge exposes exactly the participation methods a child needs, each delegating to the registry or mediator without duplicating coordination logic. |
+| `cpt-frontx-fr-mfe-host-communication` | The actions-chains mediator dispatches by a `(targetId, actionTypeId)` keyed registry with a per-target catch-all tier, recursive success/fallback chain execution, and in-flight tracking; a narrow parent–child capability bridge exposes exactly the participation methods a child needs, each delegating to the registry or mediator without duplicating coordination logic, alongside the identity of the extension and of the extension domain it occupies. One bridge pair exists per registered extension and is handed to every mount of it, so a child's registrations outlive an unmount and the runtime deactivates rather than destroys a bridge between mounts, rejecting dispatch through an inactive one explicitly. Where a mounted extension is itself a host of a further registry, dispatch composes transitively across the resulting nesting: reachability propagates and escalates hop by hop through the bridge connecting each pair of adjacent registries (`cpt-frontx-constraint-mfes-cross-nesting-reachability`), with no growth to the public bridge or registry surface. |
 | `cpt-frontx-fr-mfe-multi-occupant-domain` | Extension-domain occupancy is governed by three composable named mount strategies (Concurrent, Optional, Exclusive) validated against a cardinality matrix at domain registration, so a domain accepts side-by-side, displacing, or exclusive occupants according to the strategy its declared lifecycle actions satisfy. |
 
 #### NFR Allocation
@@ -95,7 +95,7 @@ graph TD
 |-------|---------------|------------|
 | Public surface | Registry facade and factory, handler and bridge type contracts, port types, error classes, one entry point | TypeScript, single entry point with declarations |
 | Registration & admission | Handler resolution, subset-rule contract matching, cardinality validation, extension and domain lifecycle state | TypeScript over the injected `TypeSystemPlugin` |
-| Loading & isolation | Manifest-driven discovery, lazy-import ABI resolution, blob-URL chain construction, the audited trust kernel | Browser `fetch`, `Blob`, dynamic `import()`, module-federation shared singletons |
+| Loading & isolation | Manifest-driven discovery, lazy-import ABI resolution, blob-URL chain construction, the audited trust kernel | Browser `fetch`, `Blob`, dynamic `import()`, cross-MFE shared-dependency source-text deduplication (no shared module instances) |
 | Mediation | Actions-chains mediator, parent–child capability bridge | TypeScript, keyed handler registry |
 
 ## 2. Principles & Constraints
@@ -170,6 +170,14 @@ The runtime's schema surface is opaque, exposing only a stable identifier. Forma
 
 **ADRs**: [The Runtime Coupling to the Type System](../../../architecture/ADR/0004-runtime-type-system-coupling.md)
 
+#### MFES-6 — Cross-nesting reachability without public-surface growth
+
+- [ ] `p2` - **ID**: `cpt-frontx-constraint-mfes-cross-nesting-reachability`
+
+When a mounted extension is itself a host of a further `MfeRegistry`, dispatch and reachability across the resulting nesting depth compose entirely through pairwise, adjacent-registry propagation and escalation carried over the bridge connecting each pair — no registry ever holds a reference to a non-adjacent registry. This composition introduces zero growth to the package's public surface: no new capability method is added to `MfeRegistry`, `ChildMfeBridge`, `ParentMfeBridge`, or any other type declared in the §3.3 API Contracts table. The measure this constraint applies is the capability method, as the enumeration above already implies by naming types rather than members: what a nested composition must not do is give a consumer a new operation to invoke, or a new type to import, in order to reach across nesting. A readonly identity property on a type already on that list — a bridge stating which extension and which extension domain it belongs to, in the same opaque identifiers the runtime already routes by — is identity, not capability, and is therefore outside what this constraint counts, while remaining fully governed by `cpt-frontx-interface-mfe-runtime`'s breaking-change policy like every other member of a published contract. Because a nested composition may involve more than one independently loaded copy of this package (`cpt-frontx-adr-mfe-load-isolation`), the coordination this composition needs at the moment of adoption is carried by a realm-global, version-namespaced rendezvous rather than an exported API — an implicit inter-copy protocol distinct from, and not counted against, the public-surface guarantee above, since it adds no importable symbol and holds, for the duration of one synchronous handoff, only the bridge being handed down and the link callback handed back up by each registry that adopts it, ordinarily exactly one — nothing remains at the rendezvous once that window closes. Retaining that callback against a host extension — the parent's only channel for unlinking an adopter its own successor supersedes, or releasing one when the extension is unregistered — is the parent runtime's private state, not rendezvous state and not an exported symbol: one retention per extension, superseded whenever a later mount produces its own adoption and released when that extension is unregistered, so the retention is bounded by the set of currently registered extensions rather than growing with mount cycles.
+
+**ADRs**: [Host–MFE Action Dispatch and Chaining](../../../architecture/ADR/0007-action-dispatch-and-chaining.md), [Child MFE Access to the Host](../../../architecture/ADR/0008-child-mfe-host-access.md)
+
 ## 3. Technical Architecture
 
 ### 3.1 Domain Model
@@ -201,6 +209,7 @@ Applications need to gain user-facing functionality from independently developed
 - Owns the actions-chains mediator that routes communication between microfrontends and the host, and the narrow parent–child capability bridge.
 - Owns the opaque type-substrate port: it reasons about type identifiers as opaque strings and delegates all schema, validation, and hierarchy operations to an injected type-system provider, reading only a schema's identifier.
 - Owns runtime isolation of loaded units.
+- Supports recursive composition: a mounted extension may itself hold and host a further `MfeRegistry` instance, and the mediator and bridge mechanisms remain reachable transitively across any resulting nesting depth, with no change to the public surface (`cpt-frontx-constraint-mfes-cross-nesting-reachability`).
 
 ##### Responsibility boundaries
 
@@ -226,7 +235,7 @@ Applications need to gain user-facing functionality from independently developed
 | `MfeRegistry`, `MfeRegistryFactory`, `createMfeRegistryFactory` | The abstract registry facade, its abstract factory contract, and the creation function — the sole way a consumer obtains a registry instance bound to an injected `TypeSystemPlugin`. The concrete `DefaultMfeRegistry` / `DefaultMfeRegistryFactory` stay internal (ADR-0003, `scripts/mfes-import-boundary-check.mjs`). |
 | `TypeSystemPlugin`, `ValidationResult`, `ValidationErrorItem`, `isInfrastructureLifecycleAction` | The opaque type-substrate port contract a provider implements, and the shared helper for recognizing the well-known infrastructure lifecycle actions (`load_ext`, `mount_ext`, `unmount_ext`). |
 | `MfeEntry`, `Extension`, `ExtensionDomain`, `SharedProperty`, `Action`, `ActionsChain`, `LifecycleStage`, `LifecycleHook`, `DomainContext`, `InvalidatableDomainContext` | Domain types shared across registration, admission, and mediation, and the abstract contract a domain's runtime context conforms to. `InvalidatableDomainContext`, the concrete implementation of `DomainContext` (constructed only by `DefaultMfeRegistry`), is recorded public-surface debt (see the debt register below the table). |
-| `MfeHandler`, `MfeHandlerMF`, `MfeBridgeFactory`, `ChildMfeBridge`, `ParentMfeBridge`, `ChildMfeBridgeImpl`, `ParentMfeBridgeImpl`, `ChildDomainForwardingHandler`, `LruCache`, `RetryHandler` | The handler abstraction resolved by declared base type, its default module-federation implementation, and the narrow parent/child capability bridge pair. `MfeHandlerMF` is sanctioned surface: hosts construct it and pass it to the registry, and it wires its own `MfeBridgeFactoryDefault` internally — the factory implementation is not exported. `ChildMfeBridgeImpl`, `ParentMfeBridgeImpl`, `ChildDomainForwardingHandler`, `LruCache`, and `RetryHandler` are recorded public-surface debt (see the debt register below the table). |
+| `MfeHandler`, `MfeHandlerMF`, `MfeBridgeFactory`, `ChildMfeBridge`, `ParentMfeBridge`, `ChildMfeBridgeImpl`, `ParentMfeBridgeImpl`, `ChildDomainForwardingHandler`, `LruCache`, `RetryHandler` | The handler abstraction resolved by declared base type, its default module-federation implementation, and the narrow parent/child capability bridge pair — `ChildMfeBridge` carrying four capability methods plus the readonly identity properties `extDomainId` and `extensionId`, `ParentMfeBridge` carrying `instanceId` and `dispose()`, with both bridges' identity values and `dispose()` scoped to the extension's registration rather than to a single mount. `MfeHandlerMF` is sanctioned surface: hosts construct it and pass it to the registry, and it wires its own `MfeBridgeFactoryDefault` internally — the factory implementation is not exported. `ChildMfeBridgeImpl`, `ParentMfeBridgeImpl`, `ChildDomainForwardingHandler`, `LruCache`, and `RetryHandler` are recorded public-surface debt (see the debt register below the table). |
 | `MountStrategy`, `ConcurrentMountStrategy`, `OptionalMountStrategy`, `ExclusiveMountStrategy`, `ExtensionDomainImplementation`, `ExtensionDomainImplementationFactory`, `ExtensionMounter` | The three named mount strategies and the domain-implementation machinery that enforces the cardinality matrix and executes occupancy behavior. |
 | `ActionHandler`, `ActionsChainsMediator`, `ChainResult`, `ChainExecutionOptions` | The actions-chains mediator contract; the default keyed-dispatch implementation stays internal (ADR-0003). |
 | `validateContract`, `formatContractErrors`, `validateDomainLifecycleHooks`, `validateExtensionLifecycleHooks`, `validateExtensionType` | The subset-rule contract-matching and lifecycle-hook validation functions used at admission. |
@@ -253,7 +262,7 @@ The package declares zero runtime dependencies. Its one ecosystem edge is a peer
 
 | Dependency Module | Interface Used | Purpose |
 |-------------------|----------------|---------|
-| Module Federation runtime | module-federation load/share API | Loads independently built microfrontends on demand and shares runtime singletons, behind the lazy-import ABI separation that keeps the runtime ABI distinct from the template-bound build ([Lazy Dynamic Import Resolution](../../../architecture/ADR/0012-lazy-import-resolution.md), [MFE Asset Discovery](../../../architecture/ADR/0013-mfe-asset-discovery.md)). |
+| Module Federation runtime | module-federation load/share API | Loads independently built microfrontends on demand, deduplicating shared-dependency source text (not module instances) across loads, behind the lazy-import ABI separation that keeps the runtime ABI distinct from the template-bound build ([Lazy Dynamic Import Resolution](../../../architecture/ADR/0012-lazy-import-resolution.md), [MFE Asset Discovery](../../../architecture/ADR/0013-mfe-asset-discovery.md)). Each microfrontend, including this package's own dependency on `@gears-frontx/mfes` itself where a nested MFE hosts further extensions, evaluates its own independently loaded module graph — no module instance, including this runtime's own, is shared between microfrontends (`cpt-frontx-adr-mfe-load-isolation`). |
 
 **Dependency Rules** (per project conventions):
 - The module-federation load/share API is reached only through the manifest-driven discovery and blob-URL chain construction paths; no other component of this package talks to it directly
@@ -329,6 +338,49 @@ sequenceDiagram
 ```
 
 **Description**: A registered microfrontend is admitted only after type validation and extension-domain contract matching both succeed and the domain's cardinality permits the occupant; it is then loaded on demand and mounted in isolation under the domain's mount strategy ([The MFE Runtime Public Access Surface](../../../architecture/ADR/0003-mfe-runtime-public-surface.md), [MFE Handler Resolution](../../../architecture/ADR/0006-mfe-handler-resolution.md), [The Runtime Coupling to the Type System](../../../architecture/ADR/0004-runtime-type-system-coupling.md), [Domain-Extension Compatibility](../../../architecture/ADR/0010-domain-extension-compatibility.md), [Extension-Domain Occupancy](../../../architecture/ADR/0009-extension-domain-occupancy.md), [MFE Load Isolation](../../../architecture/ADR/0011-mfe-load-isolation.md)). On validation failure the runtime rejects the unit and it is not placed into its extension domain, realizing the default-deny admission posture.
+
+#### Cross-nesting dispatch through a host-of-hosts registry
+
+- [ ] `p2` - **ID**: `cpt-frontx-mfes-seq-cross-nesting-forwarding-escalation`
+
+**Use cases**: `cpt-frontx-usecase-add-microfrontend-to-project`
+
+**Actors**: `cpt-frontx-actor-project-developer`
+
+```mermaid
+sequenceDiagram
+    participant App as Host application
+    participant Shell as Shell Registry
+    participant Child as Child Registry (host-of-hosts)
+    participant Grand as Grandchild Registry
+    Grand->>Grand: admit target
+    Grand->>Child: propagate forwarding advertisement (via inbound bridge)
+    Child->>Shell: propagate forwarding advertisement (via its own inbound bridge)
+    Shell-->>Child: forwarding entry recorded for grandchild target
+    Child-->>Grand: forwarding entry recorded for grandchild target
+    App->>Shell: dispatch action chain targeting the grandchild's admitted target
+    alt a recorded forwarding entry resolves at every hop
+        Shell->>Child: forward via recorded forwarding entry
+        Child->>Grand: forward via its own recorded forwarding entry
+        Grand-->>Child: chain result
+        Child-->>Shell: chain result
+        Shell-->>App: completed result
+    else no forwarding entry resolves at some hop
+        Shell-->>App: non-completed result
+    end
+    Grand->>Grand: dispatch action chain targeting a shell-owned target (no local handler)
+    alt Child resolves the escalated chain locally or via a forwarding entry
+        Grand->>Child: escalate via inbound bridge
+        Child-->>Grand: chain result
+    else Child cannot resolve it either
+        Grand->>Child: escalate via inbound bridge
+        Child->>Shell: escalate via its own inbound bridge
+        Shell-->>Child: chain result
+        Child-->>Grand: chain result
+    end
+```
+
+**Description**: A registry that composes as a mounted extension inside another registry — a host of hosts — propagates admitted targets upward through the bridge connecting it to its own host, transitively, so every ancestor up to the shell acquires the reachability it needs without any registry holding a reference to a non-adjacent registry. A chain the application dispatches at the shell reaches the grandchild by that same pairwise, adjacent-hop path forwarded downward, and a chain the grandchild dispatches with no local handler reaches the shell by escalating upward through the same bridges in reverse; either direction returns a non-completed result if resolution fails at any hop. This composes to any nesting depth using only the existing `ChildMfeBridge` — four capability methods plus two readonly identity properties — and two-member `ParentMfeBridge` at each boundary ([Host–MFE Action Dispatch and Chaining](../../../architecture/ADR/0007-action-dispatch-and-chaining.md), [Child MFE Access to the Host](../../../architecture/ADR/0008-child-mfe-host-access.md)).
 
 ### 3.7 Database schemas & tables
 

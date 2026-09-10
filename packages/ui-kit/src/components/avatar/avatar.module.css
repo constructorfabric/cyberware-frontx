@@ -1,0 +1,302 @@
+/*
+ * Avatar styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ *
+ * The base registry source ships Avatar/AvatarFallback/AvatarBadge as
+ * structural markers with little to no color/geometry of their own — true
+ * to the "base" variant's minimal-by-design intent, it leaves rounding,
+ * clipping, and fill colors for a consumer to add. This kit fills those in
+ * from the sibling new-york variant (same props/parts, styled against
+ * Radix instead of Base UI) since every kit component ships fully themed
+ * rather than as a bare structural shell — concretely: --muted/
+ * --muted-foreground on Fallback, --primary/--primary-foreground plus a
+ * --background ring on Badge, rounded-full on the root/image/fallback, and
+ * the 24/32/40px (sm/default/lg) size scale. None of these are on the
+ * kit's --space-* grid exactly (32px = --space-8 is the one coincidence),
+ * so they're hand-set literals — width/height/font-size aren't in
+ * tokens.test.ts's guarded-metric set the way padding/gap/line-height are
+ * (see that file's GUARDED_PROP comment: "Dimensions aren't guarded —
+ * components have intrinsic sizes no token names").
+ *
+ * The root deliberately does NOT clip via `overflow: hidden` — verified
+ * against upstream's compiled `.cn-avatar` rule (style-luma.css), which
+ * rounds the root but never sets overflow. Rounding is applied per-part
+ * instead (`.image`/`.fallback` each get their own border-radius), so the
+ * circular look comes from each part clipping itself, not from a shared
+ * clipping ancestor. That's what lets `.badge` — a sibling of image/
+ * fallback, absolutely positioned off this same `position: relative` root
+ * — render past the circle's edge instead of being clipped by it: an
+ * `overflow: hidden` root would clip its own absolutely-positioned corner
+ * badge along with the image, since both live inside the same clip box.
+ */
+
+.avatar {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  user-select: none;
+}
+
+/*
+ * A hairline inset ring blended against whatever the image/fallback
+ * underneath happens to be, rather than a flat border color — reads as a
+ * subtle edge on light AND dark photos alike, where a flat --border line
+ * would sometimes vanish (a dark border on a dark photo) or clash (a light
+ * border on a light one). `mix-blend-mode` needs the opposite blend per
+ * theme to keep darkening the edge either way (light theme: `darken`
+ * mixes toward the shadow end; dark theme: `lighten` mixes toward the
+ * opposite end) — mirrors theme.css's own dual
+ * dark-mode selector (`[data-theme='dark']` + the `prefers-color-scheme`
+ * media query guarded by `:not([data-theme='light'])`), applied here at
+ * the component level since no other component needs a non-color property
+ * to flip with the theme.
+ */
+.avatar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: var(--border-width) solid var(--border);
+  border-radius: inherit;
+  mix-blend-mode: darken;
+  pointer-events: none;
+}
+
+[data-theme='dark'] .avatar::after {
+  mix-blend-mode: lighten;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .avatar::after {
+    mix-blend-mode: lighten;
+  }
+}
+
+.sizeSm {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.sizeDefault {
+  width: var(--space-8);
+  height: var(--space-8);
+}
+
+.sizeLg {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.image {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 1;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.fallback {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  background-color: var(--muted);
+  color: var(--muted-foreground);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+}
+
+.sizeSm .fallback {
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+}
+
+/*
+ * The fill matrix, from the Figma spec sheet "Phase 3 / Avatar" (node
+ * 40001346:4724): six identity tones x two treatments, one theme variable
+ * pair per cell. Its API note names the axes verbatim — "treatment: solid |
+ * soft; tone: neutral | accent | info | success | warning | danger".
+ *
+ * `solid` paints the tone at full strength and labels it with
+ * --primary-foreground. That is not a shortcut for a missing per-tone
+ * on-color: the mockup binds that one on-primary variable for all six solid
+ * tones, so following it keeps the kit off six invented foreground tokens.
+ * `soft` inverts the pair — the tone's own -soft surface carries the tone
+ * itself as the label color.
+ *
+ * `neutral` has no --neutral family to draw from and borrows the muted one,
+ * which is why neutral+soft resolves to precisely the
+ * --muted/--muted-foreground pair `.fallback` above already declares. Those
+ * are the defaults (see avatar.tsx), so a part given neither axis keeps
+ * rendering exactly as it did before this matrix existed. `accent` borrows
+ * the primary family the same way for its solid half, matching the mockup's
+ * own --color-primary binding for the accent column.
+ *
+ * Deliberately NOT prefixed with `.fallback`: the same twelve cells paint
+ * AvatarFallback and AvatarGroupCount alike, which is what lets a "+3"
+ * overflow chip match the toned members it caps off. Both parts declare
+ * their own background/color at one-class specificity, so the two-class
+ * cells below outrank either without needing a part-specific copy.
+ */
+.variantSolid.toneNeutral {
+  background-color: var(--muted-foreground);
+  color: var(--primary-foreground);
+}
+
+.variantSolid.toneAccent {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.variantSolid.toneInfo {
+  background-color: var(--info);
+  color: var(--primary-foreground);
+}
+
+.variantSolid.toneSuccess {
+  background-color: var(--success);
+  color: var(--primary-foreground);
+}
+
+.variantSolid.toneWarning {
+  background-color: var(--warning);
+  color: var(--primary-foreground);
+}
+
+.variantSolid.toneDanger {
+  background-color: var(--danger);
+  color: var(--primary-foreground);
+}
+
+.variantSoft.toneNeutral {
+  background-color: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.variantSoft.toneAccent {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.variantSoft.toneInfo {
+  background-color: var(--info-soft);
+  color: var(--info);
+}
+
+.variantSoft.toneSuccess {
+  background-color: var(--success-soft);
+  color: var(--success);
+}
+
+.variantSoft.toneWarning {
+  background-color: var(--warning-soft);
+  color: var(--warning);
+}
+
+.variantSoft.toneDanger {
+  background-color: var(--danger-soft);
+  color: var(--danger);
+}
+
+.badge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 0 0 2px var(--background);
+  user-select: none;
+}
+
+.sizeSm .badge {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+
+.sizeSm .badge svg {
+  display: none;
+}
+
+.sizeDefault .badge {
+  width: 0.625rem;
+  height: 0.625rem;
+}
+
+.sizeLg .badge {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.sizeDefault .badge svg,
+.sizeLg .badge svg {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+
+.group {
+  display: flex;
+}
+
+.group > * + * {
+  margin-left: calc(-1 * var(--space-2));
+}
+
+.group > .avatar {
+  box-shadow: 0 0 0 2px var(--background);
+}
+
+.groupCount {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: 9999px;
+  background-color: var(--muted);
+  color: var(--muted-foreground);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  box-shadow: 0 0 0 2px var(--background);
+}
+
+.groupCount svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/*
+ * AvatarGroupCount takes no `size` prop of its own upstream — it sizes
+ * itself off the group's OTHER children via `group-has-data-[size=…]`
+ * (new-york's Tailwind translation). `:has()` is the same relationship
+ * without a data attribute: is there a sibling carrying that size class.
+ */
+.group:has(> .sizeSm) .groupCount {
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+}
+
+.group:has(> .sizeSm) .groupCount svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.group:has(> .sizeLg) .groupCount {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.group:has(> .sizeLg) .groupCount svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}

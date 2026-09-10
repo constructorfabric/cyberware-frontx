@@ -1,0 +1,419 @@
+/*
+ * Calendar styles, translated from shadcn/ui's react-day-picker wrapper
+ * (MIT) to CSS Modules. Consumes only theme.css variables — no raw colors.
+ * Class names below mirror react-day-picker's own UI-slot names (root,
+ * months, month, nav, ...) one-to-one with the `classNames` prop in
+ * calendar.tsx, so this file and that prop map read as the same table.
+ *
+ * Cell geometry rides on --control-height-md (2.25rem/36px) rather than a
+ * new local token — react-day-picker calls this "--cell-size" upstream, but
+ * the kit already has a themeable step at exactly that size (see
+ * select.module.css's .variantFilter), so no alias is introduced.
+ */
+
+.root {
+  width: fit-content;
+  background-color: var(--surface);
+  color: var(--foreground);
+  font-family: inherit;
+}
+
+.months {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Side-by-side months for numberOfMonths > 1 (the range picker's default),
+ * same breakpoint as upstream's `md:flex-row`. */
+@media (min-width: 48rem) {
+  .months {
+    flex-direction: row;
+  }
+}
+
+.month {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/*
+ * Absolutely positioned over the caption row (see .monthCaption's matching
+ * horizontal padding, which reserves the room these buttons float into).
+ * The element itself spans the WHOLE row, so everything between the two
+ * buttons sits underneath it: the caption label, and in dropdown layout the
+ * transparent <select> that must keep receiving the clicks. No stacking
+ * order is claimed here, and the container passes pointer events through to
+ * what it covers while the buttons take their own back.
+ */
+.nav {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  pointer-events: none;
+}
+
+.buttonPrevious,
+.buttonNext {
+  pointer-events: auto;
+  display: flex;
+  width: var(--control-height-md);
+  height: var(--control-height-md);
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background-color: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.buttonPrevious:hover,
+.buttonNext:hover {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.buttonPrevious[aria-disabled='true'],
+.buttonNext[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.buttonPrevious:focus-visible,
+.buttonNext:focus-visible {
+  outline: var(--border-width-focus) solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* Local `box-sizing: border-box` (the kit's per-component idiom, see
+ * tabs.module.css): the inline padding is what keeps the centred label clear
+ * of the nav buttons floating above it, so it has to be carved OUT of the
+ * row's width. Under the inherited content-box it was added to the width
+ * instead, pushing the row wider than the calendar and sliding the label
+ * straight under the next-month button. */
+.monthCaption {
+  box-sizing: border-box;
+  display: flex;
+  height: var(--control-height-md);
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  padding-inline: var(--control-height-md);
+}
+
+.dropdowns {
+  display: flex;
+  height: var(--control-height-md);
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  font-weight: var(--text-label-weight);
+}
+
+/*
+ * The classic invisible-native-select-over-styled-text pattern: .dropdown
+ * (the real <select>, see calendar.tsx — react-day-picker renders it
+ * unstyled by default) is stretched over .captionLabel's visible chip and
+ * fully transparent, so it stays the thing that actually receives clicks
+ * and keyboard input while .captionLabel supplies the look.
+ */
+.dropdownRoot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+}
+
+.dropdown {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.captionLabel {
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  font-weight: var(--text-label-weight);
+  user-select: none;
+}
+
+/* The per-dropdown chip (month, year): value + chevron, pointer cursor to
+ * read as clickable since the real interactive element sits invisibly on
+ * top of it (see .dropdown above). */
+.captionLabelDropdown {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.captionLabelDropdown:hover {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.chevron {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.captionLabelDropdown .chevron {
+  color: var(--muted-foreground);
+}
+
+.monthGrid {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.weekdays {
+  display: flex;
+}
+
+.weekday {
+  flex: 1;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  font-weight: var(--text-meta-weight);
+  text-align: center;
+  user-select: none;
+}
+
+.week {
+  display: flex;
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+.weekNumberHeader,
+.weekNumber {
+  width: var(--control-height-md);
+  color: var(--muted-foreground);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  text-align: center;
+  user-select: none;
+}
+
+.weekNumberCell {
+  display: flex;
+  height: var(--control-height-md);
+  width: var(--control-height-md);
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * The day CELL (a <td>), not the button inside it: react-day-picker applies
+ * this class plus each active modifier's own class (.today/.outside/
+ * .disabled/.rangeStart/.rangeMiddle/.rangeEnd below) to the SAME element —
+ * see getClassNamesForModifiers in react-day-picker's own source. The range
+ * fill and the today/outside/disabled dimming both paint here; the button
+ * on top only carries the primary-color fill for an actual selected day
+ * (see .dayButton's data-selected-single/data-range-* rules).
+ */
+.day {
+  position: relative;
+  aspect-ratio: 1;
+  height: 100%;
+  width: 100%;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  text-align: center;
+  user-select: none;
+}
+
+.today {
+  border-radius: var(--radius-sm);
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+/* A selected today loses its own muted fill — the selection fill (on the
+ * button, painted above this cell) already carries the state. */
+.today[data-selected] {
+  border-radius: 0;
+}
+
+.outside {
+  color: var(--muted-foreground);
+}
+
+.disabled {
+  color: var(--muted-foreground);
+  opacity: 0.5;
+}
+
+.hidden {
+  visibility: hidden;
+}
+
+.rangeStart {
+  position: relative;
+  border-start-start-radius: var(--radius-sm);
+  border-end-start-radius: var(--radius-sm);
+  background-color: var(--muted);
+}
+
+.rangeMiddle {
+  border-radius: 0;
+  background-color: var(--muted);
+}
+
+.rangeEnd {
+  position: relative;
+  border-start-end-radius: var(--radius-sm);
+  border-end-end-radius: var(--radius-sm);
+  background-color: var(--muted);
+}
+
+/*
+ * A row-wrap cap: a selected/range-continuation day that lands on the first
+ * or last column of its week still gets an outer corner rounded, even
+ * though the range itself continues into the next row — otherwise the fill
+ * reads as squared-off mid-band at every week boundary. `:has()` replaces
+ * upstream's Tailwind arbitrary-attribute selector on the same structural
+ * condition (first/last child of the row with the day cell's own
+ * data-selected attribute — see the DayPicker source's getDataAttributes).
+ */
+.week > .day:first-child:has([data-selected]) .dayButton {
+  border-start-start-radius: var(--radius-sm);
+  border-end-start-radius: var(--radius-sm);
+}
+
+.week > .day:last-child:has([data-selected]) .dayButton {
+  border-start-end-radius: var(--radius-sm);
+  border-end-end-radius: var(--radius-sm);
+}
+
+/* `min-width` is upstream's `min-w-(--cell-size)` and is what gives the grid
+ * its intrinsic size: every other width here is a percentage, so under the
+ * root's `width: fit-content` the columns would otherwise collapse onto the
+ * day numbers and shrink the whole calendar below the width its own header
+ * needs. */
+.dayButton {
+  position: relative;
+  isolation: isolate;
+  z-index: 1;
+  display: flex;
+  aspect-ratio: 1;
+  width: 100%;
+  min-width: var(--control-height-md);
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background-color: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-label-tracking);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.dayButton:hover:not(:disabled) {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.dayButton:disabled {
+  cursor: not-allowed;
+  color: var(--muted-foreground);
+  opacity: 0.5;
+}
+
+/* Keyboard roving-tabindex focus: react-day-picker moves DOM focus here via
+ * CalendarDayButton's effect (see calendar.tsx), so :focus-visible alone
+ * would miss a focus that arrived programmatically rather than by a real
+ * keyboard event in some browsers — the day cell's own data-focused
+ * modifier (set unconditionally on focus, keyboard or not) is the more
+ * reliable hook, matching upstream's group-data-[focused=true] selector. */
+.day[data-focused] .dayButton {
+  z-index: 2;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent);
+}
+
+@media (forced-colors: active) {
+  .day[data-focused] .dayButton {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+.dayButton[data-selected-single] {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.dayButton[data-selected-single]:hover {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.dayButton[data-range-start] {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.dayButton[data-range-end] {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* A one-day range (from === to) carries BOTH attributes — start's radius
+ * reset above would otherwise square off the end it also owns. */
+.dayButton[data-range-start][data-range-end] {
+  border-radius: var(--radius-sm);
+}
+
+.dayButton[data-range-middle] {
+  border-radius: 0;
+  background-color: transparent;
+  color: var(--foreground);
+}
+
+.dayButton[data-range-middle]:hover {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+@media (forced-colors: active) {
+  .dayButton[data-selected-single],
+  .dayButton[data-range-start],
+  .dayButton[data-range-end] {
+    outline: 2px solid Highlight;
+  }
+}
+
+/* Colour/shadow crossfades only, no transform/geometry — not motion under
+ * WCAG 2.3.3, left unguarded under prefers-reduced-motion (see
+ * select.module.css's .trigger for the same reasoning). */

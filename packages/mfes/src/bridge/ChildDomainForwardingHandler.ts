@@ -16,6 +16,11 @@
  * of action types the child domain supports at registration time — that information
  * lives in the child's own registry.
  *
+ * Gated transitively: `handleAction` forwards through
+ * `ParentMfeBridgeImpl.sendActionsChain`, which itself rejects with
+ * `BridgeInactiveError`/`BridgeDisposedError` while the bridge is inactive or
+ * destroyed. This handler adds no gating logic of its own.
+ *
  * @packageDocumentation
  * @internal
  */

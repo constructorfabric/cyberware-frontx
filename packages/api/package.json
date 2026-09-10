@@ -1,6 +1,6 @@
 {
   "name": "@gears-frontx/api",
-  "version": "0.3.0-alpha.1",
+  "version": "0.3.0-alpha.2",
   "description": "API communication protocols and service registry for FrontX SDK",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -36,14 +36,16 @@
   "devDependencies": {
     "@gears-frontx/depcruise-config": "0.3.0-alpha.0",
     "@gears-frontx/eslint-config": "0.2.0-alpha.0",
+    "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "4.1.4",
     "axios": "1.14.0",
-    "tsup": "^8.0.0",
-    "typescript": "^5.4.2",
+    "lodash": "4.18.1",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
     "vitest": "4.1.4"
   },
   "peerDependencies": {
-    "axios": ">=1.0.0 <1.14.1"
+    "axios": "1.14.0"
   },
   "sideEffects": true,
   "publishConfig": {

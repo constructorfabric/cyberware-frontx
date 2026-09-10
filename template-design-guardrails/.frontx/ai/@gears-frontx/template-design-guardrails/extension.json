@@ -1,0 +1,121 @@
+{
+  "id": "template-design-guardrails-ai-bundle",
+  "contractVersion": "1.0.0",
+  "entries": [
+    {
+      "id": "generate-interface",
+      "category": "skills",
+      "path": "skills/generate-interface"
+    },
+    {
+      "id": "review-interface",
+      "category": "skills",
+      "path": "skills/review-interface"
+    },
+    {
+      "id": "verify-interface",
+      "category": "skills",
+      "path": "skills/verify-interface"
+    },
+    {
+      "id": "create-theme",
+      "category": "skills",
+      "path": "skills/create-theme"
+    },
+    {
+      "id": "generate-interface-workflow",
+      "category": "workflows",
+      "path": "workflows/generate-interface.md"
+    },
+    {
+      "id": "review-interface-workflow",
+      "category": "workflows",
+      "path": "workflows/review-interface.md"
+    },
+    {
+      "id": "foundations",
+      "category": "guidelines",
+      "path": "guidelines/foundations.md"
+    },
+    {
+      "id": "layout-and-responsive",
+      "category": "guidelines",
+      "path": "guidelines/layout-and-responsive.md"
+    },
+    {
+      "id": "visual-foundations-and-tokens",
+      "category": "guidelines",
+      "path": "guidelines/visual-foundations-and-tokens.md"
+    },
+    {
+      "id": "color-and-theming",
+      "category": "guidelines",
+      "path": "guidelines/color-and-theming.md"
+    },
+    {
+      "id": "typography-content-and-iconography",
+      "category": "guidelines",
+      "path": "guidelines/typography-content-and-iconography.md"
+    },
+    {
+      "id": "motion-and-feedback",
+      "category": "guidelines",
+      "path": "guidelines/motion-and-feedback.md"
+    },
+    {
+      "id": "accessibility-and-states",
+      "category": "guidelines",
+      "path": "guidelines/accessibility-and-states.md"
+    },
+    {
+      "id": "component-anatomy-and-interaction",
+      "category": "guidelines",
+      "path": "guidelines/component-anatomy-and-interaction.md"
+    },
+    {
+      "id": "composition-patterns",
+      "category": "guidelines",
+      "path": "guidelines/composition-patterns.md"
+    },
+    {
+      "id": "data-display-and-dashboard",
+      "category": "guidelines",
+      "path": "guidelines/data-display-and-dashboard.md"
+    },
+    {
+      "id": "design-contract",
+      "category": "reference_artifacts",
+      "path": "reference-artifacts/design-contract.json"
+    },
+    {
+      "id": "layout-contract",
+      "category": "reference_artifacts",
+      "path": "reference-artifacts/layout-contract.json"
+    },
+    {
+      "id": "component-state-matrix",
+      "category": "reference_artifacts",
+      "path": "reference-artifacts/component-state-matrix.json"
+    },
+    {
+      "id": "quality-gates",
+      "category": "reference_artifacts",
+      "path": "reference-artifacts/quality-gates.json"
+    },
+    {
+      "id": "review-rubric",
+      "category": "reference_artifacts",
+      "path": "reference-artifacts/review-rubric.json"
+    },
+    {
+      "id": "guideline-index",
+      "category": "reference_artifacts",
+      "path": "reference-artifacts/guideline-index.json"
+    },
+    {
+      "id": "source-registry",
+      "category": "reference_artifacts",
+      "path": "reference-artifacts/source-registry.json"
+    }
+  ]
+}

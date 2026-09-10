@@ -1,0 +1,73 @@
+/*
+ * Progress styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ *
+ * .indicator's width is written inline by Base UI at runtime (see
+ * ProgressIndicator.js's `width: ${percentageValue}%`) — this file only
+ * supplies the visual treatment and the width-change transition.
+ */
+
+.root {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.track {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  overflow: hidden;
+  border-radius: 9999px;
+  background-color: var(--secondary);
+  height: 0.5rem;
+}
+
+.indicator {
+  height: 100%;
+  background-color: var(--primary);
+  /* Colour/size crossfade only, no transform — left unguarded under
+     prefers-reduced-motion like the kit's other such transitions. */
+  transition: width 300ms ease;
+}
+
+/* Indeterminate has no known percentage to animate toward — a sweeping
+ * band instead of a width transition communicates "still working" without
+ * implying a false completion estimate. */
+.track[data-indeterminate] .indicator {
+  width: 40%;
+  transition: none;
+  animation: progress-indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes progress-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track[data-indeterminate] .indicator {
+    animation-duration: 3.5s;
+  }
+}
+
+.label {
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  font-weight: var(--text-label-weight);
+  letter-spacing: var(--text-label-tracking);
+  color: var(--foreground);
+}
+
+.value {
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  font-weight: var(--text-meta-weight);
+  letter-spacing: var(--text-meta-tracking);
+  color: var(--muted-foreground);
+}

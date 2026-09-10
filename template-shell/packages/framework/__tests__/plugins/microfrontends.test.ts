@@ -20,7 +20,7 @@ import type { JSONSchema } from '@gears-frontx/gts-plugin';
 import { createFrontX } from '../../src/createFrontX';
 import { microfrontends } from '../../src/plugins/microfrontends';
 import { loadLayoutDomains } from '../../src/plugins/microfrontends/gts/loader';
-import { themeSchema, languageSchema, extensionScreenSchema } from '../../src/gts';
+import { themeSchema, languageSchema, extensionScreenSchema } from '@gears-frontx/frontx-template-shell';
 import type { MfeRegistry } from '@gears-frontx/framework';
 import { TestContainerProvider } from '../../src/testing/TestContainerProvider';
 import { resetSharedQueryClient } from '../../src/testing';

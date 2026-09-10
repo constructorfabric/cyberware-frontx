@@ -12,13 +12,13 @@ const buttonVariants = cva(
     variants: {
       variant: {
         [ButtonVariant.Default]:
-          'bg-primary text-primary-foreground shadow hover:bg-primary/90',
+          'bg-primary text-primary-foreground shadow hover:bg-[color-mix(in_oklab,var(--primary)_90%,transparent)]',
         [ButtonVariant.Destructive]:
-          'bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90',
+          'bg-destructive text-destructive-foreground shadow-sm hover:bg-[color-mix(in_oklab,var(--destructive)_90%,transparent)]',
         [ButtonVariant.Outline]:
           'border border-input bg-background text-foreground shadow-sm hover:bg-accent data-[state=open]:bg-accent',
         [ButtonVariant.Secondary]:
-          'bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80',
+          'bg-secondary text-secondary-foreground shadow-sm hover:bg-[color-mix(in_oklab,var(--secondary)_80%,transparent)]',
         [ButtonVariant.Ghost]: 'hover:bg-accent data-[state=open]:bg-accent',
         [ButtonVariant.Link]: 'text-primary underline-offset-4 hover:underline',
       },

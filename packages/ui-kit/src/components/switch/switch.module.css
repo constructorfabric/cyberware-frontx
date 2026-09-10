@@ -62,7 +62,7 @@
   }
 }
 
-/* 0.42 per the mockups' disabled specimens. */
+/* disabled opacity: see input.module.css */
 .switch[data-disabled] {
   cursor: not-allowed;
   opacity: 0.42;

@@ -12,8 +12,8 @@ import {
   BaseApiService,
   RestEndpointProtocol,
   RestProtocol,
-  RestMockPlugin,
 } from '@gears-frontx/react';
+import { RestMockPlugin } from '@gears-frontx/frontx-template-shell';
 import type { GetCurrentUserResponse } from './types';
 import { accountsMockMap } from './mocks';
 

@@ -1,159 +1,142 @@
 /**
  * Action Elements Category
  *
- * Demonstrates: Button, Toggle, Dropdown, Chip
+ * Demonstrates: Button, DropdownMenu
  */
 
-import React from 'react';
-import { Separator } from '../../../components/ui/separator';
-import { Button } from '../../../components/ui/button';
-import { ButtonVariant, ButtonSize } from '../../../components/types';
-import { IconButton } from '../../../components/ui/icon-button';
-import { DropdownButton } from '../../../components/ui/dropdown-button';
-import { Toggle } from '../../../components/ui/toggle';
+import React, { useState } from 'react';
 import {
+  Button,
   DropdownMenu,
-  DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
-} from '../../../components/ui/dropdown-menu';
-import { Badge } from '../../../components/ui/badge';
+  DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@gears-frontx/ui-kit';
+import { ElementDemo } from './ElementDemo';
+import styles from '../UIKitElements.module.css';
 
 interface ActionElementsProps {
   t: (key: string) => string;
+  /**
+   * Element inside this MFE's shadow root that the menu popup portals into.
+   * Left to the kit's `<body>` default the popup lands in the light DOM, where
+   * neither the adopted component stylesheets nor this host's tokens reach it.
+   */
+  portalContainer: React.RefObject<HTMLElement | null>;
 }
 
-const ElementDemo: React.FC<{ id: string; title: string; description: string; children: React.ReactNode }> = ({
-  id,
-  title,
-  description,
-  children,
-}) => (
-  <div id={id} className="scroll-mt-4 mb-8">
-    <h3 className="text-xl font-semibold mb-2">{title}</h3>
-    <p className="text-sm text-muted-foreground mb-4">{description}</p>
-    <div className="border border-border rounded-lg p-6 bg-background">{children}</div>
-  </div>
-);
+export const ActionElements: React.FC<ActionElementsProps> = ({ t, portalContainer }) => {
+  const [showBookmarks, setShowBookmarks] = useState(true);
+  const [view, setView] = useState('list');
 
-export const ActionElements: React.FC<ActionElementsProps> = ({ t }) => {
   return (
-    <div id="category-actions" className="space-y-8">
-      <div>
-        <h2 className="text-2xl font-bold mb-2">{t('category.actions')}</h2>
-        <Separator className="mb-6" />
-      </div>
+    <section id="category-actions" className={styles.category}>
+      <h2 className={styles.categoryTitle}>{t('category.actions')}</h2>
 
-      {/* Button */}
       <ElementDemo
-        id="element-button"
+        id="button"
         title={t('element.button.title')}
         description={t('element.button.description')}
       >
-        <div className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <Button variant={ButtonVariant.Default}>Default</Button>
-            <Button variant={ButtonVariant.Secondary}>Secondary</Button>
-            <Button variant={ButtonVariant.Destructive}>Destructive</Button>
-            <Button variant={ButtonVariant.Outline}>Outline</Button>
-            <Button variant={ButtonVariant.Ghost}>Ghost</Button>
-            <Button variant={ButtonVariant.Link}>Link</Button>
-          </div>
+        <div className={styles.row}>
+          <Button>Default</Button>
+          <Button variant="secondary">Secondary</Button>
+          <Button variant="outline">Outline</Button>
+          <Button variant="ghost">Ghost</Button>
+          <Button variant="link">Link</Button>
+          <Button variant="destructive">Destructive</Button>
+        </div>
 
-          <Separator />
+        <div className={styles.row}>
+          <Button size="sm">Small</Button>
+          <Button>Default size</Button>
+          <Button size="lg">Large</Button>
+        </div>
 
-          <div className="flex flex-wrap gap-2 items-center">
-            <Button size={ButtonSize.Sm}>Small</Button>
-            <Button size={ButtonSize.Default}>Default</Button>
-            <Button size={ButtonSize.Lg}>Large</Button>
-            <IconButton aria-label="Settings">⚙️</IconButton>
-          </div>
-
-          <Separator />
-
-          <div className="flex flex-wrap gap-2">
-            <Button disabled>Disabled</Button>
-            <Button variant={ButtonVariant.Destructive} disabled>
-              Disabled Destructive
-            </Button>
-          </div>
+        <div className={styles.row}>
+          <Button disabled>Disabled</Button>
+          {/*
+            `loading` keeps the button focusable and reports `aria-busy` rather
+            than setting the native disabled attribute, which would blur it.
+          */}
+          <Button loading>Loading</Button>
         </div>
       </ElementDemo>
 
-      {/* Toggle */}
       <ElementDemo
-        id="element-toggle"
-        title={t('element.toggle.title')}
-        description={t('element.toggle.description')}
-      >
-        <div className="flex flex-wrap gap-2">
-          <Toggle aria-label="Toggle italic">
-            <span className="font-bold">B</span>
-          </Toggle>
-          <Toggle aria-label="Toggle italic">
-            <span className="italic">I</span>
-          </Toggle>
-          <Toggle aria-label="Toggle underline">
-            <span className="underline">U</span>
-          </Toggle>
-          <Toggle defaultPressed aria-label="Toggle strikethrough">
-            <span className="line-through">S</span>
-          </Toggle>
-        </div>
-      </ElementDemo>
-
-      {/* Dropdown */}
-      <ElementDemo
-        id="element-dropdown"
+        id="dropdown"
         title={t('element.dropdown.title')}
         description={t('element.dropdown.description')}
       >
-        <div className="flex flex-wrap gap-4">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button>Open Menu</Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem>Profile</DropdownMenuItem>
-              <DropdownMenuItem>Settings</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>Logout</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="outline" />}>
+            Options
+          </DropdownMenuTrigger>
+          <DropdownMenuContent container={portalContainer}>
+            {/* DropdownMenuLabel throws outside a group; the group is not optional. */}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Account</DropdownMenuLabel>
+              <DropdownMenuItem>
+                Profile
+                <DropdownMenuShortcut>⇧⌘P</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled>Billing (unavailable)</DropdownMenuItem>
+            </DropdownMenuGroup>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <DropdownButton>Dropdown Button</DropdownButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => alert('Action 1')}>Action 1</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => alert('Action 2')}>Action 2</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => alert('Action 3')}>Action 3</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </ElementDemo>
+            <DropdownMenuSeparator />
 
-      {/* Chip */}
-      <ElementDemo
-        id="element-chip"
-        title={t('element.chip.title')}
-        description={t('element.chip.description')}
-      >
-        <div>
-          <p className="text-sm text-muted-foreground mb-4">
-            UIKit does not export a dedicated Chip component. Badge component provides similar functionality:
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Badge>Default Badge</Badge>
-            <Badge variant="secondary">Secondary</Badge>
-            <Badge variant="destructive">Destructive</Badge>
-            <Badge variant="outline">Outline</Badge>
-          </div>
-        </div>
+            <DropdownMenuCheckboxItem
+              checked={showBookmarks}
+              onCheckedChange={setShowBookmarks}
+            >
+              Show bookmarks
+            </DropdownMenuCheckboxItem>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuRadioGroup
+              value={view}
+              onValueChange={(value) => setView(String(value))}
+            >
+              <DropdownMenuLabel>View</DropdownMenuLabel>
+              <DropdownMenuRadioItem value="list">
+                List view
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="grid">
+                Grid view
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>More tools</DropdownMenuSubTrigger>
+              {/* The submenu inherits the parent's container; naming it again costs nothing and documents it. */}
+              <DropdownMenuSubContent container={portalContainer}>
+                <DropdownMenuItem>Export</DropdownMenuItem>
+                <DropdownMenuItem>Import</DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem variant="destructive">
+              Delete account
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </ElementDemo>
-    </div>
+    </section>
   );
 };
 

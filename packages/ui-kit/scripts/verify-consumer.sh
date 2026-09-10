@@ -145,14 +145,17 @@ echo "==> Probes: Button=$BUTTON_CLASS Table=$TABLE_CLASS Dialog=$DIALOG_CLASS"
 # dist/, not a consumer bundle — an RSC framework like Next.js reads the
 # directive straight off the installed package's chunks, before any of this
 # script's bundler legs run, so none of them would catch it drifting. Split
-# by hook usage, not by any other property: badge/dropdown-menu/toast call a
-# hook directly in their own render body (useRender/useContext/
-# useToastManager — see buildPlugin.ts's preserveUseClientPlugin comment);
-# everything else only composes Base UI primitives as JSX, which already
-# carry their own directive in Base UI's dist, so marking them here would
-# take server-renderability away for no reason.
-CLIENT_COMPONENTS=(badge dropdown-menu toast)
-SERVER_COMPONENTS=(button card checkbox dialog field input label radio-group select separator skeleton switch table tabs textarea tooltip)
+# by hook usage, not by any other property: badge/breadcrumb/button-group/
+# dropdown-menu/toast call a hook directly in their own render body
+# (useRender/useContext/useToastManager — see buildPlugin.ts's
+# preserveUseClientPlugin comment); everything else only composes Base UI
+# primitives as JSX, which already carry their own directive in Base UI's
+# dist, so marking them here would take server-renderability away for no
+# reason. input-group/native-select/pagination compose Button/Input/
+# Textarea/Separator as plain JSX (no hook of their own), same as card/
+# table/tabs above.
+CLIENT_COMPONENTS=(attachment badge breadcrumb bubble button-group carousel chart combobox context-menu data-table drawer dropdown-menu marker sidebar toast)
+SERVER_COMPONENTS=(accordion alert alert-dialog aspect-ratio avatar button calendar card checkbox collapsible command date-picker dialog direction empty field hover-card input input-group input-otp item kbd label menubar message message-scroller native-select navigation-menu pagination popover progress questionnaire radio-group resizable scroll-area select separator sheet skeleton slider spinner switch table tabs textarea toggle toggle-group tooltip)
 
 in_list() {
   # $1: needle, $2+: haystack

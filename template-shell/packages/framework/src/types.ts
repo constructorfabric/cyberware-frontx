@@ -4,9 +4,6 @@
  * Core types for FrontX framework with plugin architecture.
  * Integrates all SDK packages into a cohesive framework.
  */
-// @cpt-dod:cpt-frontx-dod-framework-composition-builder:p1
-// @cpt-dod:cpt-frontx-dod-framework-composition-app-config:p1
-// @cpt-dod:cpt-frontx-dod-framework-composition-mfe-plugin:p1
 
 // ============================================================================
 // Type Imports from SDK Packages
@@ -25,6 +22,9 @@ import type { ApiRegistry } from '@gears-frontx/api';
 
 // From @gears-frontx/i18n
 import type { I18nRegistry } from '@gears-frontx/i18n';
+
+// From @gears-frontx/mfes
+import type { MfeRegistry } from '@gears-frontx/mfes';
 
 // Re-export FrontXStore from @gears-frontx/store for framework consumers
 export type FrontXStore = StoreType;
@@ -314,6 +314,15 @@ export interface ThemeConfig {
   variables: Record<string, string>;
   /** Whether this is the default theme */
   default?: boolean;
+  /**
+   * Base appearance of the theme. apply() stamps it as `data-theme` on the
+   * document root so design-system stylesheets that switch token sets on
+   * [data-theme='light'|'dark'] (e.g. the installed UI kit's theme.css)
+   * follow this theme's light/dark nature. Defaults to 'light' when omitted,
+   * so a theme that defines only some token names never mixes with the
+   * kit's OS-driven dark defaults for the rest.
+   */
+  appearance?: 'light' | 'dark';
 }
 
 /**
@@ -369,6 +378,49 @@ export interface FrontXAppRuntimeExtensions {
 }
 
 /**
+ * FrontX App Guarantees
+ *
+ * Empty by default. An application that always builds with the `microfrontends()`
+ * plugin can declare `mfeRegistry: true` to state that the registry is guaranteed
+ * present, dropping the optional modifier for every consumer of `FrontXApp`
+ * (including through `useFrontX()`) without changing anything for applications that
+ * don't opt in. Declaring `mfeRegistry: false` keeps the slot optional, exactly as
+ * if the interface had not been augmented at all.
+ *
+ * Augment it via declaration merging in an app-level `frontx.d.ts`:
+ *
+ * ```typescript
+ * // frontx.d.ts
+ * declare module '@gears-frontx/framework' {
+ *   interface FrontXAppGuarantees {
+ *     mfeRegistry: true;
+ *   }
+ * }
+ * ```
+ *
+ * With that declaration in scope, `app.mfeRegistry` is typed as `MfeRegistry`
+ * (no longer `MfeRegistry | undefined`), so call sites no longer need an
+ * `if (!app.mfeRegistry)` guard or a `app.mfeRegistry!` assertion:
+ *
+ * ```typescript
+ * app.mfeRegistry.registerDomain(myDomain, containerProvider);
+ * ```
+ *
+ * The cost: nothing verifies the declaration against the plugins an app
+ * actually composes, so an app that declares `mfeRegistry: true` but builds
+ * without the `microfrontends()` plugin gets a type that lies — and the
+ * framework's own composition is the first place that becomes unsound, since
+ * `createFrontX` casts the aggregated registry to `FrontXApp['mfeRegistry']`
+ * whether or not the plugin contributed one. This is an opt-in assertion by
+ * design; it is checked by nothing at runtime.
+ */
+export interface FrontXAppGuarantees {}
+
+type MfeRegistrySlot = FrontXAppGuarantees extends { mfeRegistry: true }
+  ? { mfeRegistry: MfeRegistry }
+  : { mfeRegistry?: MfeRegistry };
+
+/**
  * FrontX App Interface
  * The built application with all features available.
  *
@@ -388,7 +440,7 @@ export interface FrontXAppRuntimeExtensions {
  * }
  * ```
  */
-export interface FrontXApp extends FrontXAppRuntimeExtensions {
+export interface FrontXApp extends FrontXAppRuntimeExtensions, MfeRegistrySlot {
   /** Application configuration */
   config: FrontXConfig;
 
@@ -403,9 +455,6 @@ export interface FrontXApp extends FrontXAppRuntimeExtensions {
 
   /** I18n registry */
   i18nRegistry: I18nRegistry;
-
-  /** MFE-enabled MfeRegistry (optional, provided by microfrontends plugin) */
-  mfeRegistry?: import('@gears-frontx/mfes').MfeRegistry;
 
   /** All registered actions (type-safe via FrontXActions interface) */
   actions: FrontXActions;

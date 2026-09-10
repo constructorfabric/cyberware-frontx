@@ -1,0 +1,28 @@
+{
+  "name": "@gears-frontx/test-support",
+  "version": "0.1.0-alpha.0",
+  "description": "Hardened, cross-package test-only path-containment helpers for this monorepo's packages that build fixture paths under a temp-directory root -- distinct from the per-package, in-tree __test-utils__ mock-helper convention used elsewhere.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./path-guard.ts",
+    "./path-guard": "./path-guard.ts",
+    "./path-guard.ts": "./path-guard.ts"
+  },
+  "files": [
+    "*.ts"
+  ],
+  "scripts": {
+    "test:unit": "vitest --run --passWithNoTests=false",
+    "test:unit:watch": "vitest --watch",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.2",
+    "vitest": "4.1.4"
+  },
+  "keywords": [
+    "test-support",
+    "frontx"
+  ]
+}

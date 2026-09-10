@@ -41,6 +41,7 @@ export class DefaultExtensionManager extends ExtensionManager {
   private readonly triggerLifecycle: LifecycleTriggerCallback;
   private readonly triggerDomainOwnLifecycle: DomainLifecycleTriggerCallback;
   private readonly unmountExtension: (extensionId: string) => Promise<void>;
+  private readonly releaseExtensionBridge: (extensionId: string) => void;
   private readonly validateEntryType: (entryTypeId: string) => void;
 
   constructor(config: {
@@ -48,6 +49,7 @@ export class DefaultExtensionManager extends ExtensionManager {
     triggerLifecycle: LifecycleTriggerCallback;
     triggerDomainOwnLifecycle: DomainLifecycleTriggerCallback;
     unmountExtension: (extensionId: string) => Promise<void>;
+    releaseExtension: (extensionId: string) => void;
     validateEntryType: (entryTypeId: string) => void;
   }) {
     super();
@@ -55,6 +57,7 @@ export class DefaultExtensionManager extends ExtensionManager {
     this.triggerLifecycle = config.triggerLifecycle;
     this.triggerDomainOwnLifecycle = config.triggerDomainOwnLifecycle;
     this.unmountExtension = config.unmountExtension;
+    this.releaseExtensionBridge = config.releaseExtension;
     this.validateEntryType = config.validateEntryType;
   }
 
@@ -179,6 +182,7 @@ export class DefaultExtensionManager extends ExtensionManager {
       extension,
       entry,
       bridge: null,
+      childBridge: null,
       loadState: 'idle',
       mountState: 'unmounted',
       container: null,
@@ -213,6 +217,8 @@ export class DefaultExtensionManager extends ExtensionManager {
       extensionId,
       this.typeSystem.resolveLifecycleStageDestroyedId()
     );
+
+    this.releaseExtensionBridge(extensionId);
 
     const domainState = this.domains.get(extensionState.extension.domain);
     if (domainState) {
@@ -308,6 +314,9 @@ export class DefaultExtensionManager extends ExtensionManager {
   }
 
   clear(): void {
+    for (const extensionId of Array.from(this.extensions.keys())) {
+      this.releaseExtensionBridge(extensionId);
+    }
     this.domains.clear();
     this.extensions.clear();
   }

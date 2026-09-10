@@ -1,0 +1,16 @@
+export {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+  type PaginationContentProps,
+  type PaginationEllipsisProps,
+  type PaginationItemProps,
+  type PaginationLinkProps,
+  type PaginationNextProps,
+  type PaginationPreviousProps,
+  type PaginationProps,
+} from './pagination.js';

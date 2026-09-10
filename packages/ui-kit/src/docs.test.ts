@@ -21,7 +21,7 @@ const components = readdirSync(componentsDir, { withFileTypes: true })
 
 const llms = readFileSync(join(packageRoot, 'llms.txt'), 'utf8');
 
-const AXES = ['variant', 'size', 'shape', 'density'] as const;
+const AXES = ['variant', 'size', 'shape', 'density', 'tone'] as const;
 
 const lowerFirst = (value: string) => value.charAt(0).toLowerCase() + value.slice(1);
 

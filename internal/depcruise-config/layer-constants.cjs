@@ -79,7 +79,7 @@ const PROJECTS_ORCHESTRATION_PACKAGES = Object.freeze(['cli', 'cyber-pilot-kit-f
 // even though the edge only exists at lint/build time. Exempt from the member
 // artifact chain and the publication gate, with that scope stated in the
 // DESIGN rather than implied. Directory names under `internal/`.
-const BUILD_INTERNALS_PACKAGES = Object.freeze(['eslint-config', 'depcruise-config']);
+const BUILD_INTERNALS_PACKAGES = Object.freeze(['eslint-config', 'depcruise-config', 'test-support']);
 
 // Every ecosystem package, in layer order.
 const ECOSYSTEM_PACKAGES = Object.freeze([
@@ -180,7 +180,11 @@ const ALLOWED_ECOSYSTEM_EDGES = Object.freeze({
   'ui-kit': Object.freeze({ runtime: Object.freeze([]), dev: Object.freeze([]) }),
 
   // ---- Projects orchestration ----
-  cli: Object.freeze({ runtime: Object.freeze([]), dev: Object.freeze([]) }),
+  cli: Object.freeze({
+    runtime: Object.freeze([]),
+    // Test-only path-containment helper, exercised by the CLI's own test suite.
+    dev: Object.freeze(['@gears-frontx/test-support']),
+  }),
   // KIT --> CLI is a *command-surface* relationship, not a package edge: the AI
   // upgrade orchestration (`cpt-frontx-adr-ai-driven-upgrade-orchestration`)
   // invokes the `frontx` CLI as a process, deliberately without depending on it
@@ -190,7 +194,8 @@ const ALLOWED_ECOSYSTEM_EDGES = Object.freeze({
   // permit exactly the manifest edge the ADR forbids.
   'cyber-pilot-kit-frontx': Object.freeze({
     runtime: Object.freeze([]),
-    dev: Object.freeze([]),
+    // Test-only path-containment helper, exercised by the kit's own test suite.
+    dev: Object.freeze(['@gears-frontx/test-support']),
   }),
 
   // ---- Build internals (internal/*) ----
@@ -198,6 +203,7 @@ const ALLOWED_ECOSYSTEM_EDGES = Object.freeze({
   // package would invert the build order.
   'eslint-config': Object.freeze({ runtime: Object.freeze([]), dev: Object.freeze([]) }),
   'depcruise-config': Object.freeze({ runtime: Object.freeze([]), dev: Object.freeze([]) }),
+  'test-support': Object.freeze({ runtime: Object.freeze([]), dev: Object.freeze([]) }),
 });
 
 /**

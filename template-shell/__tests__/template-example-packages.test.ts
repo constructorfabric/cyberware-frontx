@@ -29,6 +29,7 @@ import {
 import { ManifestGenerator } from '../scripts/generate-mfe-manifests';
 import {
   discoverMfeProjects,
+  discoverTypeCheckProjects,
   refuseMissingTypeCheckScript,
   runParallel,
   runSequential,
@@ -241,6 +242,57 @@ describe('getMFEPackages - what dev:all builds and serves', () => {
       ],
       skippedExamples: [],
     });
+  });
+});
+
+describe('discoverTypeCheckProjects - MFE and verification roots together', () => {
+  // A verification package (what template-design-guardrails lands under
+  // src-app/verify_packages/) is a workspace with its own `type-check` script
+  // and no mfe.json. Scanning only the MFE root left it unchecked in CI, so the
+  // aggregate has to report it alongside the MFEs, in root order.
+  it('reports verification packages after the MFE packages', async () => {
+    mfePackage('tasks-mfe', { templateExample: false, port: 3010 });
+    const verifyDir = join(workspace, 'verify_packages');
+    const designVerify = join(verifyDir, 'design-verify');
+    mkdirSync(designVerify, { recursive: true });
+    writeFileSync(
+      join(designVerify, 'package.json'),
+      JSON.stringify({ name: '@fixture/design-verify', scripts: { 'type-check': 'tsc --noEmit' } }),
+      'utf-8',
+    );
+
+    const discovery = await discoverTypeCheckProjects([mfePackagesDir, verifyDir]);
+
+    expect(discovery).toEqual({
+      projects: [
+        { name: 'tasks-mfe', cwd: join(mfePackagesDir, 'tasks-mfe') },
+        { name: 'design-verify', cwd: designVerify },
+      ],
+      missingTypeCheckScript: [],
+      skippedExamples: [],
+    });
+  });
+
+  it('refuses the run for a verification package without a type-check script', async () => {
+    const verifyDir = join(workspace, 'verify_packages');
+    const silent = join(verifyDir, 'silent-verify');
+    mkdirSync(silent, { recursive: true });
+    writeFileSync(join(silent, 'package.json'), JSON.stringify({ name: 'silent' }), 'utf-8');
+
+    const { missingTypeCheckScript } = await discoverTypeCheckProjects([mfePackagesDir, verifyDir]);
+
+    expect(missingTypeCheckScript).toEqual(['silent-verify']);
+    expect(() => refuseMissingTypeCheckScript(missingTypeCheckScript)).toThrow(/silent-verify/);
+  });
+
+  // A shell-only seed has neither root; both read as empty, not as a failure.
+  it('reports an empty set when no root exists', async () => {
+    const discovery = await discoverTypeCheckProjects([
+      join(workspace, 'nowhere'),
+      join(workspace, 'nowhere-else'),
+    ]);
+
+    expect(discovery).toEqual({ projects: [], missingTypeCheckScript: [], skippedExamples: [] });
   });
 });
 

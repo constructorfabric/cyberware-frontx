@@ -238,6 +238,46 @@ describe('react hook coverage', () => {
     expect(result.current.isLoaded).toBe(false);
   });
 
+  it('useScreenTranslations stays loaded when a language change is superseded before it settles', async () => {
+    const { app, i18nRegistry } = createApp();
+    let releaseFrench: () => void = () => {};
+    const frenchLoaded = new Promise<void>((resolve) => {
+      releaseFrench = resolve;
+    });
+    const translations = {
+      en: vi.fn(async () => ({ default: { title: 'Hello' } })),
+      fr: vi.fn(async () => {
+        await frenchLoaded;
+        return { default: { title: 'Bonjour' } };
+      }),
+    } as unknown as TranslationMap;
+
+    const { result } = renderHook(
+      () => useScreenTranslations('demo', 'superseded', translations),
+      { wrapper: createWrapper(app) }
+    );
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    // Switch to a language whose load never settles before the switch back:
+    // the French load is cancelled with English already registered, so nothing
+    // will ever arrive to report the hook loaded again. This is what a stored
+    // in-flight flag could not survive - the cancelled load has no settle path
+    // left to lower it - and it is why `isLoaded` is derived from
+    // `loadedLanguage` alone.
+    act(() => {
+      i18nRegistry.notify('fr');
+    });
+    act(() => {
+      i18nRegistry.notify('en');
+    });
+    await act(async () => {
+      releaseFrench();
+      await frenchLoaded;
+    });
+
+    expect(result.current.isLoaded).toBe(true);
+  });
+
   it('useAppDispatch returns the Redux store dispatch function', () => {
     const { app, store } = createApp();
     const { result } = renderHook(() => useAppDispatch(), {

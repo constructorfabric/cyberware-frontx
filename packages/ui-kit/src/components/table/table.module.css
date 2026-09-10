@@ -40,24 +40,27 @@
 .table {
   width: 100%;
   /*
-   * The SEPARATED borders model, on purpose — the opposite call from the
-   * shadcn translation this file started as. The mockups' Data Table
-   * (frame 202:407) draws every row as its own rounded card floating in
-   * the table: gaps between rows come from border-spacing (which only the
-   * separated model has), and each card's ring/fill/radius is assembled
-   * from the row's CELLS below, because a <tr> can neither clip a rounded
-   * background nor paint borders of its own in this model. The old
-   * collapse-model reasoning (row-level borders, full-width tint strips)
-   * left with the flat look it served.
+   * The COLLAPSED borders model — back to the standard model, and back to
+   * what the shadcn translation this file started as always used. The
+   * separated model here served an older mockup frame (202:407) that drew
+   * every row as its own rounded card floating on gaps of border-spacing;
+   * the Studio Data Table frame (40001455:6353) that supersedes it draws a
+   * flat table instead — rows packed edge to edge, separated by nothing but
+   * a full-bleed 1px rule, with the border and the corner radius belonging
+   * to the container around the table rather than to each row. Nothing in
+   * the drawn table needs a model that can put space between cells, and the
+   * collapsed model is what lets a <tr> carry that single rule as one real
+   * border instead of six per-cell edges.
    */
-  border-collapse: separate;
-  border-spacing: 0 var(--space-2);
+  border-collapse: collapse;
   caption-side: bottom;
-  /* The mockups' Data Table cell text is 12px — Meta; its hand-set 17px
-   * line normalizes to the ramp's 16 under the tokens-win ruling (see
-   * theme.css). Applied whole (size/line-height/weight/tracking), not just
-   * the two metrics the row cards themselves need — see .tableHead below
-   * for the header bar's own full application of the role. */
+  /* The drawn cell text is Meta outright, with nothing to reconcile: the
+   * frame sets every cell in Studio/Type/UI Secondary (Inter 12/16), which
+   * is --text-meta-* exactly — no tokens-win rounding involved, contrary to
+   * an earlier note here that recorded the line as a hand-set 17. Applied
+   * whole (size/line-height/weight/tracking), not just the two metrics the
+   * rows need — see .tableHead below for the header bar's own full
+   * application of its role. */
   font-size: var(--text-meta-size);
   line-height: var(--text-meta-line-height);
   font-weight: var(--text-meta-weight);
@@ -65,130 +68,83 @@
 }
 
 /*
- * The carded row, assembled from its cells: every cell carries the top and
- * bottom edge, the first and last close the sides and round the corners.
- * Ring color, extra ring thickness, and fill are row-level knobs (custom
- * properties set on .tableRow and flipped by the state/hover rules below)
- * so a state changes one declaration, not six.
- *
- * The border itself is ALWAYS 1px; a thicker state ring adds the
- * difference as an inset shadow instead — the kit's geometry-stable
- * idiom (see button.module.css). Body cells have no fixed height for
- * border-box to absorb a wider border into, so a real 2px border would
- * grow the selected row and shift every row below it. The shadow strips
- * are per-edge (a full inset ring on the first/last cell would paint a
- * vertical seam where it meets its neighbor), which makes them physical
- * x/y offsets — under RTL the first cell's strip lands on its visual
- * left while its logical border sits right; harmless while the extra
- * thickness only ever backs an already-colored ring.
- *
- * The card only closes into a rectangle when the row's cells are direct
- * children — TableCell/TableHead, the normal case.
+ * The row: a fill and the rule under it, both row-level so a state changes
+ * one declaration rather than one per cell. The fill starts transparent on
+ * purpose — the drawn table paints no per-row background at rest, it lets
+ * the surface of whatever container holds it (DataTable's card, a Card, the
+ * page) show through, and only a state or hover tints a row away from it.
  */
 .tableRow {
-  --table-row-ring: var(--border);
-  /* Extra ring thickness, drawn inward. States raise this, never the
-     border width. */
-  --table-row-ring-inset: 0px;
-  --table-row-fill: var(--surface-elevated);
-}
-
-.tableRow > :is(td, th) {
-  border-block: var(--border-width) solid var(--table-row-ring);
+  --table-row-fill: transparent;
   background-color: var(--table-row-fill);
-  box-shadow:
-    inset 0 var(--table-row-ring-inset) 0 0 var(--table-row-ring),
-    inset 0 calc(-1 * var(--table-row-ring-inset)) 0 0 var(--table-row-ring);
+  border-bottom: var(--border-width) solid var(--border);
   /* Colour crossfades only, no transform/geometry — not motion under WCAG
      2.3.3, so deliberately left unguarded under prefers-reduced-motion. */
   transition:
     color 150ms ease,
     background-color 150ms ease,
-    border-color 150ms ease,
-    box-shadow 150ms ease;
-}
-
-.tableRow > :is(td, th):first-child {
-  border-inline-start: var(--border-width) solid var(--table-row-ring);
-  border-start-start-radius: var(--radius-md);
-  border-end-start-radius: var(--radius-md);
-  box-shadow:
-    inset 0 var(--table-row-ring-inset) 0 0 var(--table-row-ring),
-    inset 0 calc(-1 * var(--table-row-ring-inset)) 0 0 var(--table-row-ring),
-    inset var(--table-row-ring-inset) 0 0 0 var(--table-row-ring);
-}
-
-.tableRow > :is(td, th):last-child {
-  border-inline-end: var(--border-width) solid var(--table-row-ring);
-  border-start-end-radius: var(--radius-md);
-  border-end-end-radius: var(--radius-md);
-  box-shadow:
-    inset 0 var(--table-row-ring-inset) 0 0 var(--table-row-ring),
-    inset 0 calc(-1 * var(--table-row-ring-inset)) 0 0 var(--table-row-ring),
-    inset calc(-1 * var(--table-row-ring-inset)) 0 0 0 var(--table-row-ring);
-}
-
-/* A one-column row's cell is first AND last child, but only the later
- * rule above applies — with no neighbor to seam against, the plain full
- * inset ring covers all four edges at once. */
-.tableRow > :is(td, th):only-child {
-  box-shadow: inset 0 0 0 var(--table-row-ring-inset) var(--table-row-ring);
-}
-
-/* The header bar is the same card shape on the --surface fill (one shade
- * off the rows in dark; both near-white in light). */
-.tableHeader .tableRow {
-  --table-row-fill: var(--surface);
-}
-
-/* The footer bar matches the header's --surface (frame 202:407).
- * --foreground on --surface: 17.9:1 light / 15.5:1 dark. */
-.tableFooter .tableRow {
-  --table-row-fill: var(--surface);
-}
-
-/* Emphasis over the body's Meta weight, expressed as --text-label-weight
- * (also 500) rather than the literal shadcn translation kept — no "Meta at
- * 500" style exists in the Studio ramp to name instead. */
-.tableFooter {
-  font-weight: var(--text-label-weight);
+    border-color 150ms ease;
 }
 
 /*
- * Hover lifts the card one surface step; scoped to the body so the
- * header/footer bars stay put. :has([aria-expanded='true']) keeps the
- * shadcn behavior of holding the highlight while a row-level disclosure
- * is open — value-tested, so a collapsed toggle does not match.
+ * The rule under the LAST body row is the one line the drawn table does not
+ * own: below it sits either the container's own bottom border or a footer
+ * bar drawing its own top border (DataTable's, data-table.module.css), and
+ * either way a second line here would double it. Scoped by
+ * `.tableBody:last-child` rather than dropped outright so a <tfoot> after
+ * the body still gets separated from it — with a footer present the body is
+ * no longer the table's last section, and the rule stays.
+ */
+.tableBody:last-child .tableRow:last-child {
+  border-bottom: 0;
+}
+
+/*
+ * Hover tints the row; scoped to the body so the header/footer bars stay
+ * put. :has([aria-expanded='true']) keeps the shadcn behavior of holding
+ * the highlight while a row-level disclosure is open — value-tested, so a
+ * collapsed toggle does not match.
+ *
+ * --muted, never --card-hover: rows are transparent, so this tint has to
+ * read against whatever is behind the table, and the two backdrops it
+ * actually meets are --surface (DataTable's card, a Card) and --background
+ * (a bare Table on the page). --card-hover IS --background's own value in
+ * light mode — it is a step up from --surface-elevated, which no row paints
+ * — so on a card-less table it would make hover invisible. --muted is a
+ * step off both.
  */
 .tableBody .tableRow:hover,
 .tableBody .tableRow:has([aria-expanded='true']) {
-  --table-row-fill: var(--card-hover);
+  --table-row-fill: var(--muted);
 }
 
 /*
- * Row state hooks, per the F-mockups' Data Table row states (frames
- * 200:493 / 202:407). The kit styles the attribute, the consumer's own
- * logic sets it (`<TableRow data-state="selected|stale|restricted">`) — no
+ * Row state hooks, per the Studio Data Table's row states (frame
+ * 40001455:6353). The kit styles the attribute, the consumer's own logic
+ * sets it (`<TableRow data-state="selected|stale|restricted">`) — no
  * selection or data logic lives here, in keeping with "primitive markup
- * only". The drawn language is the card's RING, not a tint:
- * stale/restricted keep their surface and recolor the 1px ring; selected
- * takes a 2px --primary ring on the --card-hover fill. The ring variables
- * are untouched by the hover rule above, so a state's ring holds under
- * hover while the fill still lifts for feedback (the hover rule's extra
- * ancestor selector outweighs these on the fill).
+ * only". The drawn language is a full-bleed FILL, not a ring: the frame's
+ * selected rows (the findings and team tables' first row) carry an
+ * edge-to-edge tint and an otherwise untouched 1px rule, so all three
+ * states are expressed as fills here — stale and restricted, which the
+ * frame does not draw, take the -soft tints of the status colors their
+ * older ring form already named.
+ *
+ * These sit after the hover rule and match its specificity (two classes
+ * plus one attribute against two classes plus one pseudo-class), so a
+ * state's tint wins over hover on the row it applies to instead of being
+ * washed out the moment the pointer arrives.
  */
-.tableRow[data-state='selected'] {
-  --table-row-ring: var(--primary);
-  --table-row-ring-inset: var(--ring-inset);
-  --table-row-fill: var(--card-hover);
+.tableBody .tableRow[data-state='selected'] {
+  --table-row-fill: var(--selection-subtle);
 }
 
-.tableRow[data-state='stale'] {
-  --table-row-ring: var(--warning);
+.tableBody .tableRow[data-state='stale'] {
+  --table-row-fill: var(--warning-soft);
 }
 
-.tableRow[data-state='restricted'] {
-  --table-row-ring: var(--danger);
+.tableBody .tableRow[data-state='restricted'] {
+  --table-row-fill: var(--danger-soft);
 }
 
 .tableHead {
@@ -205,34 +161,43 @@
    * it — shadcn's own table example
    * (ui.shadcn.com/docs/components/base/table) ships exactly that,
    * `className="w-[100px]"` on a cell — and under content-box, this kit's
-   * own `padding-inline` (0.5rem here) would add on top of that width
+   * own `padding-inline` (1rem here) would add on top of that width
    * instead of being absorbed into it, so a `width: 100px` cell would not
    * actually render 100px wide. border-box makes the documented pattern
    * behave as given.
    */
   box-sizing: border-box;
   /*
-   * The mockups' header bar (frame 202:407) draws 42px tall with 10px
-   * medium column labels at +0.5px tracking — neither metric exists in
-   * the token system, so under the tokens-win ruling (see theme.css) the
-   * header snaps to the lg control height and Meta's own size/line-height/
-   * tracking at --text-label-weight (500) for the emphasis, the same
-   * "role at a different weight" idiom as Body Medium elsewhere in the
-   * kit — not the literal `500` the shadcn translation hand-set, and not
-   * a style called "Meta at the 500-weight variant" (no such style exists
-   * in the Studio ramp). This bar's --surface fill is the backdrop
-   * --subtle-foreground has to clear 4.5:1 against; neither mode's drawn
-   * value did, so the token carries AA-passing values instead of the drawn
-   * ones — see theme.css and design-notes.md.
+   * The drawn header bar is 36px tall with 16px side padding — both land
+   * on the token scales exactly (--control-height-md, --space-4), so
+   * neither needs the tokens-win rounding the old 42px/10px reading did.
+   *
+   * Its column labels are the one place the drawn table leaves Inter: they
+   * are set in JetBrains Mono, uppercase, at 10/14 regular. That is the
+   * Mono role, so the role is applied whole (family/size/line-height/
+   * weight/tracking) and the drawn 10/14 rides up to the ramp's 11/16
+   * under the tokens-win ruling (see theme.css) — the alternative, keeping
+   * Meta's Inter and hand-setting a weight, drops the deliberate mono
+   * column-label voice that runs through every variant of the frame.
+   *
+   * The label color stays --subtle-foreground, the token theme.css names
+   * for exactly this consumer. The frame draws these labels in its own
+   * muted-foreground, whose value is not this kit's --muted-foreground;
+   * --subtle-foreground already carries AA-passing values measured against
+   * the header's --surface backdrop (see theme.css and design-notes.md),
+   * and re-pointing the header at a token chosen for body text would give
+   * that reasoning up for a color the frame does not actually share with
+   * us.
    */
-  height: var(--control-height-lg);
+  height: var(--control-height-md);
   padding: 0 var(--space-4);
   text-align: start;
   vertical-align: middle;
-  font-size: var(--text-meta-size);
-  line-height: var(--text-meta-line-height);
-  font-weight: var(--text-label-weight);
-  letter-spacing: var(--text-meta-tracking);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: var(--text-mono-line-height);
+  font-weight: var(--text-mono-weight);
+  letter-spacing: var(--text-mono-tracking);
   text-transform: uppercase;
   white-space: nowrap;
   color: var(--subtle-foreground);
@@ -244,12 +209,50 @@
 
 .tableCell {
   /* Same box-sizing reasoning as .tableHead above — the other half of the
-     same column-width collision, since a <td> can carry the identical
-     consumer-supplied width as its <th>. Metrics approximate the drawn
-     56px default row for single-line content; the drawn rows carry a
-     second 11px line, which consumers add themselves. */
+   * same column-width collision, since a <td> can carry the identical
+   * consumer-supplied width as its <th>. */
   box-sizing: border-box;
+  /*
+   * Block padding read off the frame's own rows rather than off its 56px
+   * pitch. The earlier reading took the artifacts-root/artifacts-folder row
+   * (node 40001712:10911) at face value — 56px tall, one line of text, so
+   * 56 must be the single-line row height — and pinned a 56px floor to
+   * reproduce it. Walking that row's children shows 56 is not a type
+   * measurement at all: it holds a 32px Row-actions button at y=12 and a
+   * 28px readiness ring at y=14, i.e. --control-height-sm plus 12px of air
+   * a side. The 16px text line is the SHORTEST thing in the box, floating
+   * in whatever slack the button leaves.
+   *
+   * The frame states its real block padding in the variants whose rows are
+   * type-driven, where no control sets the height. Every one lands on 8–12:
+   * projects (40001450:5771) draws a 58px row with its text block at
+   * y=10..46; activity (40001454:5364) a 64px row at y=8..51; findings
+   * (40001453:6215) a 72px row at y=10..56. --space-3 (12px) is that
+   * padding on the token scale, and it reproduces the whole frame from one
+   * value instead of from a pinned number:
+   *
+   *   one Meta line   16 + 12 + 12 = 40px  (the type-driven row)
+   *   32px control    32 + 12 + 12 = 56px  (artifacts-root, exactly)
+   *   two Meta lines  32 + 12 + 12 = 56px  (projects/activity's 58/64)
+   *
+   * The 56px row therefore falls OUT of the drawn control, and no longer
+   * has to be asserted. That is also what fixes the case the pinned floor
+   * silently broke: at --space-4 the kit's own actions row measured 65px
+   * against the frame's 56 (32 + 16 + 16, plus the border) — the floor
+   * only ever grows a row, so it could not pull that overshoot back, and
+   * the error stayed invisible while text-only rows sat at a coincidentally
+   * correct 56.
+   *
+   * 40px is kept as a floor (`height` on a table cell is a FLOOR, not a
+   * cap — CSS2.1 §17.5.3) so a cell with no content, or content shorter
+   * than a line, cannot collapse the row below the type-driven height. It
+   * is --control-height-lg, which is also the height the frame draws every
+   * column resize handle at across all six variants (e.g. 40001452:6069,
+   * 40001450:5916) and the height of the projects header band — the frame's
+   * own name for "one row of a data grid".
+   */
   padding: var(--space-3) var(--space-4);
+  height: var(--control-height-lg);
   vertical-align: middle;
   white-space: nowrap;
 }
@@ -262,16 +265,23 @@
  * Density — the mockups' Data Table density axis ("compact density for
  * operational views", per the design file's component mapping). One class
  * on the <table>, cell metrics follow; the default density is the base
- * styling above, untouched.
+ * styling above, untouched. The frame draws no compact specimen of its own,
+ * so this stays a proportional step down from the default rather than a
+ * measured one: the header takes the next control height below the
+ * default's, and the cells the next block padding step down (--space-2),
+ * taking a type-driven row from 40px to 32px. `height` is reset to `auto`
+ * here, not just lowered — the
+ * default density's 40px floor (see .tableCell above) would otherwise
+ * override the smaller padding and hold every compact row at the default's
+ * height, since a floor only ever grows a row, never shrinks one.
  */
 .densityCompact .tableHead {
   height: var(--control-height-sm);
 }
 
-/* Drawn compact rows shave the block padding; the drawn 6px snaps down
- * to the grid's 4 (compact leans tighter) per the tokens-win ruling. */
 .densityCompact .tableCell {
-  padding-block: var(--space-1);
+  padding-block: var(--space-2);
+  height: auto;
 }
 
 .tableCaption {
@@ -282,9 +292,31 @@
   line-height: var(--text-body-line-height);
   /*
    * Source: text-muted-foreground, against --background (a caption sits
-   * outside any row/footer tint, so no mixed-tint approximation is
-   * needed): 4.73:1 light, 7.63:1 dark — clears the 4.5:1 AA floor for
-   * normal text in both themes.
+   * outside any row tint, so no mixed-tint approximation is needed):
+   * 4.73:1 light, 7.63:1 dark — clears the 4.5:1 AA floor for normal text
+   * in both themes.
    */
   color: var(--muted-foreground);
+}
+
+/*
+ * Emphasis over the body's Meta weight, expressed as --text-label-weight
+ * (also 500) rather than the literal shadcn translation kept — no "Meta at
+ * 500" style exists in the Studio ramp to name instead. A <tfoot> is a
+ * summary bar under the rows, so it takes the same --muted fill and the
+ * same single rule above it that the drawn table's own footer bar does.
+ */
+.tableFooter {
+  font-weight: var(--text-label-weight);
+}
+
+.tableFooter .tableRow {
+  --table-row-fill: var(--muted);
+}
+
+/* The last row of the table, whatever section it is in, has the container's
+ * own bottom edge under it — see the .tableBody rule above for the full
+ * reasoning; this is that same rule for a table that ends in a <tfoot>. */
+.tableFooter .tableRow:last-child {
+  border-bottom: 0;
 }

@@ -80,11 +80,23 @@ jobs:
     - name: Build workspace packages
       run: npm run build:packages
 
-    # `dev:template:link` replaces installed directories inside the template's
-    # node_modules — the pinned tree has to exist before it can be repointed.
-    - name: Install template from its lockfile
+    # A feature branch's pins routinely name an unpublished version; this repoints
+    # them at packages/* before npm sees them. See CONTRIBUTING.md's "Why template drift CI installs without a lockfile".
+    - name: Point template ecosystem pins at the working tree
+      run: node scripts/pin-template-ecosystem-to-local.mjs
+
+    # `npm install`, not `npm ci` (the rewrite above desyncs the lockfile), and
+    # `--no-package-lock` avoids npm/cli#524. See CONTRIBUTING.md's "Why template drift CI installs without a lockfile".
+    - name: Install template with the working tree's ecosystem packages
       working-directory: template-shell
-      run: npm ci
+      run: npm install --no-audit --no-fund --no-package-lock
+
+    # The rewrite is an install-time device and nothing more: the committed
+    # manifests come back before anything is built, so build and type-check read
+    # exactly the files a seeded project ships. Only tracked files are restored -
+    # the node_modules the install just produced is untracked and survives.
+    - name: Restore the committed template manifests
+      run: git checkout -- template-shell
 
     - name: Relink template at the working tree
       run: npm run dev:template:link

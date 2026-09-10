@@ -1,0 +1,583 @@
+/*
+ * Kit CSS utilities, ported from shadcn/ui (MIT, https://ui.shadcn.com; see
+ * the repository NOTICE file for attribution). Source: the `shadcn` npm
+ * package's Tailwind v4 plugin (packages/shadcn/src/tailwind.css, upstream
+ * commit at port time) for scroll-fade/shimmer/no-scrollbar, cross-checked
+ * against the docs pages (https://ui.shadcn.com/docs/utils/scroll-fade,
+ * /docs/utils/shimmer — no-scrollbar ships in the same package but has no
+ * docs page of its own).
+ *
+ * Global classes, like theme.css — this file is NOT a CSS Module. Import it
+ * once alongside theme.css; the classes below apply by plain class name,
+ * with no scoping.
+ *
+ * Two source-level changes from upstream, both mechanical:
+ *   - Upstream is a Tailwind v4 plugin: `@utility name { … }` compiles to a
+ *     plain `.name { … }` class with no Tailwind-specific runtime behavior,
+ *     and a `@theme inline { @keyframes … }` block registers a keyframe the
+ *     same way a top-level `@keyframes` does outside Tailwind's build. Both
+ *     translate 1:1 to the plain CSS forms used here — no behavior changes.
+ *   - Tailwind's arbitrary-value utilities (`scroll-fade-<number>`,
+ *     `shimmer-duration-<number>`, …) compile a `--value()`/`--modifier()`
+ *     expression per call site, which has no equivalent outside a Tailwind
+ *     build. Two different replacements, chosen per case (see each
+ *     section's own comment): a fixed set of discrete classes stepped on
+ *     this kit's `--space-*` scale for the sizes that come up as scroll-fade
+ *     presets, or documented inline custom-property overrides for knobs the
+ *     base utility already reads with a `var(…, fallback)` — which need no
+ *     wrapper class at all, since setting the property directly IS the
+ *     override.
+ *
+ * `--spacing` (Tailwind's base spacing unit, 0.25rem in the default theme)
+ * has no direct kit equivalent; every upstream `calc(var(--spacing) * N)`
+ * below is rewritten as `calc(var(--space-1) * N)` instead — --space-1 IS
+ * that same 0.25rem base step (see theme.css), so the computed values match
+ * upstream exactly.
+ */
+
+/* ---------------------------------------------------------------------- */
+/* no-scrollbar                                                           */
+/* ---------------------------------------------------------------------- */
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* scroll-fade                                                            */
+/* ---------------------------------------------------------------------- */
+
+/*
+ * Registered as typed custom properties (not plain `--x: 0px` declarations)
+ * so the browser can animate them as lengths — `animation-timeline: scroll()`
+ * below interpolates --scroll-fade-{t,b,s,e} smoothly only because
+ * `@property` tells it these hold a <length-percentage>, not an opaque
+ * string. --scroll-fade-mask is untyped (`syntax: "*"`) because it holds a
+ * full `mask-image` value (a gradient function), not a single length.
+ */
+@property --scroll-fade-t {
+  syntax: '<length-percentage>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --scroll-fade-b {
+  syntax: '<length-percentage>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --scroll-fade-s {
+  syntax: '<length-percentage>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --scroll-fade-e {
+  syntax: '<length-percentage>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --scroll-fade-mask {
+  syntax: '*';
+  inherits: false;
+}
+
+/*
+ * Each keyframe animates one edge's fade-in distance from 0 to its resolved
+ * size (or the reverse for the trailing edge of a pair), driven by the
+ * container's own scroll position via `animation-timeline: scroll(self …)`
+ * on the utility classes below — see each class's `@supports` block. Kept
+ * as four separate keyframes (matching upstream) rather than one
+ * parameterized animation: each edge tracks a different scroll axis
+ * (block vs. inline) and a different start/end pairing.
+ */
+@keyframes scroll-fade-reveal-t {
+  from {
+    --scroll-fade-t: 0px;
+  }
+  to {
+    --scroll-fade-t: var(--_scroll-fade-size-t, var(--scroll-fade-size, min(12%, calc(var(--space-1) * 10))));
+  }
+}
+@keyframes scroll-fade-reveal-b {
+  from {
+    --scroll-fade-b: var(--_scroll-fade-size-b, var(--scroll-fade-size, min(12%, calc(var(--space-1) * 10))));
+  }
+  to {
+    --scroll-fade-b: 0px;
+  }
+}
+@keyframes scroll-fade-reveal-s {
+  from {
+    --scroll-fade-s: 0px;
+  }
+  to {
+    --scroll-fade-s: var(--_scroll-fade-size-s, var(--scroll-fade-size, min(12%, calc(var(--space-1) * 10))));
+  }
+}
+@keyframes scroll-fade-reveal-e {
+  from {
+    --scroll-fade-e: var(--_scroll-fade-size-e, var(--scroll-fade-size, min(12%, calc(var(--space-1) * 10))));
+  }
+  to {
+    --scroll-fade-e: 0px;
+  }
+}
+
+/*
+ * `.scroll-fade` and `.scroll-fade-y` are the same fade (both edges of the
+ * block/vertical axis) under two names — upstream ships them as identical
+ * blocks so `scroll-fade` reads naturally on a plain vertical scroller while
+ * `scroll-fade-y` reads naturally next to an explicit `scroll-fade-x`; one
+ * shared rule here instead of duplicating it.
+ */
+.scroll-fade,
+.scroll-fade-y {
+  --_scroll-fade-size-t: var(--scroll-fade-t-size, var(--scroll-fade-size, min(12%, calc(var(--space-1) * 10))));
+  --_scroll-fade-size-b: var(--scroll-fade-b-size, var(--scroll-fade-size, min(12%, calc(var(--space-1) * 10))));
+  --scroll-fade-block: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--scroll-fade-t, 0px),
+    #000 calc(100% - var(--scroll-fade-b, 0px)),
+    transparent 100%
+  );
+  -webkit-mask-image: var(--scroll-fade-mask, var(--scroll-fade-block));
+  mask-image: var(--scroll-fade-mask, var(--scroll-fade-block));
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+@supports (animation-timeline: scroll()) {
+  .scroll-fade,
+  .scroll-fade-y {
+    animation:
+      scroll-fade-reveal-t 1ms ease-in-out,
+      scroll-fade-reveal-b 1ms ease-in-out;
+    animation-timeline: scroll(self y), scroll(self y);
+    animation-range:
+      0 var(--scroll-fade-reveal, calc(var(--space-1) * 24)),
+      calc(100% - var(--scroll-fade-reveal, calc(var(--space-1) * 24))) 100%;
+    animation-fill-mode: both;
+  }
+}
+
+@supports not (animation-timeline: scroll()) {
+  /*
+   * Static fallback (see the file header on `@property`): without scroll-
+   * driven animations both edges just sit permanently faded at their
+   * resolved size, rather than tracking scroll position.
+   */
+  .scroll-fade,
+  .scroll-fade-y {
+    --scroll-fade-t: var(--_scroll-fade-size-t);
+    --scroll-fade-b: var(--_scroll-fade-size-b);
+  }
+}
+
+.scroll-fade-x {
+  --_scroll-fade-size-s: var(--scroll-fade-s-size, var(--scroll-fade-size, min(12%, calc(var(--space-1) * 10))));
+  --_scroll-fade-size-e: var(--scroll-fade-e-size, var(--scroll-fade-size, min(12%, calc(var(--space-1) * 10))));
+  --scroll-fade-inline: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--scroll-fade-s, 0px),
+    #000 calc(100% - var(--scroll-fade-e, 0px)),
+    transparent 100%
+  );
+  -webkit-mask-image: var(--scroll-fade-mask, var(--scroll-fade-inline));
+  mask-image: var(--scroll-fade-mask, var(--scroll-fade-inline));
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+/* Mirrors the inline gradient so the crisp/faded edges follow reading
+ * direction, same idiom as scroll-fade-s/-e below. */
+.scroll-fade-x:where([dir='rtl'], [dir='rtl'] *) {
+  --scroll-fade-inline: linear-gradient(
+    to left,
+    transparent 0,
+    #000 var(--scroll-fade-s, 0px),
+    #000 calc(100% - var(--scroll-fade-e, 0px)),
+    transparent 100%
+  );
+}
+
+@supports (animation-timeline: scroll()) {
+  .scroll-fade-x {
+    animation:
+      scroll-fade-reveal-s 1ms ease-in-out,
+      scroll-fade-reveal-e 1ms ease-in-out;
+    animation-timeline: scroll(self inline), scroll(self inline);
+    animation-range:
+      0 var(--scroll-fade-reveal, calc(var(--space-1) * 24)),
+      calc(100% - var(--scroll-fade-reveal, calc(var(--space-1) * 24))) 100%;
+    animation-fill-mode: both;
+  }
+}
+
+@supports not (animation-timeline: scroll()) {
+  .scroll-fade-x {
+    --scroll-fade-s: var(--_scroll-fade-size-s);
+    --scroll-fade-e: var(--_scroll-fade-size-e);
+  }
+}
+
+/* Single-edge fades: each tracks only the edge it names, so the opposite
+ * edge stays permanently crisp instead of also fading. */
+
+.scroll-fade-t {
+  --_scroll-fade-size-t: var(--scroll-fade-t-size, var(--scroll-fade-size, min(12%, calc(var(--space-1) * 10))));
+  --scroll-fade-mask: linear-gradient(to bottom, transparent 0, #000 var(--scroll-fade-t, 0px), #000 100%);
+  -webkit-mask-image: var(--scroll-fade-mask);
+  mask-image: var(--scroll-fade-mask);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+@supports (animation-timeline: scroll()) {
+  .scroll-fade-t {
+    animation: scroll-fade-reveal-t 1ms ease-in-out;
+    animation-timeline: scroll(self y);
+    animation-range: 0 var(--scroll-fade-reveal, calc(var(--space-1) * 24));
+    animation-fill-mode: both;
+  }
+}
+
+@supports not (animation-timeline: scroll()) {
+  .scroll-fade-t {
+    --scroll-fade-t: var(--_scroll-fade-size-t);
+  }
+}
+
+.scroll-fade-b {
+  --_scroll-fade-size-b: var(--scroll-fade-b-size, var(--scroll-fade-size, min(12%, calc(var(--space-1) * 10))));
+  --scroll-fade-mask: linear-gradient(
+    to bottom,
+    #000 0,
+    #000 calc(100% - var(--scroll-fade-b, 0px)),
+    transparent 100%
+  );
+  -webkit-mask-image: var(--scroll-fade-mask);
+  mask-image: var(--scroll-fade-mask);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+@supports (animation-timeline: scroll()) {
+  .scroll-fade-b {
+    animation: scroll-fade-reveal-b 1ms ease-in-out;
+    animation-timeline: scroll(self y);
+    animation-range: calc(100% - var(--scroll-fade-reveal, calc(var(--space-1) * 24))) 100%;
+    animation-fill-mode: both;
+  }
+}
+
+@supports not (animation-timeline: scroll()) {
+  .scroll-fade-b {
+    --scroll-fade-b: var(--_scroll-fade-size-b);
+  }
+}
+
+.scroll-fade-l {
+  --_scroll-fade-size-s: var(--scroll-fade-s-size, var(--scroll-fade-size, min(12%, calc(var(--space-1) * 10))));
+  --scroll-fade-mask: linear-gradient(to right, transparent 0, #000 var(--scroll-fade-s, 0px), #000 100%);
+  -webkit-mask-image: var(--scroll-fade-mask);
+  mask-image: var(--scroll-fade-mask);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+@supports (animation-timeline: scroll()) {
+  .scroll-fade-l {
+    animation: scroll-fade-reveal-s 1ms ease-in-out;
+    animation-timeline: scroll(self x);
+    animation-range: 0 var(--scroll-fade-reveal, calc(var(--space-1) * 24));
+    animation-fill-mode: both;
+  }
+}
+
+@supports not (animation-timeline: scroll()) {
+  .scroll-fade-l {
+    --scroll-fade-s: var(--_scroll-fade-size-s);
+  }
+}
+
+.scroll-fade-r {
+  --_scroll-fade-size-e: var(--scroll-fade-e-size, var(--scroll-fade-size, min(12%, calc(var(--space-1) * 10))));
+  --scroll-fade-mask: linear-gradient(
+    to right,
+    #000 0,
+    #000 calc(100% - var(--scroll-fade-e, 0px)),
+    transparent 100%
+  );
+  -webkit-mask-image: var(--scroll-fade-mask);
+  mask-image: var(--scroll-fade-mask);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+@supports (animation-timeline: scroll()) {
+  .scroll-fade-r {
+    animation: scroll-fade-reveal-e 1ms ease-in-out;
+    animation-timeline: scroll(self x);
+    animation-range: calc(100% - var(--scroll-fade-reveal, calc(var(--space-1) * 24))) 100%;
+    animation-fill-mode: both;
+  }
+}
+
+@supports not (animation-timeline: scroll()) {
+  .scroll-fade-r {
+    --scroll-fade-e: var(--_scroll-fade-size-e);
+  }
+}
+
+/* Logical inline edges — mirror in RTL, unlike -l/-r's physical edges. */
+
+.scroll-fade-s {
+  --_scroll-fade-size-s: var(--scroll-fade-s-size, var(--scroll-fade-size, min(12%, calc(var(--space-1) * 10))));
+  --scroll-fade-mask: linear-gradient(to right, transparent 0, #000 var(--scroll-fade-s, 0px), #000 100%);
+  -webkit-mask-image: var(--scroll-fade-mask);
+  mask-image: var(--scroll-fade-mask);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.scroll-fade-s:where([dir='rtl'], [dir='rtl'] *) {
+  --scroll-fade-mask: linear-gradient(to left, transparent 0, #000 var(--scroll-fade-s, 0px), #000 100%);
+}
+
+@supports (animation-timeline: scroll()) {
+  .scroll-fade-s {
+    animation: scroll-fade-reveal-s 1ms ease-in-out;
+    animation-timeline: scroll(self inline);
+    animation-range: 0 var(--scroll-fade-reveal, calc(var(--space-1) * 24));
+    animation-fill-mode: both;
+  }
+}
+
+@supports not (animation-timeline: scroll()) {
+  .scroll-fade-s {
+    --scroll-fade-s: var(--_scroll-fade-size-s);
+  }
+}
+
+.scroll-fade-e {
+  --_scroll-fade-size-e: var(--scroll-fade-e-size, var(--scroll-fade-size, min(12%, calc(var(--space-1) * 10))));
+  --scroll-fade-mask: linear-gradient(
+    to right,
+    #000 0,
+    #000 calc(100% - var(--scroll-fade-e, 0px)),
+    transparent 100%
+  );
+  -webkit-mask-image: var(--scroll-fade-mask);
+  mask-image: var(--scroll-fade-mask);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.scroll-fade-e:where([dir='rtl'], [dir='rtl'] *) {
+  --scroll-fade-mask: linear-gradient(to left, #000 0, #000 calc(100% - var(--scroll-fade-e, 0px)), transparent 100%);
+}
+
+@supports (animation-timeline: scroll()) {
+  .scroll-fade-e {
+    animation: scroll-fade-reveal-e 1ms ease-in-out;
+    animation-timeline: scroll(self inline);
+    animation-range: calc(100% - var(--scroll-fade-reveal, calc(var(--space-1) * 24))) 100%;
+    animation-fill-mode: both;
+  }
+}
+
+@supports not (animation-timeline: scroll()) {
+  .scroll-fade-e {
+    --scroll-fade-e: var(--_scroll-fade-size-e);
+  }
+}
+
+.scroll-fade-none {
+  --scroll-fade-mask: none;
+}
+
+/*
+ * Discrete fade-depth steps, replacing upstream's arbitrary-value
+ * `scroll-fade-<number>` (any integer × Tailwind's --spacing). This kit has
+ * no continuous spacing scale to sample from — only the seven --space-*
+ * steps theme.css defines (1/2/3/4/5/6/8; there is no space-7) — so the
+ * class names below cover exactly those steps and no others. Apply one
+ * alongside a base `scroll-fade*` class to override its default depth
+ * (`min(12%, calc(var(--space-1) * 10))`, ~12% capped near 40px).
+ *
+ * Finer control that doesn't fit a named step — an arbitrary size, a
+ * per-edge override (`--scroll-fade-t-size`/`-b-size`/`-s-size`/`-e-size`),
+ * or the reveal distance (`--scroll-fade-reveal`, 96px by default) — needs
+ * no wrapper class at all: every rule above already reads these through
+ * `var(name, fallback)`, so setting the custom property directly (inline
+ * style, or a one-off rule scoped to the element) IS the override.
+ */
+.scroll-fade-1 {
+  --scroll-fade-size: var(--space-1);
+}
+.scroll-fade-2 {
+  --scroll-fade-size: var(--space-2);
+}
+.scroll-fade-3 {
+  --scroll-fade-size: var(--space-3);
+}
+.scroll-fade-4 {
+  --scroll-fade-size: var(--space-4);
+}
+.scroll-fade-5 {
+  --scroll-fade-size: var(--space-5);
+}
+.scroll-fade-6 {
+  --scroll-fade-size: var(--space-6);
+}
+.scroll-fade-8 {
+  --scroll-fade-size: var(--space-8);
+}
+
+/* ---------------------------------------------------------------------- */
+/* shimmer                                                                */
+/* ---------------------------------------------------------------------- */
+
+/*
+ * --shimmer-angle is typed as an <angle> so the sweep's gradient angle can
+ * be transitioned/read numerically by a consumer; --shimmer-image/-text-fill
+ * are untyped (`syntax: "*"`) because each holds a full property value
+ * (a background-image function, a paint value), not a single number.
+ */
+@property --shimmer-angle {
+  syntax: '<angle>';
+  inherits: true;
+  initial-value: 20deg;
+}
+@property --shimmer-image {
+  syntax: '*';
+  inherits: false;
+}
+@property --shimmer-text-fill {
+  syntax: '*';
+  inherits: false;
+}
+
+/* Renamed from upstream's `tw-shimmer` (a Tailwind-plugin naming artifact,
+ * avoiding a collision with users' own utility classes) — no such
+ * constraint here, so the keyframe takes the plain name instead. */
+@keyframes shimmer-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+.shimmer {
+  --_spread: var(--shimmer-spread, calc(3ch + 40px));
+  --_base: currentColor;
+  --_highlight: var(--shimmer-color, oklch(from currentColor l c h / calc(alpha * 0.2)));
+
+  background-image: var(
+    --shimmer-image,
+    linear-gradient(
+      calc(90deg + var(--shimmer-angle)),
+      var(--_base) calc(50% - var(--_spread)),
+      color-mix(in oklch, var(--_highlight), var(--_base) 50%) calc(50% - var(--_spread) * 0.5),
+      var(--_highlight) 50%,
+      color-mix(in oklch, var(--_highlight), var(--_base) 50%) calc(50% + var(--_spread) * 0.5),
+      var(--_base) calc(50% + var(--_spread))
+    )
+  );
+  background-repeat: no-repeat;
+  background-size: calc(200% + var(--_spread) * 2) 100%;
+  background-position: 0 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: var(--shimmer-text-fill, transparent);
+  animation: shimmer-sweep var(--shimmer-duration, 2s) linear infinite;
+}
+
+/*
+ * Dark mode brightens the highlight instead of just tinting it (a 20%-alpha
+ * mix of currentColor reads too subtly once the surrounding text is
+ * already light) — same explicit-attribute-wins-over-media-query cascade
+ * theme.css's own dark blocks use, so this tracks whichever theme actually
+ * applies rather than only the OS preference.
+ */
+[data-theme='dark'] .shimmer {
+  --_highlight: var(--shimmer-color, oklch(from currentColor max(0.8, calc(l + 0.4)) c h / calc(alpha + 0.4)));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .shimmer {
+    --_highlight: var(--shimmer-color, oklch(from currentColor max(0.8, calc(l + 0.4)) c h / calc(alpha + 0.4)));
+  }
+}
+
+/* The sweep direction is a reading-direction concept (which edge it starts
+ * from), so it mirrors in RTL rather than staying fixed on-screen. */
+.shimmer:where([dir='rtl'], [dir='rtl'] *) {
+  animation-direction: reverse;
+}
+
+.shimmer-once {
+  animation-iteration-count: 1;
+}
+
+.shimmer-reverse {
+  animation-direction: reverse;
+}
+
+.shimmer-none {
+  --shimmer-image: none;
+  --shimmer-text-fill: currentColor;
+}
+
+/*
+ * Upstream's `shimmer-color-*`/`-duration-*`/`-spread-*`/`-angle-*` compile
+ * one arbitrary-value utility per call site (a Tailwind build feature this
+ * plain stylesheet has no equivalent for). None need a wrapper class here:
+ * `.shimmer` above already reads every one of these through `var(name,
+ * fallback)`, so a consumer sets the custom property directly to override
+ * it — inline style, or a one-off rule scoped to the element:
+ *   --shimmer-color     any theme or literal color (mixed toward
+ *                       transparent the same way the default highlight is)
+ *   --shimmer-duration  a <time>, e.g. "3s" — sweep speed
+ *   --shimmer-spread    a <length>, e.g. "var(--space-6)" — highlight width
+ *   --shimmer-angle     an <angle>, e.g. "45deg" — sweep tilt
+ */
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * The sweep is real motion (a moving gradient), unlike the color-only
+   * crossfades left unguarded elsewhere in the kit (see badge.module.css) —
+   * WCAG 2.3.3 applies, so reduced-motion drops the animation and the
+   * gradient entirely, leaving the text painted in its ordinary color
+   * rather than stuck on a static (and illegible) mid-sweep frame.
+   */
+  .shimmer {
+    animation: none;
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}

@@ -26,7 +26,7 @@ export const Popup: React.FC<PopupProps> = ({ children }) => {
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-[color-mix(in_oklab,var(--background)_80%,transparent)] backdrop-blur-sm" />
 
       {/* Dialog - z-index is calculated as 1000 + stack depth * 10 */}
       <div className="relative z-[1001] w-full max-w-lg rounded-lg border border-border bg-background p-6 shadow-lg">

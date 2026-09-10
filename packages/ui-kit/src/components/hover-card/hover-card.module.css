@@ -1,0 +1,96 @@
+/*
+ * HoverCard styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ */
+
+.positioner {
+  isolation: isolate;
+  z-index: 50;
+}
+
+.popup {
+  /*
+   * Substitutes for the preflight the kit lacks — same acute case as
+   * dialog.module.css/tooltip.module.css/popover.module.css's `.popup`.
+   */
+  box-sizing: border-box;
+  position: relative;
+  isolation: isolate;
+  z-index: 50;
+  width: 16rem;
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--popover-border);
+  border-radius: var(--radius-lg);
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  transform-origin: var(--transform-origin);
+  outline: none;
+  /* --popover-shadow: the ring-plus-drop-shadow recipe every card-like
+   * popup in the kit shares (see theme.css) — was hand-duplicated here. */
+  box-shadow: var(--popover-shadow);
+  transition:
+    opacity 100ms ease,
+    transform 100ms ease;
+}
+
+/*
+ * Mixed transition: opacity (a fade, not motion under WCAG 2.3.3 — kept)
+ * and transform (the popup scaling/sliding in and out, which is —
+ * suppressed). Split rather than a blanket `transition: none` so the fade
+ * still plays; the popup just snaps to its final position instead of
+ * animating there.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .popup {
+    transition: opacity 100ms ease;
+  }
+}
+
+/*
+ * Same idiom as popover.module.css: upstream drives this with
+ * `data-open`/`data-closed` plus tw-animate-css's side-scoped
+ * `slide-in-from-*` utilities; the kit keys the same fade+zoom+slide off
+ * Base UI's `data-starting-style`/`data-ending-style` pair instead, for
+ * consistency with dialog/tooltip/dropdown-menu/popover's shared idiom,
+ * applied symmetrically to open and close. `--space-2` (0.5rem) matches
+ * upstream's `slide-in-from-*-2` distance exactly.
+ */
+.popup[data-starting-style],
+.popup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+.popup[data-starting-style][data-side='bottom'],
+.popup[data-ending-style][data-side='bottom'] {
+  transform: scale(0.95) translateY(calc(var(--space-2) * -1));
+}
+
+.popup[data-starting-style][data-side='top'],
+.popup[data-ending-style][data-side='top'] {
+  transform: scale(0.95) translateY(var(--space-2));
+}
+
+.popup[data-starting-style][data-side='left'],
+.popup[data-ending-style][data-side='left'],
+.popup[data-starting-style][data-side='inline-start'],
+.popup[data-ending-style][data-side='inline-start'] {
+  transform: scale(0.95) translateX(var(--space-2));
+}
+
+.popup[data-starting-style][data-side='right'],
+.popup[data-ending-style][data-side='right'],
+.popup[data-starting-style][data-side='inline-end'],
+.popup[data-ending-style][data-side='inline-end'] {
+  transform: scale(0.95) translateX(calc(var(--space-2) * -1));
+}
+
+/*
+ * Base UI sets `data-instant` on the popup when an open/close change must
+ * not animate (dismiss/focus-change) — same contract as tooltip/popover.
+ */
+.popup[data-instant] {
+  transition: none;
+}

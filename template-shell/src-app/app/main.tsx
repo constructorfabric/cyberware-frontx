@@ -1,10 +1,13 @@
 /// <reference types="vite/client" />
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { FrontXProvider, apiRegistry, createFrontXApp, MfeHandlerMF, gtsPlugin, FRONTX_MFE_ENTRY_MF, themeSchema, languageSchema, extensionScreenSchema } from '@gears-frontx/react';
+import { FrontXProvider, apiRegistry, createFrontXApp, MfeHandlerMF, gtsPlugin, FRONTX_MFE_ENTRY_MF } from '@gears-frontx/react';
+import { themeSchema, languageSchema, extensionScreenSchema } from '@gears-frontx/frontx-template-shell';
 import { Toaster } from '@/app/components/ui/sonner';
 import { AccountsApiService } from '@/app/api';
+import '@gears-frontx/ui-kit/theme.css'; // UI-kit design tokens (imported exactly once, at the app entry)
 import './globals.css'; // Global styles with CSS variables
+import '@gears-frontx/ui-kit'; // side-effect: puts ui-kit component CSS in the host document, where MFE shadow roots adopt it (ThemeAwareReactLifecycle). Must come after globals.css so component rules beat Tailwind's preflight resets on specificity ties.
 import '@/app/events/bootstrapEvents'; // Register app-level events (type augmentation)
 import { registerBootstrapEffects } from '@/app/effects/bootstrapEffects'; // Register app-level effects
 import App from './App';
@@ -74,3 +77,29 @@ createRoot(document.getElementById('root')!).render(
     </FrontXProvider>
   </StrictMode>
 );
+
+// Dev-only verification hooks. The shell defines only the convention: any
+// installed verify package (src-app/verify_packages/*, delivered by
+// templates) may ship src/dev-entry.ts — a side-effect module — and the
+// shell loads every one it finds in dev. Which checks arrive, if any, is the
+// installing template's business; the shell names no template and no
+// package. import.meta.glob (not a bare import) because the packages are
+// optional: the glob resolves to an empty map when the subtree is absent,
+// and a bare specifier would never resolve anyway — native import() rejects
+// bare specifiers even when the package is installed. Behind DEV so the
+// entries and their dependencies are tree-shaken out of production builds.
+// The two console lines keep "none installed" and "installed but broken"
+// distinguishable for verification tooling that reads the console.
+if (import.meta.env.DEV) {
+  const devEntries = import.meta.glob('../verify_packages/*/src/dev-entry.ts');
+  const entries = Object.entries(devEntries);
+  if (entries.length === 0) {
+    console.info('[verify-packages] none installed — no dev-time verification will run.');
+  } else {
+    for (const [entryPath, loadEntry] of entries) {
+      loadEntry().catch((error: unknown) => {
+        console.error(`[verify-packages] ${entryPath} is installed but failed to load:`, error);
+      });
+    }
+  }
+}

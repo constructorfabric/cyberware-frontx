@@ -117,6 +117,19 @@ export default [
     },
   },
 
+  // Kit-shipped scripts: node programs installed as kit resources rather than
+  // compiled from this repo's TypeScript. The L0 block above is scoped to
+  // .ts/.tsx, so without this block every `fetch`, `process` and `console` in
+  // them is a `no-undef` error against globals node actually provides.
+  {
+    files: ['packages/**/skills/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
+  },
+
   // React hooks
   {
     files: ['**/*.{ts,tsx}'],
@@ -141,6 +154,7 @@ export default [
       '.agents/**', // Agent infrastructure (gitignored)
       'template-shell/**', // Self-contained template; ships its own eslint.config.js
       'template-mfe/**', // MFE content extracted from template-shell (issue #470); linted as part of the assembled shell+mfe tree, not from this ecosystem root
+      'template-design-guardrails/**', // Manifest-only template; its verify package ships a lint fragment the shell consumes, linted as part of the assembled shell+overlay tree, not from this ecosystem root
     ],
   },
 
@@ -164,7 +178,7 @@ export default [
                 'PACKAGE VIOLATION: Use relative imports within packages. @/ aliases are only for app code (src/).',
             },
             {
-              group: ['@tanstack/*'],
+              group: ['@tanstack/*', '!@tanstack/react-table'],
               message:
                 'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine. The routing-tanstack block below re-enables this import for its own files.',
             },
@@ -192,7 +206,7 @@ export default [
                 'SDK VIOLATION: @gears-frontx/mfes is the SDK foundation and cannot import other @gears-frontx packages.',
             },
             {
-              group: ['@tanstack/*'],
+              group: ['@tanstack/*', '!@tanstack/react-table'],
               message:
                 'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine.',
             },
@@ -238,7 +252,7 @@ export default [
                 'SDK VIOLATION: SDK packages cannot import other @gears-frontx packages (except @gears-frontx/mfes).',
             },
             {
-              group: ['@tanstack/*'],
+              group: ['@tanstack/*', '!@tanstack/react-table'],
               message:
                 'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine.',
             },
@@ -280,7 +294,7 @@ export default [
                 'SDK VIOLATION: @gears-frontx/telemetry holds no intra-ecosystem package dependency.',
             },
             {
-              group: ['@tanstack/*'],
+              group: ['@tanstack/*', '!@tanstack/react-table'],
               message:
                 'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine.',
             },
@@ -324,7 +338,7 @@ export default [
                 'SDK VIOLATION: @gears-frontx/routing holds no intra-ecosystem package dependency.',
             },
             {
-              group: ['@tanstack/*'],
+              group: ['@tanstack/*', '!@tanstack/react-table'],
               message:
                 'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine.',
             },
@@ -405,6 +419,13 @@ export default [
   // @gears-frontx/ui-kit: a React component library — React is its raison d'etre, so the
   // SDK no-React rule does not apply. Boundary: no intra-ecosystem edge, no reach into
   // template territory, package-root imports only.
+  //
+  // `!@tanstack/react-table` carves the data-table component's headless table
+  // library out of the router-engine ban below: `@tanstack/*` is not itself a
+  // router engine, it is the npm scope TanStack publishes several unrelated
+  // libraries under, and `cpt-frontx-constraint-routing-tanstack-sole-engine-import`
+  // only reserves "a concrete router engine or its packages" for
+  // @gears-frontx/routing-tanstack — react-table is neither.
   {
     files: ['packages/ui-kit/**/*.ts', 'packages/ui-kit/**/*.tsx'],
     rules: {
@@ -419,7 +440,7 @@ export default [
                 'ECOSYSTEM VIOLATION: @gears-frontx/ui-kit holds no intra-ecosystem package dependency.',
             },
             {
-              group: ['@tanstack/*'],
+              group: ['@tanstack/*', '!@tanstack/react-table'],
               message:
                 'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine.',
             },
@@ -463,7 +484,7 @@ export default [
                 'PACKAGE VIOLATION: Use relative imports within packages.',
             },
             {
-              group: ['@tanstack/*'],
+              group: ['@tanstack/*', '!@tanstack/react-table'],
               message:
                 'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine.',
             },

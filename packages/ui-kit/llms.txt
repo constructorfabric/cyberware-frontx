@@ -4,13 +4,26 @@
 > Base UI primitives, styling is compiled CSS on semantic design tokens,
 > variants via cva-driven props — `variant` for the paint/kind axis and
 > `size` for the scale one, plus the occasional extra axis where a component
-> genuinely has one (Badge's `shape`, Table's `density`). Consumers need no
-> CSS framework or build plugins.
+> genuinely has one (Table's `density`, AvatarFallback/AvatarGroupCount's
+> `tone`). Consumers need no CSS framework
+> or build plugins.
 
 Rules for generated code:
 
 - Import the design tokens exactly once at the app entry:
   `import '@gears-frontx/ui-kit/theme.css';`
+- Two more global stylesheets ship alongside it, each imported at the app
+  entry only when needed — neither is pulled in by any component's own CSS
+  chunk, so a missing import fails silently:
+  `import '@gears-frontx/ui-kit/utilities.css';` supplies the `shimmer`,
+  `scroll-fade-x` and `no-scrollbar` classes. Attachment DEPENDS on it
+  (`AttachmentTitle` shimmers while uploading, `AttachmentGroup` scrolls
+  its row with the other two) and Marker pairs with `shimmer` for
+  streaming text — without it those components render, minus the effect.
+  `import '@gears-frontx/ui-kit/typeset.css';` styles rendered markdown/
+  HTML the app does not author (chat messages, docs, CMS content): wrap it
+  in `<div class="typeset">`, optionally with a rhythm preset — see
+  [Typeset](dist/docs/typeset.md).
 - Import components from the package root: `import { Button } from '@gears-frontx/ui-kit';`
   Each component ships its own CSS, pulled in automatically by importing the
   component — there is no separate stylesheet import for component styles.
@@ -19,12 +32,20 @@ Rules for generated code:
   tree-shakes unused components' JS from a root import already, but only
   drops their CSS from a subpath import — Vite and webpack drop both either
   way, so this only matters when esbuild is the actual bundler running.
-- In an RSC framework (Next.js App Router), every component EXCEPT Badge,
-  DropdownMenu, and Toast is safe to import and render directly from a
-  Server Component — no wrapping client-boundary module needed. Those three
-  ship their own `'use client'` banner (each calls a hook — `useRender`,
-  `useContext`, `useToastManager` — directly in its own render body) and so
-  always render on the client, wherever they're imported from.
+- Icons are `lucide-react` components, imported directly at the use site
+  (`import { ChevronDownIcon } from 'lucide-react';`). The kit depends on
+  `lucide-react` itself, so it resolves without a separate install, and it is
+  also what to pass into any `icon` slot prop. Kit CSS sizes icons through
+  each part's own `svg` rule, so a plain `<SomeIcon />` picks up the right
+  size; pass `className`/`size` only to override it.
+- In an RSC framework (Next.js App Router), a component is safe to import
+  and render directly from a Server Component — no wrapping
+  client-boundary module needed — unless it appears in the next line. The
+  kit components that carry a `'use client'` banner of their own:
+  Attachment, Badge, Breadcrumb, Bubble, ButtonGroup, Carousel, Chart,
+  Combobox, ContextMenu, DataTable, Drawer, DropdownMenu, Marker, Sidebar,
+  Toast. Each calls a hook directly in its own render body, so it always
+  renders on the client, wherever it is imported from.
 - The kit paints the page itself from its tokens and sets `color-scheme`: with
   no `data-theme` attribute anywhere, `prefers-color-scheme: dark` alone
   yields a correct, legible dark page (background, text, and UA-owned
@@ -61,14 +82,63 @@ Rules for generated code:
 
 ## Components
 
-- [Badge](dist/docs/badge.md): status label, an intent-colored caption with
-  an opt-in status dot (`dot`) or a leading `icon` slot prop (icon wins
-  when both are given; default is neither); variants
-  success|warning|info|danger|muted (semantic states ONLY — pick by meaning,
-  never by color; neutral/count/category = muted), shapes pill|plain (pill
-  adds a soft fill; plain is the bare label for dense/inline spots); no
-  Base UI primitive; `render` (e.g. `<a>`) makes it a clickable tag — hover
-  feedback only appears once it is.
+- [Accordion](dist/docs/accordion.md): vertically stacked headers that
+  expand to reveal content (Accordion/AccordionItem/AccordionTrigger/
+  AccordionContent); wraps Base UI Accordion; single-item expansion by
+  default, `multiple` allows more than one open; height-animated panel.
+- [Alert](dist/docs/alert.md): page-level banner callout
+  (Alert/AlertTitle/AlertDescription/AlertAction); variant
+  default|destructive; no Base UI primitive, `role="alert"`; a leading
+  `<svg>` child switches to a two-column icon layout, detected
+  structurally.
+- [AlertDialog](dist/docs/alert-dialog.md): modal confirmation the user
+  must explicitly acknowledge (AlertDialog/AlertDialogTrigger/
+  AlertDialogContent/AlertDialogHeader/AlertDialogFooter/
+  AlertDialogAction/AlertDialogCancel); unlike `Dialog`, never closes on
+  outside press; `AlertDialogContent` size default|sm (sm stacks the two
+  actions into columns).
+- [AspectRatio](dist/docs/aspect-ratio.md): constrains a child to a fixed
+  width/height ratio via CSS `aspect-ratio`; `ratio` prop only, no Base UI
+  primitive, no variants; reserves the box, does not crop its content.
+- [Attachment](dist/docs/attachment.md): file/image attachment card for
+  chat composers and message threads (Attachment/AttachmentMedia/
+  AttachmentContent/AttachmentActions/AttachmentTrigger, AttachmentGroup);
+  upload-state axis drives the `shimmer` utility automatically via
+  context; no Base UI primitive.
+- [Avatar](dist/docs/avatar.md): profile picture with a loading fallback
+  (Avatar/AvatarImage/AvatarFallback/AvatarBadge, AvatarGroup+
+  AvatarGroupCount); sizes sm|default|lg; wraps the Base UI Avatar
+  primitive for image/fallback timing. AvatarFallback and AvatarGroupCount
+  share one fill matrix — `tone` neutral|accent|info|success|warning|danger
+  crossed with `variant` solid|soft (default neutral/soft, matching
+  upstream's single look byte for byte) — so a "+N" chip can match the toned
+  members it caps; `tone` is identity styling (derive it from who the
+  avatar is, e.g. a hash of the user id), never a live state — use
+  `AvatarBadge` for that. AvatarGroupCount takes no `size`; it reads its
+  size off its sibling Avatars' `size` within the same AvatarGroup.
+- [Badge](dist/docs/badge.md): compact inline label; variants
+  default|secondary|destructive|outline|ghost|link|success|warning|danger|info|accent
+  (paint only — no semantic-state axis), two groups on one axis: six
+  upstream paints (same names/meaning as Button's) plus five tones — a
+  soft tinted fill with the tone's own color as the label (`secondary`
+  doubles as the tone row's Neutral, so there is no separate `neutral`
+  name); a tone still paints, it does not track state — don't let color
+  alone carry the meaning, keep the label text itself explicit; no Base
+  UI primitive, but gets `render`-prop polymorphism via
+  `useRender`/`mergeProps` (e.g. `<a>`) for a badge that is actually a
+  link.
+- [Breadcrumb](dist/docs/breadcrumb.md): ancestor trail ending in the
+  current page (Breadcrumb/BreadcrumbList/BreadcrumbItem/BreadcrumbLink/
+  BreadcrumbPage/BreadcrumbSeparator/BreadcrumbEllipsis); no Base UI
+  primitive; `BreadcrumbLink` gets `render`-prop polymorphism for routing
+  through a consumer's own link component.
+- [Bubble](dist/docs/bubble.md): framed chat-message surface
+  (Bubble/BubbleContent/BubbleReactions, BubbleGroup); variants
+  default|secondary|muted|tinted|outline|ghost|destructive; `align`
+  start|end both positions the bubble and squares its speaker-side top
+  corner (the shape cue that separates a message from a button; `ghost`
+  has no frame and no notch); scoped to the message surface only — pair
+  with `Message` for the full row.
 - [Button](dist/docs/button.md): action button; variants
   default|destructive|outline|secondary|ghost|link, sizes default|sm|lg; a
   consumer className can recolor a button in every state via
@@ -77,41 +147,184 @@ Rules for generated code:
   prop, NEVER in children — `icon` with no children makes a square
   icon-only button (always pass `aria-label` then); `loading` spins,
   disables, and keeps the width and accessible name; render prop for
-  button-semantic actions over a real anchor (not a link substitute).
+  button-semantic actions over a real anchor (not a link substitute);
+  `buttonVariants` is exported for styling other elements to match.
+- [ButtonGroup](dist/docs/button-group.md): visually joins a row/column of
+  controls into one strip (ButtonGroup/ButtonGroupText/
+  ButtonGroupSeparator); orientation horizontal|vertical; works on any
+  direct child, not just buttons.
+- [Calendar](dist/docs/calendar.md): month grid for picking a day or
+  range, wrapping react-day-picker; every `DayPicker` prop passes through;
+  `captionLayout` label|dropdown|dropdown-months|dropdown-years;
+  `DatePicker` composes this behind a trigger.
 - [Card](dist/docs/card.md): bounded content surface (Card/CardHeader/
   CardTitle/CardDescription/CardAction/CardContent/CardFooter); header
   becomes a two-column/two-row grid automatically when it contains a
   CardAction/CardDescription; sizes default|sm.
+- [Carousel](dist/docs/carousel.md): embla-carousel-react scroll-snapping
+  slide track (Carousel/CarouselContent/CarouselItem/CarouselPrevious/
+  CarouselNext); orientation horizontal|vertical; `useCarousel()` exported
+  for custom controls; no Base UI primitive.
+- [Chart](dist/docs/chart.md): themeable Recharts wrapper
+  (ChartContainer/ChartTooltip+ChartTooltipContent/ChartLegend+
+  ChartLegendContent); draws no chart type itself — series colors come
+  from a per-instance `ChartConfig`, not `--chart-*` tokens; no
+  variant/size axis.
 - [Checkbox](dist/docs/checkbox.md): on/off tick box for independent
   options; `checked`/`onCheckedChange`; nest inside Label for one click
   target.
+- [Collapsible](dist/docs/collapsible.md): single expandable/collapsible
+  section (Collapsible/CollapsibleTrigger/CollapsibleContent); no
+  variants; unmounts while closed unless `keepMounted`; height-animates
+  via Base UI's measured panel height.
+- [Combobox](dist/docs/combobox.md): filterable text field picking from a
+  list, wrapping Base UI's dedicated Combobox primitive (not a
+  Popover+search composition); single-select (ComboboxInput) or
+  multi-select chips (ComboboxChips+ComboboxChip); always pass `items`.
+- [Command](dist/docs/command.md): searchable, keyboard-navigable
+  command/option list built on `cmdk` (Command/CommandInput/CommandList/
+  CommandGroup/CommandItem/CommandSeparator); `CommandDialog` composes the
+  kit's own `Dialog`, not cmdk's bundled dialog.
+- [ContextMenu](dist/docs/context-menu.md): right-click/long-press action
+  menu (ContextMenu/ContextMenuTrigger/ContextMenuContent + the same
+  item/checkbox/radio/submenu parts as DropdownMenu); always modal, no
+  hover-open; opens at the pointer position.
+- [DataTable](dist/docs/data-table.md): sortable, paginated, optionally
+  row-selectable table built on `Table` + `@tanstack/react-table` v9;
+  productizes upstream's data-table *guide* into a real component
+  (`dataTableColumnHelper`, `dataTableSelectionColumn`,
+  `DataTableSortButton`); no filtering/column-visibility/
+  virtualization/resizing.
+- [DatePicker](dist/docs/date-picker.md): field that opens a `Calendar` in
+  a `Popover` to pick a day or range; productizes upstream's
+  Popover+Calendar *recipe* into one component; mode single|range,
+  variant button|input (single mode only).
 - [Dialog](dist/docs/dialog.md): modal overlay for a focused task or
   confirmation (Dialog/DialogTrigger/DialogContent/DialogHeader/
   DialogFooter/DialogTitle/DialogDescription/DialogClose); traps focus,
   closes on Escape/outside click; `DialogContent` takes `container` and
   `showCloseButton`.
+- [Direction](dist/docs/direction.md): thin re-export of Base UI's
+  `DirectionProvider`/`useDirection`; no styling, no DOM element of its
+  own; shares a reading direction (`ltr`|`rtl`) with every RTL-aware Base
+  UI-backed kit component below it.
+- [Drawer](dist/docs/drawer.md): edge-anchored panel dismissible by swipe
+  gesture, wrapping Base UI's dedicated Drawer primitive (Drawer/
+  DrawerTrigger/DrawerContent/DrawerHeader/DrawerFooter, optional
+  DrawerSwipeHandle); `side` top|right|bottom|left; supports nested
+  drawers and snap points.
 - [DropdownMenu](dist/docs/dropdown-menu.md): actions/options anchored to
   a trigger (DropdownMenu/DropdownMenuTrigger/DropdownMenuContent/
   DropdownMenuItem/DropdownMenuCheckboxItem/DropdownMenuRadioGroup+
   DropdownMenuRadioItem/DropdownMenuSeparator/DropdownMenuShortcut/
   DropdownMenuSub+DropdownMenuSubTrigger+DropdownMenuSubContent); item
   variants default|destructive; `DropdownMenuContent` takes `container`.
-- [Field](dist/docs/field.md): labelled form field composition
-  (Field/FieldLabel/FieldDescription/FieldError); wires ids, htmlFor,
-  aria-describedby, and validation display automatically — the default
-  way to build forms.
+- [Empty](dist/docs/empty.md): placeholder for a list/table/panel with
+  nothing to show (Empty/EmptyHeader/EmptyMedia/EmptyTitle/
+  EmptyDescription/EmptyContent); no Base UI primitive; `EmptyMedia`
+  variant default|icon.
+- [Field](dist/docs/field.md): primitive-free form-layout system
+  (Field/FieldLabel/FieldDescription/FieldError/FieldGroup/FieldSet/
+  FieldLegend/FieldSeparator/FieldContent/FieldTitle); Field's `orientation`
+  is vertical|horizontal|responsive (responsive switches to horizontal at
+  the `@container/field-group` mid breakpoint — wrap fields in
+  `FieldGroup`); FieldLegend's `variant` is legend|label; no automatic id/
+  htmlFor/aria-describedby wiring — wire `FieldLabel`'s `htmlFor` to the
+  control's `id` yourself, same as upstream shadcn; `data-invalid`/
+  `data-disabled` are plain attributes you set, not derived state.
+- [HoverCard](dist/docs/hover-card.md): portalled preview panel opened on
+  hover/focus (HoverCard/HoverCardTrigger/HoverCardContent), wrapping Base
+  UI's PreviewCard primitives under the shadcn `hover-card` name; `delay`
+  measures hover intent, not entry.
 - [Input](dist/docs/input.md): single-line text field; `onValueChange`
   for the string value, `aria-invalid` for the error state; `icon` for a
   leading decorative icon, `end` for trailing interactive content (e.g. a
   clear button; rendered after the input, so tab order is field → slot) —
   neither renders automatically; `type="search"` gives the searchbox role
-  but no icon by itself — pass one via `icon`; wires into Field
-  automatically.
+  but no icon by itself — pass one via `icon`; inside `Field`, wire
+  `id`/`aria-describedby` by hand like every other control.
+- [InputGroup](dist/docs/input-group.md): composes Input/Textarea with
+  icon/text/button addons into one visually unified field (InputGroup/
+  InputGroupAddon/InputGroupButton/InputGroupText/InputGroupInput/
+  InputGroupTextarea); the group draws the border/focus/error ring, the
+  wrapped control draws none of its own — focus is keyed to the control's
+  `:focus-visible` (not any focus-within), error is `aria-invalid` on the
+  control, and disabled is scoped to the field: a disabled
+  `InputGroupButton` inside an addon dims only itself, not the group;
+  `InputGroupAddon`'s `align` is inline-start|inline-end|block-start|
+  block-end, composable on both axes at once; `InputGroupButton` size is
+  xs|sm (default xs).
+- [InputOtp](dist/docs/input-otp.md): one-time-passcode entry with paste/
+  auto-advance/completion built in, on Base UI's OTPField primitive
+  (InputOtp/InputOtpGroup/InputOtpSlot/InputOtpSeparator); `length`
+  required; `validationType` numeric|alphanumeric|...; `mask` for
+  password-style entry.
+- [Item](dist/docs/item.md): a single row in a list of similar things
+  (ItemGroup/Item/ItemMedia/ItemContent/ItemTitle/ItemDescription/
+  ItemActions/ItemHeader/ItemFooter); `Item`'s `render` prop makes the
+  whole row a link; variant default|outline|muted, size default|sm|xs.
+- [Kbd](dist/docs/kbd.md): visual keyboard-key/shortcut representation
+  (Kbd, KbdGroup); plain `<kbd>`, no interactive or ARIA behavior —
+  decoration only.
 - [Label](dist/docs/label.md): caption for a form control; native
   `<label>` props; associate via `htmlFor` or by nesting the control.
+- [Marker](dist/docs/marker.md): inline conversation marker for status
+  updates, system notes, and labeled separators (Marker/MarkerContent/
+  MarkerIcon); variants incl. border|separator; pairs with the `shimmer`
+  utility class for a streaming-text effect (opt-in, not automatic).
+- [Menubar](dist/docs/menubar.md): horizontal row of menus like a desktop
+  app's File/Edit/View bar (Menubar/MenubarMenu/MenubarTrigger + the same
+  content parts as DropdownMenu); Base UI coordinates keyboard/hover
+  switching between sibling menus.
+- [Message](dist/docs/message.md): a conversation row owning avatar/
+  alignment/header/footer layout (Message/MessageAvatar/MessageContent/
+  MessageHeader/MessageFooter, MessageGroup); no Base UI primitive;
+  render the visible surface inside it with `Bubble`.
+- [MessageScroller](dist/docs/message-scroller.md): chat-transcript
+  scroller with auto-follow-to-newest and a jump-back button
+  (MessageScrollerProvider/MessageScroller/MessageScrollerViewport/
+  MessageScrollerContent/MessageScrollerItem/MessageScrollerButton);
+  behavior from `@shadcn/react/message-scroller` (approved non-Base-UI
+  dependency), kit supplies styling only.
+- [NativeSelect](dist/docs/native-select.md): a real `<select>` styled to
+  match the kit's field chrome (NativeSelect/NativeSelectOption/
+  NativeSelectOptGroup); no Base UI primitive; for platform-native
+  pickers or no-JS/SSR fallback contexts.
+- [NavigationMenu](dist/docs/navigation-menu.md): horizontal nav bar whose
+  items expand into a rich dropdown panel (NavigationMenu/
+  NavigationMenuList/NavigationMenuItem/NavigationMenuTrigger/
+  NavigationMenuContent/NavigationMenuLink); one shared popup/Viewport
+  morphs to each active item's measured size.
+- [Pagination](dist/docs/pagination.md): page-number navigation from real
+  anchors, styled through Button's own variant classes (Pagination/
+  PaginationContent/PaginationItem/PaginationLink/PaginationPrevious/
+  PaginationNext/PaginationEllipsis); `PaginationLink`'s `isActive`
+  switches outline/ghost and sets `aria-current`.
+- [Popover](dist/docs/popover.md): portalled panel anchored to a trigger,
+  opened by click by default (Popover/PopoverTrigger/PopoverContent/
+  PopoverHeader/PopoverTitle/PopoverDescription); non-modal by default —
+  no focus trap, no backdrop; `PopoverTrigger`'s `openOnHover` opts into
+  hover-open.
+- [Progress](dist/docs/progress.md): completion bar (Progress/
+  ProgressTrack/ProgressIndicator/ProgressLabel/ProgressValue); `value`
+  required, `null` for indeterminate; reports `role="progressbar"` with
+  `aria-valuenow`/min/max.
+- [Questionnaire](dist/docs/questionnaire.md): single-item-at-a-time
+  multi-step form with progress/required/skip/invalid state
+  (Questionnaire/QuestionnaireItem/QuestionnaireChoices+
+  QuestionnaireChoice/QuestionnaireInput/QuestionnaireActions); behavior
+  from `@shadcn/react/questionnaire` (approved non-Base-UI dependency).
 - [RadioGroup](dist/docs/radio-group.md): mutually exclusive options
   (RadioGroup + RadioGroupItem); `value`/`onValueChange` on the group;
   arrow-key navigation built in.
+- [Resizable](dist/docs/resizable.md): react-resizable-panels wrapper for
+  user-draggable split panes (ResizablePanelGroup/ResizablePanel/
+  ResizableHandle); no Base UI primitive; nest groups for IDE-style
+  multi-pane layouts.
+- [ScrollArea](dist/docs/scroll-area.md): custom-styled scrollable
+  container replacing the browser's native scrollbar (ScrollArea,
+  ScrollBar); wraps Base UI ScrollArea for scroll physics/overflow
+  detection/thumb drag; no variants; not for the page's own root scroll.
 - [Select](dist/docs/select.md): dropdown picking one value from a
   list (Select/SelectTrigger/SelectValue/SelectContent/SelectGroup/
   SelectItem); trigger sizes default|sm, trigger variants default|filter
@@ -124,11 +337,27 @@ Rules for generated code:
   `decorative` prop — pass `aria-hidden="true"` for a purely visual
   divider; not for use inside DropdownMenu/Select popups, which have their
   own separator styling; no portal.
+- [Sheet](dist/docs/sheet.md): edge-anchored panel for a focused task/form
+  without leaving the page (Sheet/SheetTrigger/SheetContent/SheetHeader/
+  SheetFooter/SheetTitle/SheetDescription); wraps the same Base UI Dialog
+  primitives as `Dialog`; `side` top|right|bottom|left; modal by default.
+- [Sidebar](dist/docs/sidebar.md): composable app-shell sidebar with an
+  expand/collapse state machine (SidebarProvider+useSidebar plus ~20
+  layout parts); persists desktop open state in a cookie, toggles on
+  Cmd/Ctrl+B, switches to a slide-in `Sheet` on mobile; built entirely
+  from other kit parts.
 - [Skeleton](dist/docs/skeleton.md): pulsing placeholder shape shown while
   content loads; no Base UI primitive, no variants — size it yourself via
   `className`/`style`; no ARIA of its own, put `role="status"`/`aria-busy`
   on the surrounding container; pulse animation is removed under
   `prefers-reduced-motion: reduce`; no portal.
+- [Slider](dist/docs/slider.md): draggable control for a number or range
+  from a bounded scale (pointer drag/click-on-track/arrow-keys); `value`/
+  `defaultValue`'s length determines the number of rendered thumbs;
+  orientation horizontal|vertical.
+- [Spinner](dist/docs/spinner.md): CSS-spun lucide `loader-circle`;
+  no Base UI primitive, no variants; use `Button`'s own `loading` prop
+  inside a button instead of nesting this.
 - [Switch](dist/docs/switch.md): immediate on/off toggle;
   `checked`/`onCheckedChange`, sizes default|sm; use checkbox for
   submit-time options.
@@ -144,7 +373,8 @@ Rules for generated code:
   space (Tabs/TabsList/TabsTrigger/TabsContent); list variants
   default|line; orientation horizontal|vertical (default horizontal);
   inactive panels unmount unless `keepMounted`; no portal.
-- [Textarea](dist/docs/textarea.md): multi-line text field; native
+- [Textarea](dist/docs/textarea.md): multi-line text field; a plain styled
+  native `<textarea>` — no primitive, no Field auto-wiring; native
   `<textarea>` props; grows with content; `aria-invalid` for the error
   state.
 - [Toast](dist/docs/toast.md): brief transient notification stacked
@@ -152,11 +382,25 @@ Rules for generated code:
   JSX; mount `Toaster` once; type-driven icon
   success|info|warning|error|loading, optional action button; `Toaster`
   takes `container`.
+- [Toggle](dist/docs/toggle.md): two-state on/off button (`pressed`/
+  `defaultPressed`/`onPressedChange`); variant default|outline, size
+  default|sm|lg; standalone or as an item inside `ToggleGroup`.
+- [ToggleGroup](dist/docs/toggle-group.md): a set of related toggle
+  buttons sharing pressed state (ToggleGroup/ToggleGroupItem); single- or
+  multiple-selection via `multiple`, arrow-key navigation between items;
+  item-level variant/size fall back to the group's.
 - [Tooltip](dist/docs/tooltip.md): visual-only hint on hover/focus of a
   trigger (Tooltip/TooltipTrigger/TooltipContent); optional
   `TooltipProvider` shares delay/grouping across many tooltips;
   `TooltipContent` takes `container`; disabled on touch devices — never
   the only carrier of essential information.
+
+## Stylesheets
+
+- [Typeset](dist/docs/typeset.md): prose styling for rendered markdown/HTML
+  (`typeset.css`); wrapper class `typeset` plus rhythm presets
+  `typeset-chat|docs|reading|compact|large`, `not-typeset` to opt a subtree
+  out, `typeset-scroll` for one wide block; no component, no JS.
 
 ## Optional
 

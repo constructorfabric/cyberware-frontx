@@ -1,0 +1,87 @@
+/*
+ * Pagination styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ *
+ * PaginationLink reuses button.module.css's own classes via `buttonVariants`
+ * (see pagination.tsx) for color/geometry — this file only adds the parts
+ * upstream's Button doesn't have: the square icon-sized footprint (upstream's
+ * `size="icon"`, which this kit's Button replaced with a derived
+ * `data-icon-only` state — not reachable from outside button.tsx, so
+ * Pagination re-derives the same square geometry independently here) and
+ * the previous/next text's responsive visibility.
+ */
+
+.pagination {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+}
+
+.content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * `.link.square` — two classes on the same <a>, both applied by
+ * pagination.tsx (buttonVariants' `className` param carries both) — is a
+ * (0,2,0)-specificity compound selector, which reliably outranks
+ * button.module.css's own `.sizeDefault`/`.sizeSm`/`.sizeLg` (each (0,1,0))
+ * regardless of which stylesheet a consumer's bundler happens to load
+ * first; specificity, not source order, is what decides the cascade here.
+ * Height stays whatever the reused size class already set — aspect-ratio
+ * derives width from it, so only padding/aspect-ratio need overriding.
+ * Same idiom as button.module.css's own `.button[data-icon-only]`,
+ * independently declared since this file cannot edit that one.
+ */
+.link.square {
+  padding: 0;
+  aspect-ratio: 1;
+}
+
+.previousNextText {
+  /* Hidden below the `sm` breakpoint (640px, Tailwind's default) — matching
+   * upstream's `hidden sm:block` exactly, so a narrow viewport keeps only
+   * the chevron. */
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .previousNextText {
+    display: block;
+  }
+}
+
+.icon {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.ellipsis {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height-md);
+  height: var(--control-height-md);
+}
+
+/*
+ * Visually hidden but still announced — see breadcrumb.module.css's
+ * `.srOnly` for why `clip-path: inset(50%)` replaces the classic
+ * clip:rect()+negative-margin recipe (a literal negative margin would trip
+ * this kit's metric-token guard, tokens.test.ts).
+ */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

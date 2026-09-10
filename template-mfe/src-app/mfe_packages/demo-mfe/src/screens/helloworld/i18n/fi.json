@@ -6,6 +6,7 @@
   "navigation_description": "Napsauta alla olevaa painiketta siirtyäksesi ohjelmallisesti Teema-näkymään.",
   "go_to_theme": "Siirry Teema-näkymään",
   "open_profile_refresh": "Open Profile & Refresh",
+  "mount_widgets_host_and_ping": "Mount Widgets Host + Widget A + Ping (nested)",
   "bridge_info": "Bridge Info",
   "domain_id": "Domain ID:",
   "instance_id": "Instance ID:",

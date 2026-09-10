@@ -1,0 +1,120 @@
+/*
+ * Popover styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ */
+
+.positioner {
+  isolation: isolate;
+  z-index: 50;
+}
+
+.popup {
+  /*
+   * Substitutes for the preflight the kit lacks — same acute case as
+   * dialog.module.css/tooltip.module.css's `.popup` (content-box piles
+   * padding/border on top of the declared width otherwise).
+   */
+  box-sizing: border-box;
+  position: relative;
+  isolation: isolate;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  width: 18rem;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--popover-border);
+  border-radius: var(--radius-md);
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  transform-origin: var(--transform-origin);
+  outline: none;
+  /* --popover-shadow: the ring-plus-drop-shadow recipe every card-like
+   * popup in the kit shares (see theme.css) — was hand-duplicated here. */
+  box-shadow: var(--popover-shadow);
+  transition:
+    opacity 100ms ease,
+    transform 100ms ease;
+}
+
+/*
+ * Mixed transition: opacity (a fade, not motion under WCAG 2.3.3 — kept)
+ * and transform (the popup scaling/sliding in and out, which is —
+ * suppressed). Split rather than a blanket `transition: none` so the fade
+ * still plays; the popup just snaps to its final position instead of
+ * animating there.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .popup {
+    transition: opacity 100ms ease;
+  }
+}
+
+/*
+ * Upstream (tw-animate-css) drives this with `data-open`/`data-closed` plus
+ * side-scoped `slide-in-from-*` utilities; the kit's other overlays
+ * (dialog/tooltip/dropdown-menu) instead key the same fade+zoom off Base
+ * UI's `data-starting-style`/`data-ending-style` pair with a plain CSS
+ * transition — kept here for consistency with that established idiom
+ * rather than introducing a second animation mechanism for one component.
+ * The directional slide is new relative to those siblings (Popover/HoverCard
+ * are the only kit overlays upstream gives a side-aware entrance), applied
+ * symmetrically to both starting and ending style so close mirrors open.
+ * `--space-2` (0.5rem) matches upstream's `slide-in-from-*-2` distance
+ * exactly (2 spacing steps × 0.25rem).
+ */
+.popup[data-starting-style],
+.popup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+.popup[data-starting-style][data-side='bottom'],
+.popup[data-ending-style][data-side='bottom'] {
+  transform: scale(0.95) translateY(calc(var(--space-2) * -1));
+}
+
+.popup[data-starting-style][data-side='top'],
+.popup[data-ending-style][data-side='top'] {
+  transform: scale(0.95) translateY(var(--space-2));
+}
+
+.popup[data-starting-style][data-side='left'],
+.popup[data-ending-style][data-side='left'],
+.popup[data-starting-style][data-side='inline-start'],
+.popup[data-ending-style][data-side='inline-start'] {
+  transform: scale(0.95) translateX(var(--space-2));
+}
+
+.popup[data-starting-style][data-side='right'],
+.popup[data-ending-style][data-side='right'],
+.popup[data-starting-style][data-side='inline-end'],
+.popup[data-ending-style][data-side='inline-end'] {
+  transform: scale(0.95) translateX(calc(var(--space-2) * -1));
+}
+
+/*
+ * Base UI sets `data-instant` on the popup when an open/close change must
+ * not animate (dismiss/focus-change) — same contract as tooltip/dropdown-menu.
+ */
+.popup[data-instant] {
+  transition: none;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Studio/Label — "font-medium" translated to the ramp's medium-weight role,
+ * same idiom as dropdown-menu.module.css's .label. */
+.title {
+  font-weight: var(--text-label-weight);
+}
+
+.description {
+  color: var(--muted-foreground);
+}

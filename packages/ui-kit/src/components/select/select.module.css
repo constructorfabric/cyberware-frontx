@@ -74,7 +74,7 @@
   }
 }
 
-/* 0.42 per the mockups' disabled specimens — see input.module.css. */
+/* disabled opacity: see input.module.css */
 .trigger:disabled {
   cursor: not-allowed;
   opacity: 0.42;
@@ -296,8 +296,7 @@
   color: var(--accent-foreground);
 }
 
-/* 0.42, unified with every other disabled control in the kit — see
- * input.module.css. */
+/* disabled opacity: see input.module.css */
 .item[data-disabled] {
   pointer-events: none;
   opacity: 0.42;

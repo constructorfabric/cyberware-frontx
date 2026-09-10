@@ -19,7 +19,7 @@ import { describe, it, expect } from 'vitest';
 import { GtsPlugin } from '@gears-frontx/gts-plugin';
 import { FRONTX_SHARED_PROPERTY_THEME, FRONTX_SHARED_PROPERTY_LANGUAGE } from '../../../src/mfe/constants';
 import type { JSONSchema } from '@gears-frontx/gts-plugin';
-import { themeSchema, languageSchema, extensionScreenSchema } from '../../../src/gts';
+import { themeSchema, languageSchema, extensionScreenSchema } from '@gears-frontx/frontx-template-shell';
 
 /**
  * Returns the `value` property of a shared_property schema or fails the test

@@ -1,0 +1,112 @@
+/*
+ * Slider styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ *
+ * No absolute-position math here: Base UI's Indicator/Thumb parts write
+ * their own inline width/inset/translate styles at runtime (see
+ * SliderIndicator.js/SliderThumb.js) — this file only supplies the visual
+ * treatment (size, color, border, focus ring) each part paints itself with.
+ */
+
+.root {
+  display: flex;
+}
+
+.root[data-orientation='horizontal'] {
+  width: 100%;
+}
+
+.root[data-orientation='vertical'] {
+  height: 100%;
+}
+
+.control {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  touch-action: none;
+  user-select: none;
+}
+
+.control[data-orientation='vertical'] {
+  height: 100%;
+  width: auto;
+  flex-direction: column;
+}
+
+.control[data-disabled] {
+  opacity: 0.42;
+}
+
+.track {
+  position: relative;
+  flex-grow: 1;
+  overflow: hidden;
+  border-radius: 9999px;
+  background-color: var(--secondary);
+}
+
+.control[data-orientation='horizontal'] .track {
+  height: 0.375rem;
+}
+
+.control[data-orientation='vertical'] .track {
+  width: 0.375rem;
+}
+
+.range {
+  position: relative;
+  background-color: var(--primary);
+}
+
+/* No transition here, matching upstream: the range fill's width/height
+ * is written by Base UI's SliderIndicator on every pointermove during a
+ * drag, in the same frame it writes the thumb's translate. Animating
+ * that geometry (even a short width/height transition) makes the fill
+ * chase the already-moved thumb instead of tracking it 1:1, visibly
+ * lagging behind the drag. Keyboard/click steps are instantaneous value
+ * jumps too (Base UI has no built-in tween for them), so there is no
+ * "snap" this would smooth over — only lag it would introduce. */
+.control[data-orientation='horizontal'] .range {
+  height: 100%;
+}
+
+.control[data-orientation='vertical'] .range {
+  width: 100%;
+}
+
+.thumb {
+  display: block;
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  border: var(--border-width-focus) solid var(--primary);
+  border-radius: 9999px;
+  background-color: var(--surface-elevated);
+  outline: none;
+  transition:
+    box-shadow 150ms ease,
+    border-color 150ms ease;
+}
+
+.thumb:focus-visible {
+  outline: var(--border-width-focus) solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .thumb:focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+.thumb[data-disabled] {
+  pointer-events: none;
+}
+
+/* Declared after :focus-visible so the invalid border wins while focused,
+ * same idiom as checkbox.module.css/radio-group.module.css. */
+.thumb[aria-invalid='true'] {
+  border-color: var(--destructive);
+}

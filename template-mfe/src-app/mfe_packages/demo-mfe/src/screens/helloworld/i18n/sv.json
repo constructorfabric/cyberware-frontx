@@ -6,6 +6,7 @@
   "navigation_description": "Klicka på knappen nedan för att navigera till temaskärmen programmatiskt.",
   "go_to_theme": "Gå till temaskärmen",
   "open_profile_refresh": "Open Profile & Refresh",
+  "mount_widgets_host_and_ping": "Mount Widgets Host + Widget A + Ping (nested)",
   "bridge_info": "Bridge Info",
   "domain_id": "Domain ID:",
   "instance_id": "Instance ID:",

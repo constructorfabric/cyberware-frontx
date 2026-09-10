@@ -1,6 +1,6 @@
 {
   "name": "@gears-frontx/studio",
-  "version": "0.2.0-alpha.0",
+  "version": "0.2.0-alpha.2",
   "description": "FrontX Studio - Development studio overlay for FrontX applications",
   "type": "module",
   "main": "./dist/index.cjs",

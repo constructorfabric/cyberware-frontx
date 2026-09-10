@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { joinWithinRoot } from '@gears-frontx/test-support/path-guard';
 
 // Created with `vi.hoisted` so the handle exists before the mock factory runs.
 // The real module is spread and only `readdir` is replaced, so every case below
@@ -42,7 +43,7 @@ describe('createFsReadTargetDirFn — cpt-frontx-dod-cli-scaffolding-seed-empty-
   it('reports an absent path as undefined, distinguishing it from an empty directory', async () => {
     const readTargetDir = createFsReadTargetDirFn();
 
-    const result = await readTargetDir(path.join(tmpDir(), 'does-not-exist'));
+    const result = await readTargetDir(joinWithinRoot(tmpDir(), 'does-not-exist'));
 
     expect(result).toBeUndefined();
   });
@@ -57,8 +58,8 @@ describe('createFsReadTargetDirFn — cpt-frontx-dod-cli-scaffolding-seed-empty-
 
   it('reports the entry names of a directory that holds content', async () => {
     const dir = tmpDir();
-    fs.writeFileSync(path.join(dir, 'package.json'), '{}');
-    fs.mkdirSync(path.join(dir, 'src'));
+    fs.writeFileSync(joinWithinRoot(dir, 'package.json'), '{}');
+    fs.mkdirSync(joinWithinRoot(dir, 'src'));
     const readTargetDir = createFsReadTargetDirFn();
 
     const result = await readTargetDir(dir);
@@ -70,7 +71,7 @@ describe('createFsReadTargetDirFn — cpt-frontx-dod-cli-scaffolding-seed-empty-
   // directory containing itself, and sent the refusal down the branch that
   // recommends `frontx add` against a path add cannot use either.
   it('reports a path that exists as a file as not-a-directory rather than as a listing', async () => {
-    const file = path.join(tmpDir(), 'not-a-dir.txt');
+    const file = joinWithinRoot(tmpDir(), 'not-a-dir.txt');
     fs.writeFileSync(file, 'content');
     const readTargetDir = createFsReadTargetDirFn();
 

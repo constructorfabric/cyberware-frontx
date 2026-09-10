@@ -19,8 +19,6 @@ export interface ChainResult {
   completed: boolean;
   /** Array of action type IDs that were executed */
   path: string[];
-  /** Error message if the chain failed */
-  error?: string;
   /** Whether the chain timed out */
   timedOut?: boolean;
   /** Total execution time in milliseconds */

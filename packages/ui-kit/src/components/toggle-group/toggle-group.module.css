@@ -1,0 +1,41 @@
+/*
+ * Toggle group styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ *
+ * Deviation from upstream: upstream's `spacing` prop (default 2, a small
+ * gap) can be set to 0 to collapse into a bordered "segment" control —
+ * adjoining items then share borders via Tailwind's arbitrary
+ * `group-data-*` sibling selectors. That opt-in zero-gap mode is a
+ * Tailwind-arbitrary-value mechanic with no direct CSS Modules
+ * equivalent, and it is never shadcn's own default (spacing=2 ships as
+ * the default; the segment look only appears when a consumer explicitly
+ * passes spacing={0}). This port keeps the shipped default — a small,
+ * fixed gap between independently-bordered items — and drops the
+ * `spacing` prop; the F-mockups' bordered "segment" look these items also
+ * reference (see tabs.module.css's header comment) is left for a future
+ * pass if a consumer needs the collapsed variant.
+ */
+
+.group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: fit-content;
+}
+
+.group[data-orientation='vertical'] {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* Every item shrinks instead of wrapping its label, and lifts above its
+ * neighbors while focused/pressed so a focus ring isn't clipped by the
+ * next item's box — the two things a toggle gains from group membership
+ * that the standalone Toggle doesn't need. */
+.item {
+  flex-shrink: 0;
+}
+
+.item:focus-visible {
+  z-index: 1;
+}

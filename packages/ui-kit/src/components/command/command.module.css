@@ -1,0 +1,212 @@
+/*
+ * Command styles, translated from shadcn/ui (MIT) to CSS Modules. cmdk
+ * (the primitive Command wraps) is not Base UI and ships no data-slot
+ * markers of its own — it ships boolean attribute hooks instead
+ * ([cmdk-item], [cmdk-group-heading], [cmdk-list-sizer], ...), which is
+ * what several selectors below key off directly rather than a class this
+ * file owns. The upstream stylesheet these values translate from
+ * (base-vega's `.cn-command*` rules) is not distributed with the
+ * registry source, so sizing/spacing below is this port's own
+ * reconstruction of the well-known cmdk command-palette look — same
+ * reasoning as input-group.module.css's header comment — not values
+ * copied from a file this repo doesn't have. Consumes only theme.css
+ * variables — no raw colors.
+ */
+
+.command {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+}
+
+/*
+ * CommandDialog's popup: overrides dialog.module.css's own padding/gap (a
+ * bare dialog spaces its header/content children apart) to zero, so the
+ * nested Command fills the popup edge-to-edge instead of floating inside
+ * it — same "content owns its own chrome" shape as popover.module.css's
+ * .popup vs. a plain Popover.Popup. No new open/close animation is
+ * authored here: this popup is a DialogContent instance, so it already
+ * gets dialog.module.css's fade+scale transition and reduced-motion
+ * handling for free (see dialog.module.css's `.popup[data-starting-style]`
+ * pair) — CommandDialog only repositions/resizes what Dialog already
+ * animates, it doesn't add a second animation mechanism.
+ */
+.dialogPopup {
+  overflow: hidden;
+  padding: 0;
+  gap: 0;
+}
+
+@media (min-width: 640px) {
+  .dialogPopup {
+    max-width: 32rem;
+  }
+}
+
+/* See pagination.module.css's identical `.srOnly` for why `clip-path:
+ * inset(50%)` replaces the classic clip:rect()+negative-margin recipe (a
+ * literal negative margin would trip this kit's metric-token guard,
+ * tokens.test.ts). Each module restates this utility locally — CSS
+ * Modules give no cross-file class sharing — same as the box-sizing
+ * fix repeated file to file across the kit. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.inputWrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-3);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.inputIcon {
+  flex-shrink: 0;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  color: var(--muted-foreground);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  padding-block: var(--space-3);
+  border: 0;
+  background-color: transparent;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.input:disabled {
+  cursor: not-allowed;
+  /* disabled opacity: see input.module.css */
+  opacity: 0.42;
+}
+
+/*
+ * 300px in the upstream recipe (`max-h-[300px]`) — a fixed viewport-independent
+ * cap, not a spacing/typography role, so it stays a literal rem value rather
+ * than a --space-* step (see tokens.test.ts's guard: only padding/margin/gap/
+ * font/letter-spacing are metric-scale guarded, not dimensions).
+ */
+.list {
+  max-height: 18.75rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--space-1);
+}
+
+.empty {
+  padding: var(--space-6) 0;
+  color: var(--muted-foreground);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  text-align: center;
+}
+
+.group {
+  overflow: hidden;
+  padding: var(--space-1) 0;
+}
+
+/* cmdk renders the group heading as its own internal div behind the
+ * [cmdk-group-heading] attribute hook — CommandGroup's `className` only
+ * reaches the outer [cmdk-group] wrapper (see command.tsx), so the heading
+ * can only be reached by attribute selector, not a class this file owns. */
+.group [cmdk-group-heading] {
+  padding: var(--space-2);
+  color: var(--muted-foreground);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  font-weight: var(--text-meta-weight);
+  letter-spacing: var(--text-meta-tracking);
+}
+
+.item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: default;
+  user-select: none;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  font-weight: var(--text-meta-weight);
+  letter-spacing: var(--text-meta-tracking);
+  outline: none;
+}
+
+/*
+ * cmdk drives the active item purely through ARIA (`aria-selected`,
+ * keyboard/pointer-navigated — see cmdk's own Item source), not a
+ * Base-UI-style `data-highlighted` hook, so that's what this keys off.
+ * `data-selected`/`aria-selected` are always present as the literal string
+ * "true"/"false" (cmdk sets both unconditionally), never merely
+ * present-or-absent, so the `='true'` value match is required — a bare
+ * `[aria-selected]` presence selector would match every item.
+ */
+.item[aria-selected='true'] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.item[data-disabled='true'] {
+  pointer-events: none;
+  opacity: 0.42;
+}
+
+.item svg {
+  flex-shrink: 0;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.shortcut {
+  margin-inline-start: auto;
+  color: var(--muted-foreground);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  font-weight: var(--text-meta-weight);
+  letter-spacing: var(--text-meta-tracking);
+}
+
+.item[aria-selected='true'] .shortcut {
+  color: var(--accent-foreground);
+}
+
+/* Cancels .list's own var(--space-1) padding so the rule spans the full
+ * width, same "negative the container's own padding" idiom as
+ * dropdown-menu.module.css's .separator. */
+.separator {
+  margin: var(--space-1) calc(-1 * var(--space-1));
+  height: var(--border-width);
+  background-color: var(--border);
+}
+
+.svgIcon {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  flex-shrink: 0;
+  pointer-events: none;
+}

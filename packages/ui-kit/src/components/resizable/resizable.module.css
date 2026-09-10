@@ -1,0 +1,108 @@
+/*
+ * Resizable styles, translated from shadcn/ui base/new-york-v4 (MIT) to CSS
+ * Modules. Consumes only theme.css variables — no raw colors.
+ *
+ * The pinned react-resizable-panels@4.12.3 `Group` sets `display`,
+ * `flex-direction`, `height`, `width`, and `overflow` as an INLINE style
+ * computed from its own `orientation` prop (confirmed against its dist
+ * bundle) — inline style always wins over any class rule regardless of
+ * specificity, so a `.group` rule can never actually drive those
+ * properties here. `.group` is declared anyway as a stable class hook for
+ * consumers/tests (and as a defensive fallback if a future version stops
+ * setting them inline), not because it does the layout work today.
+ * Upstream's own `aria-[orientation=vertical]:flex-col` Tailwind variant on
+ * the SAME element is dead code for the same reason — `Group` renders no
+ * `aria-orientation` attribute at all (only `Separator` does, checked
+ * below) — so it is intentionally not translated here.
+ */
+.group {
+  display: flex;
+  height: 100%;
+  width: 100%;
+}
+
+/*
+ * `Separator` DOES render a real `aria-orientation` attribute (confirmed
+ * against the dist bundle), so — unlike `.group` above — these rules are
+ * live. Orientation here describes the DIVIDER's own drawn orientation,
+ * which is the opposite of the Group's `orientation` prop: a `vertical`
+ * Group (panels stacked top/bottom) draws a horizontal dividing line, and
+ * vice versa — same "opposite" relationship separator.module.css and
+ * button-group.module.css already document for their own orientation
+ * props.
+ */
+.handle {
+  position: relative;
+  display: flex;
+  width: var(--border-width);
+  align-items: center;
+  justify-content: center;
+  background-color: var(--border);
+}
+
+.handle[aria-orientation='horizontal'] {
+  width: 100%;
+  height: var(--border-width);
+}
+
+/* The wider invisible hit-area/hover accent straddling the hairline —
+ * upstream's `after:absolute after:inset-y-0 after:left-1/2 after:w-1
+ * after:-translate-x-1/2`. */
+.handle::after {
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: var(--space-1);
+  transform: translateX(-50%);
+  content: '';
+}
+
+.handle[aria-orientation='horizontal']::after {
+  inset-block: auto;
+  inset-inline: 0;
+  top: 50%;
+  left: 0;
+  height: var(--space-1);
+  width: 100%;
+  transform: translateY(-50%);
+}
+
+/*
+ * Kit focus-ring idiom (outline, drawn outside the element) instead of
+ * upstream's `ring-1`/`ring-offset-1` box-shadow ring — same substitution
+ * button.module.css/separator-adjacent components already make throughout
+ * the kit.
+ */
+.handle:focus-visible {
+  outline: var(--border-width-focus) solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* The optional grip chip (`withHandle`). Geometry (12x16, 2.5px glyph) and
+ * the actual glyph come from the new-york-v4 sibling — see resizable.tsx's
+ * comment on why the base source has nothing concrete to translate here. */
+.grip {
+  z-index: 1;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 0.75rem;
+  height: 1rem;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-xs);
+  background-color: var(--border);
+}
+
+.grip svg {
+  width: 0.625rem;
+  height: 0.625rem;
+}
+
+/* The grip glyph itself rotates 90deg for a horizontal handle, matching
+ * upstream's `[&[aria-orientation=horizontal]>div]:rotate-90` — GripVertical
+ * reads as "drag me sideways" by default, and rotating it is what keeps
+ * that reading correct once the handle itself is lying on its side. */
+.handle[aria-orientation='horizontal'] .grip {
+  transform: rotate(90deg);
+}

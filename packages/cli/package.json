@@ -1,6 +1,6 @@
 {
   "name": "@gears-frontx/cli",
-  "version": "0.3.0-alpha.2",
+  "version": "0.3.0-alpha.5",
   "description": "Template resolution CLI for FrontX SDK — zero bundled template content",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -27,6 +27,7 @@
     "test:unit": "vitest --run --passWithNoTests=false"
   },
   "devDependencies": {
+    "@gears-frontx/test-support": "0.1.0-alpha.0",
     "@vitest/coverage-v8": "4.1.4",
     "tsup": "^8.0.0",
     "typescript": "^5.4.2",

@@ -60,7 +60,7 @@ export function useHostAction<TPayload extends Record<string, unknown> = Record<
     const chain = {
       action: {
         type: actionTypeId,
-        target: bridge.domainId,
+        target: bridge.extDomainId,
         payload: payload as Record<string, unknown> | undefined,
       },
     };

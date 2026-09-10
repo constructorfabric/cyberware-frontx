@@ -15,7 +15,25 @@ kits into their own templates.
 ```ts
 // once, in the consumer entry module
 import '@gears-frontx/ui-kit/theme.css'; // design tokens (CSS variables)
+
+// two optional global stylesheets, each imported only if you need it:
+import '@gears-frontx/ui-kit/utilities.css'; // shimmer, scroll-fade-x, no-scrollbar
+import '@gears-frontx/ui-kit/typeset.css'; // prose styling for rendered markdown/HTML
 ```
+
+`utilities.css` is not optional for every component: **Attachment** depends
+on it — `AttachmentTitle` adds `shimmer` while uploading, and
+`AttachmentGroup` scrolls its row with `scroll-fade-x` and `no-scrollbar` —
+and **Marker** pairs with `shimmer` for its streaming-text effect. Those
+classes are plain global CSS with no component chunk to pull them in, so
+without this import they are inert and the components simply render without
+the effect. Import it once alongside `theme.css` if you use either
+component, or want the utilities for your own markup.
+
+`typeset.css` styles blocks of rendered markdown or HTML the app does not
+author itself — chat messages, docs, CMS content: wrap them in
+`<div class="typeset">`. See [typeset.md](src/styles/typeset.md) for the
+presets and rhythm variables.
 
 ```tsx
 import { Button } from '@gears-frontx/ui-kit';
@@ -44,15 +62,19 @@ components render straight from a Server Component with no kit-side client JS �
 they only compose Base UI primitives as JSX, and Base UI's own dist already
 carries `'use client'` on the modules that call hooks (an interactive primitive
 like Select or Dialog still ships Base UI's own client bundle; only the kit
-wrapper around it needs no directive of its own). Three components call a hook
-directly in their own render body and ship a `'use client'` banner on their own
-chunk instead: **Badge** (`useRender`, for its `render` prop), **DropdownMenu**
-(`useContext`, for the portal container it shares with nested submenus), and
-**Toast** (`useToastManager`, for the live toast list `Toaster` renders).
+wrapper around it needs no directive of its own). The rest call a hook directly
+in their own render body and ship a banner on their own chunk instead.
+
+The kit components that carry a `'use client'` banner of their own: Attachment,
+Badge, Breadcrumb, Bubble, ButtonGroup, Carousel, Chart, Combobox, ContextMenu,
+DataTable, Drawer, DropdownMenu, Marker, Sidebar, Toast.
+
 Everything else — including interactive primitives like Button, Checkbox,
 Dialog, Select, Switch, RadioGroup, and Tabs — stays server-renderable; each
 one's own client interactivity comes from a Base UI primitive it renders as a
-child, which establishes its own client boundary as needed.
+child, which establishes its own client boundary as needed. That list is
+checked against the source on every test run (`src/client-boundaries.test.ts`),
+so it cannot quietly fall behind the code.
 
 The theme file paints the page (background, text, and UA-owned surfaces like
 the scrollbar) as well as defining the tokens, so dark mode works out of the

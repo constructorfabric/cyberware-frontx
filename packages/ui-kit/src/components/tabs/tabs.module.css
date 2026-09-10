@@ -204,10 +204,9 @@
 
 /*
  * Both orientations set the underline's cross-axis offset to the same
- * -1 * --space-1 (-0.25rem) — horizontal used to hand-set -5px, an
- * off-grid value with no relation to the vertical rule's token, even
- * though both exist for the identical reason (sit the bar just past the
- * tab's own edge without adding to its layout box).
+ * -1 * --space-1 (-0.25rem): both exist for the identical reason (sit the
+ * bar just past the tab's own edge without adding to its layout box), so
+ * neither may drift onto an off-grid hand-set value.
  */
 .trigger[data-orientation='horizontal']::after {
   inset-inline: 0;

@@ -1,0 +1,154 @@
+/*
+ * MessageScroller styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Behavior is @shadcn/react's, not Base UI's (see message-scroller.tsx);
+ * only the visual language — the crossfade, the floating button placement —
+ * is translated from upstream's Tailwind here. Consumes only theme.css
+ * variables — no raw colors.
+ */
+
+.root {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.viewport {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Keeps the scrollbar's reserved gutter from shifting content width as
+   * the bar appears/disappears — same reasoning as select.module.css's
+   * listbox. */
+  scrollbar-gutter: stable;
+}
+
+.content {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  /* Grows to fit the messages rather than stretching to fill the viewport —
+   * short transcripts stay top-anchored instead of spreading out. */
+  height: max-content;
+}
+
+/*
+ * Bottom-anchors a chat transcript that is shorter than its viewport - the
+ * newest message sits flush against the composer, blank space collects
+ * above the oldest one instead of below the newest (the "hole before the
+ * composer" bug). `@shadcn/react`'s own spacer
+ * (`[data-message-scroller-spacer]`, appended after every item - see
+ * message-scroller.tsx's file header) cannot do this job: `scrollToEnd()`
+ * zeroes that spacer's height before it scrolls (it exists to pad the
+ * scrollable range for `scrollToMessage`'s align-into-view math, not to
+ * hold a permanent bottom gap), so a short transcript always lands at
+ * `scrollTop: 0` with items stacked from the top of `.content`'s
+ * `min-height: 100%` box, leaving the leftover space below the last one.
+ *
+ * `justify-content: flex-end` redistributes that same leftover space to
+ * the TOP instead once the real children (the spacer among them, since it
+ * is always either 0-height or hidden here) are shorter than the box - no
+ * height math of our own to keep in sync with the primitive's. Once real
+ * content is taller than the viewport there is no leftover space left to
+ * redistribute, so a long transcript scrolls exactly as before.
+ *
+ * `:has(> [data-scroll-anchor])` scopes this to an actual chat transcript -
+ * every `MessageScrollerItem` renders that attribute (see
+ * message-scroller.tsx) regardless of whether `messageId`/`scrollAnchor`
+ * are passed - without a prop a consumer has to remember to opt into. A
+ * plain reading surface that puts un-wrapped content straight into
+ * `MessageScrollerContent` (the mail reading pane's history toggle +
+ * message body, no `MessageScrollerItem` in sight) never matches, and
+ * keeps its existing top-anchored flow.
+ */
+.content:has(> [data-scroll-anchor]) {
+  justify-content: flex-end;
+}
+
+.item {
+  min-width: 0;
+  flex-shrink: 0;
+  /*
+   * Off-screen messages skip layout/paint until scrolled near — the win
+   * that matters for a long transcript. `contain-intrinsic-size` reserves
+   * an estimate so the scrollbar doesn't jump as items enter/leave that
+   * state. jsdom does not implement `content-visibility` (it has no
+   * layout engine at all), so this line has no observable effect under
+   * vitest — see message-scroller.test.tsx's note on what jsdom can't
+   * exercise.
+   */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 10rem;
+}
+
+/*
+ * Floating jump button. `data-active`/`data-direction` come from the
+ * primitive itself (see message-scroller.tsx) — `inert`/`tabindex` are
+ * also the primitive's own, so no pointer-events rule is needed for
+ * keyboard users; `pointer-events: none` below only guards against a
+ * lingering mouse hover mid-fade-out.
+ */
+.button {
+  position: absolute;
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  transition:
+    translate 200ms ease,
+    scale 200ms ease,
+    opacity 200ms ease;
+}
+
+.button[data-direction='end'] {
+  bottom: var(--space-4);
+}
+
+.button[data-direction='start'] {
+  top: var(--space-4);
+}
+
+/* Rotate the shared arrow-down glyph for the "scroll to start" direction
+ * rather than shipping a second icon. */
+.button[data-direction='start'] svg {
+  rotate: 180deg;
+}
+
+.button[data-active='false'] {
+  translate: -50% 0;
+  scale: 0.95;
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: 400ms;
+  transition-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+.button[data-direction='end'][data-active='false'] {
+  translate: -50% 100%;
+}
+
+.button[data-direction='start'][data-active='false'] {
+  translate: -50% -100%;
+}
+
+.button[data-active='true'] {
+  scale: 1;
+  opacity: 1;
+  transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Position/scale motion suppressed; the opacity fade (not motion under
+ * WCAG 2.3.3) still plays — same split as hover-card.module.css/
+ * popover.module.css. */
+@media (prefers-reduced-motion: reduce) {
+  .button,
+  .button[data-active='false'] {
+    transition: opacity 200ms ease;
+    translate: -50% 0;
+    scale: 1;
+  }
+}

@@ -1,0 +1,38 @@
+/*
+ * DatePicker styles, translated from shadcn/ui's date-picker doc recipe
+ * (MIT) to CSS Modules. Consumes only theme.css variables — no raw colors.
+ * Most of the visual surface is inherited for free from Button/Input/
+ * Popover; this file only carries the handful of overrides the recipe
+ * layers on top of those three.
+ */
+
+/* Left-aligns the icon + label pair — Button's own `.button` centers its
+ * content by default, which reads fine for a short label but leaves a
+ * wide date-picker trigger looking centered-and-adrift instead of anchored
+ * to its icon, per the recipe's own `justify-start`. */
+.trigger {
+  justify-content: flex-start;
+}
+
+/* The recipe's `data-[empty=true]:text-muted-foreground` — placeholder text
+ * reads as a placeholder even though it sits in a Button, not an <input>. */
+.trigger[data-empty] {
+  color: var(--muted-foreground);
+}
+
+/*
+ * The doubled class raises this selector's specificity to (0,2,0) so it
+ * reliably outranks popover.module.css's `.popup` — same equal-specificity
+ * class, but declared in a DIFFERENT stylesheet, whose relative load order
+ * a same-specificity override cannot depend on (unlike select.tsx's
+ * SelectContent, which overrides its OWN module's `.popup` and can rely on
+ * plain source order within one file). Matches the recipe's `w-auto p-0`:
+ * the calendar dictates its own width, and the popup's own padding would
+ * otherwise double up with the calendar's inherent one.
+ */
+.content.content {
+  width: auto;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}

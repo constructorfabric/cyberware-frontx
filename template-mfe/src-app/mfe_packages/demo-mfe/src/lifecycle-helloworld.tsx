@@ -1,10 +1,10 @@
 import React from 'react';
 import type { ChildMfeBridge } from '@gears-frontx/react';
-import { ThemeAwareReactLifecycle } from '@gears-frontx/react';
+import { KitThemedLifecycle } from './shared/KitThemedLifecycle';
 import { mfeApp } from './init';
 import { HelloWorldScreen } from './screens/helloworld/HelloWorldScreen';
 
-class HelloWorldLifecycle extends ThemeAwareReactLifecycle {
+class HelloWorldLifecycle extends KitThemedLifecycle {
   constructor() {
     super(mfeApp);
   }

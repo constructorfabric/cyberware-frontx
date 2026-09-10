@@ -277,7 +277,9 @@ function MyExtension() {
 
 #### useSharedProperty
 
-Subscribe to shared property changes:
+Subscribe to shared property changes. Two forms: the context form reads the bridge from `MfeContext`, and the options form accepts an explicit bridge and a fallback.
+
+**Context form** — `useSharedProperty(propertyTypeId)`. Reads the bridge from `MfeContext` and throws if no `MfeProvider` is mounted. Returns the value (or `undefined` if the host has not published it), updating on every host publish.
 
 ```tsx
 import { useSharedProperty, Gears FrontX_SHARED_PROPERTY_THEME } from '@gears-frontx/react';
@@ -288,6 +290,31 @@ function ThemedComponent() {
   return <div style={{ backgroundColor: theme?.primaryColor }}>...</div>;
 }
 ```
+
+**Options form** — `useSharedProperty(propertyTypeId, { bridge, fallback })`. Use it for components that never mount `MfeProvider`, or to show a value until the host publishes one.
+
+```tsx
+import { useSharedProperty } from '@gears-frontx/react';
+import type { ChildMfeBridge } from '@gears-frontx/framework';
+
+function StandaloneComponent({ bridge }: { bridge: ChildMfeBridge }) {
+  const label = useSharedProperty<string>(LABEL_PROPERTY_ID, {
+    bridge,
+    fallback: 'Untitled',
+  });
+
+  return <span>{label}</span>;
+}
+```
+
+`UseSharedPropertyOptions<T>` fields:
+
+- `bridge` — bridge to read the property from, bypassing `MfeContext`. Pass it when the calling component never mounts `MfeProvider` (for example, a component that receives its bridge as a prop or from a non-React entry point). When omitted, the hook falls back to the bridge from `MfeContext` and throws if no `MfeProvider` is mounted. Changing `bridge` or `propertyTypeId` moves the subscription to the new source and the returned value follows on the same render.
+- `fallback` — value returned while the host has not published the property yet. Only `undefined` is substituted; a published `null` is a real value and comes through as-is. With `fallback` set the hook returns `T` rather than `T | undefined`. It may be passed inline on every render without affecting the subscription.
+
+There is no consumer-side validation option on purpose: the host validates every published value against the property's schema before it reaches any MFE (`TypeSystemPlugin.register()` throws on a mismatch and the update is never stored or delivered). `T` is the caller's declaration of that schema, as with `useState<T>`.
+
+Both forms read through `useSyncExternalStore`, so the first render shows the host's current value and the result is tearing-protected under concurrent rendering. The TSDoc block on `useSharedProperty` in `src/mfe/hooks/useSharedProperty.ts` is the authoritative reference; this guide summarizes consumer-facing usage.
 
 #### useHostAction
 
@@ -475,7 +502,7 @@ This allows users to import everything from `@gears-frontx/react` without needin
 - `useScreenTranslations` - Screen translation loading
 - `useTheme` - Theme utilities
 - `useMfeBridge` - Access MFE bridge
-- `useSharedProperty` - Subscribe to shared property
+- `useSharedProperty` - Subscribe to shared property, via `MfeContext` or an explicit bridge
 - `useHostAction` - Invoke host action
 - `useDomainExtensions` - Subscribe to domain extensions
 - `useRegisteredPackages` - Subscribe to registered GTS packages
@@ -494,6 +521,7 @@ This allows users to import everything from `@gears-frontx/react` without needin
 - `QueryCache` - Restricted cache interface (accepts descriptors or raw keys)
 - `MutationCallbackContext` - Context with queryCache injected into mutation callbacks
 - `MfeProviderProps`, `ExtensionDomainSlotProps`
+- `UseSharedPropertyOptions<T>` - Options for `useSharedProperty` (bridge, fallback)
 - `UseTranslationReturn`, `UseThemeReturn`
 - All types from @gears-frontx/framework (including `EndpointDescriptor`, `MutationDescriptor`, `StreamDescriptor`, `StreamStatus`)
 

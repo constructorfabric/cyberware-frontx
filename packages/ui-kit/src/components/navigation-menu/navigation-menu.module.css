@@ -1,0 +1,400 @@
+/*
+ * NavigationMenu styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors — with one documented
+ * exception: --positioner-width/-height and --popup-width/-height below are
+ * written at runtime by Base UI's own NavigationMenuTrigger (see
+ * node_modules/@base-ui/react/navigation-menu/utils/setSharedFixedSize.mjs),
+ * the mechanism behind the single shared Viewport morphing to each active
+ * item's measured size. They are the direct equivalent of --anchor-width/
+ * -height (already exempt in tokens.test.ts's BASE_UI_RUNTIME_VARS) but are
+ * NOT yet in that exempt list — flagged in this change's report rather than
+ * self-added, since tokens.test.ts is frozen/owned by another agent.
+ */
+
+.root {
+  position: relative;
+  display: flex;
+  flex: 1;
+  max-width: max-content;
+  align-items: center;
+  justify-content: center;
+}
+
+.list {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  /* The indicator's `top: 100%` anchor, and the trigger icon's rotation —
+   * both scoped to this box, not the shared popup. */
+  position: relative;
+}
+
+/*
+ * Substitutes for the preflight the kit lacks: without it, content-box
+ * (this kit's ambient default) would pile this class's own padding on top
+ * of the UA <button> border-box default and disagree with it — moot for a
+ * real <button> (already border-box, so this is a no-op there, same as
+ * button.module.css's own copy of this comment), but NavigationMenuTrigger
+ * types both `render` and `nativeButton` (NativeButtonProps), so
+ * `<NavigationMenuTrigger render={<a/>} nativeButton={false}>` type-checks
+ * today and would hit the real collision on an element with no UA
+ * border-box default. Same acute case as tabs.module.css/badge.module.css,
+ * scoped the same way (this class only).
+ */
+.trigger {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: var(--control-height-md);
+  padding: 0 var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  color: var(--foreground);
+  font-family: inherit;
+  /* Studio/Label metrics — the same field-text recipe as Button's default
+   * size (see button.module.css), so a nav trigger reads at the same scale
+   * as every other interactive label in the kit. */
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  font-weight: var(--text-label-weight);
+  letter-spacing: var(--text-label-tracking);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  /* Colour crossfade only, no transform/geometry — not motion under WCAG
+     2.3.3, so deliberately left unguarded under prefers-reduced-motion. */
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
+}
+
+/* data-popup-open: Base UI's own state attribute for "this item's popup is
+ * open" (triggerOpenStateMapping, see NavigationMenuIcon.mjs/
+ * NavigationMenuTrigger.mjs) — kept lit while active, same as a
+ * hover/focus fill, so the trigger reads as "currently expanded" even after
+ * the pointer moves onto the popup itself. */
+.trigger:hover,
+.trigger[data-popup-open] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.trigger:focus-visible {
+  outline: var(--border-width-focus) solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* box-shadow-based rings don't render in forced-colors mode; Button/Input/
+ * Select all carry this same escape hatch — see button.module.css. */
+@media (forced-colors: active) {
+  .trigger:focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+/* disabled opacity: see input.module.css */
+.trigger:disabled,
+.trigger[data-disabled] {
+  pointer-events: none;
+  opacity: 0.42;
+}
+
+.triggerIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  /* Rotation only — not opacity/position — so nothing here needs the
+   * mixed-transition split the popup/positioner below use; a reduced-motion
+   * user still sees the chevron flip instantly instead of sweeping. */
+  transition: transform 150ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .triggerIcon {
+    transition: none;
+  }
+}
+
+.triggerIcon[data-popup-open] {
+  transform: rotate(180deg);
+}
+
+/*
+ * Isolate + stack above page content, matching every other kit popup
+ * (DropdownMenu/Select). Sized to Base UI's own measured, morphing
+ * dimensions (see this file's header comment) rather than a fixed
+ * min-width: the whole point of the shared Viewport is that ONE popup
+ * resizes to whichever item is active, not that each item gets its own
+ * independently-sized popup.
+ */
+.positioner {
+  isolation: isolate;
+  z-index: 50;
+  height: var(--positioner-height);
+  width: var(--positioner-width);
+  max-width: var(--available-width);
+  outline: none;
+  /*
+   * Animates the popup sliding to its new anchor position (a different
+   * trigger, e.g. left-to-right) — genuine motion, unlike the fade-only
+   * transitions on Dialog/Select/DropdownMenu's positioners (which never
+   * move once open). Suppressed entirely under reduced motion below, not
+   * split like the popup's opacity+transform mix: there is no opacity
+   * component here to preserve.
+   */
+  transition:
+    top 350ms cubic-bezier(0.22, 1, 0.36, 1),
+    right 350ms cubic-bezier(0.22, 1, 0.36, 1),
+    bottom 350ms cubic-bezier(0.22, 1, 0.36, 1),
+    left 350ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .positioner {
+    transition: none;
+  }
+}
+
+/*
+ * Base UI's own instant-transition flag (NavigationMenuPositionerDataAttributes
+ * .instant, see node_modules/@base-ui/react/navigation-menu/positioner/
+ * NavigationMenuPositioner.mjs): set for one frame on initial open (so the
+ * popup doesn't visibly animate in from the portal's unpositioned 0,0
+ * default) and again while the window resizes (so a reflow doesn't play
+ * as a slide). Same idea as DropdownMenu's `[data-instant]`, different
+ * part: there it lands on .popup, here Base UI puts it on the positioner
+ * itself, since the positioner is what owns the top/right/bottom/left
+ * transition being suppressed.
+ */
+.positioner[data-instant] {
+  transition: none;
+}
+
+/*
+ * Substitutes for the preflight the kit lacks: without it, content-box
+ * (this kit's ambient default) would pile this class's own 1px border on
+ * top of `width/height: var(--popup-*)`, rendering the popup 2px larger
+ * than Base UI just measured and fixed it at — the same collision as
+ * select.module.css's/dropdown-menu.module.css's `.popup`, just against
+ * runtime-measured dimensions instead of --anchor-width. Popup renders a
+ * plain <nav> (verified against the Base UI source), so there's no UA
+ * border-box default to fall back on.
+ */
+.popup {
+  box-sizing: border-box;
+  position: relative;
+  isolation: isolate;
+  height: var(--popup-height);
+  width: var(--popup-width);
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--popover-border);
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  /* --popover-shadow: the ring-plus-drop-shadow recipe every card-like
+   * popup in the kit shares (see theme.css). */
+  box-shadow: var(--popover-shadow);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity 350ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 350ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 350ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+ * Mixed transition, same idiom as DropdownMenu/Select's popups: opacity (a
+ * fade, not motion under WCAG 2.3.3 — kept) versus the width/height morph
+ * (genuine size motion — suppressed). Unlike those popups this one never
+ * scales (no data-starting/ending transform here — the shared Viewport's
+ * own width/height morph already carries the size change, so a second,
+ * independent scale pop would read as redundant/janky layered on top of it),
+ * so there is no transform term to keep split out here.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .popup {
+    transition: opacity 350ms ease;
+  }
+}
+
+.popup[data-starting-style],
+.popup[data-ending-style] {
+  opacity: 0;
+}
+
+.viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/*
+ * The per-item content panel that gets portaled into .viewport when its
+ * item is active (see NavigationMenuContent.mjs's ReactDOM.createPortal).
+ * Sized to its own content
+ * (`width: max-content`), not stretched to the popup: the popup itself is
+ * what's sized to the content via --popup-width/-height above.
+ */
+.content {
+  height: 100%;
+  width: max-content;
+  transition:
+    opacity 350ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 350ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+ * Mixed transition: opacity (fade, kept) plus the activation-direction
+ * slide below (transform, suppressed) — same split as every other popup in
+ * the kit. Under reduced motion the translateX() values two rules down
+ * still apply AT the starting/ending instant (removing them outright would
+ * mean re-deriving this rule's specificity twice), but with `transform`
+ * dropped from the transition list here, that value change is un-animated:
+ * it snaps for one frame instead of sliding.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .content {
+    transition: opacity 350ms ease;
+  }
+}
+
+.content[data-starting-style],
+.content[data-ending-style] {
+  opacity: 0;
+}
+
+/*
+ * data-activation-direction (NavigationMenuContentDataAttributes, set by
+ * Base UI when an item becomes/stops being active): which way the popup
+ * moved to reach this item, horizontally. The outgoing content slides the
+ * OPPOSITE way from the incoming one, so the two read as one continuous
+ * sweep rather than two independent fades — translateX signs matched
+ * verbatim against the upstream shadcn source's Tailwind arbitrary values
+ * (data-ending-style:data-activation-direction=left:translate-x-[50%] etc.,
+ * apps/v4/registry/bases/base/ui/navigation-menu.tsx). 'up'/'down' are
+ * deliberately left unstyled — upstream's own port only maps left/right,
+ * since the shared Viewport (this component's whole reason for existing)
+ * is a horizontal-orientation concept; a vertical NavigationMenu falls back
+ * to the plain opacity fade above.
+ */
+.content[data-activation-direction='left'][data-starting-style] {
+  transform: translateX(-50%);
+}
+
+.content[data-activation-direction='right'][data-starting-style] {
+  transform: translateX(50%);
+}
+
+.content[data-activation-direction='left'][data-ending-style] {
+  transform: translateX(50%);
+}
+
+.content[data-activation-direction='right'][data-ending-style] {
+  transform: translateX(-50%);
+}
+
+.link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  color: var(--foreground);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-label-tracking);
+  text-decoration: none;
+  outline: none;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
+}
+
+/* data-active: Base UI's default state-attribute fallback for the `active`
+ * boolean prop (getStateAttributesProps, no custom mapping declared for
+ * Link — see NavigationMenuLink.mjs) — "this points at the current page". */
+.link:hover,
+.link:focus,
+.link[data-active] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.link:focus-visible {
+  outline: var(--border-width-focus) solid var(--ring);
+  outline-offset: -2px;
+}
+
+@media (forced-colors: active) {
+  .link:focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+/*
+ * NavigationMenuIndicator: an optional small arrow that tracks the active
+ * trigger, hanging just below it. Must be rendered as a child of the SAME
+ * NavigationMenuItem as its NavigationMenuTrigger — the underlying Base UI
+ * Icon part reads its "am I the active item" state from item context
+ * (useNavigationMenuItemContext, throws outside an Item), unlike the
+ * classic Radix indicator, which is one shared element the whole List
+ * positions with computed left/width math. Base UI's per-item design means
+ * that math is unnecessary: `.item`'s own `position: relative` (above)
+ * plus `top: 100%` on this box places the arrow directly under whichever
+ * item is currently active, and the other items' own copies simply stay
+ * hidden (`opacity: 0` at rest below).
+ */
+.indicator {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  height: 0.375rem;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .indicator {
+    transition: none;
+  }
+}
+
+.indicator[data-popup-open] {
+  opacity: 1;
+}
+
+.indicatorArrow {
+  position: relative;
+  top: 60%;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-xs);
+  background-color: var(--border);
+  transform: rotate(45deg);
+}
+
+.svgIcon {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  flex-shrink: 0;
+  pointer-events: none;
+}

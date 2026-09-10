@@ -32,23 +32,47 @@ describe('Textarea', () => {
     expect(textarea).toHaveProperty('disabled', true);
   });
 
+  // `field-sizing: content` (textarea.module.css) ignores the native
+  // `rows`/`cols` attribute outright per spec - passing `rows` alone has
+  // zero effect on rendered geometry in a browser that supports it. jsdom
+  // does not implement `field-sizing`, so this only pins the mechanism
+  // Textarea uses to recover a `rows`-driven floor: the `--rows` custom
+  // property, set on the element only when a caller passes `rows`.
+  it('sets --rows on style only when rows is passed, for the CSS floor to key off', () => {
+    const { rerender } = render(<Textarea />);
+    expect(screen.getByRole('textbox').style.getPropertyValue('--rows')).toBe('');
+
+    rerender(<Textarea rows={8} />);
+    expect(screen.getByRole('textbox').style.getPropertyValue('--rows')).toBe('8');
+  });
+
+  it('keeps a consumer style object alongside --rows', () => {
+    render(<Textarea rows={8} style={{ color: 'red' }} />);
+    const textarea = screen.getByRole('textbox');
+    expect(textarea.style.color).toBe('red');
+    expect(textarea.style.getPropertyValue('--rows')).toBe('8');
+  });
+
   it('forwards the invalid state', () => {
     render(<Textarea aria-invalid={true} />);
     expect(screen.getByRole('textbox').getAttribute('aria-invalid')).toBe('true');
   });
 
-  it('wires into a surrounding Field like Input does', () => {
+  it('composes inside a Field via manual id/htmlFor/aria-describedby wiring', () => {
+    // Unlike Input (still a Base UI primitive), Textarea has no primitive
+    // to lean on, and the canonical Field wires nothing automatically —
+    // every id below is set by hand, same as field.md's own examples.
     render(
-      <Field name="notes" disabled>
-        <FieldLabel>Notes</FieldLabel>
-        <Textarea />
-        <FieldDescription>Optional context.</FieldDescription>
+      <Field>
+        <FieldLabel htmlFor="notes">Notes</FieldLabel>
+        <Textarea id="notes" disabled aria-describedby="notes-desc" />
+        <FieldDescription id="notes-desc">Optional context.</FieldDescription>
       </Field>,
     );
     const textarea = screen.getByLabelText('Notes');
     expect(textarea).toHaveProperty('tagName', 'TEXTAREA');
     expect(textarea).toHaveProperty('disabled', true);
     const description = screen.getByText('Optional context.');
-    expect(textarea.getAttribute('aria-describedby')).toContain(description.id);
+    expect(textarea.getAttribute('aria-describedby')).toBe(description.id);
   });
 });

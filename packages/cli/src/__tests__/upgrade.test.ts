@@ -417,8 +417,8 @@ describe('upgradeChangeSetReviewApproval (F14 change-set engine flow)', () => {
   // project file is written, returning `{ok:false}` per `ApplyResult`'s
   // contract (ADR-0019 / ADR-0021 Confirmation (d)). A thrown exception at
   // that point would escape past `inst-app-catch`'s restore-on-error, since
-  // that block only wraps the for-each-entry loop — by the time such an
-  // error surfaced, entries could already be on disk with no way back. Both
+  // that block only wraps the apply `try` (the for-each-entry loop plus the
+  // provenance write), not the precondition checks ahead of it. Both
   // cases are asserted BEFORE the loop ever runs: zero writes, zero removes.
   const trivialChangeSet: ChangeSet = {
     templateIdentity: 'my-template',
@@ -484,8 +484,9 @@ describe('upgradeChangeSetReviewApproval (F14 change-set engine flow)', () => {
   // element (e.g. `[null]`) reached `existingRecords.findIndex(record =>
   // record.templateIdentity === ...)` and threw a raw TypeError that escaped
   // `ApplyResult`'s `{ok:true}|{ok:false}` contract entirely — bypassing the
-  // restore-on-error path (which only wraps the for-each-entry loop) even
-  // though nothing had been written yet. Both cases must abort as
+  // restore-on-error path (which only wraps the apply `try`, not the
+  // precondition checks ahead of it) even though nothing had been written
+  // yet. Both cases must abort as
   // `{ok:false}`, before any write, with a message naming the file and which
   // element/field was invalid.
   it('(l) a provenance array element that is null aborts before any project file is written, without throwing', async () => {
@@ -567,5 +568,51 @@ describe('upgradeChangeSetReviewApproval (F14 change-set engine flow)', () => {
     expect(applyResult.message).toMatch(/index 0/);
     expect(writes.size).toBe(0);
     expect(removed.size).toBe(0);
+  });
+
+  // #506: `writeProvenance` used to run AFTER `inst-app-try`'s rollback
+  // boundary, so a filesystem failure there threw past `ApplyResult`'s
+  // `{ok:false}` contract having already written approved project files —
+  // a partially-upgraded repository with no way back. The provenance write
+  // now shares the same try/catch as the project-file loop
+  // (`inst-app-update-prov` nested inside `inst-app-try`), so a
+  // `writeProvenance` failure after a project file has already been
+  // mutated must still restore that file, restore the prior provenance
+  // bytes, and return a typed failure rather than throwing.
+  it('(o) a writeProvenance failure after a project file was already mutated restores that file and the prior provenance bytes, and returns a typed failure', async () => {
+    const provPath = `${PROJ_ROOT}/.frontx/provenance.json`;
+    const appPath = `${PROJ_ROOT}/src/App.tsx`;
+    const originalProvContent = JSON.stringify([BASE_PROVENANCE], null, 2);
+    const originalAppContent = 'v1 content';
+    const files = new Map<string, string>([
+      [provPath, originalProvContent],
+      [appPath, originalAppContent],
+    ]);
+
+    const applyResult = await applyChangeSet(trivialChangeSet, PROJ_ROOT, BASE_PROVENANCE, {
+      readProjectFile: async (p) => files.get(p) ?? null,
+      writeProjectFile: async (p, c) => { files.set(p, c); },
+      removeProjectFile: async (p) => { files.delete(p); },
+      // Mutates `files` BEFORE throwing — a real filesystem write can fail
+      // partway through, after already landing bytes on disk. If the fake
+      // only threw, the byte-for-byte assertion below would pass even
+      // without a genuine restore (the map would simply never have been
+      // touched), so this proves the restore path actually overwrites a
+      // corrupted-in-place provenance file back to the snapshot.
+      writeProvenance: async (p, c) => {
+        files.set(p, `${c}\npartial write`);
+        throw new Error('disk full');
+      },
+    });
+
+    expect(applyResult.ok).toBe(false);
+    if (applyResult.ok) return;
+    expect(applyResult.message).toMatch(/disk full/);
+    // The project-file mutation that happened before the provenance write
+    // failed is rolled back — not left half-applied.
+    expect(files.get(appPath)).toBe(originalAppContent);
+    // The provenance file is restored to its exact pre-upgrade bytes, not
+    // left at whatever partial/failed write state `writeProvenance` threw at.
+    expect(files.get(provPath)).toBe(originalProvContent);
   });
 });

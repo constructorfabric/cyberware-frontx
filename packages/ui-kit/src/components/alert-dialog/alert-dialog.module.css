@@ -1,0 +1,209 @@
+/*
+ * AlertDialog styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ *
+ * AlertDialog reuses Dialog's own Base UI popup/backdrop primitives under
+ * the hood (@base-ui/react/alert-dialog re-exports @base-ui/react/dialog's
+ * Popup/Backdrop/Portal/Title/Description), so this file mirrors
+ * dialog.module.css's popup/backdrop treatment — including the kit's
+ * `--overlay` scrim rather than upstream's lighter `bg-black/10` — for the
+ * same reason DialogContent and AlertDialogContent already share a
+ * primitive: they are architecturally the same modal surface.
+ */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  isolation: isolate;
+  z-index: 50;
+  background-color: var(--overlay);
+  /* Opacity-only, no transform/geometry — a fade isn't motion under
+     WCAG 2.3.3, so deliberately left unguarded under prefers-reduced-motion. */
+  transition: opacity 100ms ease;
+}
+
+.backdrop[data-starting-style],
+.backdrop[data-ending-style] {
+  opacity: 0;
+}
+
+.popup {
+  /*
+   * Substitutes for the preflight the kit lacks — same acute case as
+   * dialog.module.css's `.popup`.
+   */
+  box-sizing: border-box;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  isolation: isolate;
+  z-index: 50;
+  display: grid;
+  /* See dialog.module.css's `.popup` for why `minmax(0, 1fr)`, not a bare
+   * implicit column: an over-wide child otherwise drags the popup's own
+   * track past its max-width cap instead of overflowing inside it. */
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: min(20rem, calc(100% - var(--space-8)));
+  max-height: calc(100% - var(--space-8));
+  overflow-y: auto;
+  gap: var(--space-6);
+  /*
+   * Deliberately unpadded, same as dialog.module.css's `.popup`. See there
+   * for the measurement. A scroll container's padding does not clip its
+   * content (overflow clips at the padding box) and sticky offsets resolve
+   * against the scrollport already inset by it, so padding here leaves
+   * strips no sticky region can cover and scrolled text bleeds through
+   * them. The inset lives on the flow regions below instead.
+   */
+  padding: 0;
+  border: var(--border-width) solid var(--popover-border);
+  border-radius: var(--radius-xl);
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  outline: none;
+  transform: translate(-50%, -50%);
+  /* --popover-shadow: the ring-plus-drop-shadow recipe every card-like
+   * popup in the kit shares (see theme.css) — was hand-duplicated here. */
+  box-shadow: var(--popover-shadow);
+  transition:
+    opacity 100ms ease,
+    transform 100ms ease;
+}
+
+/* Only the `default` size grows past its `sm`-and-below floor; `sm` stays
+ * at the narrow cap on every viewport width — matches upstream's own
+ * `data-[size=default]:sm:max-w-lg` (no such override for `data-[size=sm]`). */
+@media (min-width: 640px) {
+  .popup[data-size='default'] {
+    max-width: 32rem;
+  }
+}
+
+/*
+ * Mixed transition: opacity (a fade, not motion under WCAG 2.3.3 — kept)
+ * and transform (the centered popup scaling in/out, which is — suppressed).
+ * Split rather than a blanket `transition: none` so the fade still plays;
+ * the popup just snaps to its final scale instead of animating there.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .popup {
+    transition: opacity 100ms ease;
+  }
+}
+
+.popup[data-starting-style],
+.popup[data-ending-style] {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.95);
+}
+
+/*
+ * The popup's inset, re-expressed on the regions that scroll inside it:
+ * same structure and reasoning as dialog.module.css's `.popup > *` rules.
+ * No `.closeButton` exception here: an alert dialog has no built-in X, so
+ * every direct child is a flow region.
+ */
+.popup > * {
+  /* Same missing-preflight guard as `.popup` itself. See
+   * dialog.module.css for why the inset needs border-box here. */
+  box-sizing: border-box;
+  padding-inline: var(--space-6);
+}
+
+/* `:where()` keeps these at the same single-class weight as the rule above,
+ * so a consumer's `className` on a region can still replace the inset,
+ * see dialog.module.css. */
+.popup > :where(*:first-child) {
+  padding-block-start: var(--space-6);
+}
+
+.popup > :where(*:last-child) {
+  padding-block-end: var(--space-6);
+}
+
+/*
+ * Sticky + opaque + full-bleed, not just flow siblings: .popup is itself the
+ * scroll container (see its own comment above) - same footgun as
+ * dialog.module.css's header/footer, see there for the full reasoning.
+ * Without position and an explicit background, a merely-sticky header/footer
+ * still wins hit-testing (elementFromPoint reports it) but scrolled content
+ * paints straight through it; and without the region spanning the popup's
+ * full width and edges, the strips around its box keep bleeding. Opaque
+ * var(--popover) matches .popup's own background exactly.
+ */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  place-items: center;
+  gap: var(--space-2);
+  text-align: center;
+  background-color: var(--popover);
+}
+
+@media (min-width: 640px) {
+  .popup[data-size='default'] .header {
+    place-items: start;
+    text-align: left;
+  }
+}
+
+.media {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4rem;
+  height: 4rem;
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-md);
+  background-color: var(--muted);
+}
+
+/* Same header/footer-bleed fix as dialog.module.css's .footer - see there
+ * for the full reasoning. */
+.footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--space-2);
+  background-color: var(--popover);
+}
+
+@media (min-width: 640px) {
+  .popup[data-size='default'] .footer {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+}
+
+/* `sm` always stacks Cancel/Action side by side, at every viewport width —
+ * matches upstream's un-prefixed `group-data-[size=sm]:grid grid-cols-2`. */
+.popup[data-size='sm'] .footer {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Studio/Heading 2 at Label weight — same "role's size, Label's weight"
+ * idiom as tooltip/table/dropdown-menu (see design-notes.md's accessibility
+ * pass): upstream's title is "lg" sized but "medium" (500) weight, which
+ * doesn't match the Heading-2 role's own 600 weight. */
+.title {
+  margin: 0;
+  font-size: var(--text-heading-2-size);
+  line-height: var(--text-heading-2-line-height);
+  font-weight: var(--text-label-weight);
+  letter-spacing: var(--text-heading-2-tracking);
+}
+
+.description {
+  color: var(--muted-foreground);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+}

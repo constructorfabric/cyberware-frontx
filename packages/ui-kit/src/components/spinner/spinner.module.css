@@ -1,0 +1,30 @@
+/*
+ * Spinner styles, translated from shadcn/ui base (registry/bases/base/ui/
+ * spinner.tsx: "size-4 animate-spin") to CSS Modules. Consumes only
+ * theme.css variables — no raw colors.
+ */
+.spinner {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    /* The standalone `rotate` property, not `transform: rotate(...)` —
+       same idiom button.module.css's own loading spinner already uses. */
+    rotate: 360deg;
+  }
+}
+
+/*
+ * Slowed, not removed — same reasoning as button.module.css's spinner: the
+ * rotation itself is the "still loading" information, so a user who has
+ * asked for reduced motion still gets it, just calmer, rather than a
+ * frozen icon that reads as stuck.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+}

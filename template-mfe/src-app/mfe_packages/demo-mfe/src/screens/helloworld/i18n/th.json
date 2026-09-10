@@ -6,6 +6,7 @@
   "navigation_description": "คลิกปุ่มด้านล่างเพื่อนำทางไปยังหน้าจอธีมโดยทางโปรแกรม",
   "go_to_theme": "ไปที่หน้าจอธีม",
   "open_profile_refresh": "Open Profile & Refresh",
+  "mount_widgets_host_and_ping": "Mount Widgets Host + Widget A + Ping (nested)",
   "bridge_info": "Bridge Info",
   "domain_id": "Domain ID:",
   "instance_id": "Instance ID:",

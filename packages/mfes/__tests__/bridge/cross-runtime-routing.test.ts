@@ -26,6 +26,10 @@ describe('Cross-Runtime Action Chain Routing', () => {
     );
     parentBridge = new ParentMfeBridgeImpl(childBridge);
     childBridge.setParentBridge(parentBridge);
+    // These tests exercise an already-mounted bridge pair; production code
+    // reaches this state via `RuntimeBridgeFactory.acquireBridge`, which
+    // activates the child bridge as its final step.
+    childBridge.activate();
   });
 
   describe('ChildDomainForwardingHandler', () => {
@@ -123,7 +127,7 @@ describe('Cross-Runtime Action Chain Routing', () => {
     });
   });
 
-  describe('ChildMfeBridgeImpl.cleanup', () => {
+  describe('ChildMfeBridgeImpl.destroy', () => {
     it('should unregister all tracked child domains before nulling callbacks', () => {
       // Setup: Register multiple child domains
       const registerCallback = vi.fn();
@@ -135,7 +139,7 @@ describe('Cross-Runtime Action Chain Routing', () => {
       childBridge.registerChildDomain('mock.ext.domain.v1~child3.v1');
 
       // Act: Cleanup
-      childBridge.cleanup();
+      childBridge.destroy();
 
       // Assert: All domains were unregistered
       expect(unregisterCallback).toHaveBeenCalledTimes(3);
@@ -151,7 +155,7 @@ describe('Cross-Runtime Action Chain Routing', () => {
       childBridge.registerChildDomain('mock.ext.domain.v1~child.v1');
 
       // Act: Cleanup
-      childBridge.cleanup();
+      childBridge.destroy();
 
       // Assert: Unregister was called (proves callback was still wired)
       expect(unregisterCallback).toHaveBeenCalledWith('mock.ext.domain.v1~child.v1');
@@ -171,7 +175,7 @@ describe('Cross-Runtime Action Chain Routing', () => {
       childBridge.registerChildDomain('mock.ext.domain.v1~child2.v1');
 
       // Act: Cleanup
-      childBridge.cleanup();
+      childBridge.destroy();
 
       // Reset the mock to verify subsequent cleanup doesn't call unregister again
       unregisterCallback.mockClear();
@@ -180,7 +184,7 @@ describe('Cross-Runtime Action Chain Routing', () => {
       childBridge.setChildDomainCallbacks(registerCallback, unregisterCallback);
 
       // Call cleanup again
-      childBridge.cleanup();
+      childBridge.destroy();
 
       // Assert: No unregister calls (set was cleared)
       expect(unregisterCallback).not.toHaveBeenCalled();
@@ -250,7 +254,7 @@ describe('Cross-Runtime Action Chain Routing', () => {
       expect(handlers.has(childDomainId)).toBe(true);
 
       // Act: Cleanup (simulating unmount)
-      childBridge.cleanup();
+      childBridge.destroy();
 
       // Assert: Handler was removed
       expect(handlers.has(childDomainId)).toBe(false);

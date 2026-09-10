@@ -1,0 +1,116 @@
+/*
+ * Message styles, translated from shadcn/ui (MIT) to CSS Modules. The base
+ * registry (registry/bases/base/ui/message.tsx) ships no color/spacing
+ * classes of its own — only structural Tailwind (flex/gap/data-attribute
+ * variants); the actual geometry translated below comes from the
+ * new-york-v4 style pack's version of the same file, the same source
+ * badge.module.css's own header note points to. Consumes only theme.css
+ * variables — no raw colors.
+ */
+
+.messageGroup {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.message {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  gap: var(--space-2);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+}
+
+.message[data-align='end'] {
+  flex-direction: row-reverse;
+}
+
+/*
+ * No overflow: hidden here. Avatar already clips its own image per part
+ * (see avatar.module.css), and its root is deliberately left unclipped so
+ * an AvatarBadge may overhang the circle. Clipping this wrapper one level
+ * up would reintroduce exactly the badge-clip Avatar's own root avoids.
+ */
+.messageAvatar {
+  display: flex;
+  width: fit-content;
+  min-width: var(--space-8);
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-end;
+  border-radius: 9999px;
+  background-color: var(--muted);
+}
+
+/*
+ * Sits next to the bubble instead of centered on the whole row: shifted up
+ * by one footer-row's worth of space so it stays aligned with the bubble
+ * rather than sliding down to the footer's baseline. `:has()` replicates
+ * upstream's `group-has-data-[slot=message-footer]` with no group-marker
+ * class needed — `.message` is the only ancestor this selector requires.
+ * Left untransitioned, like Card's own `:has()`-driven padding change
+ * (card.module.css): a one-shot layout response to a sibling appearing,
+ * not a hover/focus crossfade.
+ */
+.message:has(.messageFooter) .messageAvatar {
+  transform: translateY(calc(var(--space-8) * -1));
+}
+
+.messageContent {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  /*
+   * Upstream's 0.625rem (gap-2.5) sits exactly between --space-2 and
+   * --space-3 — rounded UP rather than down, so a message's own internal
+   * rhythm (header/bubble/footer) stays looser than the tighter --space-2
+   * gap MessageGroup uses BETWEEN whole messages. Rounding down would
+   * collapse that distinction entirely.
+   */
+  gap: var(--space-3);
+  overflow-wrap: break-word;
+}
+
+.message[data-align='end'] .messageContent > * {
+  align-self: flex-end;
+}
+
+.messageHeader,
+.messageFooter {
+  display: flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  padding-inline: var(--space-3);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  /* font-medium, the same idiom as badge.module.css's label text:
+   * --text-meta is regular weight on its own, so weight borrows
+   * --text-label's medium step instead. */
+  font-weight: var(--text-label-weight);
+  color: var(--muted-foreground);
+}
+
+/*
+ * Collapses flush with a ghost Bubble's own (now padding-less) content — an
+ * inset header/footer would otherwise float disconnected from a bubble
+ * that no longer has a frame to sit inside. Matched on Bubble's own
+ * `data-variant` attribute, not a cross-module class reference: CSS
+ * Modules hashes `.bubble` in bubble.module.css independently of any
+ * literal `.bubble` written here, so the state attribute Bubble already
+ * stamps on its own root is the only reliable cross-component hook.
+ */
+.message:has([data-variant='ghost']) .messageHeader,
+.message:has([data-variant='ghost']) .messageFooter {
+  padding-inline: 0;
+}
+
+.message[data-align='end'] .messageFooter {
+  justify-content: flex-end;
+}

@@ -69,6 +69,10 @@ describe('StudioPanel', () => {
     const collapseButton = screen.getByRole('button', {
       name: 'studio:aria.collapseButton',
     });
+    // The control an unattended browser run collapses the panel with, and the
+    // presence of this id is also how such a run tells an expanded overlay
+    // from a collapsed one.
+    expect(collapseButton.getAttribute('data-testid')).toBe('studio-collapse');
     fireEvent.click(collapseButton);
     expect(toggleCollapsed).toHaveBeenCalledTimes(1);
   });

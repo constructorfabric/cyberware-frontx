@@ -26,7 +26,7 @@ Part of the FrontX React Layer (L3) - depends on @gears-frontx/framework. Peer d
 | Hook | Purpose |
 |------|---------|
 | `useMfeBridge()` | Access MFE bridge (child MFEs) |
-| `useSharedProperty()` | Subscribe to shared property changes |
+| `useSharedProperty()` | Subscribe to shared property changes, via `MfeContext` or an explicit `bridge` option |
 | `useHostAction()` | Invoke actions on host application |
 | `useDomainExtensions()` | Subscribe to extensions in a domain |
 
@@ -96,6 +96,26 @@ function MyExtension() {
   return <div style={{ backgroundColor: theme?.primaryColor }}>...</div>;
 }
 ```
+
+### Shared Properties Without MfeProvider
+
+`useSharedProperty(propertyTypeId, options)` takes an explicit `bridge` for components that never mount `MfeProvider`, plus a `fallback` returned until the host publishes the property (only `undefined` is substituted; a published `null` is a value). With `fallback` set the result type is `T`. There is no consumer-side validation option: the host validates published values against the property's schema before delivery, so `T` is the caller's declaration of that schema.
+
+```tsx
+import { useSharedProperty } from '@gears-frontx/react';
+import type { ChildMfeBridge } from '@gears-frontx/framework';
+
+function StandaloneComponent({ bridge }: { bridge: ChildMfeBridge }) {
+  const label = useSharedProperty<string>(LABEL_PROPERTY_ID, {
+    bridge,
+    fallback: 'Untitled',
+  });
+
+  return <span>{label}</span>;
+}
+```
+
+Omitting `bridge` falls back to `MfeContext`; the hook still throws when neither is available. Changing `bridge` or `propertyTypeId` moves the subscription and the value follows on the same render.
 
 ### Subscribing to Domain Extensions
 

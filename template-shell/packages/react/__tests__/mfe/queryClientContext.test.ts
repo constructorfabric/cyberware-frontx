@@ -32,8 +32,8 @@ function createMinimalHai3App(): FrontXApp {
 
 function makeScreenMountBridgeStub(): ChildMfeBridge {
   return {
-    domainId: 'screen',
-    instanceId: 'bridge',
+    extDomainId: 'screen',
+    extensionId: 'bridge',
     executeActionsChain: vi.fn().mockResolvedValue(undefined),
     subscribeToProperty: vi.fn().mockReturnValue(() => undefined),
     getProperty: vi.fn().mockReturnValue(undefined),

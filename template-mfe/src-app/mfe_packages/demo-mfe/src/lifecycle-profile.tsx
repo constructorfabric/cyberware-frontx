@@ -1,14 +1,12 @@
 import React from 'react';
 import type { ChildMfeBridge, JsonObject } from '@gears-frontx/react';
-import { ActionHandler, ThemeAwareReactLifecycle } from '@gears-frontx/react';
+import { ActionHandler } from '@gears-frontx/react';
+import { KitThemedLifecycle } from './shared/KitThemedLifecycle';
 import { mfeApp } from './init';
 import { ProfileScreen } from './screens/profile/ProfileScreen';
 import { fetchUser } from './actions/profileActions';
 import { DEMO_ACTION_REFRESH_PROFILE } from './shared/extension-ids';
 
-// @cpt-FEATURE:child-bridge-action-handler:p3
-
-// @cpt-begin:child-bridge-action-handler:p3:inst-1
 class ProfileRefreshHandler extends ActionHandler {
   handleAction(
     _actionTypeId: string,
@@ -18,9 +16,8 @@ class ProfileRefreshHandler extends ActionHandler {
     return Promise.resolve();
   }
 }
-// @cpt-end:child-bridge-action-handler:p3:inst-1
 
-class ProfileLifecycle extends ThemeAwareReactLifecycle {
+class ProfileLifecycle extends KitThemedLifecycle {
   constructor() {
     super(mfeApp);
   }
@@ -29,7 +26,6 @@ class ProfileLifecycle extends ThemeAwareReactLifecycle {
     return <ProfileScreen bridge={bridge} />;
   }
 
-  // @cpt-begin:child-bridge-action-handler:p3:inst-2
   override mount(container: Element | ShadowRoot, bridge: ChildMfeBridge): void {
     // Let the base class render the React tree first so the screen is visible
     // before any action can arrive.
@@ -38,7 +34,6 @@ class ProfileLifecycle extends ThemeAwareReactLifecycle {
     // chained next step finds the handler already in place.
     bridge.registerActionHandler(DEMO_ACTION_REFRESH_PROFILE, new ProfileRefreshHandler());
   }
-  // @cpt-end:child-bridge-action-handler:p3:inst-2
 }
 
 /**

@@ -55,7 +55,11 @@ export function createThemeRegistry(): ThemeRegistry {
       parts.push(`${key}: ${value}`);
     }
     if (parts.length === 0) return;
-    sheet.insertRule(`:root { ${parts.join('; ')} }`, 0);
+    // :root:root (specificity 0,2,0) so applied theme tokens deterministically beat
+    // design-system [data-theme='...'] token blocks (0,1,0) — with plain :root the
+    // outcome is a specificity tie decided by style-tag order, which Vite HMR
+    // re-injection can flip at any time.
+    sheet.insertRule(`:root:root { ${parts.join('; ')} }`, 0);
   }
 
   return {
@@ -90,6 +94,13 @@ export function createThemeRegistry(): ThemeRegistry {
       }
 
       applyCSSVariables(config.variables);
+      if (typeof document !== 'undefined') {
+        // Default to 'light' rather than removing the attribute: with no
+        // data-theme, a dark-OS machine lets the kit's
+        // `:root:not([data-theme='light'])` block own every kit-only token
+        // while the shell's own tokens stay light — a mixed palette.
+        document.documentElement.setAttribute('data-theme', config.appearance ?? 'light');
+      }
       currentThemeId = id;
       notifySubscribers();
     },

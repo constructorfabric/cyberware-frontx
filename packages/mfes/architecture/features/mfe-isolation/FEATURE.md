@@ -76,6 +76,10 @@ User-facing interactions that start with an actor and describe the end-to-end fl
 - The expose chunk source cannot be fetched — load fails and the cache entry is evicted for retry
 - The import primitive receives a non-inline-content URL — guard rejects it with a type error before any dynamic import executes
 - The entry names its manifest by id, and neither the handler's own manifest cache nor the type system supplied at handler registration holds a manifest under that id — load fails with an error naming the unresolved reference; a handler that belongs to no registry has no type system to ask and fails the same way
+- The manifest declares the same shared-dependency package name more than once — load fails with an error naming the duplicated package and the manifest, before any shared-dependency source is fetched
+- A chunk's static dependency has no blob URL when that chunk is rewritten — load fails with an error naming the referring chunk and the unbuilt dependency, rather than emitting an origin URL for it
+- A chunk's static-dependency graph contains a cycle, whether closed within one branch or across two branches that fanned out independently — load fails with a diagnostic naming the chunks on the cycle and the microfrontend, because no module may be resolved outside the load's own graph
+- The manifest's shared dependencies import one another circularly — load fails with a diagnostic naming those dependencies and the imports among them, rather than minting a module whose bare specifiers are left unrewritten
 
 **Steps**:
 1. [x] - `p1` - Actor registers the microfrontend entry with the registry - `inst-register`
@@ -88,7 +92,7 @@ User-facing interactions that start with an actor and describe the end-to-end fl
       1. [x] - `p1` - **IF** the reference carries the manifest document itself, System caches it under its own id and uses it for this load - `inst-manifest-inline`
       2. [x] - `p1` - **ELSE** the reference names the manifest by id: System reads the handler's manifest cache and, on a miss, asks the type system supplied to the handler at registration for the manifest registered under that id, accepting only a value of manifest shape - `inst-manifest-by-id`
       3. [x] - `p1` - **IF** no source yields a manifest for the id, System raises an MFE load error naming the unresolved reference and the ways to supply it - `inst-manifest-unresolved-raise`
-   2. [x] - `p1` - System builds shared-dependency blob URLs in dependency order (leaves first) via the build-shared-dep-blobs algorithm - `inst-build-shared-blobs`
+   2. [x] - `p1` - System builds shared-dependency blob URLs for every shared dependency the manifest declares via the build-shared-dep-blobs algorithm, which decides their construction order itself from the fetched sources - `inst-build-shared-blobs`
    3. [x] - `p1` - System builds the blob URL chain for the expose chunk and its full static-dependency graph via the blob-url-chain algorithm - `inst-build-expose-chain`
    4. [x] - `p1` - System imports the expose blob URL through the trust-kernel guarded import primitive - `inst-import-expose`
    5. [x] - `p1` - System validates that the imported module implements the lifecycle contract (mount and unmount functions) - `inst-validate-lifecycle`
@@ -106,50 +110,77 @@ Internal system functions that implement the isolation mechanism.
 
 - [x] `p1` - **ID**: `cpt-frontx-algo-mfe-isolation-blob-url-chain`
 
-**Input**: Expose chunk filename, per-load state (base URL, entry ID, shared-dep blob URL map, in-flight map, blob URL map)
+**Input**: Expose chunk filename, the requesting lineage (ancestor filenames whose construction transitively awaits this one), a build-scoped failure signal, and per-load state (base URL, entry ID, shared-dep blob URL map, an in-flight construction registry — a transient join point that lets concurrent requesters for one filename share a single construction — and the blob URL map, the one durable record of completed constructions)
 
-**Output**: Per-load blob URL map updated with the expose chunk and all transitive static-dependency blob URLs
+**Output**: Per-load blob URL map updated with the expose chunk and all transitive static-dependency blob URLs — the whole chain, with no exception — or a failure of the chain build
 
 **Steps**:
-1. [x] - `p1` - Check whether the chunk filename is already present in the per-load blob URL map - `inst-check-map`
-2. [x] - `p1` - **IF** chunk already mapped - `inst-if-mapped`
+1. [x] - `p1` - Operate under a failure signal created fresh for each chain build — the initial expose-chunk build, or one lazy-chunk resolution — and shared only by the recursive constructions of that same build, so a failed build never suppresses or fails a later independent build within the same load - `inst-build-failure-scope`
+2. [x] - `p1` - Check whether the chunk filename is already present in the per-load blob URL map - `inst-check-map`
+3. [x] - `p1` - **IF** chunk already mapped - `inst-if-mapped`
    1. [x] - `p1` - **RETURN** immediately (already computed for this load) - `inst-return-mapped`
-3. [x] - `p1` - Check whether a construction promise for this filename is already in-flight in the per-load in-flight map - `inst-check-inflight`
-4. [x] - `p1` - **IF** an in-flight promise exists - `inst-if-inflight`
-   1. [x] - `p1` - **RETURN** the existing in-flight promise (concurrent callers share one construction) - `inst-return-inflight`
-5. [x] - `p1` - Fetch the chunk source text from the absolute chunk URL using the LRU source-text cache for URL-level deduplication - `inst-fetch-source`
-6. [x] - `p1` - Parse all relative static import filenames from the chunk source - `inst-parse-static-imports`
-7. [x] - `p1` - **FOR EACH** dependency filename in the parsed static imports - `inst-for-each-dep`
-   1. [x] - `p1` - Recursively build the blob URL chain for the dependency - `inst-recurse-dep`
-8. [x] - `p1` - Rewrite all relative static import specifiers to their resolved blob URLs from the per-load blob URL map - `inst-rewrite-static`
-9. [x] - `p1` - Rewrite all bare shared-dependency specifiers to their pre-built shared-dep blob URLs - `inst-rewrite-shared`
-10. [x] - `p1` - Replace `import.meta.url` occurrences with the chunk's real HTTP base URL to preserve relative URL resolution under blob evaluation - `inst-rewrite-meta-url`
-11. [x] - `p1` - **IF** the rewritten source references the lazy-import ABI function - `inst-if-lazy-ref`
+4. [x] - `p1` - Check whether the requested filename already appears in the lineage carried by this request, which would make its own construction depend on itself — a cycle this load's graph cannot express - `inst-check-ancestor-cycle`
+5. [x] - `p1` - **IF** the filename is present in its own lineage - `inst-if-ancestor-cycle`
+   1. [x] - `p1` - **RETURN** error — fail this chain build with a diagnostic naming the chunk and the lineage that closes the cycle, without constructing and **without awaiting**, so no circular wait is created - `inst-raise-ancestor-cycle`
+6. [x] - `p1` - **WHEN** a cycle is detected — in a construction's own lineage or in a joined lineage — emit the diagnostic as the raised error itself, once per chunk per chain build, naming the chunk, the lineage that closes the cycle, the microfrontend, and the remedy (rebuild the microfrontend so its chunk graph is acyclic), rather than as a warning alongside a degraded resolution - `inst-diagnose-cycle`
+7. [x] - `p1` - Check whether a construction promise for this filename is already in-flight in the per-load in-flight map - `inst-check-inflight`
+8. [x] - `p1` - **IF** an in-flight promise exists - `inst-if-inflight`
+   1. [x] - `p1` - Form the union of this request's own lineage and the lineage recorded on the in-flight entry - `inst-join-lineage-union`
+   2. [x] - `p1` - **IF** that union already names the requested filename — awaiting it would close a cycle across two branches that fanned out independently, which is the cross-branch circular wait this check exists to prevent - `inst-if-join-cycle`
+      1. [x] - `p1` - **RETURN** error — fail this chain build with the same diagnostic as `inst-raise-ancestor-cycle`, without awaiting, so no circular wait is created across the two branches - `inst-raise-join-cycle`
+   3. [x] - `p1` - **ELSE** contribute this request's own lineage into the in-flight entry's lineage before awaiting it, so that a later request issued by the joined construction back into this branch is detectable as the cycle it is - `inst-contribute-lineage`
+   4. [x] - `p1` - **RETURN** the existing in-flight promise (concurrent callers share one construction) - `inst-return-inflight`
+9. [x] - `p1` - Register an in-flight entry for this filename carrying a lineage seeded from the requesting lineage, and thread that lineage — live, not a snapshot — through this construction and into every dependency it recurses into - `inst-register-inflight`
+10. [x] - `p1` - **IF** the build's failure signal is already raised when this construction begins - `inst-if-failed-at-entry`
+    1. [x] - `p1` - **RETURN** without fetching, abandoning work this build will never use - `inst-return-failed-at-entry`
+11. [x] - `p1` - Fetch the chunk source text from the absolute chunk URL using the LRU source-text cache for URL-level deduplication - `inst-fetch-source`
+12. [x] - `p1` - **IF** the build's failure signal was raised by another branch while this fetch was in flight - `inst-if-failed-after-fetch`
+    1. [x] - `p1` - **RETURN** without minting a blob URL - `inst-return-failed-after-fetch`
+13. [x] - `p1` - Parse all relative static import filenames from the chunk source - `inst-parse-static-imports`
+14. [x] - `p1` - Fan the sibling dependency recursions out concurrently rather than awaiting each sibling's entire subtree before starting the next, admitting them through a single concurrency budget shared by the whole chain build so that the number of source fetches in flight for that build never exceeds one fixed width — a constant of the runtime, not a field a caller configures — regardless of graph depth or the number of sibling groups; the bound keeps added concurrency shortening wall-clock time instead of queuing behind the transport's own connection limit, and keeps a build from minting page-lifetime blob URLs for work a failing build will never use - `inst-fanout-bounded`
+15. [x] - `p1` - **FOR EACH** dependency filename in the parsed static imports - `inst-for-each-dep`
+    1. [x] - `p1` - Recursively build the blob URL chain for the dependency, passing a lineage extended with this chunk's own filename - `inst-recurse-dep`
+16. [x] - `p1` - Await every sibling recursion and scan the outcomes in declaration order — not completion order — for the first failure, so the reported error is deterministic regardless of which sibling lost the wall-clock race - `inst-first-failure-declaration-order`
+17. [x] - `p1` - **IF** a sibling recursion failed - `inst-if-sibling-failed`
+    1. [x] - `p1` - Raise this build's failure signal and propagate that first failure to the caller - `inst-raise-build-failure`
+18. [x] - `p1` - **IF** the build's failure signal was raised by a branch outside this construction's own subtree - `inst-if-failed-elsewhere`
+    1. [x] - `p1` - **RETURN** without minting a blob URL - `inst-return-failed-elsewhere`
+19. [x] - `p1` - Rewrite all relative static import specifiers to their resolved blob URLs from the per-load blob URL map - `inst-rewrite-static`
+20. [x] - `p1` - Raise an MFE load error for any static dependency that has no entry in the per-load blob URL map when its referrer is rewritten — unconditionally, there being no sanctioned reason for an absence now that a detected cycle fails the build where it is detected — naming the referring chunk and the dependency, rather than emitting an origin URL for a module that would then evaluate outside the isolated graph with its bare specifiers unrewritten - `inst-raise-unbuilt-dep`
+21. [x] - `p1` - Rewrite all bare shared-dependency specifiers to their pre-built shared-dep blob URLs - `inst-rewrite-shared`
+22. [x] - `p1` - Replace `import.meta.url` occurrences with the chunk's real HTTP base URL to preserve relative URL resolution under blob evaluation - `inst-rewrite-meta-url`
+23. [x] - `p1` - **IF** the rewritten source references the lazy-import ABI function - `inst-if-lazy-ref`
     1. [x] - `p1` - Mint or reuse the per-load lazy-loader stub blob URL and inject its import at the top of the source - `inst-inject-lazy-stub`
-12. [x] - `p1` - Wrap the fully rewritten source in a blob, create a blob URL, and record it in the per-load blob URL map - `inst-create-blob`
-13. [x] - `p1` - **RETURN** with the blob URL present in the per-load map - `inst-return-complete`
+24. [x] - `p1` - Wrap the fully rewritten source in a blob, create a blob URL, and record it in the per-load blob URL map - `inst-create-blob`
+25. [x] - `p1` - **RETURN** with the blob URL present in the per-load map, which is the durable record of this construction - `inst-return-complete`
+26. [x] - `p1` - **WHEN** a construction settles — fulfilled or rejected — without a blob URL recorded for its filename (abandonment because another branch of the same build failed, or its own failure — including a detected cycle), remove its in-flight registry entry, so a later request re-attempts construction instead of joining a settled promise that produced nothing - `inst-settle-drop-inflight`
 
 ### Shared-Dependency Blob URL Construction
 
 - [x] `p1` - **ID**: `cpt-frontx-algo-mfe-isolation-build-shared-dep-blob-urls`
 
-**Input**: MFE manifest containing the shared-dependency list (name, version, chunk path) in dependency order (leaves first)
+**Input**: MFE manifest containing the shared-dependency list (name, version, chunk path) in the manifest's published enumeration order, which fixes only the sequence in which the declarations are visited (`cpt-frontx-adr-mfe-asset-discovery`)
 
 **Output**: Map of shared-dependency package name to blob URL, covering all shared dependencies declared in the manifest
 
 **Steps**:
-1. [x] - `p1` - **FOR EACH** shared dependency declared in the manifest, in declaration order - `inst-for-each-dep`
+1. [x] - `p1` - Verify that every shared-dependency package name declared in the manifest is unique within that manifest, before any network access - `inst-assert-unique-names`
+2. [x] - `p1` - **IF** the same package name is declared more than once, regardless of version - `inst-if-duplicate-name`
+   1. [x] - `p1` - **RETURN** error — fail the load with a diagnostic naming the duplicated package and the manifest, because sources and rewrite maps are keyed by bare package name and a duplicate would silently displace the earlier declaration - `inst-raise-duplicate-name`
+3. [x] - `p1` - **FOR EACH** shared dependency declared in the manifest, visited in the manifest's enumeration order — which governs only the sequence of visits and, when two declarations collide on the same `name@version` key, which one claims the cross-MFE cache entry, so the enumeration may issue its fetches concurrently, admitted through the same fixed width `inst-fanout-bounded` names; this phase completes before the load's expose-chunk chain build begins, so the two phases never contribute to one another's in-flight count - `inst-for-each-dep`
    1. [x] - `p1` - Compute the deduplication cache key as `name@version` - `inst-compute-key`
    2. [x] - `p1` - **IF** the cross-MFE shared-dep text cache already holds a promise for this key - `inst-if-cache-hit`
       1. [x] - `p1` - Retrieve the cached source text promise - `inst-retrieve-cached`
    3. [x] - `p1` - **ELSE** - `inst-else-fetch`
       1. [x] - `p1` - Derive the absolute chunk URL from the manifest's `publicPath` and the dependency's `chunkPath` - `inst-derive-url`
-      2. [x] - `p1` - Fetch the source text and store the promise in the cross-MFE cache; on rejection, evict the entry to permit retry - `inst-fetch-and-cache`
-2. [x] - `p1` - Resolve the collected sources in dependency order, processing each dependency only after all dependencies it imports have been resolved; fall back to partial rewrites on circular dependencies - `inst-resolve-order`
-3. [x] - `p1` - **FOR EACH** dependency in resolved order - `inst-for-each-resolved`
+      2. [x] - `p1` - Fetch the source text and store the *in-flight fetch promise* in the cross-MFE cache under the key before awaiting it — which is what keeps the deduplication race-free however the concurrent fetches are interleaved; on rejection, evict the entry to permit retry - `inst-fetch-and-cache`
+4. [x] - `p1` - Resolve the collected sources in dependency order — the sole source of dependency-order correctness for blob construction, derived from the fetched sources themselves and not from the manifest's enumeration order — processing each dependency only after all dependencies it imports have been resolved - `inst-resolve-order`
+5. [x] - `p1` - **IF** a pass over the pending shared dependencies resolves none of them, the remaining set imports one another circularly and no dependency order over it exists - `inst-if-shared-cycle`
+   1. [x] - `p1` - **RETURN** error — fail the load with a diagnostic naming the shared dependencies that remain unresolved and the imports among them that form the cycle, rather than minting a module whose bare specifiers are left unrewritten and which therefore cannot be instantiated - `inst-raise-shared-cycle`
+6. [x] - `p1` - **FOR EACH** dependency in resolved order - `inst-for-each-resolved`
    1. [x] - `p1` - Rewrite bare shared-dep specifiers in the source to the already-resolved blob URLs - `inst-rewrite-specifiers`
    2. [x] - `p1` - Wrap the rewritten source in a blob, create a fresh blob URL, and add it to the shared-dep blob URL map - `inst-create-dep-blob`
-4. [x] - `p1` - **RETURN** the complete shared-dep blob URL map - `inst-return-map`
+7. [x] - `p1` - **RETURN** the complete shared-dep blob URL map - `inst-return-map`
 
 ### Trust-Kernel Guarded Import
 
@@ -252,5 +283,12 @@ The system **MUST** accept an entry's manifest either as the document itself or 
 - [x] All blob URLs in the instance-keyed load cache are retained for the page lifetime and are never revoked after the import resolves
 - [x] Shared-dependency source text is deduplicated across MFE loads using a cross-MFE LRU cache keyed by `name@version`; cache entries for failed fetches are evicted to permit retry
 - [x] On load failure, the cache entry for the failed extension instance is evicted so a subsequent call can attempt a fresh load
+- [ ] No load ever emits, for any module and for any reason, a specifier that is not an inline-content URL minted by that load. There is no exception for dependency cycles.
+- [ ] A chunk whose static-dependency graph closes a cycle — including one that closes across two branches that fanned out independently — fails the load without a circular wait, with a diagnostic naming the chunk, the lineage that closes the cycle, and the microfrontend.
+- [ ] Shared dependencies that import one another circularly fail the load with a diagnostic naming them, rather than producing a module whose bare specifiers are left unrewritten.
+- [ ] A static dependency absent from the per-load blob URL map when its referrer is rewritten fails the load with a diagnostic naming the referring chunk and the dependency — unconditionally, there being no sanctioned reason for an absence.
+- [x] A chain build that fails does not affect any later independent chain build of the same load: a lazy import that follows a failed one re-attempts construction of every chunk the failed build abandoned, including chunks the two builds share.
+- [x] Sibling static-import dependencies are fetched concurrently, and the number of chunk-source fetches in flight for one chain build never exceeds the runtime's fixed width no matter how deep or how wide the dependency graph is; the failure reported for a group of siblings is still the first in declaration order regardless of completion order.
+- [x] A manifest declaring the same shared-dependency package name more than once fails the load with a diagnostic naming that package, before any shared-dependency source is fetched.
 - [ ] An entry whose manifest is named by id loads when the manifest is registered with the type system of the registry the handler was registered into, without the id ever being cached by an earlier load
 - [ ] An entry whose manifest id no source resolves fails the load with a diagnostic naming that reference, both when a type system was supplied and when the handler belongs to no registry

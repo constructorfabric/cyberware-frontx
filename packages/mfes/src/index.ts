@@ -72,7 +72,7 @@ export { NoHandlerForActionTargetError } from './mediator/actions-chains-mediato
 export { ChildMfeBridgeImpl, ParentMfeBridgeImpl, ChildDomainForwardingHandler } from './bridge';
 
 // Bridge error classes (Phase 6)
-export { NoActionsChainHandlerError, BridgeDisposedError } from './bridge/errors';
+export { NoActionsChainHandlerError, BridgeDisposedError, BridgeInactiveError } from './bridge/errors';
 
 // Error classes (Phase 7)
 export {

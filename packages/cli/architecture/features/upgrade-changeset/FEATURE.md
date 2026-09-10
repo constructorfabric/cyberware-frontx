@@ -140,12 +140,12 @@ Internal system functions and procedures that do not interact with actors direct
 2. [x] - `p1` - **TRY**: - `inst-app-try`
    1. [x] - `p1` - **FOR EACH** clean entry in the change set, in dependency order: - `inst-app-for-each-entry`
       1. [x] - `p1` - Apply the entry to the project root within the template's ownership boundary: for an exclusive subtree, write or remove the whole file; for a `region-union` shared file, rewrite only the template's own marker-delimited region(s) in place, leaving every co-owning template's region byte-for-byte untouched - `inst-app-apply-entry`
-3. [x] - `p1` - **CATCH** application error: - `inst-app-catch`
-   1. [x] - `p1` - Restore `target` all affected files from the pre-upgrade snapshot, leaving the project byte-for-byte unchanged - `inst-app-restore-on-error`
-   2. [x] - `p1` - Report the error and **RETURN** failure without updating provenance - `inst-app-return-failure`
-4. [x] - `p1` - Update `target` the selected applied template's provenance record to the newer version - `inst-app-update-prov`
-5. [x] - `p1` - Retain `target` the pre-upgrade snapshot for rollback until the developer explicitly releases it or a new upgrade cycle begins - `inst-app-retain-snapshot`
-6. [x] - `p1` - **RETURN** success: applied entries, updated provenance, rollback available - `inst-app-return-success`
+   2. [x] - `p1` - Update `target` the selected applied template's provenance record to the newer version, as part of the same atomic application as the project-file writes above — not after it - `inst-app-update-prov`
+3. [x] - `p1` - **CATCH** application error, including a failure writing the updated provenance record: - `inst-app-catch`
+   1. [x] - `p1` - Restore `target` all affected files, including the provenance file, from the pre-upgrade snapshot, leaving the project byte-for-byte unchanged - `inst-app-restore-on-error`
+   2. [x] - `p1` - Report the error and **RETURN** failure without leaving a partially-upgraded repository - `inst-app-return-failure`
+4. [x] - `p1` - Retain `target` the pre-upgrade snapshot for rollback until the developer explicitly releases it or a new upgrade cycle begins - `inst-app-retain-snapshot`
+5. [x] - `p1` - **RETURN** success: applied entries, updated provenance, rollback available - `inst-app-return-success`
 
 ### Rollback an Applied Change Set
 
@@ -206,6 +206,8 @@ The change set for a record admitted on the repository-name match covers that te
 
 The system **MUST** apply the approved change set non-destructively by writing only the approved entries to the repository within the selected template's ownership boundary — rewriting only that template's own marker-delimited region(s) in a shared file and leaving every co-owning template's region untouched — retain a pre-upgrade snapshot for rollback, and update the selected applied template's provenance record to the newer version upon successful application.
 
+The provenance write **MUST** be treated as part of the same atomic application as the project-file writes, not as a step that follows it: if writing the updated provenance fails, the system **MUST** restore every snapshotted project file and the prior provenance bytes to their pre-upgrade state and **RETURN** a typed failure, rather than throwing after project files have already been changed.
+
 **Implements**:
 - `cpt-frontx-flow-upgrade-changeset-review-approval`
 - `cpt-frontx-algo-upgrade-changeset-apply`
@@ -253,3 +255,4 @@ The system **MUST** provide exactly one change-set engine in `cpt-frontx-compone
 - [x] A provenance record written before identity came from the manifest, its recorded identity being the repository name its subtree-less source-spec addresses, still upgrades without a refusal, provided both resolved versions declare one identity.
 - [x] The change set computed for such a record covers that template's exclusive subtrees only: every `region-union` shared file is excluded from it, contributing neither a clean entry nor a conflict whichever identity its markers carry.
 - [x] A provenance record whose identity is neither the identity the resolved versions declare nor the repository its own source-spec addresses causes the engine to refuse rather than assume a match.
+- [x] A provenance-write failure occurring after at least one project file has already been applied restores every changed project file and the prior provenance bytes byte-for-byte, and the engine returns a typed failure rather than throwing.

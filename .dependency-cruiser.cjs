@@ -368,9 +368,47 @@ module.exports = {
         // `@tanstack/*` branch: in-tree via node_modules, and the bare
         // specifier an uninstalled or non-workspace package resolves to.
         path: ['(^|/)node_modules/@tanstack/', '^@tanstack/'],
+        // `@tanstack/*` is a scope, not a router engine — TanStack also
+        // publishes unrelated libraries under it (e.g. the headless table
+        // library ui-kit's data-table component uses). The constraint this
+        // rule enforces reserves only "a concrete router engine or its
+        // packages" for @gears-frontx/routing-tanstack, so react-table is
+        // carved out of the ban rather than tightening the scope match itself.
+        pathNot: ['(^|/)node_modules/@tanstack/react-table', '^@tanstack/react-table'],
       },
       comment:
-        'cpt-frontx-constraint-routing-tanstack-sole-engine-import: @gears-frontx/routing-tanstack is the only package in this ecosystem permitted to import a concrete router engine; no other ecosystem package may import @tanstack/*.',
+        'cpt-frontx-constraint-routing-tanstack-sole-engine-import: @gears-frontx/routing-tanstack is the only package in this ecosystem permitted to import a concrete router engine; no other ecosystem package may import @tanstack/* (except @tanstack/react-table, which is not a router engine).',
+    },
+
+    // ============ TEST-SUPPORT BOUNDARY ENFORCEMENT ============
+
+    // `@gears-frontx/test-support` (internal/test-support) is a test-only
+    // path-containment helper: `layer-constants.cjs`'s `ALLOWED_ECOSYSTEM_EDGES`
+    // lists it only under `cli.dev`/`cyber-pilot-kit-frontx.dev`, and
+    // `scripts/package-edge-tests.ts` (`npm run arch:edges`) checks that at the
+    // package.json-manifest level only. This rule is the import-graph side of
+    // the same boundary: it forbids any *production* source file from
+    // importing it, regardless of what a package's manifest declares. Test
+    // files are excluded by shape (`.test.ts`/`.test.tsx`, or anything under a
+    // `__tests__/`/`__test-utils__/` directory), matching the same convention
+    // `frontx-ui-kit-1-no-template-content` above uses for its own test
+    // carve-out.
+    {
+      name: 'frontx-test-support-test-only',
+      severity: 'error',
+      from: {
+        path: '^packages/[^/]+/src/',
+        pathNot: '\\.test\\.(ts|tsx)$|__tests__|__test-utils__',
+      },
+      to: {
+        path: [
+          '^internal/test-support/',
+          '(^|/)node_modules/@gears-frontx/test-support(/|$)',
+          '^@gears-frontx/test-support(/|$)',
+        ],
+      },
+      comment:
+        '@gears-frontx/test-support is a test-only path-containment helper; no production source file may import it.',
     },
   ],
   options: {
@@ -401,5 +439,18 @@ module.exports = {
     // boundary contract is about coupling, not about what survives to runtime.
     // `no-circular` compensates via `viaOnly` (see the top of this file).
     tsPreCompilationDeps: true,
+    // dependency-cruiser defaults `exportsFields` to `[]` (its enhanced-resolve
+    // 4 backwards-compatibility choice), which makes the `exports` map
+    // invisible and leaves resolution to the legacy `main`. Dependencies that
+    // ship an `exports` map and no `main` - `@tanstack/react-table`,
+    // `@shadcn/react/*` - therefore came back `couldNotResolve`, and an
+    // unresolved specifier keeps its bare form as `resolved`, which reads as
+    // "outside packages/" and tripped `frontx-ui-kit-1-no-template-content` on
+    // ordinary node_modules imports. Restoring enhanced-resolve's own defaults
+    // makes them resolve the way Node and the bundlers already do.
+    enhancedResolveOptions: {
+      exportsFields: ['exports'],
+      conditionNames: ['import', 'require', 'node', 'default'],
+    },
   },
 };

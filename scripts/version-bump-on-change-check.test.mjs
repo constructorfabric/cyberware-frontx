@@ -6,8 +6,10 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   dependencyFieldsChanged,
+  discoverManifestOnlyTemplateRoots,
   discoverPackageRoots,
   groupChangedFilesByPackageRoot,
+  hasSubstantiveTemplateChange,
   isDocsOnlyPath,
   runCli,
 } from './version-bump-on-change-check.mjs';
@@ -92,6 +94,33 @@ async function writeBaselineFixture(root) {
     private: true,
     version: '0.1.0-alpha.0',
     dependencies: { '@gears-frontx/react': '0.2.0-alpha.3' },
+  });
+}
+
+const MANIFEST_ONLY_DIR = 'template-design-guardrails';
+const MANIFEST_ONLY_NAME = '@gears-frontx/template-design-guardrails';
+
+/**
+ * A manifest-only template: frontx-template.json (the only version truth -
+ * there is deliberately NO package.json), a DESIGN.md, and the template's own
+ * .frontx/ai/<identity>/ bundle subtree. The design-guardrails template shape.
+ * Passing `version: null` omits the field entirely (the broken-manifest case).
+ * @param {string} root
+ * @param {string | null} [version]
+ */
+async function writeManifestOnlyTemplateFixture(root, version = '0.1.0-alpha.1') {
+  await writeJson(path.join(root, MANIFEST_ONLY_DIR, 'frontx-template.json'), {
+    schemaVersion: '1.0',
+    name: MANIFEST_ONLY_NAME,
+    ...(version === null ? {} : { version }),
+    ownershipBoundaries: {
+      exclusiveSubtrees: ['DESIGN.md', `.frontx/ai/${MANIFEST_ONLY_NAME}/`],
+      sharedFiles: [],
+    },
+  });
+  await writeFile(path.join(root, MANIFEST_ONLY_DIR, 'DESIGN.md'), '# Design guardrails\n');
+  await writeJson(path.join(root, MANIFEST_ONLY_DIR, '.frontx', 'ai', MANIFEST_ONLY_NAME, 'extension.json'), {
+    skills: ['skills/guardrails.md'],
   });
 }
 
@@ -436,7 +465,7 @@ describe('hasSubstantiveChange + versionAt (via runCli)', () => {
 
     const { exitCode, output } = run(root);
     expect(exitCode).toBe(0);
-    expect(output).toContain('none of 4 governed package(s) had substantive changes');
+    expect(output).toContain('none of 4 governed package(s) and 0 manifest-only template(s) had substantive changes');
   });
 
   it('counts only the packages with substantive changes in the success line', async () => {
@@ -453,7 +482,7 @@ describe('hasSubstantiveChange + versionAt (via runCli)', () => {
 
     const { exitCode, output } = run(root);
     expect(exitCode).toBe(0);
-    expect(output).toContain('every one of 1 package(s) with substantive changes');
+    expect(output).toContain('every one of 1 governed root(s) with substantive changes');
   });
 
   it('fails loudly, naming the base ref, when the merge base cannot be resolved', async () => {
@@ -471,6 +500,197 @@ describe('hasSubstantiveChange + versionAt (via runCli)', () => {
     });
     expect(exitCode).toBe(1);
     expect(lines.join('\n')).toContain('origin/does-not-exist');
+  });
+});
+
+describe('discoverManifestOnlyTemplateRoots', () => {
+  it('returns only the template roots with no package.json, not the manifest+package.json ones', async () => {
+    const root = await makeRepo();
+    // Mixed fixture: template-shell and template-mfe both carry a manifest AND
+    // a package.json; only the guardrails template is manifest-only.
+    await writeBaselineFixture(root);
+    await writeManifestOnlyTemplateFixture(root);
+
+    expect(discoverManifestOnlyTemplateRoots(root)).toEqual([MANIFEST_ONLY_DIR]);
+  });
+});
+
+describe('hasSubstantiveTemplateChange', () => {
+  const templateRoot = MANIFEST_ONLY_DIR;
+
+  it('exempts frontx-template.json itself - the bump edit must not force a second bump', () => {
+    expect(hasSubstantiveTemplateChange(templateRoot, [`${templateRoot}/frontx-template.json`])).toBe(false);
+  });
+
+  it('exempts a docs-only file', () => {
+    expect(hasSubstantiveTemplateChange(templateRoot, [`${templateRoot}/DESIGN.md`])).toBe(false);
+  });
+
+  it('counts any other file under the root', () => {
+    expect(hasSubstantiveTemplateChange(templateRoot, [`${templateRoot}/.frontx/ai/x/extension.json`])).toBe(true);
+  });
+});
+
+// A manifest-only template has no package.json - by design, nothing
+// installable - so its version truth is the "version" field of
+// frontx-template.json itself. The gate must (a) never crash or false-fail on
+// such a template's mere presence, and (b) still hold its changes to the
+// bump-on-change contract, against the manifest version rather than a
+// package.json one.
+describe('manifest-only template (frontx-template.json carries the version)', () => {
+  it('discovers the manifest-only root, and still passes, when only other packages change', async () => {
+    const root = await makeRepo();
+    await writeBaselineFixture(root);
+    await writeManifestOnlyTemplateFixture(root);
+    commitAll(root, 'base');
+    git(root, ['checkout', '-q', '-b', 'feature']);
+    await writeJson(path.join(root, 'packages', 'api', 'src', 'index.js'), 'export const x = 2;\n');
+    await writeJson(path.join(root, 'packages', 'api', 'package.json'), {
+      name: '@gears-frontx/api',
+      version: '0.3.0-alpha.1',
+    });
+    commitAll(root, 'change and bump api only');
+
+    expect(discoverManifestOnlyTemplateRoots(root)).toContain(MANIFEST_ONLY_DIR);
+    expect(run(root).exitCode).toBe(0);
+  });
+
+  it("fails when a manifest-only template's bundle content changes without a frontx-template.json version bump", async () => {
+    const root = await makeRepo();
+    await writeBaselineFixture(root);
+    await writeManifestOnlyTemplateFixture(root);
+    commitAll(root, 'base');
+    git(root, ['checkout', '-q', '-b', 'feature']);
+    await writeJson(path.join(root, MANIFEST_ONLY_DIR, '.frontx', 'ai', MANIFEST_ONLY_NAME, 'extension.json'), {
+      skills: ['skills/guardrails.md', 'skills/review.md'],
+    });
+    commitAll(root, 'change guardrails bundle without bump');
+
+    const { exitCode, output } = run(root);
+    expect(exitCode).toBe(1);
+    expect(output).toContain(MANIFEST_ONLY_DIR);
+  });
+
+  it("passes when a manifest-only template's content change comes with a frontx-template.json version bump", async () => {
+    const root = await makeRepo();
+    await writeBaselineFixture(root);
+    await writeManifestOnlyTemplateFixture(root);
+    commitAll(root, 'base');
+    git(root, ['checkout', '-q', '-b', 'feature']);
+    await writeManifestOnlyTemplateFixture(root, '0.1.0-alpha.2');
+    await writeJson(path.join(root, MANIFEST_ONLY_DIR, '.frontx', 'ai', MANIFEST_ONLY_NAME, 'extension.json'), {
+      skills: ['skills/guardrails.md', 'skills/review.md'],
+    });
+    commitAll(root, 'change guardrails bundle and bump the manifest version');
+
+    expect(run(root).exitCode).toBe(0);
+  });
+
+  it('passes a commit that touches ONLY frontx-template.json - a bump alone is never substantive', async () => {
+    const root = await makeRepo();
+    await writeBaselineFixture(root);
+    await writeManifestOnlyTemplateFixture(root);
+    commitAll(root, 'base');
+    git(root, ['checkout', '-q', '-b', 'feature']);
+    await writeJson(path.join(root, MANIFEST_ONLY_DIR, 'frontx-template.json'), {
+      schemaVersion: '1.0',
+      name: MANIFEST_ONLY_NAME,
+      version: '0.1.0-alpha.2',
+      ownershipBoundaries: {
+        exclusiveSubtrees: ['DESIGN.md', `.frontx/ai/${MANIFEST_ONLY_NAME}/`],
+        sharedFiles: [],
+      },
+    });
+    commitAll(root, 'bump the manifest version alone');
+
+    expect(run(root).exitCode).toBe(0);
+  });
+
+  // The .md exemption is INTENTIONAL: a manifest-only template's docs edits
+  // inherit the same isDocsOnlyPath decision as everywhere else in this gate,
+  // deliberately - DESIGN.md prose changing alone demands no bump.
+  it('passes a commit that touches only DESIGN.md with no bump - the docs-only exemption is inherited on purpose', async () => {
+    const root = await makeRepo();
+    await writeBaselineFixture(root);
+    await writeManifestOnlyTemplateFixture(root);
+    commitAll(root, 'base');
+    git(root, ['checkout', '-q', '-b', 'feature']);
+    await writeFile(path.join(root, MANIFEST_ONLY_DIR, 'DESIGN.md'), '# Design guardrails, revised\n');
+    commitAll(root, 'docs-only edit to the template');
+
+    const { exitCode, output } = run(root);
+    expect(exitCode).toBe(0);
+    // The success line counts BOTH kinds of governed root, not just packages.
+    expect(output).toContain('none of 4 governed package(s) and 1 manifest-only template(s) had substantive changes');
+  });
+
+  // Mirror of the package bump-then-revert case: the manifest version is read
+  // from the two endpoint blobs, so an intermediate bump that a later commit
+  // reverts must still fail.
+  it('fails when a frontx-template.json bump is reverted later in the same PR (bump-then-revert)', async () => {
+    const root = await makeRepo();
+    await writeBaselineFixture(root);
+    await writeManifestOnlyTemplateFixture(root);
+    commitAll(root, 'base');
+    git(root, ['checkout', '-q', '-b', 'feature']);
+    await writeManifestOnlyTemplateFixture(root, '0.1.0-alpha.2');
+    await writeJson(path.join(root, MANIFEST_ONLY_DIR, '.frontx', 'ai', MANIFEST_ONLY_NAME, 'extension.json'), {
+      skills: ['skills/guardrails.md', 'skills/review.md'],
+    });
+    commitAll(root, 'change bundle and bump');
+    await writeManifestOnlyTemplateFixture(root, '0.1.0-alpha.1');
+    // Re-assert the substantive bundle content so ONLY the version reverts.
+    await writeJson(path.join(root, MANIFEST_ONLY_DIR, '.frontx', 'ai', MANIFEST_ONLY_NAME, 'extension.json'), {
+      skills: ['skills/guardrails.md', 'skills/review.md'],
+    });
+    commitAll(root, 'revert the bump');
+
+    const { exitCode, output } = run(root);
+    expect(exitCode).toBe(1);
+    expect(output).toContain(MANIFEST_ONLY_DIR);
+  });
+
+  // Governance is classified at the MERGE BASE: a PR that adds a package.json
+  // to a previously manifest-only template must not thereby flip the root out
+  // of manifest governance in the same PR that changes its content.
+  it('still demands a manifest bump when the same PR adds a package.json to a previously manifest-only template', async () => {
+    const root = await makeRepo();
+    await writeBaselineFixture(root);
+    await writeManifestOnlyTemplateFixture(root);
+    commitAll(root, 'base');
+    git(root, ['checkout', '-q', '-b', 'feature']);
+    await writeJson(path.join(root, MANIFEST_ONLY_DIR, 'package.json'), {
+      name: 'design-guardrails-harness',
+      private: true,
+    });
+    await writeJson(path.join(root, MANIFEST_ONLY_DIR, '.frontx', 'ai', MANIFEST_ONLY_NAME, 'extension.json'), {
+      skills: ['skills/guardrails.md', 'skills/review.md'],
+    });
+    commitAll(root, 'add a package.json and change the bundle, no manifest bump');
+
+    const { exitCode, output } = run(root);
+    expect(exitCode).toBe(1);
+    expect(output).toContain(MANIFEST_ONLY_DIR);
+  });
+
+  // A manifest that EXISTS but has no version must fail loudly, not silently
+  // exempt the root the way a genuinely absent manifest (new/removed package)
+  // does - conflating the two would ungoverned the template forever.
+  it('fails loudly, naming the root, when frontx-template.json declares no version at either ref', async () => {
+    const root = await makeRepo();
+    await writeBaselineFixture(root);
+    await writeManifestOnlyTemplateFixture(root, null);
+    commitAll(root, 'base');
+    git(root, ['checkout', '-q', '-b', 'feature']);
+    await writeJson(path.join(root, MANIFEST_ONLY_DIR, '.frontx', 'ai', MANIFEST_ONLY_NAME, 'extension.json'), {
+      skills: ['skills/guardrails.md', 'skills/review.md'],
+    });
+    commitAll(root, 'change bundle under a versionless manifest');
+
+    const { exitCode, output } = run(root);
+    expect(exitCode).toBe(1);
+    expect(output).toContain(`${MANIFEST_ONLY_DIR}/frontx-template.json`);
+    expect(output).toContain('no usable "version"');
   });
 });
 

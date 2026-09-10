@@ -1,5 +1,3 @@
-// @cpt-dod:cpt-frontx-dod-studio-devtools-panel-overlay:p1
-// @cpt-algo:cpt-frontx-algo-studio-devtools-portal-management:p1
 import React from 'react';
 import { useTranslation } from '@gears-frontx/react';
 import { Card } from './uikit/base/card';
@@ -10,9 +8,8 @@ import { useResizable } from './hooks/useResizable';
 import { useStudioContext } from './StudioProvider';
 import { ControlPanel } from './sections/ControlPanel';
 import { STORAGE_KEYS } from './types';
+import { STUDIO_COLLAPSE_TESTID } from './testIds';
 
-// @cpt-begin:cpt-frontx-dod-studio-devtools-panel-overlay:p1:inst-1
-// @cpt-begin:cpt-frontx-algo-studio-devtools-portal-management:p1:inst-1
 export const StudioPanel: React.FC = () => {
   const { toggleCollapsed, setPortalContainer } = useStudioContext();
   const { t } = useTranslation();
@@ -42,6 +39,11 @@ export const StudioPanel: React.FC = () => {
 
       <div
         className="studio-panel fixed z-[10000]"
+        // The floating panel is page content outside <header>/<main>, so it
+        // carries its own landmark (axe: region) — complementary fits a
+        // supporting dev tool that is not part of the page's main flow.
+        role="complementary"
+        aria-label={t('studio:title')}
         style={{
           left: `${position.x}px`,
           top: `${position.y}px`,
@@ -51,8 +53,14 @@ export const StudioPanel: React.FC = () => {
       >
       <Card className="h-full w-full flex flex-col overflow-hidden bg-white/20 dark:bg-black/50 backdrop-blur-md backdrop-saturate-[180%] border border-white/30 dark:border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.2)]">
         {/* Header with drag handle */}
+        {/* jsx-a11y/no-static-element-interactions is exempted for this file in
+            eslint.config.js (an inline directive can't be used: the plugin
+            arrives with an installed verify package, and a directive is an
+            error when the rule is undefined and unused when it never fires):
+            onMouseDown starts a pointer-only panel drag; the header's real
+            controls (collapse button) are native and keyboard-reachable. */}
         <div
-          className="studio-header px-4 py-3 border-b border-border/50 select-none flex items-center justify-between"
+          className="studio-header px-4 py-3 border-b border-[color-mix(in_oklab,var(--border)_50%,transparent)] select-none flex items-center justify-between"
           onMouseDown={handleDragMouseDown}
           style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
         >
@@ -61,6 +69,7 @@ export const StudioPanel: React.FC = () => {
             variant={ButtonVariant.Ghost}
             size={ButtonSize.Sm}
             onClick={toggleCollapsed}
+            data-testid={STUDIO_COLLAPSE_TESTID}
             className="h-7 w-7 p-0"
             aria-label={t('studio:aria.collapseButton')}
             title={t('studio:aria.collapseButton')}
@@ -96,7 +105,7 @@ export const StudioPanel: React.FC = () => {
           tabIndex={0}
         >
           <svg
-            className="w-5 h-5 text-muted-foreground/70 hover:text-muted-foreground transition-colors"
+            className="w-5 h-5 text-[color-mix(in_oklab,var(--muted-foreground)_70%,transparent)] hover:text-muted-foreground transition-colors"
             fill="currentColor"
             viewBox="0 0 24 24"
           >
@@ -110,5 +119,3 @@ export const StudioPanel: React.FC = () => {
 };
 
 StudioPanel.displayName = 'StudioPanel';
-// @cpt-end:cpt-frontx-dod-studio-devtools-panel-overlay:p1:inst-1
-// @cpt-end:cpt-frontx-algo-studio-devtools-portal-management:p1:inst-1

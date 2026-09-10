@@ -88,8 +88,8 @@ describe('blank-mfe lifecycle', () => {
     const lifecycle = module.default;
     const renderContent = Reflect.get(lifecycle, 'renderContent');
     const { bridge } = createMfeBridgeFixture({
-      domainId: 'blank-domain',
-      instanceId: 'blank-instance',
+      extDomainId: 'blank-domain',
+      extensionId: 'blank-instance',
       initialProperties: {
         [FRONTX_SHARED_PROPERTY_THEME]: 'blank-theme',
         [FRONTX_SHARED_PROPERTY_LANGUAGE]: 'en',
@@ -107,6 +107,24 @@ describe('blank-mfe lifecycle', () => {
     ).toBeTruthy();
   });
 
+  // `:root` matches no node in a shadow tree, so the kit's tokens only reach its
+  // components once every selector position naming it names the host instead.
+  it('re-anchors the ui-kit design tokens onto the shadow host it renders into', async () => {
+    const module = await import('./lifecycle');
+    const initializeStyles = Reflect.get(module.default, 'initializeStyles') as (
+      container: ShadowRoot
+    ) => void;
+    const shadowRoot = document.createElement('div').attachShadow({ mode: 'open' });
+
+    initializeStyles.call(module.default, shadowRoot);
+
+    const injectedCss = shadowRoot.querySelector('style')?.textContent ?? '';
+    expect(injectedCss).toContain(':host {');
+    // Not "no `:root` starts a line": a survivor mid-line matches nothing in a
+    // shadow tree just as silently, so nothing named `:root` may remain at all.
+    expect(injectedCss).not.toContain(':root');
+  });
+
   it('inherits base mount behavior from ThemeAwareReactLifecycle', async () => {
     const module = await import('./lifecycle');
     const lifecycle = module.default as {
@@ -114,8 +132,8 @@ describe('blank-mfe lifecycle', () => {
     };
     const container = document.createElement('div');
     const { bridge } = createMfeBridgeFixture({
-      domainId: 'blank-domain',
-      instanceId: 'blank-instance',
+      extDomainId: 'blank-domain',
+      extensionId: 'blank-instance',
     });
 
     lifecycle.mount(container, bridge);

@@ -338,13 +338,10 @@ describe('Button focus-ring contrast', () => {
     }
   });
 
-  // The single-tone model's whole point is that only default and
-  // destructive need a family color of their own now that violet-on-violet
-  // is no longer the failure mode — everything else shares the kit-wide
-  // --ring, same as every non-Button control. Guards against a future edit
-  // silently re-special-casing one of those four (the old two-tone version
-  // of this file special-cased ghost/link/secondary too, and nothing here
-  // would have caught it drifting).
+  // Under the single-tone model only default and destructive need a family
+  // color of their own; everything else shares the kit-wide --ring, same as
+  // every non-Button control. Guards against a future edit silently
+  // re-special-casing one of those four.
   it('resolves default and destructive to their own ring tone and the rest to --ring', () => {
     const ringNameFor = (variant: string) => {
       const scope = effectiveDeclarations(`.${variant}`);

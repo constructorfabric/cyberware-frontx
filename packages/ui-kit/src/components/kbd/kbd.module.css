@@ -1,0 +1,50 @@
+/*
+ * Kbd styles, translated from shadcn/ui base (registry/bases/base/ui/
+ * kbd.tsx, style-vega.css's .cn-kbd rule) to CSS Modules. Consumes only
+ * theme.css variables — no raw colors.
+ *
+ * No box-sizing declared: like separator.module.css, this class only sets
+ * background-color/color-affecting properties plus padding on a fixed
+ * height, and the height itself already accounts for that padding by
+ * being a literal (not a token-derived box needing a border-box guarantee
+ * the way input/tabs/badge do — see their own comments).
+ */
+.kbd {
+  display: inline-flex;
+  height: 1.25rem; /* upstream h-5; no control-height step this small, so
+    kept as a literal (see tokens.test.ts: dimensions aren't guarded). */
+  width: fit-content;
+  min-width: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  border-radius: var(--radius-sm);
+  padding-inline: var(--space-1);
+  background-color: var(--muted);
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  /*
+   * Upstream's text-xs (12px/16px) matches --text-meta-size/-line-height/
+   * -tracking exactly, but its font-medium (500) doesn't match Meta's own
+   * regular weight — the same "size from one role, weight from another
+   * for emphasis" idiom table.module.css already uses for its header text
+   * (see that file), not a new pattern invented here.
+   */
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  font-weight: var(--text-label-weight);
+  letter-spacing: var(--text-meta-tracking);
+  pointer-events: none;
+  user-select: none;
+}
+
+.kbd svg {
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
+}
+
+.kbdGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}

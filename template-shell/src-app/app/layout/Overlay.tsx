@@ -21,7 +21,7 @@ export const Overlay: React.FC<OverlayProps> = ({ children }) => {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
+    <div className="fixed inset-0 z-50 bg-[color-mix(in_oklab,var(--background)_80%,transparent)] backdrop-blur-sm flex items-center justify-center">
       {children}
     </div>
   );

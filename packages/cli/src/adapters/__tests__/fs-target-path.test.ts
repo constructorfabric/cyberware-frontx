@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { joinWithinRoot } from '@gears-frontx/test-support/path-guard';
 
 // Created with `vi.hoisted` so the handle exists before the mock factory runs.
 // The real module is spread and only `stat` is replaced, so every case below
@@ -42,11 +43,11 @@ describe('createFsReadTargetPathStateFn — cpt-frontx-dod-cli-scaffolding-add-u
   it('reports a path nothing stands at as absent, the free ground materialization writes into', async () => {
     const readTargetPathState = createFsReadTargetPathStateFn();
 
-    expect(await readTargetPathState(path.join(tmpDir(), 'does-not-exist'))).toBe('absent');
+    expect(await readTargetPathState(joinWithinRoot(tmpDir(), 'does-not-exist'))).toBe('absent');
   });
 
   it('reports an existing file as a file, so the guard sees content a write would destroy', async () => {
-    const file = path.join(tmpDir(), 'held.ts');
+    const file = joinWithinRoot(tmpDir(), 'held.ts');
     fs.writeFileSync(file, 'content');
     const readTargetPathState = createFsReadTargetPathStateFn();
 
@@ -63,11 +64,11 @@ describe('createFsReadTargetPathStateFn — cpt-frontx-dod-cli-scaffolding-add-u
   // occupant of this path, not an absence.
   it('resolves a symlink to what it points at rather than reporting the link itself', async () => {
     const dir = tmpDir();
-    fs.writeFileSync(path.join(dir, 'real.ts'), 'content');
-    fs.symlinkSync(path.join(dir, 'real.ts'), path.join(dir, 'link.ts'));
+    fs.writeFileSync(joinWithinRoot(dir, 'real.ts'), 'content');
+    fs.symlinkSync(joinWithinRoot(dir, 'real.ts'), joinWithinRoot(dir, 'link.ts'));
     const readTargetPathState = createFsReadTargetPathStateFn();
 
-    expect(await readTargetPathState(path.join(dir, 'link.ts'))).toBe('file');
+    expect(await readTargetPathState(joinWithinRoot(dir, 'link.ts'))).toBe('file');
   });
 
   // The link resolves to nothing, so the resolving `stat` reports it missing —
@@ -76,10 +77,10 @@ describe('createFsReadTargetPathStateFn — cpt-frontx-dod-cli-scaffolding-add-u
   // being guarded. Reported as occupied so the guard refuses it.
   it('reports a dangling symlink as a file, since a write through it creates the file it names', async () => {
     const dir = tmpDir();
-    fs.symlinkSync(path.join(dir, 'never-created.ts'), path.join(dir, 'dangling.ts'));
+    fs.symlinkSync(joinWithinRoot(dir, 'never-created.ts'), joinWithinRoot(dir, 'dangling.ts'));
     const readTargetPathState = createFsReadTargetPathStateFn();
 
-    expect(await readTargetPathState(path.join(dir, 'dangling.ts'))).toBe('file');
+    expect(await readTargetPathState(joinWithinRoot(dir, 'dangling.ts'))).toBe('file');
   });
 
   // An unreadable path says nothing about what stands there; swallowing the

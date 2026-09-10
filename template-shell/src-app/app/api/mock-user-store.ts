@@ -7,12 +7,12 @@ import { UserRole, type ApiUser } from './types';
 
 export const createDefaultAccountsMockUser = (): ApiUser => ({
   id: 'mock-user-001',
-  email: 'demo@frontx.dev',
-  firstName: 'Demo',
-  lastName: 'User',
+  email: 'alex.rivera@frontx.dev',
+  firstName: 'Alex',
+  lastName: 'Rivera',
   role: UserRole.Admin,
   language: Language.English,
-  avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Demo',
+  avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=AlexRivera',
   createdAt: new Date('2024-01-01T00:00:00Z').toISOString(),
   updatedAt: new Date('2024-12-01T00:00:00Z').toISOString(),
   extra: {

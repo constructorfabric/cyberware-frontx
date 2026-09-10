@@ -1,0 +1,120 @@
+/*
+ * Toggle styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ */
+
+.toggle {
+  /*
+   * Substitutes for the preflight the kit lacks — same acute case as
+   * button.module.css: a real <button> is border-box by UA default, but
+   * this class also lands on Base UI's `render` escape hatch, where it
+   * isn't.
+   */
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  color: var(--muted-foreground);
+  font-family: inherit;
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  font-weight: var(--text-label-weight);
+  letter-spacing: var(--text-label-tracking);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  /* Colour and box-shadow crossfades only, no transform/geometry — not motion under
+     WCAG 2.3.3, so deliberately left unguarded under prefers-reduced-motion. */
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.toggle:hover {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+/*
+ * Pressed (Base UI's `data-pressed`, the Toggle equivalent of Switch's
+ * data-checked): promoted to the accent pairing the drawn masters reserve
+ * for their `selected` specimen, one step louder than the --muted hover
+ * above, so a pressed toggle reads as "selected" rather than merely hovered.
+ */
+.toggle[data-pressed] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.toggle:focus-visible {
+  outline: var(--border-width-focus) solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .toggle:focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+/* disabled opacity: see input.module.css */
+.toggle:disabled {
+  pointer-events: none;
+  opacity: 0.42;
+}
+
+.variantOutline {
+  border-color: var(--border-strong);
+  background-color: transparent;
+}
+
+/* The same neutral hover as the borderless toggle above — the drawn outline
+ * `hover` specimen fills with --muted and keeps its border, leaving the
+ * accent tint to mean `pressed` on both variants alike. */
+.variantOutline:hover {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+.variantOutline[data-pressed] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+  border-color: var(--border-strong);
+}
+
+/* Toggles sit on the same control/height scale as Button. */
+.sizeDefault {
+  height: var(--control-height-md);
+  padding: 0 var(--space-3);
+  min-width: var(--control-height-md);
+}
+
+.sizeSm {
+  height: var(--control-height-sm);
+  padding: 0 var(--space-2);
+  min-width: var(--control-height-sm);
+  border-radius: var(--radius-sm);
+}
+
+.sizeLg {
+  height: var(--control-height-lg);
+  padding: 0 var(--space-4);
+  min-width: var(--control-height-lg);
+}
+
+/* Icon children (e.g. a formatting glyph) — fixed at one size regardless of
+ * the toggle's own size, matching upstream (no per-size icon scale here,
+ * unlike Button's slotted icon). */
+.toggle svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  flex-shrink: 0;
+  pointer-events: none;
+}

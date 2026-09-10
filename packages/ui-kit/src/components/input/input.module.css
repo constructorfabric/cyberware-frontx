@@ -60,7 +60,22 @@
 
 .input::file-selector-button {
   display: inline-flex;
-  height: 1.75rem;
+  /*
+   * The second preflight substitute in this file (see .input's box-sizing).
+   * Tailwind's reset lists ::file-selector-button alongside every element,
+   * so upstream's `file:` utilities land on a zeroed box; without it
+   * Chrome's UA `padding: 1px 6px` survives, indenting "Choose File" 6px
+   * past the field's own padding-inline and opening a 10px hole before the
+   * filename instead of upstream's 4px. Declared as the logical pair the
+   * UA ends up with, so the gap follows the writing direction under RTL.
+   */
+  padding: 0;
+  margin-block: 0;
+  margin-inline: 0 var(--space-1);
+  /* Upstream draws the button one control step below the field box (h-6
+   * inside h-8, i.e. 8px shorter); against this kit's --control-height-lg
+   * field that step is --control-height-sm. */
+  height: var(--control-height-sm);
   border: 0;
   background-color: transparent;
   color: var(--foreground);

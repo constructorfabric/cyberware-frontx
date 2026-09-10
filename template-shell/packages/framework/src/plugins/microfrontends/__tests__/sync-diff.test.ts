@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createFrontX } from '../../../createFrontX';
 import { microfrontends, addExtensionMounted } from '../index';
 import { gtsPlugin } from '@gears-frontx/gts-plugin';
-import { themeSchema, languageSchema, extensionScreenSchema } from '../../../gts';
+import { themeSchema, languageSchema, extensionScreenSchema } from '@gears-frontx/frontx-template-shell';
 import { loadLayoutDomains } from '../gts/loader';
 import type { FrontXApp } from '../../../types';
 import {

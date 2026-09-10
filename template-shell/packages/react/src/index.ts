@@ -66,6 +66,7 @@ export {
   ThemeAwareReactLifecycle,
   useSharedProperty,
   useHostAction,
+  useMfeRegistry,
   useDomainExtensions,
   useMountedExtensions,
   useRegisteredPackages,
@@ -76,6 +77,7 @@ export type {
   MfeContextValue,
   MfeProviderProps,
   ExtensionDomainSlotProps,
+  UseSharedPropertyOptions,
 } from './mfe';
 
 // ============================================================================
@@ -141,7 +143,6 @@ export {
   createSlice,
 
   // Layout domain exports
-  LayoutDomain,
   layoutReducer,
   layoutDomainReducers,
   LAYOUT_SLICE_NAME,
@@ -220,10 +221,6 @@ export {
   RestEndpointProtocol,
   SseProtocol,
   SseStreamProtocol,
-  // Protocol-specific mock plugins (replaces generic MockPlugin)
-  RestMockPlugin,
-  SseMockPlugin,
-  MockEventSource,
   // Plugin base classes
   ApiPluginBase,
   ApiPlugin,
@@ -364,9 +361,6 @@ export type {
   EventSourceLike,
   RestShortCircuitResponse,
   SseShortCircuitResponse,
-  RestMockConfig,
-  SseMockConfig,
-  SseMockEvent,
 
   // I18n
   I18nConfig,
@@ -494,8 +488,10 @@ export type {
 // MFE Concrete implementations
 export { MfeHandlerMF, gtsPlugin } from '@gears-frontx/framework';
 
-// GTS Derived Schemas (application-layer registration)
-export { themeSchema, languageSchema, extensionScreenSchema } from '@gears-frontx/framework';
+// GTS derived schemas (themeSchema, languageSchema, extensionScreenSchema) and the
+// protocol-specific mock plugins (RestMockPlugin, SseMockPlugin, MockEventSource)
+// are application-layer symbols owned by @gears-frontx/frontx-template-shell and
+// are no longer re-exported here — import them from the template package (#601).
 
 // MFE Utilities
 export {
@@ -545,8 +541,6 @@ export type {
 import type { EventPayloadMap as FrameworkEventPayloadMap, EventBus } from '@gears-frontx/framework';
 import { eventBus as frameworkEventBus } from '@gears-frontx/framework';
 
-// @cpt-dod:cpt-frontx-dod-react-bindings-event-payload-map:p2
-// @cpt-begin:cpt-frontx-dod-react-bindings-event-payload-map:p2:inst-event-payload-map
 export interface EventPayloadMap extends FrameworkEventPayloadMap { }
 
 /**
@@ -555,4 +549,3 @@ export interface EventPayloadMap extends FrameworkEventPayloadMap { }
  * type-safe access to both framework events and app-layer augmented events.
  */
 export const eventBus: EventBus<EventPayloadMap> = frameworkEventBus as EventBus<EventPayloadMap>;
-// @cpt-end:cpt-frontx-dod-react-bindings-event-payload-map:p2:inst-event-payload-map

@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
+import { joinWithinRoot } from '@gears-frontx/test-support/path-guard';
 import { createFsWriteFileFn } from '../adapters/fs-project-io';
 import { createFsReadTargetPathStateFn } from '../adapters/fs-target-path';
 import { seedRepository } from '../commands/seed-repository';
@@ -1466,9 +1467,12 @@ describe('addTemplate occupied-ground guard — cpt-frontx-dod-cli-scaffolding-a
   // `claimed.txt -> ../escaped.txt` lands outside the directory being guarded.
   it('refuses a claimed path held by a dangling symlink, so no write escapes the target directory', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'frontx-escape-'));
-    const targetDir = path.join(root, 'repo');
+    const targetDir = joinWithinRoot(root, 'repo');
     fs.mkdirSync(targetDir);
-    fs.symlinkSync('../escaped.txt', path.join(targetDir, 'claimed.txt'));
+    // The symlink target '../escaped.txt' is an intentionally escaping
+    // relative string (the point of this test), not a path built from `root`
+    // — left as a literal, not routed through `joinWithinRoot`.
+    fs.symlinkSync('../escaped.txt', joinWithinRoot(targetDir, 'claimed.txt'));
     const escaping = makeEntry('escape-template', [{ path: 'claimed.txt', content: 'from the template' }], {
       ownershipBoundaries: { exclusiveSubtrees: ['claimed.txt'], sharedFiles: [] },
     });
@@ -1492,7 +1496,7 @@ describe('addTemplate occupied-ground guard — cpt-frontx-dod-cli-scaffolding-a
       expect(result.reason).toBe('target-holds-undeclared-content');
       // The escape itself: the write would have created this file one level
       // above the directory the developer named.
-      expect(fs.existsSync(path.join(root, 'escaped.txt'))).toBe(false);
+      expect(fs.existsSync(joinWithinRoot(root, 'escaped.txt'))).toBe(false);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

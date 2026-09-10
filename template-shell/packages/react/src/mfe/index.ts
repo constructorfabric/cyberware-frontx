@@ -9,7 +9,9 @@ export { MfeProvider, type MfeProviderProps } from './MfeProvider';
 export {
   useMfeBridge,
   useSharedProperty,
+  type UseSharedPropertyOptions,
   useHostAction,
+  useMfeRegistry,
   useDomainExtensions,
   useMountedExtensions,
   useRegisteredPackages,

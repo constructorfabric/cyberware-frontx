@@ -69,12 +69,15 @@
  * the truth map); `link-template-ecosystem.mjs` (repoints exactly the
  * `packages/*` directories the template pins at their local builds - template
  * contributions never enter that linker, since a template's own workspace
- * member already resolves locally with nothing published to shadow it); and
+ * member already resolves locally with nothing published to shadow it);
  * `version-bump-on-change-check.mjs` (reuses `readTemplateEcosystemPackages`
  * directly, on top of the same `packages/*` walk, to enumerate the package
  * ROOTS its CI gate governs - narrowed further there to the non-`private`
  * ones, since a template's own scope-qualified fixture apps are pinned
- * consumers rather than publishable sources).
+ * consumers rather than publishable sources); and the two install-time pin
+ * rewriters, `pin-template-ecosystem-to-local.mjs` and
+ * `pin-unpublished-ecosystem-to-local-pack.mjs`, which substitute a local
+ * directory or a local `npm pack` tarball for a pin the registry cannot serve.
  */
 import fs from 'node:fs';
 import path from 'node:path';

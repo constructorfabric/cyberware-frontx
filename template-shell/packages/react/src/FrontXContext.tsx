@@ -4,7 +4,6 @@
  * React Layer: L3 (Depends on @gears-frontx/framework)
  */
 // @cpt-flow:cpt-frontx-flow-react-bindings-use-frontx:p2
-// @cpt-algo:cpt-frontx-algo-react-bindings-mfe-context-guard:p1
 
 import { createContext, useContext } from 'react';
 import type { FrontXApp } from '@gears-frontx/framework';
@@ -26,7 +25,6 @@ export const FrontXContext = createContext<FrontXApp | null>(null);
  * @returns The FrontX app instance
  */
 // @cpt-begin:cpt-frontx-flow-react-bindings-use-frontx:p2:inst-call-use-frontx
-// @cpt-begin:cpt-frontx-algo-react-bindings-mfe-context-guard:p1:inst-throw-no-frontx-context
 export function useFrontX(): FrontXApp {
   const context = useContext(FrontXContext);
 
@@ -44,4 +42,3 @@ export function useFrontX(): FrontXApp {
   // @cpt-end:cpt-frontx-flow-react-bindings-use-frontx:p2:inst-return-frontx-app
 }
 // @cpt-end:cpt-frontx-flow-react-bindings-use-frontx:p2:inst-call-use-frontx
-// @cpt-end:cpt-frontx-algo-react-bindings-mfe-context-guard:p1:inst-throw-no-frontx-context

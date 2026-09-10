@@ -181,7 +181,6 @@ function isSafePathSegment(name) {
 function readPackageJsonSync(packageJsonPath, rootDir) {
   const safePath = resolvePackageJsonPathWithinRoot(rootDir, packageJsonPath);
   // safePath is confined to repo root by resolvePackageJsonPathWithinRoot (see above).
-  // nosemgrep
   return JSON.parse(fs.readFileSync(safePath, 'utf8'));
 }
 

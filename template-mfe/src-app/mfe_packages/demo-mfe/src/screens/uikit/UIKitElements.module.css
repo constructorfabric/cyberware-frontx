@@ -1,0 +1,289 @@
+/*
+ * Layout for the ui-kit showcase: the screen frame, the category menu, and the
+ * demo card every element sits in.
+ *
+ * Colour, spacing and type resolve through @gears-frontx/ui-kit tokens, which
+ * KitThemedLifecycle re-anchors onto this shadow root's host.
+ *
+ * No Tailwind utility appears here, deliberately. The host's compiled Tailwind
+ * does reach this shadow root — ThemeAwareReactLifecycle clones the document's
+ * stylesheets into it — but its colour utilities read the shell's HSL-triplet
+ * tokens through the same names the kit re-declares as complete colours, so
+ * `text-muted-foreground` would resolve to `hsl(oklch(...))` and be dropped.
+ * A showcase of the kit painted half in the shell's grammar would misrepresent
+ * both.
+ */
+
+.screen {
+  background-color: var(--background);
+  color: var(--foreground);
+  display: flex;
+  gap: var(--space-6);
+  padding: var(--space-8);
+}
+
+.sidebar {
+  flex: 0 0 16rem;
+  width: 16rem;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: var(--space-8);
+  /* Without this a wide demo (the table) stretches the flex item past the screen. */
+  min-width: 0;
+}
+
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.title {
+  font-size: var(--text-display-size);
+  font-weight: var(--text-display-weight);
+  letter-spacing: var(--text-display-tracking);
+  line-height: var(--text-display-line-height);
+}
+
+.description {
+  color: var(--muted-foreground);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+}
+
+/*
+ * The container every portalling kit component is pointed at. It has to be an
+ * element inside this shadow root — a popup left on the kit's `<body>` default
+ * lands in the light DOM, where neither the adopted component stylesheets nor
+ * the tokens on this host reach it.
+ */
+.portalContainer {
+  position: absolute;
+}
+
+/* Category section */
+
+.category {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.categoryTitle {
+  font-size: var(--text-heading-1-size);
+  font-weight: var(--text-heading-1-weight);
+  letter-spacing: var(--text-heading-1-tracking);
+  line-height: var(--text-heading-1-line-height);
+}
+
+/* One element demo */
+
+.demo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* The menu scrolls a demo to the top of the viewport; this keeps its heading clear. */
+  scroll-margin-top: var(--space-4);
+}
+
+.demoTitle {
+  font-size: var(--text-heading-2-size);
+  font-weight: var(--text-heading-2-weight);
+  letter-spacing: var(--text-heading-2-tracking);
+  line-height: var(--text-heading-2-line-height);
+  margin: 0;
+}
+
+.demoDescription {
+  color: var(--muted-foreground);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+}
+
+.demoStage {
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+}
+
+/* A row of variants that should wrap rather than overflow. */
+.row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* A column of controls, capped at a form's reading width. */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 24rem;
+}
+
+.inlineControl {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.note {
+  color: var(--muted-foreground);
+  font-size: var(--text-meta-size);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+}
+
+.definitions {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.term {
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+}
+
+.value {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: var(--text-mono-line-height);
+}
+
+/*
+ * The heading element exists for the document outline — the kit's CardTitle
+ * renders a plain div and contributes nothing to it — so its type comes from
+ * the CardTitle it sits in, and this rule only has to stop the UA stylesheet's
+ * own h2 size and margins from overriding what it inherits.
+ */
+.sectionTitle {
+  font: inherit;
+  margin: 0;
+}
+
+/* Category menu */
+
+.menu {
+  background-color: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  max-height: calc(100vh - var(--space-8));
+  overflow-y: auto;
+  padding: var(--space-4);
+  position: sticky;
+  top: var(--space-4);
+}
+
+.menuTitle {
+  font-size: var(--text-heading-2-size);
+  font-weight: var(--text-heading-2-weight);
+  margin-bottom: var(--space-4);
+}
+
+.menuList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.menuSubList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding-inline-start: var(--space-4);
+}
+
+.categoryButton {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-weight: var(--text-label-weight);
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-2);
+  text-align: start;
+  width: 100%;
+}
+
+.categoryButton:hover {
+  background-color: var(--muted);
+}
+
+.disclosure {
+  color: var(--muted-foreground);
+  font-size: var(--text-meta-size);
+}
+
+.elementButton {
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-meta-size);
+  padding: var(--space-1) var(--space-2);
+  text-align: start;
+  width: 100%;
+}
+
+.elementButton:hover {
+  background-color: var(--muted);
+}
+
+.elementButtonActive {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: var(--text-label-weight);
+}
+
+.elementButtonActive:hover {
+  background-color: var(--primary-hover);
+}
+
+/* Loading placeholders */
+
+.placeholders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/*
+ * Kit Skeleton bakes in no dimension by design — the consumer sizes each
+ * instance. These are silhouettes of the content they stand in for rather than
+ * values a token could carry.
+ */
+.placeholderTitle {
+  height: var(--control-height-lg);
+  width: 16rem;
+}
+
+.placeholderLine {
+  height: var(--space-4);
+}
+
+.placeholderBlock {
+  height: 16rem;
+}

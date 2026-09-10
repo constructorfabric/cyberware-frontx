@@ -1,0 +1,82 @@
+/*
+ * Menubar styles, translated from shadcn/ui (MIT) to CSS Modules. Only the
+ * two parts unique to Menubar live here (the outer bar, the toolbar-style
+ * top-level trigger) — every other part (content/item/checkboxItem/
+ * radioItem/separator/label/shortcut/subTrigger/subPopup, and the popup's
+ * enter/exit animation) is reused verbatim from dropdown-menu.tsx, so its
+ * styling lives in dropdown-menu.module.css, not duplicated here.
+ * Consumes only theme.css variables — no raw colors.
+ */
+
+.menubar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  background-color: var(--surface);
+}
+
+/*
+ * A top-level MenubarTrigger renders a real <button> (DropdownMenuTrigger
+ * wraps Menu.Trigger, which is NativeButtonProps-typed) — already
+ * border-box via the UA stylesheet, so no local box-sizing fix is needed
+ * here (contrast dropdown-menu.module.css's .popup, a plain <div> with no
+ * such default).
+ */
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background-color: transparent;
+  color: inherit;
+  font-family: inherit;
+  cursor: default;
+  user-select: none;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  font-weight: var(--text-meta-weight);
+  letter-spacing: var(--text-meta-tracking);
+  outline: none;
+  /* Colour crossfade only, no transform/geometry — not motion under
+     WCAG 2.3.3, so deliberately left unguarded under prefers-reduced-motion. */
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+/*
+ * MenuTrigger carries no `data-highlighted` (that's an Item/Row state, per
+ * MenuTriggerDataAttributes in @base-ui/react/menu) — only `data-popup-open`
+ * (its own menu is open) and `data-pressed`. Hover/keyboard movement between
+ * sibling top-level triggers is native focus, covered by :hover and
+ * :focus-visible below.
+ */
+.trigger:hover,
+.trigger[data-popup-open] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.trigger:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--ring-inset) var(--ring);
+}
+
+/* The ring above is an inset box-shadow, and forced-colors mode doesn't
+ * render box-shadow at all — add an explicit outline or the focus
+ * indicator disappears entirely under the mode. */
+@media (forced-colors: active) {
+  .trigger:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+/* disabled opacity: see input.module.css */
+.trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}

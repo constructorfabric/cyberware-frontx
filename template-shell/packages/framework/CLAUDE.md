@@ -310,7 +310,6 @@ For convenience, this package re-exports from SDK packages:
 - From @gears-frontx/state: `eventBus`, `createStore`, `getStore`, `registerSlice`, `hasSlice`, `createSlice`
 - From @gears-frontx/mfes: `Extension`, `ScreenExtension`, `ExtensionDomain`, `MfeHandler`, `MfeBridgeFactory`, `ParentMfeBridge`, `ChildMfeBridge`, action constants, contracts/types
 - From @gears-frontx/gts-plugin: `gtsPlugin`, `JSONSchema`
-- From @gears-frontx/frontx-template-shell: `LayoutDomain`, `RestMockPlugin`, `SseMockPlugin`
 - From @gears-frontx/api: `apiRegistry`, `BaseApiService`, `RestProtocol`, `SseProtocol`, `MOCK_PLUGIN`, `isMockPlugin`, `StreamDescriptor`, `StreamStatus`
 - From @gears-frontx/i18n: `i18nRegistry`, `Language`, `SUPPORTED_LANGUAGES`, `getLanguageMetadata`
 

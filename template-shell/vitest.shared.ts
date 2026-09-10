@@ -70,8 +70,17 @@ export const VITE_RESOLVE_DEDUPE: readonly string[] = [
   '@gears-frontx/framework',
 ];
 
-/** Vitest `server.deps.inline` — see {@link VITE_RESOLVE_DEDUPE} (pnpm + vi.doMock). */
-export const VITEST_SERVER_DEPS_INLINE: readonly string[] = ['@gears-frontx/react', '@gears-frontx/framework'];
+/**
+ * Vitest `server.deps.inline` — see {@link VITE_RESOLVE_DEDUPE} (pnpm + vi.doMock).
+ * `@gears-frontx/ui-kit` is inlined for a different reason: its dist chunks
+ * import their component CSS as sibling files, which Node's ESM loader rejects
+ * ("Unknown file extension .css") unless Vite processes the package.
+ */
+export const VITEST_SERVER_DEPS_INLINE: readonly string[] = [
+  '@gears-frontx/react',
+  '@gears-frontx/framework',
+  '@gears-frontx/ui-kit',
+];
 
 /**
  * Monorepo-wide coverage thresholds, enforced whenever a config is executed

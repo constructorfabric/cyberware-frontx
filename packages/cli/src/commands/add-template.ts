@@ -323,9 +323,11 @@ async function refuseUnlessGroundFree(
     // someone else's subtree passes it untouched, and exempting such a path here
     // would hand it straight to a whole-file write over existing content. No
     // supported flow needs the wider exemption — the reference templates declare
-    // disjoint ground on purpose (the shell claims `src-app/app/` and its
-    // siblings rather than `src-app/`, leaving `src-app/mfe_packages/` to the
-    // MFE template).
+    // disjoint ground on purpose, each claim as narrow as what the template
+    // actually ships: the shell claims `src-app/app/` and its siblings rather
+    // than `src-app/`, and the MFE template claims its own package directories
+    // under `src-app/mfe_packages/` rather than that directory itself, which is
+    // what lets a second template own a package beside them.
     if (isArbitratedGround(path, claimed, occupied)) continue;
     if ((await readTargetPathStateFn(`${targetDir}/${path}`)) === 'absent') continue;
     occupiedPaths.push(path);

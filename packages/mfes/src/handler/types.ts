@@ -20,12 +20,15 @@ import { ActionHandler } from '../mediator/types';
  */
 export abstract class ParentMfeBridge {
   /**
-   * Unique instance ID for the child MFE.
+   * The GTS id of the extension this bridge belongs to; stable across every
+   * mount of that extension.
    */
   abstract readonly instanceId: string;
 
   /**
-   * Dispose the bridge and clean up resources.
+   * Dispose the bridge and clean up resources. Permanent teardown, performed
+   * only when the extension this bridge belongs to is unregistered — not on
+   * an ordinary unmount.
    */
   abstract dispose(): void;
 }
@@ -34,9 +37,12 @@ export abstract class ParentMfeBridge {
  * Child MFE Bridge abstract class.
  * Provided to child MFEs for communication with the host.
  */
+// @cpt-begin:cpt-frontx-algo-mfe-host-communication-bridge-delegation:p1:inst-inbound-bridge-internal
 export abstract class ChildMfeBridge {
-  abstract readonly domainId: string;
-  abstract readonly instanceId: string;
+  /** The GTS id of the domain the extension is mounted into. */
+  abstract readonly extDomainId: string;
+  /** The extension's own GTS id. */
+  abstract readonly extensionId: string;
 
   /**
    * Execute an actions chain via the registry.
@@ -79,6 +85,7 @@ export abstract class ChildMfeBridge {
    */
   abstract registerActionHandler(actionTypeId: string, handler: ActionHandler): void;
 }
+// @cpt-end:cpt-frontx-algo-mfe-host-communication-bridge-delegation:p1:inst-inbound-bridge-internal
 
 /**
  * Runtime values supplied by the host at mount time.
@@ -103,6 +110,18 @@ export interface MfeEntryLifecycle<TBridge = ChildMfeBridge> {
    * a `ShadowRoot` created by `DefaultMountManager`. With custom handlers, it may
    * be a plain `Element`. React's `createRoot()` accepts both types.
    *
+   * The runtime treats this call's completion — synchronous return, or
+   * resolution of a returned promise — as the extension's readiness signal:
+   * `DefaultMountManager` awaits it before marking the extension mounted and
+   * before a chain's `next` continuation may target it. A `mount()` that
+   * returns before its own `registerActionHandler` calls have run (for
+   * example a UI-framework binding that defers registration to an
+   * asynchronous render/effect pass) makes those handlers unreachable to any
+   * action dispatched immediately after — the mediator resolves a handler
+   * once and does not retry. An implementation MUST NOT resolve until every
+   * `registerActionHandler` call it intends to make synchronously as part of
+   * this mount has completed.
+   *
    * @param container - DOM element or shadow root to mount into
    * @param bridge - Bridge instance for communication with host
    * @param mountContext - Host-provided runtime context for this mount
@@ -120,6 +139,15 @@ export interface MfeEntryLifecycle<TBridge = ChildMfeBridge> {
    * a `ShadowRoot`. With custom handlers, it may be a plain `Element`.
    *
    * @param container - DOM element or shadow root to unmount from
+   *
+   * Action-handler registrations and property subscriptions made through the
+   * bridge survive this call and are re-presented to the next `mount()` on
+   * the same bridge instance; the runtime never clears them. An
+   * implementation that binds subscribers or handlers to a UI-framework tree
+   * torn down here MUST invoke the unsubscribe/unregister functions it
+   * captured before returning. Failing to do so does not drop delivery — it
+   * produces duplicate delivery, one copy into each detached tree, once the
+   * next `mount()` subscribes again.
    */
   unmount(container: Element | ShadowRoot): void | Promise<void>;
 }
@@ -134,7 +162,9 @@ export abstract class MfeBridgeFactory<TBridge extends ChildMfeBridge = ChildMfe
    *
    * @param domainId - ID of the domain the MFE is mounted in
    * @param entryTypeId - Type ID of the MFE entry
-   * @param instanceId - Unique instance ID for this MFE
+   * @param instanceId - The extension's own GTS identifier (per
+   *   `ChildMfeBridgeImpl`'s `(extDomainId, extensionId)` constructor), not a
+   *   separately-minted instance id
    * @returns Bridge instance
    */
   abstract create(
