@@ -178,7 +178,8 @@ describe('button contract conformance', () => {
     // FIRST $ref in allOf as the parent (store.findParentRef), and the id is
     // that parent's id plus this component's segment. Whether the COMMITTED
     // base.component.json's own $id equals BASE_TYPE_ID is N5's concern, not
-    // this test's: assertContractFreshness's baseSchemaDiff (testing.ts)
+    // this test's: assertContractFreshness's shared-schema comparison (freshness.ts's
+    // sharedSchemaDiffs)
     // already checks that centrally, byte-for-byte against buildBaseSchema(),
     // for every component that calls it - a second, narrower literal check
     // here would just be the same fact with two owners.
@@ -495,8 +496,48 @@ describe('overlay and extraction safety', () => {
       { name: 'disabled', optional: true, typeText: 'string', declarationFile: 'button.tsx', expressed: { schema: { type: 'string' }, complete: true } },
     ]);
     expect(() => buildPropsAndRequired('button', conflicting, elementSurface)).toThrow(
-      /"disabled".*button\.tsx.*declared type "boolean"/s,
+      /"disabled".*button\.tsx.*asserts \{"type":"string"\}.*element surface's \{"type":"boolean"\}/s,
     );
+  });
+
+  it('rejects a cva axis whose enum conflicts with the element surface, naming both shapes', () => {
+    // The axes reached `properties` without ever passing the agreement
+    // check: an axis named `type` on a component rendering a <button>
+    // compiled cleanly beside the surface's own three-value enum, and a
+    // validator resolving the reference then accepted only the intersection
+    // of the two, which is empty.
+    const axisConflict: ComponentExtraction = {
+      ...syntheticExtraction([]),
+      axes: { type: ['ghost', 'solid'] },
+    };
+    expect(() => buildPropsAndRequired('button', axisConflict, elementSurface)).toThrow(
+      /"type".*cva axis.*asserts \{"type":"string","enum":\["ghost","solid"\]\}.*element surface's \{"type":"string","enum":\["submit","reset","button"\]\}/s,
+    );
+  });
+
+  it('lets an axis win over an API prop of the same name, and a declared prop win over the axis', () => {
+    // The precedence rule spelled out: DECLARED > AXIS > API. An API prop
+    // shadowed by an axis loses its shape AND its requiredness, because
+    // VariantProps types every axis optional and that is the type a caller
+    // is compiled against; a declared prop overwrites the axis outright.
+    const axisOverApi: ComponentExtraction = {
+      ...syntheticExtraction([], [
+        { name: 'tone', optional: false, typeText: 'string', declarationFile: '@base-ui/react/internals/types.d.mts', expressed: { schema: { type: 'string' }, complete: true } },
+      ]),
+      axes: { tone: ['muted', 'loud'] },
+    };
+    const fromAxis = buildPropsAndRequired('button', axisOverApi, elementSurface);
+    expect(fromAxis.properties.tone).toEqual({ type: 'string', enum: ['muted', 'loud'] });
+    expect(fromAxis.required).toEqual([]);
+
+    const declaredOverAxis: ComponentExtraction = {
+      ...syntheticExtraction([
+        { name: 'tone', optional: true, typeText: '"muted" | undefined', declarationFile: 'button.tsx', expressed: { schema: { type: 'string', enum: ['muted'] }, complete: true } },
+      ]),
+      axes: { tone: ['muted', 'loud'] },
+    };
+    const fromDeclaration = buildPropsAndRequired('button', declaredOverAxis, elementSurface);
+    expect(fromDeclaration.properties.tone).toEqual({ type: 'string', enum: ['muted'] });
   });
 
   it('keeps a declared prop that agrees with the element surface, rather than deferring to it', () => {

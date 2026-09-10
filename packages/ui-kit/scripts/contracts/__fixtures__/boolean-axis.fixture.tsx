@@ -26,6 +26,13 @@ const panelVariants = cva('panel', {
     raised: {
       true: 'panel-raised',
     },
+    // The mirrored single-key form: cva resolves `StringToBoolean<'false'>`
+    // to `boolean` just as it does for `'true'`, so this is a boolean prop
+    // too - read as a string axis it stated a prop accepting only the
+    // string "false".
+    unstyled: {
+      false: 'panel-styled',
+    },
     emphasis: {
       low: 'panel-low',
       high: 'panel-high',
@@ -39,6 +46,6 @@ const panelVariants = cva('panel', {
 
 export type PanelProps = VariantProps<typeof panelVariants>;
 
-export function Panel({ fullWidth, raised, emphasis }: PanelProps) {
-  return <div className={panelVariants({ fullWidth, raised, emphasis })} />;
+export function Panel({ fullWidth, raised, unstyled, emphasis }: PanelProps) {
+  return <div className={panelVariants({ fullWidth, raised, unstyled, emphasis })} />;
 }

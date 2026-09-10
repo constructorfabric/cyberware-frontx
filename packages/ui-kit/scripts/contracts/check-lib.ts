@@ -58,15 +58,23 @@ export interface ElementSurfaceSchemaLike {
   properties?: Record<string, ElementSurfacePropertyLike>;
   required?: string[];
   // The pattern families a surface admits by shape rather than by name
-  // (`^aria-`, `^data-`, `^on[A-Z]`). Read only by the reconciliation in
-  // diffOwnPropsSchema, which has to answer "does this surface accept the
-  // name at all" and not just "does it declare it".
+  // (`^aria-`, `^data-`, `^on[A-Z]`). A family is part of the surface in
+  // exactly the way a declared name is: it is what makes the surface accept
+  // a name, so both the reconciliation in diffOwnPropsSchema and the
+  // compatibility comparison below read it.
   patternProperties?: Record<string, unknown>;
 }
 
 export interface ElementSurfaceDiff {
   added: string[];
   removed: string[];
+  // The pattern families that arrived and that vanished. A family is a
+  // source string, and dropping one stops the surface accepting every name
+  // it matched at once - roughly 150 React event handlers for `^on[A-Z]` -
+  // so a removal is read exactly as a removed property is, and an addition
+  // exactly as an added one: it only widens.
+  addedPatterns: string[];
+  removedPatterns: string[];
   narrowed: { prop: string; reason: string }[];
   // An host element surface is a separate type the contract NAMES
   // (see its own $comment) - gts-ts's flat property/required/enum comparison
@@ -84,9 +92,17 @@ export interface ElementSurfaceDiff {
 function compareElementSurfaceNames(
   oldSchema: ElementSurfaceSchemaLike,
   newSchema: ElementSurfaceSchemaLike,
-): { added: string[]; removed: string[]; newlyRequired: string[] } {
+): { added: string[]; removed: string[]; addedPatterns: string[]; removedPatterns: string[]; newlyRequired: string[] } {
   const oldProps = oldSchema.properties ?? {};
   const newProps = newSchema.properties ?? {};
+  // A surface accepts a name two ways - by declaring it, and by matching it
+  // with a pattern family - so both halves are compared. A family present at
+  // the base and gone now removes every name it matched, which is the same
+  // event as a removed property and larger: deleting `^on[A-Z]` from a
+  // <button>'s surface drops roughly 150 event handlers at once, and
+  // comparing declared names alone reported nothing at all.
+  const oldPatterns = new Set(Object.keys(oldSchema.patternProperties ?? {}));
+  const newPatterns = new Set(Object.keys(newSchema.patternProperties ?? {}));
   // A prop the new schema requires and the old one did not rejects a props
   // object that used to validate (the prop simply absent) - the same
   // "changed shape" the type/enum checks in diffElementSurface treat as
@@ -102,6 +118,8 @@ function compareElementSurfaceNames(
   return {
     added: Object.keys(newProps).filter((name) => !(name in oldProps)),
     removed: Object.keys(oldProps).filter((name) => !(name in newProps)),
+    addedPatterns: [...newPatterns].filter((source) => !oldPatterns.has(source)).sort(),
+    removedPatterns: [...oldPatterns].filter((source) => !newPatterns.has(source)).sort(),
     newlyRequired: (newSchema.required ?? []).filter((name) => name in newProps && !oldRequired.has(name)),
   };
 }
@@ -145,7 +163,7 @@ function shapeNarrowings(name: string, oldProp: ElementSurfacePropertyLike, newP
 export function diffElementSurface(oldSchema: ElementSurfaceSchemaLike, newSchema: ElementSurfaceSchemaLike): ElementSurfaceDiff {
   const oldProps = oldSchema.properties ?? {};
   const newProps = newSchema.properties ?? {};
-  const { added, removed, newlyRequired } = compareElementSurfaceNames(oldSchema, newSchema);
+  const { added, removed, addedPatterns, removedPatterns, newlyRequired } = compareElementSurfaceNames(oldSchema, newSchema);
   const narrowed: { prop: string; reason: string }[] = [];
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-element-surface
 
@@ -161,7 +179,14 @@ export function diffElementSurface(oldSchema: ElementSurfaceSchemaLike, newSchem
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-element-surface
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-element-surface
-  return { added, removed, narrowed, compatible: removed.length === 0 && narrowed.length === 0 };
+  return {
+    added,
+    removed,
+    addedPatterns,
+    removedPatterns,
+    narrowed,
+    compatible: removed.length === 0 && removedPatterns.length === 0 && narrowed.length === 0,
+  };
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-element-surface
 
@@ -402,6 +427,9 @@ export function decideCompat(input: CompatDecisionInput): CompatDecision {
     ...(ownPropsDiff?.newlyRequiredProps.map((prop) => `own prop "${prop}" became required`) ?? []),
     ...(ownPropsDiff?.narrowedProps.map((entry) => `own prop "${entry.prop}" ${entry.reason}`) ?? []),
     ...(elementSurfaceDiff?.removed.map((prop) => `element surface: prop "${prop}" removed`) ?? []),
+    ...(elementSurfaceDiff?.removedPatterns.map(
+      (source) => `element surface: pattern family "${source}" removed - every name it matched is no longer accepted`,
+    ) ?? []),
     ...(elementSurfaceDiff?.narrowed.map((entry) => `element surface: prop "${entry.prop}" ${entry.reason}`) ?? []),
   ];
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-combine
@@ -961,6 +989,105 @@ export function classifyProps(
   return { known, unchecked, nearMiss };
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-classify
+
+// The prop names one JSX snippet passes to one component, once per opening
+// tag it contains. A scanner rather than a parser: the snippets this reads
+// are a contract's own `examples`, which are fragments, not modules - no
+// TypeScript program can be built over them, and the question asked of them
+// is only "which names were written here".
+//
+// It walks the tag rather than matching attributes with a pattern, because
+// an attribute value can contain anything a JSX expression can - `icon={<X
+// />}`, `onClick={() => {}}`, a string holding a `>` - and a pattern over
+// the raw text reads names out of those too.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-usage
+export function propsPassedTo(code: string, componentName: string): string[][] {
+  const usages: string[][] = [];
+  // The lookahead keeps `<Accordion` from matching `<AccordionItem`: an
+  // example for the root routinely contains its parts.
+  const opener = new RegExp(`<${componentName}(?![A-Za-z0-9_])`, 'g');
+  let match = opener.exec(code);
+  while (match !== null) {
+    const names: string[] = [];
+    let index = opener.lastIndex;
+    let braceDepth = 0;
+    let quote: string | undefined;
+    while (index < code.length) {
+      const char = code[index];
+      if (quote !== undefined) {
+        if (char === quote) quote = undefined;
+        index += 1;
+        continue;
+      }
+      if (char === '"' || char === "'" || char === '`') {
+        quote = char;
+        index += 1;
+        continue;
+      }
+      if (char === '{') {
+        braceDepth += 1;
+        index += 1;
+        continue;
+      }
+      if (char === '}') {
+        braceDepth -= 1;
+        index += 1;
+        continue;
+      }
+      // Only outside an expression value is an identifier a prop name; a
+      // `{...rest}` spread and everything inside a value are skipped.
+      if (braceDepth === 0 && char === '>') break;
+      if (braceDepth === 0 && /[A-Za-z_]/.test(char)) {
+        const name = /^[A-Za-z0-9_:.-]*/.exec(code.slice(index))?.[0] ?? '';
+        names.push(name);
+        index += name.length;
+        continue;
+      }
+      index += 1;
+    }
+    usages.push(names);
+    match = opener.exec(code);
+  }
+  return usages;
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-usage
+
+// One near miss, with everything a caller needs to fix it: which usage it
+// was found in, the name that was written, and the kit prop it is one edit
+// from.
+export interface NearMissFinding {
+  component: string;
+  source: string;
+  prop: string;
+  probably: string;
+}
+
+// The near misses in a set of usages of one component. This is the
+// enforcement path the annotated open schema needs: the schema admits every
+// name and records the classification, so `variannt="ghost"` is rejected by
+// nothing unless something runs the classification and derives a failure
+// from it. classifyProps decides what a near miss IS; this is what turns one
+// into an exit code, and it lives beside the classification rather than in
+// each caller so a fourth enrolled component is protected without its test
+// author remembering to ask.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-enforce
+export function nearMissesIn(
+  component: string,
+  usages: readonly { source: string; props: readonly string[] }[],
+  contract: ContractPropsLike,
+  surface?: ElementSurfacePropsLike,
+): NearMissFinding[] {
+  const findings: NearMissFinding[] = [];
+  for (const usage of usages) {
+    const props: Record<string, unknown> = {};
+    for (const name of usage.props) props[name] = true;
+    for (const { prop, probably } of classifyProps(props, contract, surface).nearMiss) {
+      findings.push({ component, source: usage.source, prop, probably });
+    }
+  }
+  return findings;
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-enforce
 
 // Which props a component forwards to its host element that the committed
 // surface for that element declares by neither name nor pattern. The

@@ -412,14 +412,17 @@ function traceToObjectLiteral(
 // prop that only accepts the strings "true" and "false" - a shape no caller
 // can satisfy, since `fullWidth` takes a boolean.
 //
-// The `true`-only form is the common one in real cva configs (a variant with
-// no styling for the false branch), so it counts too; anything else is an
-// ordinary string axis, including a map that merely happens to contain
+// The whole rule is "every key is `true` or `false`, and there is at least
+// one": either single-key form is common in real cva configs (a variant that
+// only styles one branch), and cva resolves `StringToBoolean<'false'>` to
+// `boolean` exactly as it resolves the `'true'` key, so a `false`-only map is
+// a boolean prop for the same reason a `true`-only one is. Anything else is
+// an ordinary string axis, including a map that merely happens to contain
 // `true` alongside other keys.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-boolean-axis
 export function isBooleanAxis(values: string[]): boolean {
   if (values.length === 0 || values.length > 2) return false;
-  return values.every((value) => value === 'true' || value === 'false') && values.includes('true');
+  return values.every((value) => value === 'true' || value === 'false');
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-boolean-axis
 

@@ -20,13 +20,14 @@
 // The compile-and-diff path they stand in for is what button/accordion/
 // data-table's own contract suites assert, for real, against real sources.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { OPEN_UNEVALUATED } from './compile';
+import { nearMissesIn, propsPassedTo } from './check-lib';
 import { runCompat, runEnrollment, runGuard, type CheckContext } from './check';
 import { BASE_TYPE_ID, elementTypeId, elementTypeRef, propsSchemaId } from './ids';
 import { applyContractTestTimeout } from './testing';
@@ -74,9 +75,15 @@ function pascalCase(stem: string): string {
 // x-gts-traits, bare, exactly as a real contract holds it.
 function contractJson(
   component: string,
-  options: { major?: number; element?: string; properties?: Record<string, unknown>; required?: string[] } = {},
+  options: {
+    major?: number;
+    element?: string;
+    properties?: Record<string, unknown>;
+    required?: string[];
+    examples?: { good: { title: string; code: string }[]; bad: { title: string; code: string; why: string }[] };
+  } = {},
 ): Record<string, unknown> {
-  const { major = 1, element, properties = {}, required = [] } = options;
+  const { major = 1, element, properties = {}, required = [], examples } = options;
   return {
     $id: propsSchemaId(component, major),
     $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -85,7 +92,10 @@ function contractJson(
     properties,
     required,
     unevaluatedProperties: OPEN_UNEVALUATED,
-    'x-gts-traits': element === undefined ? {} : { host_element: elementTypeRef(element) },
+    'x-gts-traits': {
+      ...(element === undefined ? {} : { host_element: elementTypeRef(element) }),
+      ...(examples === undefined ? {} : { examples }),
+    },
   };
 }
 
@@ -168,6 +178,29 @@ function createFixture(): Fixture {
       // forwarded prop list from - the real lookup reads a component's own
       // source, which no fixture has.
       undeclaredForwardedProps: () => [],
+      // The real classification, over the committed contract a fixture
+      // wrote rather than over a fresh compile: a fixture repo has no
+      // TypeScript to compile, and what this rule is about is the props a
+      // contract's own examples pass, which the committed document carries.
+      nearMisses: (directory, stem) => {
+        const path = join(root, 'src', 'components', directory, `${stem}.contract.json`);
+        if (!existsSync(path)) return [];
+        const contract = JSON.parse(readFileSync(path, 'utf8')) as {
+          properties?: Record<string, unknown>;
+          'x-gts-traits'?: { examples?: { good?: { title: string; code: string }[]; bad?: { title: string; code: string }[] } };
+        };
+        const examples = contract['x-gts-traits']?.examples;
+        const usages: { source: string; props: string[] }[] = [];
+        for (const [kind, entries] of [
+          ['good', examples?.good ?? []],
+          ['bad', examples?.bad ?? []],
+        ] as const) {
+          for (const entry of entries) {
+            for (const props of propsPassedTo(entry.code, pascalCase(stem))) usages.push({ source: `examples.${kind} "${entry.title}"`, props });
+          }
+        }
+        return nearMissesIn(stem, usages, contract);
+      },
       // No TypeScript source in a fixture repo, so nothing to build a program
       // over - the two export listings above answer from the overlays.
       prepareExtraction: () => {},

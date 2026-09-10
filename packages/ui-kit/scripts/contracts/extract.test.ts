@@ -369,8 +369,13 @@ describe('extractComponent: a boolean cva variant', () => {
   const [panel] = extractComponent(fixture('boolean-axis.fixture.tsx'));
 
   it('reads the variant map keys as written, and names which axes are boolean', () => {
-    expect(panel.axes).toEqual({ fullWidth: ['true', 'false'], raised: ['true'], emphasis: ['low', 'high'] });
-    expect(panel.booleanAxes).toEqual(['fullWidth', 'raised']);
+    expect(panel.axes).toEqual({
+      fullWidth: ['true', 'false'],
+      raised: ['true'],
+      unstyled: ['false'],
+      emphasis: ['low', 'high'],
+    });
+    expect(panel.booleanAxes).toEqual(['fullWidth', 'raised', 'unstyled']);
   });
 
   it('reads a boolean default instead of losing it, and reports nothing it could not read', () => {
@@ -383,18 +388,21 @@ describe('extractComponent: a boolean cva variant', () => {
 });
 
 describe('isBooleanAxis', () => {
-  it('recognizes the two shapes cva uses for a boolean variant', () => {
+  it('recognizes every shape cva uses for a boolean variant, both single-key forms included', () => {
+    // cva resolves `StringToBoolean<'false'>` to `boolean` exactly as it
+    // resolves the `'true'` key, so a map with only a `false` key types the
+    // prop as a boolean too - compiled as a string enum it stated a prop
+    // accepting only the string "false", which no caller can satisfy.
     expect(isBooleanAxis(['true', 'false'])).toBe(true);
     expect(isBooleanAxis(['false', 'true'])).toBe(true);
     expect(isBooleanAxis(['true'])).toBe(true);
+    expect(isBooleanAxis(['false'])).toBe(true);
   });
 
   it('is false for a string axis, including one that merely contains "true"', () => {
-    // `false` alone is not a boolean variant either: cva's own type for a
-    // variant map with only a `false` key does not produce a boolean prop,
-    // and a map pairing `true` with real string keys is an ordinary string
-    // axis whose keys happen to include one.
-    for (const values of [['low', 'high'], ['true', 'high'], ['false'], [], ['true', 'false', 'maybe']]) {
+    // A map pairing `true` with real string keys is an ordinary string axis
+    // whose keys happen to include one.
+    for (const values of [['low', 'high'], ['true', 'high'], [], ['true', 'false', 'maybe']]) {
       expect(isBooleanAxis(values), values.join('|')).toBe(false);
     }
   });

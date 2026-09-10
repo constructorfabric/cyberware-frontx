@@ -37,6 +37,8 @@ import {
   extractContractMajor,
   findRemovedContracts,
   mapChangedFilesToComponents,
+  nearMissesIn,
+  propsPassedTo,
   resolveRenameSource,
   synthesizeVersionedId,
   touchesAnyOverlay,
@@ -49,12 +51,16 @@ import {
   type DirectoryExportEnrollment,
   type GuardResult,
   type ElementSurfaceDiff,
+  type NearMissFinding,
 } from './check-lib';
 import {
+  compileContract,
   hostElementToken,
   loadBaseSchema,
   loadElementSurface,
+  loadHostSurface,
   overlayStems,
+  pascalCase,
   registerContractTypes,
   resolveTargetExtraction,
   type CompiledContract,
@@ -88,6 +94,13 @@ export interface CheckContext {
   // other entry here is: it reads the component's own source and the
   // committed surface, both resolved against this package.
   undeclaredForwardedProps: (directory: string, exportStem: string) => string[];
+  // Every near miss of a kit prop in the usages this harness can see for one
+  // described export - its contract's own examples. Injected like every
+  // other entry here: it compiles a contract against this package's own
+  // kit root. This is the piece that makes the annotated open schema safe:
+  // the schema admits `variannt` and records that nothing checked it, and
+  // this is where a name one edit from a real kit prop becomes an exit code.
+  nearMisses: (directory: string, exportStem: string) => NearMissFinding[];
   // Declares up front which component directories this run is about to read
   // source for, so the extractor builds one TypeScript program over all of
   // them instead of one per file. A kit-wide run is the caller that needs it:
@@ -157,6 +170,35 @@ export function defaultCheckContext(): CheckContext {
       }
     },
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-enrollment:p2:inst-en-forwarded
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-enforce
+    // The usages the harness can see for an export are the ones its own
+    // contract carries: the `good` snippets a consumer is meant to copy and
+    // the `bad` ones it is meant to recognize. A typo is a typo in either -
+    // a counter-example teaches its own shape, and a misspelled prop in one
+    // teaches the misspelling.
+    //
+    // NOT swallowed the way the two reports above are: this one derives an
+    // exit code, so a component whose contract cannot be compiled has to
+    // reach the guard's own freshness failure rather than quietly
+    // contributing no findings.
+    nearMisses: (directory, exportStem) => {
+      const contract = compileContract(directory, exportStem);
+      const component = pascalCase(exportStem);
+      const usages: { source: string; props: string[] }[] = [];
+      const examples = contract['x-gts-traits'].examples;
+      for (const [kind, entries] of [
+        ['good', examples.good],
+        ['bad', examples.bad],
+      ] as const) {
+        for (const entry of entries) {
+          for (const props of propsPassedTo(entry.code, component)) {
+            usages.push({ source: `examples.${kind} "${entry.title}"`, props });
+          }
+        }
+      }
+      return nearMissesIn(exportStem, usages, contract, loadHostSurface(contract));
+    },
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-enforce
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-extraction:p1:inst-ex-shared-program
     prepareExtraction: (directories) => {
       const paths = directories.map(entryFile).filter((path) => existsSync(path));
@@ -642,6 +684,20 @@ function componentExportEnrollment(ctx: CheckContext, directory: string): Direct
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-enrollment:p2:inst-en-unenrolled
 
+// Every near miss across a set of enrolled directories, one entry per
+// export. Shared by the enrollment report and the guard because the rule is
+// one rule: the guard is what CI runs, so that is where a near miss has to
+// fail, and the enrollment command is where a developer looks before asking
+// for enrollment, so that is where it has to be visible. An entry naming no
+// directory contributes nothing - the allowlist report above is what says so.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-enforce
+function enrolledComponentNearMisses(ctx: CheckContext, enrolled: readonly string[], unknownEnrolled: ReadonlySet<string>): NearMissFinding[] {
+  return enrolled
+    .filter((component) => !unknownEnrolled.has(component))
+    .flatMap((component) => ctx.overlayStems(component).flatMap((stem) => ctx.nearMisses(component, stem)));
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-enforce
+
 export function runGuard(base: string, options: { json: boolean }, ctx: CheckContext = defaultCheckContext()): number {
   // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-guard-change:p1:inst-verify-base
   if (!baseRefResolves(ctx, base)) return refuseUnresolvableBase(ctx, 'guard', base);
@@ -799,12 +855,44 @@ export function runGuard(base: string, options: { json: boolean }, ctx: CheckCon
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-each
 
+  // The near-miss check, on the components this run is already about and
+  // that are actually enrolled with every overlay in place. The guard is
+  // what CI runs, which is why it is here as well as in the enrollment
+  // report: a typo'd kit prop admitted by the open schema is a defect no
+  // other check in this repository derives a failure from.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-enforce
+  const checkable = results
+    .filter((result) => result.status === 'enrolled-ok')
+    .map((result) => result.component)
+    .filter((component) => enrolledSet.has(component));
+  const nearMisses = enrolledComponentNearMisses(ctx, checkable, new Set());
+  if (nearMisses.length > 0) violated = true;
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-enforce
+
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-guard:p1:inst-gd-return
   if (options.json) {
     ctx.log(
-      JSON.stringify({ command: 'guard', base, violated, toolingChanged, enrollmentChanged, overlayChanged, dependenciesChanged, results }),
+      JSON.stringify({
+        command: 'guard',
+        base,
+        violated,
+        toolingChanged,
+        enrollmentChanged,
+        overlayChanged,
+        dependenciesChanged,
+        results,
+        nearMisses,
+      }),
     );
   } else {
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-enforce
+    for (const finding of nearMisses) {
+      ctx.log(
+        `[FAIL] ${finding.component}: "${finding.prop}" in ${finding.source} is one edit from "${finding.probably}" - ` +
+          `the schema admits it and checks nothing, which is what makes a typo of a kit prop an error rather than an unchecked name`,
+      );
+    }
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-enforce
     for (const result of results) {
       const label =
         result.status === 'enrolled-violation' || result.status === 'component-removed'
@@ -874,6 +962,15 @@ export function runEnrollment(options: { json: boolean }, ctx: CheckContext = de
     );
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-enrollment:p2:inst-en-forwarded
 
+  // The one thing in this report that DOES derive an exit code, and the
+  // reason it is here: a compiled contract admits every unrecognized prop
+  // and records the classification, so a name one edit from a real kit prop
+  // is caught by nothing unless a command runs the classification. Every
+  // other number here counts what exists; this one is a defect.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-enforce
+  const nearMisses = enrolledComponentNearMisses(ctx, enrolled, unknownEnrolled);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-enforce
+
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-enrollment:p2:inst-en-return
   if (options.json) {
     ctx.log(
@@ -884,12 +981,21 @@ export function runEnrollment(options: { json: boolean }, ctx: CheckContext = de
         unenrolled,
         allowlistProblems,
         forwardedGaps,
+        nearMisses,
       }),
     );
-    return 0;
+    return nearMisses.length > 0 ? 1 : 0;
   }
 
   ctx.log(`${report.enrolledCount} of ${report.total} components enrolled.`);
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-enforce
+  if (nearMisses.length > 0) {
+    ctx.log('Props one edit from a kit prop the contract declares (a typo, not an unchecked name):');
+    for (const finding of nearMisses) {
+      ctx.log(`  - ${finding.component}: "${finding.prop}" in ${finding.source} - probably "${finding.probably}"`);
+    }
+  }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-props-classification:p1:inst-pc-enforce
   if (allowlistProblems.length > 0) {
     ctx.log('enrolled.json entries that grant enrollment over nothing:');
     for (const problem of allowlistProblems) ctx.log(`  - ${problem}`);
@@ -900,13 +1006,14 @@ export function runEnrollment(options: { json: boolean }, ctx: CheckContext = de
     for (const gap of forwardedGaps) ctx.log(`  - ${gap.component}: ${gap.props.length} - ${gap.props.join(', ')}`);
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-enrollment:p2:inst-en-forwarded
-  if (unenrolled.length === 0) return 0;
-  ctx.log('Not yet in enrolled.json (n of m exports already have a contract):');
-  for (const entry of unenrolled) {
-    const skippedNote = entry.skippedNonComponents.length > 0 ? ` (skipped, not components: ${entry.skippedNonComponents.join(', ')})` : '';
-    ctx.log(`  - ${entry.directory}: ${entry.enrolledExports} of ${entry.totalExports} exports${skippedNote}`);
+  if (unenrolled.length > 0) {
+    ctx.log('Not yet in enrolled.json (n of m exports already have a contract):');
+    for (const entry of unenrolled) {
+      const skippedNote = entry.skippedNonComponents.length > 0 ? ` (skipped, not components: ${entry.skippedNonComponents.join(', ')})` : '';
+      ctx.log(`  - ${entry.directory}: ${entry.enrolledExports} of ${entry.totalExports} exports${skippedNote}`);
+    }
   }
-  return 0;
+  return nearMisses.length > 0 ? 1 : 0;
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-enrollment:p2:inst-en-return
 }
 

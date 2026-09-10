@@ -8,7 +8,7 @@
 // props contract reads as "anything goes", so the reader concluded `value`
 // and `defaultValue` were plain strings when their real type is
 // `AccordionValue<Value>`. Nothing in the harness was wrong about the TYPE;
-// the compiler simply had nowhere to put it once classifyProviderSafeType
+// the compiler simply had nowhere to put it once extract.ts's expressType
 // returned undefined.
 //
 // Compiled from a real extraction rather than a synthetic
@@ -238,6 +238,9 @@ describe('a boolean cva axis', () => {
     // contract stating `enum: ['true','false']` on a string rejected it.
     expect(properties.fullWidth).toEqual({ type: 'boolean', default: false });
     expect(properties.raised).toEqual({ type: 'boolean' });
+    // The mirrored single-key form: cva types a `false`-only map as a
+    // boolean for the same reason it types a `true`-only one that way.
+    expect(properties.unstyled).toEqual({ type: 'boolean' });
   });
 
   it('leaves a string axis a string enum with its own default', () => {

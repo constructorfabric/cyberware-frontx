@@ -1881,19 +1881,23 @@ export function parseOverlay(component: string, raw: unknown): Overlay {
 // (`loadOverlay('accordion', 'accordion-item')`) reads
 // accordion/accordion-item.contract.yaml instead - a second overlay file in
 // the same directory, not a second directory.
+// The stem's own directory-prefix check T5 adds: `component` on the overlay
+// is validated against the stem by parseOverlay, but nothing there knows
+// which directory the file was loaded FROM. A part overlay filed under the
+// wrong directory (or a directory typo in the filename) would otherwise
+// compile as if it were a top-level component. One function, applied both by
+// the single-overlay load below and by the kit-wide walk, so the two cannot
+// admit different files.
+function assertStemBelongsToDirectory(directory: string, exportStem: string): void {
+  if (exportStem === directory || exportStem.startsWith(`${directory}-`)) return;
+  throw new Error(
+    `${exportStem}: overlay stem does not belong to directory "${directory}" - a part's stem must equal ` +
+      `the directory or start with "${directory}-"`,
+  );
+}
+
 function loadOverlay(directory: string, exportStem: string = directory): Overlay {
-  if (exportStem !== directory && !exportStem.startsWith(`${directory}-`)) {
-    // The stem's own directory-prefix check T5 adds: `component` on the
-    // overlay is validated against `exportStem` by parseOverlay below (an
-    // unchanged, two-argument call - see button.contract.test.ts), but
-    // nothing there knows which directory the file was loaded FROM. A part
-    // overlay filed under the wrong directory (or a directory typo in the
-    // filename) would otherwise compile as if it were a top-level component.
-    throw new Error(
-      `${exportStem}: overlay stem does not belong to directory "${directory}" - a part's stem must equal ` +
-        `the directory or start with "${directory}-"`,
-    );
-  }
+  assertStemBelongsToDirectory(directory, exportStem);
   // @cpt-begin:cpt-frontx-ui-kit-flow-component-contracts-compile:p1:inst-author-overlay
   const path = join(kitRoot, 'src', 'components', directory, `${exportStem}.contract.yaml`);
   const raw: unknown = parseYaml(readFileSync(path, 'utf8'));
@@ -1907,10 +1911,13 @@ function loadOverlay(directory: string, exportStem: string = directory): Overlay
 // component has to carry that component's major, which is a fact about that
 // component's overlay and not about the referrer's.
 //
-// A missing overlay is not an error here: `deriveParentKinds` asks about
-// every described component in the kit, and a directory whose overlay cannot
-// be read is answered by loadOverlay's own failure at the point it is
-// actually compiled.
+// A missing overlay IS an error here, and by design: this reads the
+// component's own overlay through loadOverlay, whose readFileSync throws
+// ENOENT when the file is absent, so a caller asking for the major of a
+// component that has no overlay is told so at that point rather than handed
+// the default. The kit-wide walk is the reader that must not throw on one
+// unreadable file, and it collects its own failures (collectOverlays) rather
+// than coming through here.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-identifiers:p2:inst-id-major
 export function contractMajor(directory: string, exportStem: string = directory): number {
   return loadOverlay(directory, exportStem).major ?? DEFAULT_CONTRACT_MAJOR;
@@ -2000,23 +2007,50 @@ export function buildPropsAndRequired(
     // string enum its keys look like, the contract stated a prop accepting
     // only the strings "true" and "false", which no caller can satisfy.
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-boolean-axis
-    properties[axis] = booleanAxes.has(axis) ? { type: 'boolean' } : { type: 'string', enum: values };
+    const schema: ContractProperty = booleanAxes.has(axis) ? { type: 'boolean' } : { type: 'string', enum: values };
     const declaredDefault = extraction.defaults[axis];
     if (declaredDefault !== undefined) {
-      properties[axis].default = booleanAxes.has(axis) ? declaredDefault === 'true' : declaredDefault;
+      schema.default = booleanAxes.has(axis) ? declaredDefault === 'true' : declaredDefault;
     }
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-boolean-axis
+    // An axis is a property of the same props object every other property
+    // belongs to, so it is held to the same "one prop, one shape" rule: a
+    // cva axis named `type` on a component rendering a <button> writes
+    // `enum: [<its variants>]` beside the surface's own
+    // `enum: ["submit","reset","button"]`, and a validator that resolves the
+    // surface reference accepts only the intersection, normally empty.
+    // Checked here rather than in the two prop loops alone, which is where
+    // the axes used to slip past it.
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
+    assertAgreesWithElementSurface(
+      component,
+      { name: axis, typeText: describeAxis(values, booleanAxes.has(axis)), expressed: schema },
+      `${component}.tsx (cva axis)`,
+      elementSurfaceTypes,
+    );
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
+    properties[axis] = schema;
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-axes
 
-  // Declared props first, then API props: the two share one `properties` map
-  // and one `required` list, so a name can only belong to one of them, and
-  // the declared side wins by arriving first - a kit component that
-  // re-declares a primitive prop (every one of them narrows `className`) is
-  // stating the narrower fact deliberately.
+  // PRECEDENCE, stated once for all three sources of a property: DECLARED >
+  // AXIS > API. The three share one `properties` map and one `required`
+  // list, so a name that reaches more than one of them has exactly one
+  // answer, and each collision has its own reason:
+  //  - declared over axis: the component's own props type is what a caller
+  //    is compiled against, and a component that both derives an axis and
+  //    re-declares its name is narrowing that axis deliberately (the
+  //    declaration below simply overwrites the axis entry);
+  //  - declared over API: the component's own declaration is the narrower
+  //    one (`className?: string` over the primitive's
+  //    `string | ((state) => string)`);
+  //  - axis over API: an axis is the kit's own variant surface for that name
+  //    and every axis is optional, because that is how VariantProps types
+  //    one - so the API prop's shape and its requiredness both give way,
+  //    which is the answer the API loop's guard below encodes.
   for (const prop of extraction.ownProps) {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
-    assertAgreesWithElementSurface(component, prop, `${component}.tsx`, elementSurfaceTypes);
+    assertAgreesWithElementSurface(component, underCheck(prop), `${component}.tsx`, elementSurfaceTypes);
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
     if (prop.expressed?.complete === true) {
@@ -2044,14 +2078,20 @@ export function buildPropsAndRequired(
   for (const prop of extraction.apiProps) {
     if (withheldNames.has(prop.name)) continue;
     if (prop.name in properties) {
-      // The component declares this name itself, and its own declaration is
-      // the narrower one (`className?: string` over Base UI's
-      // `string | ((state) => string)`). Nothing to add, and nothing to
-      // reconcile: `required` already carries the declared side's answer.
+      // Either the component declares this name itself, or one of its cva
+      // axes carries it, and the precedence rule above settles both: the
+      // declaration is the narrower shape (`className?: string` over the
+      // primitive's `string | ((state) => string)`), and an axis is the
+      // kit's own variant surface for that name. Nothing to add either way,
+      // and nothing left to reconcile in `required` - a declared prop
+      // already pushed its own answer, and an axis is optional by
+      // construction, so an API prop shadowed by one becomes optional here.
+      // That is the answer, not an oversight: the props type a caller is
+      // compiled against types the axis as optional too.
       continue;
     }
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
-    assertAgreesWithElementSurface(component, prop, prop.declarationFile, elementSurfaceTypes);
+    assertAgreesWithElementSurface(component, underCheck(prop), prop.declarationFile, elementSurfaceTypes);
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
     // No slot record: `x-uikit.slots` is the kit's own slotted props, and a
     // forwarded API prop the schema cannot type is not one - its TypeScript
@@ -2066,7 +2106,26 @@ export function buildPropsAndRequired(
   return { properties, required, slots };
 }
 
-// One prop, one shape. Where a prop's name is also declared by the
+// How a cva axis reads when the conflict message has to name it: the shape
+// VariantProps gives the prop, in the words a reader of the component's
+// source will recognize.
+function describeAxis(values: readonly string[], boolean: boolean): string {
+  return boolean ? 'boolean' : values.map((value) => `"${value}"`).join(' | ');
+}
+
+// What the surface agreement is checked over, whichever side the name came
+// from: a cva axis, a prop the component declares, or a prop of the
+// primitive underneath. Only the name, the shape being written and the text
+// for the message matter, so the check does not have to know which of the
+// three it is looking at - which is how the axes came to be the one source
+// it never saw.
+interface PropertyUnderCheck {
+  name: string;
+  typeText: string;
+  expressed?: ContractProperty;
+}
+
+// One prop, one shape. Where a property's name is also declared by the
 // host element surface this contract names, a validator that resolves
 // that reference applies both to the same value, so a disagreement is not a
 // precedence question - it is a props object that can satisfy neither. Only an
@@ -2077,7 +2136,7 @@ export function buildPropsAndRequired(
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
 function assertAgreesWithElementSurface(
   component: string,
-  prop: ExtractedProp,
+  prop: PropertyUnderCheck,
   declaredIn: string,
   elementSurfaceTypes: Map<string, ContractProperty | undefined>,
 ): void {
@@ -2087,20 +2146,31 @@ function assertAgreesWithElementSurface(
   // is stated in full: a prop the surface declares `array` and the component
   // types as an array of something Ajv cannot check agrees about the only
   // thing either of them enforces.
-  const expressed = prop.expressed?.schema;
+  const expressed = prop.expressed;
   const agrees =
     expressed !== undefined &&
     expressed.type === declared.type &&
     JSON.stringify(expressed.enum) === JSON.stringify(declared.enum);
   if (agrees) return;
+  // Both shapes, spelled out: the message a reader acts on has to say what
+  // the two sides each assert, not only that they differ.
+  const mine = expressed === undefined ? 'nothing' : JSON.stringify({ type: expressed.type, enum: expressed.enum });
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict-refuse
   throw new Error(
-    `${component}: prop "${prop.name}" declared "${prop.typeText}" in ${declaredIn} conflicts with the ` +
-      `element surface's declared type "${declared.type}" - one prop, one shape, and the two disagree`,
+    `${component}: prop "${prop.name}" declared "${prop.typeText}" in ${declaredIn} asserts ${mine} and conflicts ` +
+      `with the element surface's ${JSON.stringify({ type: declared.type, enum: declared.enum })} - one prop, one ` +
+      `shape, and the two disagree`,
   );
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict-refuse
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
+
+// The extracted-prop adapter: the two prop loops hold an ExtractedProp, and
+// what the check needs off it is its name, its printed type and whatever the
+// schema states about it.
+function underCheck(prop: ExtractedProp): PropertyUnderCheck {
+  return { name: prop.name, typeText: prop.typeText, expressed: prop.expressed?.schema };
+}
 
 // Every property of a compiled contract whose value Ajv will not fully
 // check - a slot the kit declares, or an API prop of the primitive
@@ -2312,7 +2382,12 @@ export function deriveMountPoints(directory: string, exportStem: string): string
   const selfToken = gtsToken(exportStem);
   const refPattern = new RegExp(componentTypeRefPattern(true));
   const mountPoints: string[] = [];
-  for (const { directory: otherDirectory, stem, overlay } of eachOverlay()) {
+  // What an unreadable overlay would have to say to be one of this
+  // component's containers: the reference segment every `accepts.components`
+  // entry naming it carries, at any major - the stale-major refusal below
+  // matches by name too, so a wrong major must still be seen.
+  const namesSelf = `${VENDOR_PACKAGE}.component.${selfToken}.v`;
+  for (const { directory: otherDirectory, stem, overlay } of usableOverlays([namesSelf], `${exportStem}: mount points`)) {
     if (stem === exportStem) continue;
     for (const accepted of overlay.accepts.components ?? []) {
       if (accepted === self) {
@@ -2354,18 +2429,118 @@ export function compileMountedIn(directory: string, exportStem: string, overlay:
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-structure-derivation:p1:inst-co-derive
 
-// Every overlay the kit ships, read once per caller: the directory it lives
-// in, its own stem, and the parsed document. Two derivations walk this - a
-// component's mount points and a family's membership - and each used to spell
-// the same two nested directory listings out for itself.
-function eachOverlay(): { directory: string; stem: string; overlay: Overlay }[] {
+// One overlay file as it sits on disk, before anything has read it as YAML.
+// The text travels with it because a file that fails to parse can still be
+// asked, textually, whether it mentions a component - which is the only
+// question left once it cannot be asked structurally.
+export interface OverlaySource {
+  directory: string;
+  stem: string;
+  path: string;
+  text: string;
+}
+
+export interface OverlayFailure {
+  directory: string;
+  stem: string;
+  path: string;
+  message: string;
+  text: string;
+}
+
+export interface OverlayWalk {
+  overlays: { directory: string; stem: string; overlay: Overlay }[];
+  failures: OverlayFailure[];
+}
+
+// Every overlay the kit ships, parsed, with the ones that would not parse
+// collected instead of thrown. Both derivations that walk the kit - a
+// component's mount points and a family's membership - sit on the compile
+// path of every contract, so a throw from inside the walk made one
+// half-written overlay for an unenrolled component fail every compile, every
+// guard and every conformance suite in the package. A failure is raised by
+// the caller, and only where it can actually change that caller's answer.
+//
+// Pure over the sources it is handed, so the collection and the scoping can
+// be exercised without writing a file into src/components.
+export function collectOverlays(sources: readonly OverlaySource[]): OverlayWalk {
+  const overlays: OverlayWalk['overlays'] = [];
+  const failures: OverlayFailure[] = [];
+  for (const source of sources) {
+    try {
+      assertStemBelongsToDirectory(source.directory, source.stem);
+      overlays.push({
+        directory: source.directory,
+        stem: source.stem,
+        overlay: parseOverlay(source.stem, parseYaml(source.text) as unknown),
+      });
+    } catch (error) {
+      failures.push({
+        directory: source.directory,
+        stem: source.stem,
+        path: source.path,
+        message: error instanceof Error ? error.message : String(error),
+        text: source.text,
+      });
+    }
+  }
+  return { overlays, failures };
+}
+
+// Which unreadable overlays could have changed the answer a caller is
+// computing. The test is textual on purpose: a file that does not parse
+// cannot be asked what it declares, so the only honest question left is
+// whether the text mentions the thing being derived - the component
+// reference an `accepts.components` entry would carry, or the family token
+// every member of a family names. Generous by construction, and that is the
+// safe direction: a mention that turns out to be prose fails a compile whose
+// author has to open the offending file either way, while a missed mention
+// would be a derivation quietly computed over a file nobody could read.
+export function overlayFailuresMentioning(failures: readonly OverlayFailure[], needles: readonly string[]): OverlayFailure[] {
+  return failures.filter((failure) => needles.some((needle) => failure.text.includes(needle)));
+}
+
+function readOverlaySources(): OverlaySource[] {
   const componentsDir = join(kitRoot, 'src', 'components');
-  const overlays: { directory: string; stem: string; overlay: Overlay }[] = [];
+  const sources: OverlaySource[] = [];
   for (const entry of readdirSync(componentsDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     for (const stem of overlayStems(entry.name)) {
-      overlays.push({ directory: entry.name, stem, overlay: loadOverlay(entry.name, stem) });
+      const path = join(componentsDir, entry.name, `${stem}.contract.yaml`);
+      sources.push({ directory: entry.name, stem, path, text: readFileSync(path, 'utf8') });
     }
+  }
+  return sources;
+}
+
+// Read once per process, not once per caller. Both derivations are called
+// per compiled contract and one of them again per family member, so the
+// directory listing, the YAML parse and the Ajv overlay validation were
+// quadratic in the enrolled set; the walk is pure for the life of the
+// process, exactly like the schema builders memoized the same way.
+const eachOverlay = memoizeSchema((): OverlayWalk => collectOverlays(readOverlaySources()));
+
+// Already-warned paths, so a kit-wide run reports an unreadable overlay once
+// rather than once per component it did not affect.
+const warnedOverlayFailures = new Set<string>();
+
+// The overlays a derivation may use, with the failures that bear on it
+// raised and the rest reported. `needles` is what "bears on it" means for
+// this caller: the text an unreadable overlay would have to carry to have
+// fed this component's output.
+function usableOverlays(needles: readonly string[], derivation: string): OverlayWalk['overlays'] {
+  const { overlays, failures } = eachOverlay();
+  const blocking = overlayFailuresMentioning(failures, needles);
+  if (blocking.length > 0) {
+    throw new Error(
+      `${derivation}: ${blocking.length} overlay(s) this derivation reads would not parse, and each of them names ` +
+        `it:\n  ${blocking.map((failure) => `${failure.path}: ${failure.message}`).join('\n  ')}`,
+    );
+  }
+  for (const failure of failures) {
+    if (warnedOverlayFailures.has(failure.path)) continue;
+    warnedOverlayFailures.add(failure.path);
+    console.warn(`warning: ${failure.path} would not parse and was skipped - ${failure.message}`);
   }
   return overlays;
 }
@@ -2375,10 +2550,12 @@ function eachOverlay(): { directory: string; stem: string; overlay: Overlay }[] 
 // carries the filled `members` list, and a part carries nothing but its own
 // membership.
 //
-// Pure over the entries it is handed, so the two rules it enforces - exactly
-// one root per family name, and no family without one - can be exercised
-// without writing an overlay; familyRoster below applies it to what the kit
-// ships.
+// Pure over the entries it is handed, so the one rule it enforces - a family
+// name has at most one root - can be exercised without writing an overlay;
+// familyRoster below applies it to what the kit ships. The other half of the
+// rule, that a family declared by any member HAS a root, is a question about
+// a component rather than about the roster and lives in
+// compileFamilyMembership, which is where a root-less family is refused.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-structure-derivation:p1:inst-co-family
 export interface FamilyRoster {
   name: string;
@@ -2409,11 +2586,14 @@ export function buildFamilyRoster(
   return { name, root: root?.ref, parts: parts.sort() };
 }
 
-// The same, over the overlays the kit ships.
+// The same, over the overlays the kit ships. An unreadable overlay bears on
+// this roster when its text carries the family's own token, because that is
+// what a member states - and only then, so a half-written overlay for an
+// unrelated component leaves the roster alone.
 export function familyRoster(name: string): FamilyRoster {
   return buildFamilyRoster(
     name,
-    eachOverlay().map(({ stem, overlay }) => ({
+    usableOverlays([name], `family "${name}"`).map(({ stem, overlay }) => ({
       ref: componentTypeRef(stem, overlay.major ?? DEFAULT_CONTRACT_MAJOR),
       stem,
       membership: overlay.family_membership,

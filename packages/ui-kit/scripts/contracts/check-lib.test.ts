@@ -62,7 +62,7 @@ describe('jsonDiff', () => {
 describe('diffElementSurface', () => {
   it('is compatible when a prop is only added', () => {
     const diff = diffElementSurface({ properties: { disabled: { type: 'boolean' } } }, { properties: { disabled: { type: 'boolean' }, form: { type: 'string' } } });
-    expect(diff).toEqual({ added: ['form'], removed: [], narrowed: [], compatible: true });
+    expect(diff).toEqual({ added: ['form'], removed: [], addedPatterns: [], removedPatterns: [], narrowed: [], compatible: true });
   });
 
   it('is incompatible when a prop is removed', () => {
@@ -119,7 +119,7 @@ describe('diffElementSurface', () => {
       { properties: { render: {} } },
       { properties: { render: { description: 'TS: ReactNode. Not expressible in JSON Schema, checked by tsc.' } } },
     );
-    expect(described).toEqual({ added: [], removed: [], narrowed: [], compatible: true });
+    expect(described).toEqual({ added: [], removed: [], addedPatterns: [], removedPatterns: [], narrowed: [], compatible: true });
 
     const reworded = diffElementSurface(
       { properties: { render: { description: 'TS: ReactNode. Not expressible in JSON Schema, checked by tsc.' } } },
@@ -130,13 +130,13 @@ describe('diffElementSurface', () => {
 
   it('is compatible when a type or enum constraint is removed entirely, not merely widened', () => {
     const typeLifted = diffElementSurface({ properties: { render: { type: 'string' } } }, { properties: { render: {} } });
-    expect(typeLifted).toEqual({ added: [], removed: [], narrowed: [], compatible: true });
+    expect(typeLifted).toEqual({ added: [], removed: [], addedPatterns: [], removedPatterns: [], narrowed: [], compatible: true });
 
     const enumLifted = diffElementSurface(
       { properties: { variant: { type: 'string', enum: ['a', 'b'] } } },
       { properties: { variant: { type: 'string' } } },
     );
-    expect(enumLifted).toEqual({ added: [], removed: [], narrowed: [], compatible: true });
+    expect(enumLifted).toEqual({ added: [], removed: [], addedPatterns: [], removedPatterns: [], narrowed: [], compatible: true });
   });
 
   it('is incompatible when a forwarded prop becomes required, whether it existed as optional before or arrives required', () => {
@@ -160,6 +160,38 @@ describe('diffElementSurface', () => {
       { properties: { autoFocus: { type: 'boolean' } }, required: ['autoFocus'] },
     );
     expect(stayedRequired.compatible).toBe(true);
+  });
+
+  it('is incompatible when a pattern family is removed, and compatible when one only arrives', () => {
+    // Deleting `^on[A-Z]` from a <button>'s surface stops it accepting every
+    // React event handler at once, while `properties` and `required` stay
+    // byte-identical - the half of the surface the comparison used to skip.
+    const surface = {
+      properties: { disabled: { type: 'boolean' } },
+      patternProperties: { '^aria-': {}, '^data-': {}, '^on[A-Z]': {} },
+    };
+    const dropped = diffElementSurface(surface, {
+      properties: { disabled: { type: 'boolean' } },
+      patternProperties: { '^aria-': {}, '^data-': {} },
+    });
+    expect(dropped.removed).toEqual([]);
+    expect(dropped.removedPatterns).toEqual(['^on[A-Z]']);
+    expect(dropped.compatible).toBe(false);
+
+    const arrived = diffElementSurface({ properties: { disabled: { type: 'boolean' } } }, surface);
+    expect(arrived.addedPatterns).toEqual(['^aria-', '^data-', '^on[A-Z]']);
+    expect(arrived.compatible).toBe(true);
+  });
+
+  it('reads a narrowed pattern family as the removal it is', () => {
+    // A family is its source string: rewriting `^on[A-Z]` as `^onC` accepts
+    // a strict subset of what it used to, and there is no partial-match
+    // reading of two regular expressions that a compatibility answer could
+    // rest on - so the old source is gone and the new one is new.
+    const diff = diffElementSurface({ patternProperties: { '^on[A-Z]': {} } }, { patternProperties: { '^onC': {} } });
+    expect(diff.removedPatterns).toEqual(['^on[A-Z]']);
+    expect(diff.addedPatterns).toEqual(['^onC']);
+    expect(diff.compatible).toBe(false);
   });
 });
 
@@ -220,10 +252,19 @@ describe('decideCompat', () => {
   it('fails on an incompatible element-surface diff alone, even when the schema-level check is clean', () => {
     const decision = decideCompat({
       ...base,
-      elementSurfaceDiff: { added: [], removed: ['form'], narrowed: [], compatible: false },
+      elementSurfaceDiff: { added: [], removed: ['form'], addedPatterns: [], removedPatterns: [], narrowed: [], compatible: false },
     });
     expect(decision.decision).toBe('fail');
     expect(decision.notes[0]).toContain('element surface: prop "form" removed');
+  });
+
+  it('fails on a removed pattern family, and says what the family stopped accepting', () => {
+    const decision = decideCompat({
+      ...base,
+      elementSurfaceDiff: { added: [], removed: [], addedPatterns: [], removedPatterns: ['^on[A-Z]'], narrowed: [], compatible: false },
+    });
+    expect(decision.decision).toBe('fail');
+    expect(decision.notes[0]).toContain('element surface: pattern family "^on[A-Z]" removed');
   });
 
   it('fails on an incompatible own-props diff alone, even when gts-ts reports backward compatible', () => {
