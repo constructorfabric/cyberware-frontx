@@ -12,31 +12,47 @@
 // process-boundary adapter (spawning the `frontx` CLI, parsing its JSON
 // output) would be wired without ever importing the CLI package.
 //
-// PHASE 8 — multi-record provenance SET: `readProvenance` now returns the
-// project's FULL provenance record set (one record per applied template,
-// `cpt-frontx-contract-project-provenance`); orchestration selects the
-// NAMED applied template's record before invoking the command surface.
+// Single-document provenance model: `readProvenance` returns the project's
+// single state document (`ProjectStateDocument`, one `TemplateEntry` per
+// registered name, `cpt-frontx-contract-project-provenance`); orchestration
+// selects the NAMED template's entry from its `templates` map before
+// invoking the command surface. Three distinct guards precede that
+// selection/invocation — unreadable document, unregistered name, and a
+// registered name with no applied targets — each with its own outcome code
+// (FEATURE §2 steps 3-5).
 import { describe, it, expect, vi } from 'vitest';
 import { orchestrateAiDrivenUpgrade, type OrchestrationDeps } from '../orchestrate.js';
-import type { ChangeSet, InvokeUpgradeCommandFn, ProvenanceRecord, ReviewDecision } from '../types.js';
+import type { ChangeSet, InvokeUpgradeCommandFn, ReviewDecision } from '../types.js';
+import type { ProjectStateDocument } from '../../project-state.js';
 
 const PROJ_ROOT = '/proj';
 
-const PROVENANCE_RECORD: ProvenanceRecord = {
-  templateIdentity: 'my-template',
-  scaffoldedFromVersion: '1.0.0',
-  sourceSpec: 'local:my-template',
+const PROJECT_STATE: ProjectStateDocument = {
+  formatVersion: 1,
+  templates: {
+    // Recorded at a REMOTE origin carrying an `@ref`, because that is what a
+    // version-driven upgrade can actually be resolved against: the engine
+    // reads its second argument as a source-spec, so the target version has
+    // to be rebased onto this origin's ref (`resolveTargetOrigin`). These
+    // fixtures used a `path:` origin while the orchestration passed the bare
+    // version straight through to a MOCKED command surface, so the mismatch
+    // never showed up here — against the real engine a bare `2.0.0` is
+    // refused for having no `host:` prefix.
+    'my-template': { origin: 'github:acme/my-template@v1.0.0', version: '1.0.0', targets: ['apps/web'] },
+    // A second registered template's entry — proves selection reaches into a
+    // multi-entry `templates` map rather than assuming a single
+    // whole-repository origin.
+    'other-template': { origin: 'github:acme/other-template@v3.4.0', version: '3.4.0', targets: ['apps/admin'] },
+    // Registered but with no applied target — the `TARGET_NOT_APPLIED` guard.
+    // Keeps a `path:` origin deliberately: this entry refuses before origin
+    // resolution is ever reached, which is what makes the guard order visible.
+    'no-target-template': { origin: 'path:./templates/no-target-template', version: '1.0.0', targets: [] },
+    // Registered at a LOCAL origin with an applied target — no ref to rebase
+    // a version onto, so this is the `ORIGIN_UNAVAILABLE` limit.
+    'local-template': { origin: 'path:./templates/local-template', version: '1.0.0', targets: ['apps/local'] },
+  },
+  projectOwnedRoots: [],
 };
-
-// A second applied template's record — proves selection reaches into a
-// multi-record SET rather than assuming a single whole-repository origin.
-const OTHER_PROVENANCE_RECORD: ProvenanceRecord = {
-  templateIdentity: 'other-template',
-  scaffoldedFromVersion: '3.4.0',
-  sourceSpec: 'local:other-template',
-};
-
-const PROVENANCE_SET: ProvenanceRecord[] = [PROVENANCE_RECORD, OTHER_PROVENANCE_RECORD];
 
 const RESOLVABLE_CHANGESET: ChangeSet = {
   templateIdentity: 'my-template',
@@ -50,14 +66,23 @@ const RESOLVABLE_CHANGESET: ChangeSet = {
 // the real command's contract: it computes (or fails to compute) a change
 // set, hands it to `onChangeSet` for review, and applies only on 'approved'.
 function makeCommandInvoker(options: {
-  resolvable?: boolean;
+  resolutionFailure?: { code: string; message: string };
+  noop?: boolean;
   applyFails?: boolean;
   changeSet?: ChangeSet;
 }): { invoke: InvokeUpgradeCommandFn; appliedSpy: ReturnType<typeof vi.fn> } {
   const appliedSpy = vi.fn();
-  const invoke: InvokeUpgradeCommandFn = async (_projectRoot, _targetVersion, onChangeSet) => {
-    if (options.resolvable === false) {
-      return { ok: false, status: 'resolution-failed', message: 'Target template not found in local inventory.' };
+  const invoke: InvokeUpgradeCommandFn = async (_projectRoot, _templateName, _targetVersion, onChangeSet) => {
+    if (options.resolutionFailure) {
+      return { ok: false, status: 'resolution-failed', code: options.resolutionFailure.code, message: options.resolutionFailure.message };
+    }
+    if (options.noop) {
+      // The command surface's first, unconfirmed call reporting the
+      // project is already at the target version — `onChangeSet` is never
+      // invoked, exactly as it never is for a genuine resolution failure;
+      // this is the real no-op this kit's own `empty-changeset` status
+      // names, never a refusal.
+      return { ok: true, status: 'noop' };
     }
     const decision: ReviewDecision = await onChangeSet(options.changeSet ?? RESOLVABLE_CHANGESET);
     if (decision === 'approved') {
@@ -75,7 +100,7 @@ function makeCommandInvoker(options: {
 function baseDeps(overrides: Partial<OrchestrationDeps> = {}): OrchestrationDeps {
   const { invoke } = makeCommandInvoker({});
   return {
-    readProvenance: vi.fn().mockResolvedValue(PROVENANCE_SET),
+    readProvenance: vi.fn().mockResolvedValue(PROJECT_STATE),
     invokeUpgradeCommand: invoke,
     presentEnrichedReview: vi.fn().mockResolvedValue('declined'),
     ...overrides,
@@ -83,57 +108,101 @@ function baseDeps(overrides: Partial<OrchestrationDeps> = {}): OrchestrationDeps
 }
 
 describe('orchestrateAiDrivenUpgrade (F17 — drives the SINGLE F14 engine through its command surface, never a second one)', () => {
-  // inst-request-upgrade / inst-read-provenance / inst-check-provenance / inst-provenance-missing
-  it('returns provenance-missing and never invokes the command surface when the provenance set is absent', async () => {
+  // inst-request-upgrade / inst-read-provenance / inst-check-provenance-unreadable / inst-provenance-unreadable
+  it('returns project-invalid and never invokes the command surface when the project state document is absent/unreadable', async () => {
     const { invoke } = makeCommandInvoker({});
     const invokeSpy = vi.fn(invoke);
     const deps = baseDeps({ readProvenance: vi.fn().mockResolvedValue(null), invokeUpgradeCommand: invokeSpy });
     const result = await orchestrateAiDrivenUpgrade(PROJ_ROOT, 'my-template', '2.0.0', deps);
-    expect(result.status).toBe('provenance-missing');
+    expect(result.status).toBe('project-invalid');
+    if (result.status === 'project-invalid') expect(result.code).toBe('PROJECT_INVALID');
     expect(invokeSpy).not.toHaveBeenCalled();
   });
 
-  // inst-read-provenance / inst-check-provenance / inst-provenance-missing — multi-record set, no match
-  it('returns provenance-missing when the provenance SET holds records but none for the named applied template', async () => {
+  // inst-check-not-registered / inst-provenance-not-registered — the document has entries, but none for the named template
+  it('returns template-not-registered when the document holds no templates[name] entry for the named template', async () => {
     const { invoke } = makeCommandInvoker({});
     const invokeSpy = vi.fn(invoke);
-    const deps = baseDeps({ readProvenance: vi.fn().mockResolvedValue(PROVENANCE_SET), invokeUpgradeCommand: invokeSpy });
+    const deps = baseDeps({ readProvenance: vi.fn().mockResolvedValue(PROJECT_STATE), invokeUpgradeCommand: invokeSpy });
     const result = await orchestrateAiDrivenUpgrade(PROJ_ROOT, 'no-such-template', '2.0.0', deps);
-    expect(result.status).toBe('provenance-missing');
-    if (result.status === 'provenance-missing') {
+    expect(result.status).toBe('template-not-registered');
+    if (result.status === 'template-not-registered') {
+      expect(result.code).toBe('TEMPLATE_NOT_REGISTERED');
       expect(result.message).toContain('no-such-template');
     }
     expect(invokeSpy).not.toHaveBeenCalled();
   });
 
-  // inst-read-provenance / inst-check-provenance — multi-record set, selects the NAMED record (not the first one)
-  it('selects the record for the named applied template out of a multi-record provenance set', async () => {
-    const readProvenance = vi.fn().mockResolvedValue(PROVENANCE_SET);
+  // inst-check-no-targets / inst-provenance-no-targets — the entry exists but its targets array is empty
+  it('returns target-not-applied when the named template is registered but its targets array is empty', async () => {
+    const { invoke } = makeCommandInvoker({});
+    const invokeSpy = vi.fn(invoke);
+    const deps = baseDeps({ readProvenance: vi.fn().mockResolvedValue(PROJECT_STATE), invokeUpgradeCommand: invokeSpy });
+    const result = await orchestrateAiDrivenUpgrade(PROJ_ROOT, 'no-target-template', '2.0.0', deps);
+    expect(result.status).toBe('target-not-applied');
+    if (result.status === 'target-not-applied') {
+      expect(result.code).toBe('TARGET_NOT_APPLIED');
+      expect(result.message).toContain('no-target-template');
+    }
+    expect(invokeSpy).not.toHaveBeenCalled();
+  });
+
+  // inst-check-not-registered — a multi-entry document, selects the NAMED entry (not the first one)
+  it('selects the entry for the named template out of a multi-entry templates map', async () => {
+    const readProvenance = vi.fn().mockResolvedValue(PROJECT_STATE);
     const { invoke } = makeCommandInvoker({});
     const deps = baseDeps({
       readProvenance,
       invokeUpgradeCommand: invoke,
       presentEnrichedReview: vi.fn().mockResolvedValue('declined'),
     });
-    // Named template is the SECOND record in the set.
+    // Named template is NOT the first key in the `templates` map.
     const result = await orchestrateAiDrivenUpgrade(PROJ_ROOT, 'other-template', '4.0.0', deps);
     expect(readProvenance).toHaveBeenCalledWith(PROJ_ROOT);
     expect(result.status).toBe('declined');
     if (result.status === 'declined') {
       expect(result.reviewPackage.selectedTemplate).toEqual({
-        templateIdentity: 'other-template',
-        currentVersion: '3.4.0',
+        name: 'other-template',
+        origin: 'github:acme/other-template@v3.4.0',
+        version: '3.4.0',
+        targets: ['apps/admin'],
       });
     }
   });
 
-  // inst-invoke-enrichment / inst-check-changeset / inst-empty-changeset
-  it('returns empty-changeset and presents no review when the command surface cannot resolve the change set', async () => {
-    const { invoke } = makeCommandInvoker({ resolvable: false });
+  // inst-invoke-enrichment / inst-check-changeset — a genuine no-op (the
+  // command surface's baseline already equals the candidate) is the ONLY
+  // case that legitimately reports "nothing to update": `onChangeSet` is
+  // never invoked, and the command surface itself reports `ok:true,
+  // status:'noop'` rather than a refusal.
+  it('returns empty-changeset and presents no review for a genuine no-op (baseline already equals the candidate)', async () => {
+    const { invoke } = makeCommandInvoker({ noop: true });
+    const presentSpy = vi.fn();
+    const deps = baseDeps({ invokeUpgradeCommand: invoke, presentEnrichedReview: presentSpy });
+    const result = await orchestrateAiDrivenUpgrade(PROJ_ROOT, 'my-template', '1.0.0', deps);
+    expect(result.status).toBe('empty-changeset');
+    expect(presentSpy).not.toHaveBeenCalled();
+  });
+
+  // inst-invoke-enrichment / inst-check-changeset — a genuine CLI refusal
+  // from the command surface's first call MUST surface as a failure
+  // carrying its own code, never as "nothing to update": `onChangeSet` is
+  // never invoked for this status either, which is exactly what used to
+  // make this indistinguishable from the real no-op above.
+  it.each([
+    { code: 'CONTENT_CONFLICT', message: 'A file was changed both by the candidate and on disk.' },
+    { code: 'TARGET_CONFLICT', message: 'Ground newly claimed holds another template\'s nested target.' },
+    { code: 'PROJECT_INVALID', message: 'The project state document is absent or unreadable.' },
+  ])('surfaces $code from the command surface as resolution-failed, never empty-changeset', async ({ code, message }) => {
+    const { invoke } = makeCommandInvoker({ resolutionFailure: { code, message } });
     const presentSpy = vi.fn();
     const deps = baseDeps({ invokeUpgradeCommand: invoke, presentEnrichedReview: presentSpy });
     const result = await orchestrateAiDrivenUpgrade(PROJ_ROOT, 'my-template', '9.9.9', deps);
-    expect(result.status).toBe('empty-changeset');
+    expect(result.status).toBe('resolution-failed');
+    if (result.status === 'resolution-failed') {
+      expect(result.code).toBe(code);
+      expect(result.message).toBe(message);
+    }
     expect(presentSpy).not.toHaveBeenCalled();
   });
 
@@ -146,6 +215,52 @@ describe('orchestrateAiDrivenUpgrade (F17 — drives the SINGLE F14 engine throu
     const result = await orchestrateAiDrivenUpgrade(PROJ_ROOT, 'my-template', '1.0.0', deps);
     expect(result.status).toBe('empty-changeset');
     expect(presentSpy).not.toHaveBeenCalled();
+  });
+
+  // inst-extract-provenance / inst-invoke-engine — the selected name and the target version's
+  // RESOLVED origin are passed directly to the command surface (issue #508), so the engine cannot
+  // name a different template, and its second argument is a source-spec it can actually parse.
+  it("invokes the command surface with the selected template name and the target version's resolved origin", async () => {
+    const { invoke } = makeCommandInvoker({});
+    const invokeSpy = vi.fn(invoke);
+    const deps = baseDeps({
+      invokeUpgradeCommand: invokeSpy,
+      presentEnrichedReview: vi.fn().mockResolvedValue('declined'),
+    });
+    await orchestrateAiDrivenUpgrade(PROJ_ROOT, 'my-template', '2.0.0', deps);
+    // The recorded origin's ref is rebased onto the target version — never the
+    // bare `2.0.0`, which the engine would refuse for having no `host:` prefix.
+    expect(invokeSpy).toHaveBeenCalledWith(
+      PROJ_ROOT,
+      'my-template',
+      'github:acme/my-template@2.0.0',
+      expect.any(Function),
+    );
+  });
+
+  // inst-invoke-engine's limit: a name recorded at a local `path:` origin has no ref for a
+  // version to be rebased onto, so the upgrade refuses at the boundary that can explain it
+  // rather than handing the engine a string that means something else.
+  it('refuses with ORIGIN_UNAVAILABLE when the selected name is recorded at a local origin', async () => {
+    const { invoke } = makeCommandInvoker({});
+    const invokeSpy = vi.fn(invoke);
+    const deps = baseDeps({ invokeUpgradeCommand: invokeSpy });
+
+    const result = await orchestrateAiDrivenUpgrade(PROJ_ROOT, 'local-template', '2.0.0', deps);
+
+    expect(result.status).toBe('origin-unavailable');
+    expect(result).toMatchObject({ code: 'ORIGIN_UNAVAILABLE' });
+    // Refused BEFORE the engine was touched: no change set was ever computed.
+    expect(invokeSpy).not.toHaveBeenCalled();
+  });
+
+  // Guard order is observable: an entry with no applied target refuses as
+  // TARGET_NOT_APPLIED even though its origin is also unresolvable, because
+  // step 5 runs before origin resolution.
+  it('reports TARGET_NOT_APPLIED, not ORIGIN_UNAVAILABLE, for a local-origin entry with no targets', async () => {
+    const deps = baseDeps({});
+    const result = await orchestrateAiDrivenUpgrade(PROJ_ROOT, 'no-target-template', '2.0.0', deps);
+    expect(result.status).toBe('target-not-applied');
   });
 
   // inst-extract-provenance / inst-present-review / inst-gate-approve / inst-engine-apply / inst-update-provenance / inst-return-applied
@@ -161,8 +276,10 @@ describe('orchestrateAiDrivenUpgrade (F17 — drives the SINGLE F14 engine throu
     if (result.status === 'applied') {
       expect(result.reviewPackage.impactAnalysis.entries.length).toBeGreaterThan(0);
       expect(result.reviewPackage.selectedTemplate).toEqual({
-        templateIdentity: 'my-template',
-        currentVersion: '1.0.0',
+        name: 'my-template',
+        origin: 'github:acme/my-template@v1.0.0',
+        version: '1.0.0',
+        targets: ['apps/web'],
       });
     }
   });

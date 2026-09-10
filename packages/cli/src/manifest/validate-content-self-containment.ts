@@ -1,30 +1,61 @@
 // @cpt-algo:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2
 //
 // Closes the gap the manifest-CONTRACT check alone leaves open (see #493):
-// `validate-contract.ts` validates the manifest's *declared* ownership
-// boundaries, but nothing there inspects the *content* those boundaries own.
-// A file inside a declared exclusive subtree OR shared-file path can carry a
-// filesystem-path reference that resolves outside the candidate template
-// directory - a `package.json` `file:` specifier; a tsconfig `paths` mapping,
-// `extends` target, `references[].path` entry, `files`/`include`/`exclude`
-// entry, or one of the `compilerOptions` path fields (`TSCONFIG_SINGLE_PATH_
-// OPTIONS`/`TSCONFIG_PATH_LIST_OPTIONS` below); or a lockfile
-// workspace-member/`resolved` entry - and the contract check has no way to
-// see it. This is exactly how the #485 escaping-`file:` bug class lived
-// undetected through pre-publish validation. The carrier set is a registry,
-// not a closed list: adding a carrier is a code change here, not a spec
-// rewrite (deliberately excluded: `package.json` `workspaces` globs and any
-// non-JSON carrier - this module parses structurally and never scans raw
-// text).
+// `validate-contract.ts` validates the manifest's *declared* `excludedSubtrees`,
+// but nothing there inspects the *content* the template itself owns. A file
+// within the template's own payload can carry a filesystem-path reference
+// that resolves outside the candidate template directory - a `package.json`
+// `file:` specifier; a tsconfig `paths` mapping, `extends` target,
+// `references[].path` entry, `files`/`include`/`exclude` entry, or one of
+// the `compilerOptions` path fields (`TSCONFIG_SINGLE_PATH_OPTIONS`/
+// `TSCONFIG_PATH_LIST_OPTIONS` below); or a lockfile workspace-member/
+// `resolved` entry - and the contract check has no way to see it. This is
+// exactly how the #485 escaping-`file:` bug class lived undetected through
+// pre-publish validation. The carrier set is a registry, not a closed list:
+// adding a carrier is a code change here, not a spec rewrite (deliberately
+// excluded: `package.json` `workspaces` globs and any non-JSON carrier -
+// this module parses structurally and never scans raw text).
+//
+// The enumeration surface is the template's own PAYLOAD (FEATURE §1.2): the
+// candidate template directory as a whole, minus the manifest file itself,
+// minus the conventional `.frontx/ai/<manifest-name>/` bundle folder when
+// present (a CLI-owned delivery, never this template's own content), minus
+// its declared `excludedSubtrees` (ground reserved for a nested template's
+// own content, not this template's, `cpt-frontx-adr-template-ownership-
+// boundary-declaration`) - generically: it reads the manifest's own
+// `excludedSubtrees` declaration and knows no template name beyond what the
+// manifest itself states, so it applies unchanged to every template.
 //
 // Generic by construction: every input here is the manifest's OWN declared
-// content-owning paths (exclusive subtrees plus shared-file paths) and the
-// candidate directory's own files. No template name, no file path, no site
-// count is hardcoded, so this stays safe for
+// `excludedSubtrees` and the candidate directory's own files. No template
+// name, no file path, no site count is hardcoded, so this stays safe for
 // `cpt-frontx-constraint-cli-template-independence` (CLI-1) - the check
 // inspects whatever candidate it is pointed at and knows nothing else.
-import type { ListContentOwnedFilesFn, ManifestViolation, ManifestValidationResult, ReadFileFn } from './types';
+//
+// PRECONDITION this module relies on rather than re-checks: `commands/
+// validate.ts` calls this algorithm ONLY after `validateManifestContract`
+// has returned VALIDATED (spec flow step 6, "ELSE (manifest contract is
+// VALIDATED)") - a REJECTED contract result returns FAIL before this
+// module is ever reached. Every declared `excludedSubtrees` entry this
+// module filters payload paths against, and probes via
+// `resolveDeclaredExclusion`, is therefore already contract-canonical: well
+// -formed (trailing "/", no leading "/", no backslash, no drive-prefix, no
+// home-relative "~" root, no "."/".."/empty segment, no glob) and a strict
+// descendant of the template's own target. This module does NOT re-derive
+// or re-normalize that shape itself - a second place deciding what a
+// declared entry means is exactly the drift `src/paths/relative-path.ts`'s
+// own header exists to prevent - it only ever compares an already-canonical
+// entry against an enumerated path by plain string prefix.
+import type {
+  ListPayloadFilesFn,
+  ResolveDeclaredExclusionFn,
+  ManifestViolation,
+  ManifestValidationResult,
+  ReadFileFn,
+} from './types';
+import { MANIFEST_FILENAME } from './types';
 import { parseJsonc } from './parse-jsonc';
+import { isReservedTempName, RESERVED_TEMP_SUFFIX } from '../paths/reserved-temp-name';
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -41,13 +72,13 @@ interface PathSpecifier {
   baseDir: string;
 }
 
-const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const;
+const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies', 'overrides'] as const;
 
 // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-for-each-carrier
 // A file counts as a carrier only by name - not by directory - so a
-// `package.json` nested arbitrarily deep inside a declared content-owning
-// path (a workspace member, an MFE fixture) is inspected exactly like the
-// template's root manifest.
+// `package.json` nested arbitrarily deep inside the payload (a workspace
+// member, an MFE fixture) is inspected exactly like the template's root
+// manifest.
 type CarrierKind = 'package.json' | 'tsconfig' | 'lockfile';
 
 function carrierKind(fileRelPath: string): CarrierKind | null {
@@ -62,10 +93,10 @@ function carrierKind(fileRelPath: string): CarrierKind | null {
 // Untrusted carrier JSON may spell a path with Windows separators (authored
 // on Windows, or simply copied verbatim from a Windows machine) - a
 // backslash-separated relative escape (`..\..\shared`) split ONLY on `/`
-// survives as one opaque segment that never matches `..`, so the escape is
-// missed entirely (CodeRabbit review finding on #493). Every path-arithmetic
-// helper below normalizes to POSIX separators as its first step, so this is
-// the one place backslash-vs-forward-slash is ever decided.
+// survives as one opaque segment that never matches `..`, so the escape
+// would be missed entirely. Every path-arithmetic helper below normalizes
+// to POSIX separators as its first step, so this is the one place
+// backslash-vs-forward-slash is ever decided.
 function toPosixSeparators(value: string): string {
   return value.replace(/\\/g, '/');
 }
@@ -106,6 +137,26 @@ function isAbsoluteOrHomeRelative(value: string): boolean {
 // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-extract-specifiers
 // `file:` dependency specifiers in `package.json` - relative to the manifest
 // file's OWN directory (npm's own resolution rule for a `file:` range).
+//
+// `overrides` sits in this same registry because it pins a transitive
+// dependency's resolved package to a literal filesystem path exactly like a
+// `dependencies` `file:` entry does - but its value is not always a flat
+// string like the other four fields': npm lets a value be an OBJECT when the
+// override targets a dependency-OF-a-dependency rather than the top-level
+// package itself, e.g. `{"foo": {".": "file:../foo", "bar": "file:../bar"}}`
+// overrides "foo" via the "." key and "foo"'s own "bar" dependency via the
+// "bar" key. Reporting only the flat case would silently under-scan a shape
+// that IS a literal `file:` specifier just because it is more convenient to
+// skip - exactly the failure mode this registry exists to close. So the
+// object branch below is walked one level deep for every field, which is a
+// no-op for the other four (their values are never objects) and covers
+// `overrides`' real shape. npm's own docs and every observed lockfile nest
+// at most this one level in practice (a "chained" override nesting deeper
+// is not a real-world carrier this registry needs to chase), so this is a
+// bounded, field-specific widening of the existing loop - not a generic
+// recursive walker like `collectLegacyLockEntries` below uses for the
+// lockfile's legitimately-unbounded nested `dependencies` tree, whose depth
+// is not knowable in advance the way `overrides`' is.
 function extractPackageJsonSpecifiers(fileRelPath: string, parsed: unknown): PathSpecifier[] {
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return [];
   const obj = parsed as Record<string, unknown>;
@@ -117,6 +168,16 @@ function extractPackageJsonSpecifiers(fileRelPath: string, parsed: unknown): Pat
     for (const [name, value] of Object.entries(depMap as Record<string, unknown>)) {
       if (typeof value === 'string' && value.startsWith('file:')) {
         results.push({ description: `${field}["${name}"]`, rawPath: value.slice('file:'.length), baseDir });
+      } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        for (const [nestedKey, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+          if (typeof nestedValue === 'string' && nestedValue.startsWith('file:')) {
+            results.push({
+              description: `${field}["${name}"]["${nestedKey}"]`,
+              rawPath: nestedValue.slice('file:'.length),
+              baseDir,
+            });
+          }
+        }
       }
     }
   }
@@ -174,11 +235,10 @@ const TSCONFIG_SINGLE_PATH_OPTIONS = [
 // The same, for the `compilerOptions` fields whose value is an ARRAY of paths.
 const TSCONFIG_PATH_LIST_OPTIONS = ['typeRoots', 'rootDirs'] as const;
 
-// Every path-like specifier a tsconfig file's own shape declares (A2 review
-// finding on #493 widened this from `paths` alone to `extends` and
-// `references[].path`; a CodeRabbit finding widened it again to the file-list
-// fields; the local review round completed the `compilerOptions` tables above -
-// same file, same parse, same escape semantics throughout).
+// Every path-like specifier a tsconfig file's own shape declares — `paths`,
+// `extends`, `references[].path`, the file-list fields, and the
+// `compilerOptions` tables above — same file, same parse, same escape
+// semantics throughout.
 // `paths` mapping entries resolve against `baseUrl` (default `.`); everything
 // else here resolves against the tsconfig file's OWN directory instead, per
 // TypeScript's own resolution rule for each.
@@ -195,7 +255,7 @@ function extractTsconfigSpecifiers(fileRelPath: string, parsed: unknown): PathSp
     // An absolute/home-relative `baseUrl` REPLACES the tsconfig directory
     // entirely rather than being joined onto it (matching real path
     // resolution) - joining first would hide the escape inside a
-    // concatenated string that no longer looks absolute (A1 review finding).
+    // concatenated string that no longer looks absolute.
     const baseDir = isAbsoluteOrHomeRelative(rawBaseUrl) ? rawBaseUrl : posixJoin(tsconfigDir, rawBaseUrl);
 
     const paths = co['paths'];
@@ -364,12 +424,12 @@ function resolvesOutsideRoot(baseDir: string, rawPath: string): boolean {
   // absolute tsconfig `baseUrl`) or an absolute `rawPath` (e.g. an
   // `npm install`/`npm link`-written absolute `file:` specifier) each escape
   // on their own - joining first would corrupt the segment count instead of
-  // rejecting outright (see A1 review finding on #493).
+  // rejecting outright.
   if (isAbsoluteOrHomeRelative(baseDir) || isAbsoluteOrHomeRelative(rawPath)) return true;
   // `posixJoin` already normalizes each segment it's given; normalizing the
   // joined result again here is a deliberate belt-and-suspenders step right
-  // at the split, so this line never again depends on every upstream caller
-  // having normalized correctly (CodeRabbit review finding on #493).
+  // at the split, so this line never depends on every upstream caller having
+  // normalized correctly.
   const combined = toPosixSeparators(posixJoin(baseDir, rawPath));
   const segments: string[] = [];
   for (const segment of combined.split('/')) {
@@ -385,94 +445,135 @@ function resolvesOutsideRoot(baseDir: string, rawPath: string): boolean {
 }
 // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-resolve-specifier
 
-// @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-for-each-subtree
+// Whether `fileRelPath` falls within a declared `excludedSubtrees` entry
+// (each already contract-validated to end with a trailing "/") or the
+// conventional `.frontx/ai/<manifest-name>/` bundle folder - ground that is
+// not this template's own payload.
+function isWithinExcludedGround(fileRelPath: string, excludedSubtrees: string[], bundlePrefix: string | null): boolean {
+  if (bundlePrefix !== null && fileRelPath.startsWith(bundlePrefix)) return true;
+  return excludedSubtrees.some((entry) => fileRelPath.startsWith(entry));
+}
+
 export async function validateContentSelfContainment(
   templateDir: string,
   manifestRaw: string,
-  listContentOwnedFiles: ListContentOwnedFilesFn,
+  listPayloadFiles: ListPayloadFilesFn,
+  resolveDeclaredExclusion: ResolveDeclaredExclusionFn,
   readFile: ReadFileFn,
 ): Promise<ManifestValidationResult> {
-  const contentOwningPaths = extractDeclaredContentPaths(manifestRaw);
+  const { name: manifestName, excludedSubtrees } = extractPayloadInputs(manifestRaw);
   const violations: ManifestViolation[] = [];
-  const seenFiles = new Set<string>();
 
-  for (const contentOwnedPath of contentOwningPaths) {
-    // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-enumerate-files
-    const files = await listContentOwnedFiles(templateDir, contentOwnedPath);
-    // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-enumerate-files
-    // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-for-each-subtree
-    for (const fileRelPath of files) {
-      // Overlapping subtree entries (a directory and a file beneath it) can
-      // list the same file twice; a violation is reported once regardless.
-      if (seenFiles.has(fileRelPath)) continue;
-      seenFiles.add(fileRelPath);
+  // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-enumerate-files
+  // A declared `excludedSubtrees` entry cannot be honestly resolved because
+  // it is a broken symlink, or resolves outside the candidate template
+  // directory, is refused - never treated as empty content - by calling the
+  // resolver once per declared entry and letting its throw propagate to the
+  // command boundary that owns the exit code (`commands/validate.ts`),
+  // exactly like the main payload enumeration below. The resolver's
+  // `'ABSENT'`/`'RESOLVED'` result carries no further information this
+  // algorithm needs - a genuinely absent entry (the ordinary case, since the
+  // manifest is authored before any target is known) and one that exists
+  // and resolves cleanly are both simply "not a refusal" - so it is not read.
+  for (const entry of excludedSubtrees) {
+    await resolveDeclaredExclusion(templateDir, entry);
+  }
 
-      const kind = carrierKind(fileRelPath);
-      if (kind === null) continue;
+  // The one authoritative enumeration: every regular file reachable under
+  // the candidate template directory. Filtered down to the payload by
+  // removing the manifest file itself, the AI-extension bundle folder, and
+  // anything within a declared `excludedSubtrees` entry.
+  const enumeratedFiles = await listPayloadFiles(templateDir);
+  const bundlePrefix = manifestName !== '' ? `.frontx/ai/${manifestName}/` : null;
+  const payloadFiles = enumeratedFiles.filter(
+    (fileRelPath) => fileRelPath !== MANIFEST_FILENAME && !isWithinExcludedGround(fileRelPath, excludedSubtrees, bundlePrefix),
+  );
+  // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-enumerate-files
 
-      // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-parse-carrier
-      // A carrier this check cannot inspect is a REJECTION, not a skip. Both
-      // failure paths below used to `continue`, which made "we could not look"
-      // indistinguishable from "we looked and it was clean" - the one shape a
-      // validation gate must never have, since silence is also what a pass
-      // looks like (review finding on #493). The file was enumerated as the
-      // template's own declared content, so a template shipping a carrier
-      // nobody can read cannot be certified self-contained.
-      let raw: string;
-      try {
-        raw = await readFile(`${templateDir}/${fileRelPath}`);
-      } catch (error) {
-        violations.push({
-          field: fileRelPath,
-          message: `is a declared ${kind} carrier that could not be read (${describeError(error)}), so its path references cannot be checked`,
-        });
-        continue;
-      }
-
-      let parsed: unknown;
-      try {
-        // A tsconfig carrier is read JSONC-tolerantly (comments, trailing
-        // commas) - the same shape `tsc`'s own config reader accepts - so a
-        // tsconfig template authors and `tsc` both consider valid is never
-        // reported as broken JSON here; `package.json` and lockfile carriers
-        // stay strict JSON, since neither ecosystem tool that owns their
-        // format tolerates comments in them.
-        parsed = kind === 'tsconfig' ? parseJsonc(raw) : JSON.parse(raw);
-      } catch (error) {
-        const shapeNote =
-          kind === 'tsconfig'
-            ? "is not valid JSON, even tolerating the comments and trailing commas tsc's own config reader accepts"
-            : 'is not valid JSON';
-        violations.push({
-          field: fileRelPath,
-          message: `is a declared ${kind} carrier that ${shapeNote} (${describeError(error)}), so its path references cannot be checked`,
-        });
-        continue;
-      }
-      // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-parse-carrier
-
-      const specifiers =
-        kind === 'package.json'
-          ? extractPackageJsonSpecifiers(fileRelPath, parsed)
-          : kind === 'tsconfig'
-            ? extractTsconfigSpecifiers(fileRelPath, parsed)
-            : extractLockfileSpecifiers(fileRelPath, parsed);
-
-      // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-for-each-specifier
-      for (const specifier of specifiers) {
-        // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-if-outside-root
-        if (resolvesOutsideRoot(specifier.baseDir, specifier.rawPath)) {
-          // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-add-violation
-          violations.push({
-            field: `${fileRelPath}:${specifier.description}`,
-            message: `references "${specifier.rawPath}", which resolves outside the template root`,
-          });
-          // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-add-violation
-        }
-        // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-if-outside-root
-      }
-      // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-for-each-specifier
+  // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-foreach-enumerated
+  for (const fileRelPath of payloadFiles) {
+    // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-if-reserved-name
+    if (isReservedTempName(fileRelPath)) {
+      // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-add-reserved-name-violation
+      violations.push({
+        field: fileRelPath,
+        message:
+          `collides with the CLI's reserved temporary-file naming convention (the "${RESERVED_TEMP_SUFFIX}" suffix an ` +
+          'upgrade\'s write phase uses for its own materialize-then-rename step): a payload path carrying this name is ' +
+          'never classified, written, or reported once an upgrade excludes it from comparison, so it is not admissible payload',
+      });
+      // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-add-reserved-name-violation
     }
+    // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-if-reserved-name
+  }
+  // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-foreach-enumerated
+
+  for (const fileRelPath of payloadFiles) {
+    const kind = carrierKind(fileRelPath);
+    if (kind === null) continue;
+
+    // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-parse-carrier
+    // A carrier this check cannot inspect is a REJECTION, not a skip. If
+    // either failure path below simply `continue`d, "we could not look"
+    // would be indistinguishable from "we looked and it was clean" - the
+    // one shape a validation gate must never have, since silence is also
+    // what a pass looks like. The file was enumerated as the template's own
+    // payload, so a template shipping a carrier nobody can read cannot be
+    // certified self-contained.
+    let raw: string;
+    try {
+      raw = await readFile(`${templateDir}/${fileRelPath}`);
+    } catch (error) {
+      violations.push({
+        field: fileRelPath,
+        message: `is a declared ${kind} carrier that could not be read (${describeError(error)}), so its path references cannot be checked`,
+      });
+      continue;
+    }
+
+    let parsed: unknown;
+    try {
+      // A tsconfig carrier is read JSONC-tolerantly (comments, trailing
+      // commas) - the same shape `tsc`'s own config reader accepts - so a
+      // tsconfig template authors and `tsc` both consider valid is never
+      // reported as broken JSON here; `package.json` and lockfile carriers
+      // stay strict JSON, since neither ecosystem tool that owns their
+      // format tolerates comments in them.
+      parsed = kind === 'tsconfig' ? parseJsonc(raw) : JSON.parse(raw);
+    } catch (error) {
+      const shapeNote =
+        kind === 'tsconfig'
+          ? "is not valid JSON, even tolerating the comments and trailing commas tsc's own config reader accepts"
+          : 'is not valid JSON';
+      violations.push({
+        field: fileRelPath,
+        message: `is a declared ${kind} carrier that ${shapeNote} (${describeError(error)}), so its path references cannot be checked`,
+      });
+      continue;
+    }
+    // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-parse-carrier
+
+    const specifiers =
+      kind === 'package.json'
+        ? extractPackageJsonSpecifiers(fileRelPath, parsed)
+        : kind === 'tsconfig'
+          ? extractTsconfigSpecifiers(fileRelPath, parsed)
+          : extractLockfileSpecifiers(fileRelPath, parsed);
+
+    // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-for-each-specifier
+    for (const specifier of specifiers) {
+      // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-if-outside-root
+      if (resolvesOutsideRoot(specifier.baseDir, specifier.rawPath)) {
+        // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-add-violation
+        violations.push({
+          field: `${fileRelPath}:${specifier.description}`,
+          message: `references "${specifier.rawPath}", which resolves outside the template root`,
+        });
+        // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-add-violation
+      }
+      // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-if-outside-root
+    }
+    // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-for-each-specifier
   }
 
   // @cpt-begin:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-if-violations
@@ -488,48 +589,27 @@ export async function validateContentSelfContainment(
   // @cpt-end:cpt-frontx-algo-template-manifest-validate-content-self-containment:p2:inst-csc-return-validated
 }
 
-// Reads the manifest's OWN declared content-owning paths: every exclusive
-// subtree, PLUS every shared-file path (A3 review finding on #493). Either
-// ownership-boundary kind can own a carrier file, and which one a given
-// template uses is not this algorithm's business to predict: `template-shell`
-// and `template-mfe` both ship `sharedFiles: []` today and declare their
-// `package.json`/lockfile/tsconfig carriers as exclusive subtrees, but
-// ADR-0031's own worked example puts exactly those carriers in `sharedFiles`,
-// so enumerating `exclusiveSubtrees` alone would silently stop inspecting the
-// highest-value carriers the first time a template took that shape.
-// Malformed input yields an empty
-// list rather than throwing - the manifest CONTRACT check
+// Reads the manifest's OWN `name` and declared `excludedSubtrees` - the two
+// payload-shaping inputs this algorithm needs. Malformed input yields the
+// empty defaults rather than throwing: the manifest CONTRACT check
 // (`validate-contract.ts`) is the one authority for reporting a malformed
-// manifest; this algorithm only runs at all once that check has already
+// manifest, and this algorithm only runs at all once that check has already
 // passed (see `commands/validate.ts`), so this is a defensive fallback, not
-// a second contract enforcement path.
-function extractDeclaredContentPaths(raw: string): string[] {
+// a second contract-enforcement path.
+function extractPayloadInputs(raw: string): { name: string; excludedSubtrees: string[] } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return [];
+    return { name: '', excludedSubtrees: [] };
   }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return [];
-  const boundaries = (parsed as Record<string, unknown>)['ownershipBoundaries'];
-  if (typeof boundaries !== 'object' || boundaries === null || Array.isArray(boundaries)) return [];
-  const boundariesObj = boundaries as Record<string, unknown>;
-
-  const subtrees = boundariesObj['exclusiveSubtrees'];
-  const exclusiveSubtrees = Array.isArray(subtrees)
-    ? subtrees.filter((s): s is string => typeof s === 'string')
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { name: '', excludedSubtrees: [] };
+  }
+  const obj = parsed as Record<string, unknown>;
+  const name = typeof obj['name'] === 'string' ? (obj['name'] as string) : '';
+  const excludedSubtrees = Array.isArray(obj['excludedSubtrees'])
+    ? (obj['excludedSubtrees'] as unknown[]).filter((s): s is string => typeof s === 'string')
     : [];
-
-  const sharedFiles = boundariesObj['sharedFiles'];
-  const sharedFilePaths = Array.isArray(sharedFiles)
-    ? sharedFiles
-        .map((entry) =>
-          typeof entry === 'object' && entry !== null && !Array.isArray(entry)
-            ? (entry as Record<string, unknown>)['path']
-            : undefined,
-        )
-        .filter((p): p is string => typeof p === 'string')
-    : [];
-
-  return [...exclusiveSubtrees, ...sharedFilePaths];
+  return { name, excludedSubtrees };
 }

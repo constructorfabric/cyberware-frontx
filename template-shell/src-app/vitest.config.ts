@@ -46,10 +46,6 @@ export default defineConfig({
         replacement: path.resolve(__dirname, '../packages/framework/dist/testing.js'),
       },
       {
-        find: '@frontx-test-utils',
-        replacement: path.resolve(__dirname, './__test-utils__'),
-      },
-      {
         find: '@',
         replacement: __dirname,
       },

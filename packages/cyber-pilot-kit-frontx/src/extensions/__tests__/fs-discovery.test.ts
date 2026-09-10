@@ -34,10 +34,30 @@ function makeFakeReader(files: Record<string, string>): BundleFsReader {
 
 const PROJECT_ROOT = 'scaffolded-project';
 const AI_ROOT = `${PROJECT_ROOT}/.frontx/ai`;
+const PROJECT_STATE_PATH = `${PROJECT_ROOT}/.frontx/project.json`;
+
+/**
+ * The trust gate (§1.1-1.2) reads `.frontx/project.json` through the same
+ * injected reader every other test in this file already uses; this helper
+ * builds a document that registers a trusted, pinned origin for each named
+ * identity so the pre-existing structural-scan tests below keep exercising
+ * ONLY the structural behavior they were written for, unaffected by the new
+ * trust check that now runs before it.
+ */
+function trustedState(...identities: string[]): string {
+  return JSON.stringify({
+    formatVersion: 1,
+    templates: Object.fromEntries(
+      identities.map((identity) => [identity, { origin: `path:./templates/${identity.replace('/', '-')}`, version: '1.0.0', targets: ['.'] }]),
+    ),
+    projectOwnedRoots: [],
+  });
+}
 
 describe('discoverExtensionBundlesFromFs (§1.5 id-scoped AI-Extension Bundle Convention)', () => {
   it('discovers a single id-scoped bundle root and feeds its conforming entries', () => {
     const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: trustedState('acme-template'),
       [`${AI_ROOT}/acme-template/extension.json`]: JSON.stringify({
         id: 'acme-template-ai-bundle',
         contractVersion: '1.0.0',
@@ -65,6 +85,7 @@ describe('discoverExtensionBundlesFromFs (§1.5 id-scoped AI-Extension Bundle Co
 
   it('discovers a scoped npm-style identity (`@scope/name`) bundle root two path segments deep', () => {
     const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: trustedState('@gears-frontx/frontx-template-shell'),
       [`${AI_ROOT}/@gears-frontx/frontx-template-shell/extension.json`]: JSON.stringify({
         id: 'frontx-template-shell-ai-bundle',
         contractVersion: '1.0.0',
@@ -83,6 +104,7 @@ describe('discoverExtensionBundlesFromFs (§1.5 id-scoped AI-Extension Bundle Co
 
   it('discovers multiple co-applied scoped bundles under the same npm scope independently', () => {
     const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: trustedState('@gears-frontx/template-a', '@gears-frontx/template-b'),
       [`${AI_ROOT}/@gears-frontx/template-a/extension.json`]: JSON.stringify({
         id: 'template-a-bundle',
         contractVersion: '1.0.0',
@@ -107,6 +129,7 @@ describe('discoverExtensionBundlesFromFs (§1.5 id-scoped AI-Extension Bundle Co
 
   it('an npm scope directory with no nested package name yields a missing-anchor structural error under the scope identity', () => {
     const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: trustedState('@empty-scope'),
       [`${AI_ROOT}/@empty-scope/.keep`]: '',
     });
     // makeFakeReader only registers directories that are proper ancestors of
@@ -130,6 +153,7 @@ describe('discoverExtensionBundlesFromFs (§1.5 id-scoped AI-Extension Bundle Co
 
   it('discovers multiple disjoint co-located id-scoped bundles independently', () => {
     const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: trustedState('acme-template', 'other-template'),
       [`${AI_ROOT}/acme-template/extension.json`]: JSON.stringify({
         id: 'acme-bundle',
         contractVersion: '1.0.0',
@@ -164,6 +188,7 @@ describe('discoverExtensionBundlesFromFs (§1.5 id-scoped AI-Extension Bundle Co
 
   it('a malformed anchor in one bundle yields a structural error for it while other bundles still discover', () => {
     const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: trustedState('broken-template', 'good-template'),
       [`${AI_ROOT}/broken-template/extension.json`]: '{not json',
       [`${AI_ROOT}/good-template/extension.json`]: JSON.stringify({
         id: 'good-bundle',
@@ -184,6 +209,7 @@ describe('discoverExtensionBundlesFromFs (§1.5 id-scoped AI-Extension Bundle Co
 
   it('a bundle with no extension.json anchor yields a structural error and an empty bundle', () => {
     const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: trustedState('anchorless-template'),
       [`${AI_ROOT}/anchorless-template/skills/x/README.md`]: 'no anchor here',
     });
     const bundles = discoverExtensionBundlesFromFs(PROJECT_ROOT, reader);
@@ -194,6 +220,7 @@ describe('discoverExtensionBundlesFromFs (§1.5 id-scoped AI-Extension Bundle Co
 
   it('an identity-less anchor (missing "id") yields a structural error and an empty bundle', () => {
     const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: trustedState('no-id-template'),
       [`${AI_ROOT}/no-id-template/extension.json`]: JSON.stringify({ contractVersion: '1.0.0', entries: [] }),
     });
     const bundles = discoverExtensionBundlesFromFs(PROJECT_ROOT, reader);
@@ -203,6 +230,7 @@ describe('discoverExtensionBundlesFromFs (§1.5 id-scoped AI-Extension Bundle Co
 
   it('a bundle-root subdirectory outside the four-slot closed set yields a "category outside the closed set" structural error, scoped to that bundle', () => {
     const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: trustedState('my-template'),
       [`${AI_ROOT}/my-template/extension.json`]: JSON.stringify({ id: 'bundle', contractVersion: '1.0.0', entries: [] }),
       [`${AI_ROOT}/my-template/mocks/oob.md`]: 'oob content',
     });
@@ -214,6 +242,7 @@ describe('discoverExtensionBundlesFromFs (§1.5 id-scoped AI-Extension Bundle Co
 
   it('a skill entry whose directory is missing SKILL.md is REJECTED, not silently skipped', () => {
     const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: trustedState('my-template'),
       [`${AI_ROOT}/my-template/extension.json`]: JSON.stringify({
         id: 'bundle',
         contractVersion: '1.0.0',
@@ -229,6 +258,7 @@ describe('discoverExtensionBundlesFromFs (§1.5 id-scoped AI-Extension Bundle Co
 
   it('a malformed entry does not affect conforming entries from the same bundle', () => {
     const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: trustedState('my-template'),
       [`${AI_ROOT}/my-template/extension.json`]: JSON.stringify({
         id: 'bundle',
         contractVersion: '1.0.0',
@@ -247,6 +277,7 @@ describe('discoverExtensionBundlesFromFs (§1.5 id-scoped AI-Extension Bundle Co
 
   it('an entry naming a category outside the closed set is a structural error, not a silent skip', () => {
     const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: trustedState('my-template'),
       [`${AI_ROOT}/my-template/extension.json`]: JSON.stringify({
         id: 'bundle',
         contractVersion: '1.0.0',
@@ -262,5 +293,108 @@ describe('discoverExtensionBundlesFromFs (§1.5 id-scoped AI-Extension Bundle Co
     const reader = makeFakeReader({});
     const bundles = discoverExtensionBundlesFromFs(PROJECT_ROOT, reader);
     expect(bundles).toHaveLength(0);
+  });
+});
+
+describe('discoverExtensionBundlesFromFs — trust gate (§1.1-1.2, §4 transition 1)', () => {
+  it('an identity with no registered origin is DENIED, and no slot of its bundle is ever read', () => {
+    const files: Record<string, string> = {
+      [PROJECT_STATE_PATH]: trustedState(), // no identity registered at all
+      [`${AI_ROOT}/untrusted-template/extension.json`]: JSON.stringify({
+        id: 'bundle',
+        contractVersion: '1.0.0',
+        entries: [{ id: 'skill-1', category: 'skills', path: 'skills/skill-1' }],
+      }),
+      [`${AI_ROOT}/untrusted-template/skills/skill-1/SKILL.md`]: '# Skill 1',
+    };
+    const baseReader = makeFakeReader(files);
+    const readCalls: string[] = [];
+    const listCalls: string[] = [];
+    const spyReader: BundleFsReader = {
+      readFile(path) {
+        readCalls.push(path);
+        return baseReader.readFile(path);
+      },
+      listDir(path) {
+        listCalls.push(path);
+        return baseReader.listDir(path);
+      },
+    };
+
+    const bundles = discoverExtensionBundlesFromFs(PROJECT_ROOT, spyReader);
+
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0].identity).toBe('untrusted-template');
+    expect(bundles[0].denial).toBeDefined();
+    expect(bundles[0].denial?.identity).toBe('untrusted-template');
+    expect(bundles[0].bundle).toHaveLength(0);
+    expect(bundles[0].structuralErrors).toHaveLength(0);
+
+    // Proves "denied before any slot is scanned": nothing under the denied
+    // identity's own bundle root — not even its extension.json anchor — was
+    // ever read or listed.
+    const bundleRoot = `${AI_ROOT}/untrusted-template`;
+    expect(readCalls.some((path) => path.startsWith(bundleRoot))).toBe(false);
+    expect(listCalls.some((path) => path.startsWith(bundleRoot))).toBe(false);
+  });
+
+  it('a `path:` origin is trusted exactly like a remote pinned origin', () => {
+    const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: JSON.stringify({
+        formatVersion: 1,
+        templates: { 'local-template': { origin: 'path:./templates/local-template', version: '0.0.0', targets: ['.'] } },
+        projectOwnedRoots: [],
+      }),
+      [`${AI_ROOT}/local-template/extension.json`]: JSON.stringify({
+        id: 'bundle',
+        contractVersion: '1.0.0',
+        entries: [{ id: 'skill-1', category: 'skills', path: 'skills/skill-1' }],
+      }),
+      [`${AI_ROOT}/local-template/skills/skill-1/SKILL.md`]: '# Skill 1',
+    });
+
+    const bundles = discoverExtensionBundlesFromFs(PROJECT_ROOT, reader);
+
+    expect(bundles[0].denial).toBeUndefined();
+    expect(bundles[0].bundle).toHaveLength(1);
+  });
+
+  it('an absent project.json denies every discovered bundle', () => {
+    const reader = makeFakeReader({
+      [`${AI_ROOT}/acme-template/extension.json`]: JSON.stringify({
+        id: 'bundle',
+        contractVersion: '1.0.0',
+        entries: [{ id: 'skill-1', category: 'skills', path: 'skills/skill-1' }],
+      }),
+      [`${AI_ROOT}/acme-template/skills/skill-1/SKILL.md`]: '# Skill 1',
+    });
+
+    const bundles = discoverExtensionBundlesFromFs(PROJECT_ROOT, reader);
+
+    expect(bundles[0].denial).toBeDefined();
+    expect(bundles[0].bundle).toHaveLength(0);
+    expect(bundles[0].structuralErrors).toHaveLength(0);
+  });
+
+  it('an unparseable project.json denies every discovered bundle', () => {
+    const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: '{not json',
+      [`${AI_ROOT}/acme-template/extension.json`]: JSON.stringify({ id: 'bundle', contractVersion: '1.0.0', entries: [] }),
+    });
+
+    const bundles = discoverExtensionBundlesFromFs(PROJECT_ROOT, reader);
+
+    expect(bundles[0].denial).toBeDefined();
+  });
+
+  it('a project.json missing a "templates" map denies every discovered bundle (deny is the safe direction)', () => {
+    const reader = makeFakeReader({
+      [PROJECT_STATE_PATH]: JSON.stringify({ formatVersion: 1 }),
+      [`${AI_ROOT}/acme-template/extension.json`]: JSON.stringify({ id: 'bundle', contractVersion: '1.0.0', entries: [] }),
+    });
+
+    const bundles = discoverExtensionBundlesFromFs(PROJECT_ROOT, reader);
+
+    expect(bundles[0].denial).toBeDefined();
   });
 });

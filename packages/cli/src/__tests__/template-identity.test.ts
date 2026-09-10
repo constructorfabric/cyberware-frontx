@@ -31,7 +31,8 @@ function manifestOf(name: string): TemplateManifest {
   return {
     name,
     version: '1.0.0',
-    ownershipBoundaries: { exclusiveSubtrees: ['src'], sharedFiles: [] },
+    excludedSubtrees: [],
+    description: 'Fixture template for manifest-identity resolution tests.',
   };
 }
 
@@ -96,7 +97,7 @@ function filesOf(content: string): Record<string, string> {
 async function resolveSpec(spec: string, content: string) {
   const parsed = parseSourceSpec(spec);
   if (!parsed.ok) throw new Error(`fixture spec did not parse: ${spec}`);
-  return resolveToInventory(parsed.value, fetchOf(content));
+  return resolveToInventory({ kind: 'remote', ref: parsed.value }, { fetchFn: fetchOf(content) });
 }
 
 describe('resolveToInventory — identity (inst-resolve-name, inst-resolve-identity-missing)', () => {

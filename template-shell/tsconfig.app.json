@@ -45,7 +45,8 @@
       "@gears-frontx/studio/*": ["./packages/studio/src/*"],
       "@gears-frontx/auth": ["./packages/auth/src/index.ts"],
       "@gears-frontx/auth/*": ["./packages/auth/src/*"],
-      "@frontx-test-utils/*": ["./src-app/__test-utils__/*"]
+      "@gears-frontx/mfe-test-support": ["./packages/mfe-test-support/index.ts"],
+      "@gears-frontx/mfe-test-support/*": ["./packages/mfe-test-support/*"]
     }
   },
   "include": [

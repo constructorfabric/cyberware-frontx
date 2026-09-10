@@ -5,7 +5,7 @@
 // normalizations it deliberately does NOT perform — a caller reading only the
 // consumers cannot tell an unhandled spelling from a handled one.
 import { describe, it, expect } from 'vitest';
-import { pathWithinSubtree, pathsNest } from '../paths/relative-path';
+import { pathWithinSubtree, pathsNest, pathWithinTarget, targetsNest } from '../paths/relative-path';
 
 describe('pathWithinSubtree — containment by whole path segments', () => {
   it.each([
@@ -107,5 +107,40 @@ describe('pathsNest — containment asked in both directions', () => {
     );
 
     expect(asymmetric).toEqual([]);
+  });
+});
+
+describe('pathWithinTarget / targetsNest — the root-aware counterparts for concrete TARGETS', () => {
+  // A concrete applied target, unlike a declaration such as `excludedSubtrees`
+  // or `projectOwnedRoots`, can legitimately be `.`, the project root — and a
+  // project root contains every other well-formed relative path
+  // unconditionally. `pathWithinSubtree`/`pathsNest` correctly do NOT grant
+  // `.` this meaning (an empty or otherwise degenerate DECLARATION addresses
+  // no location at all, which is the right behavior for a declaration); these
+  // two are the one place that adds the target-specific exception.
+
+  it('treats "." as containing every other path, unlike pathWithinSubtree', () => {
+    expect(pathWithinTarget('src/index.ts', '.')).toBe(true);
+    expect(pathWithinSubtree('src/index.ts', '.')).toBe(false);
+  });
+
+  it('still defers to pathWithinSubtree for a non-root target', () => {
+    expect(pathWithinTarget('packages/app/src', 'packages/app')).toBe(true);
+    expect(pathWithinTarget('packages/other', 'packages/app')).toBe(false);
+  });
+
+  it('"." nests with every other target, unlike pathsNest', () => {
+    expect(targetsNest('.', 'packages/app')).toBe(true);
+    expect(targetsNest('packages/app', '.')).toBe(true);
+    expect(pathsNest('.', 'packages/app')).toBe(false);
+  });
+
+  it('two non-root targets still defer to pathsNest for coincidence/nesting', () => {
+    expect(targetsNest('packages/app', 'packages/app/src')).toBe(true);
+    expect(targetsNest('packages/app', 'packages/app-shell')).toBe(false);
+  });
+
+  it('"." nests with itself', () => {
+    expect(targetsNest('.', '.')).toBe(true);
   });
 });

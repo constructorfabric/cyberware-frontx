@@ -1,0 +1,47 @@
+{
+  "name": "@gears-frontx/mfe-test-support",
+  "version": "0.1.0-alpha.0",
+  "description": "Shared test-only helpers and the Vitest MFE project base config for this template's host app and MFE packages -- render/mock doubles for @gears-frontx/react bindings plus the shared vitest.mfe.base project factory, imported by name instead of a relative reach across template boundaries.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./attachRegisteredRestMocks": "./attachRegisteredRestMocks.ts",
+    "./createMfeBridgeFixture": "./createMfeBridgeFixture.ts",
+    "./createResetAccountsMockState": "./createResetAccountsMockState.ts",
+    "./describeAccountsApiServiceContract": "./describeAccountsApiServiceContract.ts",
+    "./mockShadowHost": "./mockShadowHost.ts",
+    "./mockUserFixture": "./mockUserFixture.ts",
+    "./renderWithProviders": "./renderWithProviders.tsx",
+    "./vitest.mfe.base": "./vitest.mfe.base.ts"
+  },
+  "files": [
+    "*.ts",
+    "*.tsx"
+  ],
+  "scripts": {
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@gears-frontx/framework": "*",
+    "@gears-frontx/react": "*"
+  },
+  "devDependencies": {
+    "@testing-library/react": "16.3.2",
+    "@types/node": "^24.9.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.0.3",
+    "@vitejs/plugin-react": "4.3.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "typescript": "5.4.2",
+    "vite": "6.4.3",
+    "vitest": "4.1.4"
+  },
+  "keywords": [
+    "frontx",
+    "test-support",
+    "mfe",
+    "vitest"
+  ]
+}

@@ -6,10 +6,24 @@ microfrontend runtime, a set of demo microfrontends, solution packages
 to develop and ship it.
 
 You are (typically) reading this inside a project that was scaffolded from this
-template with the FrontX CLI:
+template with the FrontX CLI. `seed` bootstraps a project from the CLI's
+built-in official defaults, which only resolve inside this monorepo checkout —
+useful for developing the templates themselves. Each default is a `path:`
+origin resolved against the directory being seeded, so seeding a bare empty
+folder has nothing to resolve against; the template must be vendored into it
+first. See [QUICK_START.md § 4, "Or seed a new project from the built-in
+defaults"](../QUICK_START.md#4-or-seed-a-new-project-from-the-built-in-defaults)
+in the root of this repository for the exact command — a plain recursive copy
+also drags in `node_modules`, `dist`, `dist-lib`, and `.frontx`, so vendoring
+uses `git archive` to transfer tracked content only.
+
+Anywhere else — a fresh external folder — `register` a remote origin and
+`apply` it instead, which is the path that actually works outside this
+checkout:
 
 ```bash
-frontx seed frontx-template-shell ./my-app
+frontx register <origin>
+frontx apply --input '{"templates":{"@gears-frontx/frontx-template-shell":["."]}}'
 ```
 
 From here on, this repository is **your application**. This template gives you a
@@ -23,8 +37,8 @@ working starting point; what you build on top is yours.
 - **The MFE runtime, pre-wired** — screens are contributed by microfrontends and
   appear in the menu automatically; no central screen registry to maintain.
 - **Demo microfrontends** (`src-app/mfe_packages`, added separately via
-  [`frontx-template-mfe`](../template-mfe/README.md)) — `demo-mfe` (Hello World,
-  Profile, Current Theme, UIKit Elements, Widgets Host), a minimal `_blank-mfe`
+  `frontx-template-mfe`) — `demo-mfe` (Hello World, Profile, Current Theme,
+  UIKit Elements, Widgets Host), a minimal `_blank-mfe`
   to copy from, and two widget fixtures. A shell-only seed has zero MFEs; the
   host, build, and manifest pipeline all work with none present. These ship to be
   read and copied and stay out of your running app; `src-app/mfe_packages/README.md`
@@ -115,13 +129,20 @@ npm run dev:all
 #    Host:  http://localhost:5173
 ```
 
-A shell-only seed has no MFEs yet, so `dev:all` just runs the host, and
+A shell-only project has no MFEs yet, so `dev:all` just runs the host, and
 `generate:mfe-manifests` writes an empty manifest set — both expected, not
-errors. Add MFE packages with `frontx add frontx-template-mfe` (see
-[`template-mfe`](../template-mfe/README.md)), then run `npm install` again —
-`add` changes what the workspace glob matches, so the lock must be
-regenerated — before their preview ports (`:3001` demo, `:3099` blank,
-`:3201`/`:3202` widget fixtures) come up alongside the host.
+errors. Add MFE packages by registering and applying `frontx-template-mfe`
+at `src-app/mfe_packages`:
+
+```bash
+frontx register <mfe-origin>
+frontx apply --input '{"templates":{"@gears-frontx/frontx-template-mfe":["src-app/mfe_packages"]}}'
+```
+
+then run `npm install` again — applying a new template changes what the
+workspace glob matches, so the lock must be regenerated — before their
+preview ports (`:3001` demo, `:3099` blank, `:3201`/`:3202` widget fixtures)
+come up alongside the host.
 
 The FrontX ecosystem packages (`@gears-frontx/mfes`, `@gears-frontx/gts-plugin`,
 `@gears-frontx/api`) resolve from the npm registry at exact pinned versions.
@@ -140,7 +161,7 @@ my-app/
 │   │   ├── mfe/             # MFE bootstrap + generated manifests
 │   │   ├── themes/          # Theme tokens and registries
 │   │   └── globals.css      # Tailwind entry + theme CSS variables
-│   └── mfe_packages/        # Microfrontends (empty until `frontx add frontx-template-mfe`)
+│   └── mfe_packages/        # Microfrontends (empty until `frontx-template-mfe` is applied)
 ├── src/                     # Shared solution lib (api, build, gts)
 ├── packages/                # Solution packages: react, framework, state, i18n, studio, auth
 ├── public/                  # Static assets + generated-mfe-manifests.json
@@ -180,10 +201,11 @@ template version is released, upgrade with the FrontX CLI — changes are shown 
 a reviewable change set before anything is written:
 
 ```bash
-frontx upgrade . <targetVersion>
+frontx upgrade @gears-frontx/frontx-template-shell <new-origin>
 ```
 
-> **Multi-template repositories.** `frontx upgrade` is not yet supported once a
-> second template has been added (e.g. after `frontx add frontx-template-mfe`) —
-> it currently reads a single provenance record. Upgrading a shell+mfe project
-> is not supported in this release.
+`upgrade` acts on one registered template name across every target it has been
+applied to, so a project with more than one template registered (shell plus
+`@gears-frontx/frontx-template-mfe`, say) upgrades each independently by name — there is no
+restriction on upgrading once a second template has been added. `--restore`
+reverses the immediately preceding upgrade for a name.

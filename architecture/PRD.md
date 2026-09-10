@@ -53,8 +53,8 @@ Across both groups, three needs recur: stable, narrow contracts an AI agent can 
 
 ### 1.3 Goals (Business Outcomes)
 
-- **Bounded time-to-scaffold** — A Project Developer (or an AI agent acting for one) can assemble a working repository from a template in a single operation whose duration is bounded by a target published in the platform's release notes. Baseline: not yet measured (new product); Target: a predictable, bounded assembly operation; Timeframe: established and published at the first platform release.
-- **Reviewable, reversible upgrades** — Every upgrade of an applied template to a newer version is applied as a reviewable change set that a developer approves before it touches repository files, with non-destructive rollback. Baseline: none (new product); Target: 100% of upgrades review-gated and reversible; Timeframe: first platform release.
+- **Single-operation scaffolding** — A Project Developer (or an AI agent acting for one) can assemble a working repository from one or more templates in a single operation: one command, no manual wiring step between templates, and no partially-assembled repository left behind when it refuses. Baseline: not yet measured (new product); Target: 100% of supported assemblies complete or refuse whole in one invocation; Timeframe: at the first platform release. A duration ceiling is deliberately NOT stated here: no baseline measurement exists yet, and an unquantified "bounded" target would be unfalsifiable at approval time. The scale thresholds the assembly path is actually held to are the ones its NFRs carry (`cpt-frontx-cli-nfr-template-scale`), and a wall-clock ceiling is published with the release-notes figure once there is a measurement to set it from.
+- **Reviewable, reversible upgrades** — Every upgrade of an applied template to a newer version is applied as a reviewable change set that a developer approves before it touches repository files, with non-destructive rollback. Baseline: none (new product); Target: 100% of upgrades review-gated; reversible for one generation, where the preceding origin still resolves to the version recorded beside it; Timeframe: first platform release.
 - **Automatic activation of template AI extensions** — When a template that bundles AI capabilities is installed in a project, those capabilities become available to AI agents automatically, with no manual wiring by the developer. Baseline: none (new product); Target: zero manual wiring steps for template-bundled AI capabilities; Timeframe: first platform release.
 - **Compatibility within a major version** — Platform releases preserve backward compatibility within a major version, so consuming applications are not forced to upgrade in lockstep with the product. Baseline: none (new product); Target: zero breaking changes to published product contracts within a major version line; Timeframe: ongoing from the first major release.
 - **No architectural ceiling on application scale** — The platform places no upper limit on the number of microfrontends or type definitions an application integrates, beyond the thresholds stated in the non-functional requirements. Baseline: none (new product); Target: scale governed only by the stated NFR thresholds, not by product architecture; Timeframe: first platform release.
@@ -103,6 +103,7 @@ Runtime vocabulary used by the requirements below is owned by the members that i
 **Role**: The AI-tooling command-line integration. The FrontX AI Tooling Framework is installed into a consuming project through it, and AI agents discover the ecosystem's skills, workflows, and guidelines through it.
 **Direction**: Inbound (installs the framework into a consuming project).
 **Availability**: Required at template-project install and upgrade time and during AI-driven development sessions.
+**Root-level usage**: Declared here as shared vocabulary, not because a root-owned requirement or use case exercises it — none does. It is exercised by the AI Tooling Framework's own PRD (`packages/cyber-pilot-kit-frontx/architecture/PRD.md` §5.1) and by the CLI's; a reader finding no root-level citation is seeing a deliberate absence, not a dead declaration.
 
 #### AI Agent Host
 
@@ -112,6 +113,7 @@ Runtime vocabulary used by the requirements below is owned by the members that i
 **Direction**: Inbound (consumes the declared resources installed into a consuming project).
 **Conformance expectation**: Honors the discovery obligations of the kit-installation contract, owned by the AI Tooling Framework's PRD ([cyber-pilot-kit-frontx PRD §7.2](../packages/cyber-pilot-kit-frontx/architecture/PRD.md#72-external-integration-contracts)).
 **Availability**: Third-party, outside the product's control; required during AI-driven development sessions.
+**Root-level usage**: Declared here as shared vocabulary on the same footing as the AI Tooling CLI above — no root-owned requirement or use case exercises it; the AI Tooling Framework's PRD (§5.1) does.
 
 #### GitHub
 
@@ -245,6 +247,10 @@ The ecosystem **MUST** avoid a fixed architectural ceiling and express concrete 
 - **Inclusivity** (UX-PRD-005): Not applicable — for the same reason as Accessibility, the product ships no end-user-facing interface.
 - **Regulatory Compliance** (COMPL-PRD-001 / COMPL-PRD-002 / COMPL-PRD-003): Not applicable — the product is developer tooling that does not process regulated data; applications and templates built on the product own their own compliance posture.
 - Privacy of end-user telemetry belongs to the telemetry member and to consuming applications, not to this root PRD.
+- **Recovery Requirements** (REL-PRD-002): Not applicable at root altitude — the root runs nothing and holds no data, so it has no RPO, RTO, backup or disaster-recovery position; each member states its own, and for the CLI the durable state is a Git-tracked file whose recovery story is Git's own history.
+- **Error Handling Expectations** (REL-PRD-003): Owned by members — the root fixes no failure surface of its own. The one root-level behaviour that can fail, the governance guard, is required to fail continuous integration loudly rather than pass silently (§1.3).
+- **Data Ownership** (DATA-PRD-001): Addressed by the layer model rather than by a separate requirement — each member owns the data its own behaviour holds (§1.3, federated artifacts), and the root holds none.
+- **Data Quality** (DATA-PRD-002): Not applicable at root altitude — the root defines no data whose accuracy, completeness or timeliness could be stated; each member states quality expectations for the data it holds.
 
 ## 7. Public Library Interfaces
 

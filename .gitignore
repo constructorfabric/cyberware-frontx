@@ -115,6 +115,16 @@ __pycache__/
 .cf-studio/config/kits/sdlc/*
 .cf-studio/.cache/explore/*
 
+# Studio's resolved kit manifest — the merged view of every included
+# manifest.toml with agent/skill/workflow source paths rewritten to this
+# machine's absolute filesystem paths (Studio's include-resolution step).
+# Despite living under config/ alongside core.toml and artifacts.toml, it is
+# not user-editable state (see config/README.md's file list, which does not
+# include it): it is regenerated output, and its absolute paths make it
+# machine-specific by construction. Placed outside the BEGIN/END block for the
+# same reason as the sdlc kit content above.
+.cf-studio/config/manifest.toml
+
 # BEGIN Constructor Studio
 # Generated Constructor Studio runtime and agent integration files.
 # Files matched here are owned by Constructor Studio and may be overwritten.
@@ -131,6 +141,7 @@ __pycache__/
 .agents/skills/cf-coding-review/SKILL.md
 .agents/skills/cf-coding-tests/SKILL.md
 .agents/skills/cf-coding/SKILL.md
+.agents/skills/cf-cyber-pilot-kit-frontx-frontx-project-scaffolding/SKILL.md
 .agents/skills/cf-cyber-pilot-kit-frontx-frontx/SKILL.md
 .agents/skills/cf-debug-prompts/SKILL.md
 .agents/skills/cf-docs-ci/SKILL.md
@@ -235,6 +246,7 @@ __pycache__/
 .claude/skills/cf-coding-review/SKILL.md
 .claude/skills/cf-coding-tests/SKILL.md
 .claude/skills/cf-coding/SKILL.md
+.claude/skills/cf-cyber-pilot-kit-frontx-frontx-project-scaffolding/SKILL.md
 .claude/skills/cf-cyber-pilot-kit-frontx-frontx/SKILL.md
 .claude/skills/cf-debug-prompts/SKILL.md
 .claude/skills/cf-docs-ci/SKILL.md

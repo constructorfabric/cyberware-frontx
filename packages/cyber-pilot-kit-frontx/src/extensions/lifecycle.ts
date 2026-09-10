@@ -1,6 +1,36 @@
 // @cpt-state:cpt-frontx-state-template-ai-extensions-extension-lifecycle:p1
 import { validateExtensionEntry } from './contract.js';
-import { AiExtensionLifecycleState, type AiExtensionEntry, type LifecycleResult, type StructuralError } from './types.js';
+import {
+  AiExtensionLifecycleState,
+  type AiExtensionEntry,
+  type LifecycleResult,
+  type StructuralError,
+  type TrustDenial,
+} from './types.js';
+
+/**
+ * FROM BUNDLED TO DENIED WHEN the bundle's template identity carries no
+ * registered, pinned origin in the project's single state document,
+ * `.frontx/project.json` — checked BEFORE any entry in the bundle is
+ * scanned, so an untrusted bundle never reaches DISCOVERED (§4 transition
+ * 1). The trust decision itself (whether `identity` carries such an origin)
+ * is made by the caller — `fs-discovery.ts`'s `checkIdentityTrust`, which
+ * carries both this state machine's markers AND the flow/algorithm markers
+ * for the SAME check stated at two altitudes (§2 step 7, §3 step 3) — this
+ * transition only wraps that outcome as the DENIED state change and reports
+ * the denial action.
+ */
+// @cpt-begin:cpt-frontx-state-template-ai-extensions-extension-lifecycle:p1:inst-trans-bundled-to-denied
+export function transitionBundledToDenied(identity: string): { state: typeof AiExtensionLifecycleState.DENIED; denial: TrustDenial } {
+  // @cpt-begin:cpt-frontx-state-template-ai-extensions-extension-lifecycle:p1:inst-action-report-denial
+  const denial: TrustDenial = {
+    identity,
+    reason: `template identity "${identity}" carries no registered, pinned origin in the project's single state document (.frontx/project.json) — its AI-extension bundle is untrusted and excluded from activation before any of its slots are scanned`,
+  };
+  // @cpt-end:cpt-frontx-state-template-ai-extensions-extension-lifecycle:p1:inst-action-report-denial
+  return { state: AiExtensionLifecycleState.DENIED, denial };
+}
+// @cpt-end:cpt-frontx-state-template-ai-extensions-extension-lifecycle:p1:inst-trans-bundled-to-denied
 
 /**
  * FROM BUNDLED TO DISCOVERED WHEN the installed template's AI-extension bundle

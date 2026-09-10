@@ -13,7 +13,7 @@
 Teams increasingly rely on AI agents to build and maintain frontends. For an agent to do that reliably it needs a product surface that is **stable, narrow, and explicitly contracted** — not an open-ended codebase to guess at. FrontX provides exactly that, across three recurring needs:
 
 - **Stable contracts an agent can target** — a versioned runtime and type-system substrate held to semantic-versioning discipline.
-- **A repository lifecycle an agent can drive end to end** — install, apply, assemble, validate, and upgrade templates, with per-template provenance and review-gated, reversible upgrades.
+- **A repository lifecycle an agent can drive end to end** — register, apply, assemble, validate, and upgrade templates, tracked in one project state document, with review-gated, reversible upgrades.
 - **AI tooling that knows the ecosystem out of the box** — and can be extended with knowledge specific to each template in use.
 
 ## Who FrontX is for
@@ -55,11 +55,11 @@ Owns the **full lifecycle of assembling and evolving a repository from
 templates**:
 
 - Install, list, update, and validate templates from a versioned source
-- Apply a template to seed a new repository or extend an existing one
-- Assemble a repository from multiple templates, resolving referenced presets
+- Register a template's origin under a project, then apply it — as an explicit, target-keyed batch — to seed a new repository or extend an existing one
+- Preview an explicit batch statelessly before applying it
 - Declare each template's ownership boundaries; detect and prevent conflicting assembly before any file is written
-- Record each applied template's provenance independently
-- Upgrade each applied template independently, as a reviewable change set
+- Track every registered template and its applied targets in one project state document
+- Upgrade a registered template to a new origin independently, as a reviewable, reversible change set
 
 Package: `@gears-frontx/cli` — the `frontx` executable, which ships zero bundled
 templates.
@@ -129,32 +129,35 @@ template you apply.
 ### Scaffold and evolve a project
 
 ```bash
-# Install a template from a versioned source (host:owner/repo[//subtree]@ref)
-frontx install github:acme/starter-repo@v1.0.0
+# Register a template's origin under the project — creates .frontx/project.json
+# on first use, and pins a remote origin to the exact commit the fetch settled on
+frontx register github:acme/starter-repo@v1.0.0
 
-# Install a template that occupies a subtree of a repository
-frontx install github:acme/templates//shell@v1.0.0
+# Apply the registered template to a target, via an explicit batch — the name
+# is the identity the template's own manifest declares, not the repository it
+# came from
+frontx apply --input '{"templates":{"@acme/starter-repo":["."]}}'
 
-# List installed templates by the identity each manifest declares
+# List what the project has registered, plus what is installed locally
 frontx list
 
-# Seed a new repository from an installed template, by that identity -
-# which is what the manifest declares, not the repository it came from.
-# Here github:acme/starter-repo declares "@acme/web-app" in its manifest.
-frontx seed @acme/web-app ./my-app
+# Later, upgrade a registered template to a newer origin (reviewable, reversible)
+frontx upgrade @acme/starter-repo github:acme/starter-repo@v1.1.0
 
-# Or add a template into an existing repository — writes only the ground the
-# template declares, and refuses, naming the paths, where that ground already
-# holds content no provenance accounts for
-frontx add @acme/web-app ./existing-repo
-
-# Later, upgrade an applied template to a newer version (reviewable change set)
-frontx upgrade ./my-app 1.1.0
+# ...or roll it back to the origin it just left
+frontx upgrade @acme/starter-repo --restore
 ```
 
-The CLI records each applied template's provenance under the project's
-`.frontx/` and can upgrade each independently. See [QUICK_START.md](QUICK_START.md)
-for the full command walkthrough and AI-tooling usage.
+The CLI tracks every registered template's origin and applied targets in one
+`.frontx/project.json`, and upgrades each registered template independently.
+`frontx seed` can register and apply the CLI's own built-in default templates
+in one call, but those defaults are `path:` origins resolved relative to the
+directory being seeded, so a bare empty target has nothing to resolve against
+— the template must already be vendored into it first (see
+[QUICK_START.md](QUICK_START.md) for the exact steps). `register` + `apply` is
+the way to start a project anywhere else, with no vendoring step required. See
+[QUICK_START.md](QUICK_START.md) for the full command walkthrough, including
+`seed`, `delete`, and `ownership`, and AI-tooling usage.
 
 ### The FrontX CLI
 
@@ -164,11 +167,17 @@ within a project. It bundles no templates of its own.
 | Command | Purpose |
 |---------|---------|
 | `frontx install <spec>` | Install a template from a source-spec (`host:owner/repo[//subtree]@ref`) into the local inventory, tracked under the identity its manifest declares |
-| `frontx list [--json]` | List installed templates; `--json` emits one machine-readable record per entry, carrying its identity, pinned reference, source address and the description its manifest declares |
-| `frontx seed <templateRef> <targetDir>` | Seed a **new** repository from a template; `templateRef` is the identity shown by `frontx list`, not the repository name |
-| `frontx add <templateRef> <targetDir>` | Add a template into an **existing** repository; writes only the ground the template declares and refuses, naming the paths, where that ground already holds content no applied template's provenance accounts for |
-| `frontx upgrade <projectRoot> <version>` | Upgrade an applied template (reviewable change set) |
+| `frontx list [--json]` | List the CLI's built-in default templates, this project's registered templates, and the local inventory; `--json` emits `{"ok":true,"data":{"defaults":[...],"registered":[...],"installed":[...]}}` |
+| `frontx register <origin> [--replace]` | Register a template's origin under the current project's `.frontx/project.json`, pinning a remote origin to the immutable value the fetch settled on |
+| `frontx assemble --input <batch-json>` | Preview an explicit, target-keyed batch against every registered template's declared ownership; writes nothing |
+| `frontx apply --input <batch-json> [--adopt-existing]` | Materialize an explicit batch into the current project — bootstrapping it or extending it further |
+| `frontx seed <dir> --input <batch-json> [--adopt-existing]` | Bootstrap a **new** project directory from the CLI's own built-in default templates only — see [QUICK_START.md](QUICK_START.md) for where this does and does not work |
+| `frontx upgrade <name> <origin>` \| `frontx upgrade <name> --restore` | Upgrade a registered template to a new origin, or reverse its most recent upgrade, as a reviewable change set |
+| `frontx unregister <name>` | Remove a registered template that has no applied targets |
+| `frontx ownership add\|remove\|list <path>` | Manage the project's own reserved paths (`projectOwnedRoots`) |
+| `frontx delete <target> [--yes] [--dry-run]` | Delete an applied template target; confirmation-gated |
 | `frontx validate <templateDir>` | Validate a template manifest for publication |
+| `frontx validate --project` | Validate `.frontx/project.json` against the registry, the local inventory, and the filesystem |
 | `frontx update-local <identity> <spec>` | Refresh a locally installed template from its source |
 
 ### AI Tooling
@@ -191,7 +200,7 @@ On install, its `frontx_`-prefixed resources (KIT-1) register in the project's
 no training step. As shipped today the kit provides four capabilities:
 
 - **Ecosystem fluency and request routing** — a top-level skill (`SKILL.md`), navigation rules (`AGENTS.md`), and boundary guidelines that let agents reason correctly about MFEs, extension domains, source-specs, and the ecosystem/template boundary. Its routing section states which capability serves each kind of FrontX request.
-- **Intent-driven project scaffolding** — the developer says what they want built rather than naming a template; the kit matches that intent against the descriptions installed templates declare, applies the chosen set by running `frontx seed`/`frontx add`, and then realizes each unit the intent names through the applied templates' own activated skills. The direct CLI path stays available unchanged for a developer who already holds a reference.
+- **Intent-driven project scaffolding** — the developer says what they want built rather than naming a template; the kit matches that intent against the descriptions installed templates declare, applies the chosen set by running `frontx register`/`frontx apply`, and then realizes each unit the intent names through the applied templates' own activated skills. The direct CLI path stays available unchanged for a developer who already holds a reference.
 - **Template-extension discovery & activation** — a template can ship its own skills, workflows, guidelines, and reference artifacts; on `frontx install`, the kit discovers and activates them in the consuming project, with no manual wiring.
 - **AI-driven upgrade orchestration** — the kit drives template upgrades over the CLI's machine-readable command surface (`frontx upgrade --json`), layering review gates, migration analysis, and downstream impact assessment onto the direct CLI path.
 
@@ -218,8 +227,9 @@ FrontX/                              # Ecosystem repository root
 │   ├── ui-kit/                     # Published library (standalone): UI components (artifact chain is recorded debt)
 │   ├── cli/                        # Projects orchestration: template-resolution CLI (`frontx`)
 │   └── cyber-pilot-kit-frontx/     # Projects orchestration: AI Tooling Kit
-├── template-shell/                 # Reference template: app shell (developed here, applied via `frontx seed`)
-├── template-mfe/                   # Reference template: add-only MFE bundle (applied via `frontx add`)
+├── template-shell/                 # Reference template: app shell (developed here; register + apply, or seed inside this checkout)
+├── template-mfe/                   # Reference template: add-only MFE bundle (register + apply)
+├── template-design-guardrails/     # Reference template: design-review contract (register + apply)
 ├── internal/                       # Internal build/lint config workspaces
 ├── scripts/                        # Architecture, version-policy, and test tooling
 └── tsconfig.json                   # TypeScript config (ecosystem packages only)

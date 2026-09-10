@@ -30,7 +30,13 @@ describe('createRealDeps — TEST-ONLY FRONTX_TEST_LOCAL_SOURCE_DIR hook', () =>
     process.env.FRONTX_TEST_LOCAL_SOURCE_DIR = localDir;
 
     const deps = createRealDeps();
-    const content = await deps.fetchFn('https://api.github.com/repos/acme/anything/tarball/v1');
+    const fetchOutcome = await deps.fetchFn('https://api.github.com/repos/acme/anything/tarball/v1');
+    // `deps.fetchFn` is the real `FetchFn` union (`string | FetchResult`):
+    // the local adapter this env var wires in returns a bare string (it has
+    // no pin to report), but the STATIC type is the union every `FetchFn`
+    // carries, so this narrows the same way `resolve.ts` does rather than
+    // assuming the string arm.
+    const content = typeof fetchOutcome === 'string' ? fetchOutcome : fetchOutcome.content;
 
     expect(JSON.parse(content)).toEqual({
       $frontxTemplateFiles: { 'frontx-template.json': '{"name":"fixture","version":"1.0.0"}' },

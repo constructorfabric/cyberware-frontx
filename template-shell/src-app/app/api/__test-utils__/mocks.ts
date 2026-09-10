@@ -4,7 +4,7 @@ import {
   readCurrentAccountsMockUser,
   replaceCurrentAccountsMockUser,
 } from '../mock-user-store';
-import { createResetAccountsMockState } from '@frontx-test-utils/createResetAccountsMockState';
+import { createResetAccountsMockState } from '@gears-frontx/mfe-test-support/createResetAccountsMockState';
 
 // @cpt-dod:cpt-frontx-dod-api-communication-base-service:p1
 

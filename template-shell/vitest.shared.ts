@@ -157,7 +157,8 @@ const REPO_ROOT = path.dirname(SHARED_SHARED_FILE_PATH);
 const SHARED_SETUP_FILE_PATH = path.join(REPO_ROOT, 'vitest.setup.ts');
 const MFE_BASE_FILE_PATH = path.join(
   REPO_ROOT,
-  'src-app',
+  'packages',
+  'mfe-test-support',
   'vitest.mfe.base.ts',
 );
 
@@ -179,9 +180,11 @@ export const SHARED_VITEST_SETUP_FILES = [SHARED_SETUP_FILE_PATH] as const;
 const SHARED_SETUP_FILE_CONTENTS = readFileSync(SHARED_SETUP_FILE_PATH, 'utf-8');
 
 // Read the live MFE base file so `renderStandaloneMfeVitestBase` cannot drift
-// from `src/mfe_packages/vitest.mfe.base.ts`. The renderer below transforms
-// the live source (stripping the vitest.shared import and inlining its
-// constants) rather than maintaining a parallel template string.
+// from `packages/mfe-test-support/vitest.mfe.base.ts` (imported by MFE
+// packages under their own package name rather than a relative reach into
+// this shell). The renderer below transforms the live source (stripping the
+// vitest.shared import and inlining its constants) rather than maintaining a
+// parallel template string.
 const MFE_BASE_FILE_CONTENTS = readFileSync(MFE_BASE_FILE_PATH, 'utf-8');
 
 export function renderStandaloneVitestSetupFile(): string {
@@ -330,16 +333,20 @@ export function definePackageVitestConfig(
  * Render the MFE Vitest base config for a scaffolded project.
  *
  * Rather than maintaining a template string that mirrors
- * `src/mfe_packages/vitest.mfe.base.ts`, this reads the live module and
- * performs a narrow transform:
- *   1. Replace the `import { ... } from '../../vitest.shared';` block with
- *      inline literals of the shared constants.
- *   2. Swap `[...SHARED_VITEST_SETUP_FILES]` for a local `sharedSetupFile`
- *      reference anchored against `import.meta.url`.
+ * `packages/mfe-test-support/vitest.mfe.base.ts`, this reads the live module
+ * and performs a narrow transform:
+ *   1. Replace the `import { ... } from '../../vitest.shared';` block with a
+ *      locally-declared `__dirname`/`sharedSetupFile` pair plus inline
+ *      literals of the shared constants — the canonical module needs none of
+ *      that itself (it is imported by package name, not by relative path
+ *      from a fixed scaffold location), but a scaffolded standalone copy
+ *      does, since it has no `vitest.shared.ts` sibling to import.
+ *   2. Swap `[...SHARED_VITEST_SETUP_FILES]` for that local `sharedSetupFile`
+ *      reference.
  *
- * Any other change to the live MFE base file (plugins, aliases, dedupe rules,
- * new test options) propagates to scaffolded projects without touching this
- * function. `scripts/vitest-shared.test.ts` asserts the rendered output still
+ * Any other change to the live MFE base file (plugins, dedupe rules, new test
+ * options) propagates to scaffolded projects without touching this function.
+ * `__tests__/vitest-shared.test.ts` asserts the rendered output still
  * contains every shared-constant value, so silent drift from the source
  * primitives still fails CI.
  */
@@ -359,24 +366,21 @@ export function renderStandaloneMfeVitestBase(): string {
   // The shared import body itself has no `}` characters, so confining the
   // group to non-brace content is safe.
   const importBlockRegex =
-    /import\s+\{[^}]*?\}\s+from\s+['"](?:\.\.\/)*vitest\.shared['"];\n?/;
-  const dirnameDeclRegex =
-    /const __dirname = path\.dirname\(fileURLToPath\(import\.meta\.url\)\);\n?/;
+    /import\s+\{[^}]*?\}\s+from\s+['"](?:\.\.\/)*vitest\.shared(?:\.ts)?['"];\n?/;
 
   let importBlockMatched: boolean = false;
-  let dirnameDeclMatched: boolean = false;
   let setupFilesMatched: boolean = false;
 
   const rendered = MFE_BASE_FILE_CONTENTS
     .replace(importBlockRegex, () => {
       importBlockMatched = true;
-      return `${STANDALONE_VITEST_NODE_WORKER_EXEC_ARGV_FN}\n`;
-    })
-    .replace(dirnameDeclRegex, (match) => {
-      dirnameDeclMatched = true;
       return (
-        `${match}${match.endsWith('\n') ? '' : '\n'}\n${inlineConstants}\n` +
-        `const sharedSetupFile = path.resolve(__dirname, '../../vitest.setup.ts');\n`
+        `${STANDALONE_VITEST_NODE_WORKER_EXEC_ARGV_FN}\n` +
+        `import path from 'node:path';\n` +
+        `import { fileURLToPath } from 'node:url';\n\n` +
+        `const __dirname = path.dirname(fileURLToPath(import.meta.url));\n` +
+        `const sharedSetupFile = path.resolve(__dirname, '../../vitest.setup.ts');\n\n` +
+        `${inlineConstants}\n`
       );
     })
     .replace(/\[\.\.\.SHARED_VITEST_SETUP_FILES\]/, () => {
@@ -384,9 +388,9 @@ export function renderStandaloneMfeVitestBase(): string {
       return '[sharedSetupFile]';
     });
 
-  if (!importBlockMatched || !dirnameDeclMatched || !setupFilesMatched) {
+  if (!importBlockMatched || !setupFilesMatched) {
     throw new Error(
-      'renderStandaloneMfeVitestBase could not rewrite src/mfe_packages/vitest.mfe.base.ts; update the transform for the new source shape.',
+      'renderStandaloneMfeVitestBase could not rewrite packages/mfe-test-support/vitest.mfe.base.ts; update the transform for the new source shape.',
     );
   }
 

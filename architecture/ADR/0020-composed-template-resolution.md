@@ -1,9 +1,9 @@
 ---
 status: accepted
-date: 2026-06-04
+date: 2026-08-12
 ---
 
-# Multi-Template Assembly and Preset Reference Resolution
+# How Several Templates Are Applied Together into One Repository
 
 <!-- toc -->
 
@@ -14,9 +14,9 @@ date: 2026-06-04
   - [Consequences](#consequences)
   - [Confirmation](#confirmation)
 - [Pros and Cons of the Options](#pros-and-cons-of-the-options)
-  - [Manifest-declared reference resolution with ownership-boundary conflict arbitration](#manifest-declared-reference-resolution-with-ownership-boundary-conflict-arbitration)
-  - [Single-level reference declaration, no transitive walk](#single-level-reference-declaration-no-transitive-walk)
-  - [Convention-based discovery](#convention-based-discovery)
+  - [Manifest-declared transitive preset composition](#manifest-declared-transitive-preset-composition)
+  - [Explicit instance specifications with a persisted, fingerprinted execution plan](#explicit-instance-specifications-with-a-persisted-fingerprinted-execution-plan)
+  - [Explicit target-keyed batch, no saved plan](#explicit-target-keyed-batch-no-saved-plan)
 - [More Information](#more-information)
 - [Traceability](#traceability)
 
@@ -26,77 +26,101 @@ date: 2026-06-04
 
 ## Context and Problem Statement
 
-A repository is assembled from one or more independently-applied templates, and a template may reference other templates to be applied together as a set — a **preset** (`cpt-frontx-fr-cli-composed-template-resolution`). When a developer applies a preset, the templates it references should arrive as part of the same operation rather than being discovered and applied by hand afterwards. This raises two coupled questions the CLI (`cpt-frontx-component-cli`, the `@gears-frontx/cli` package) must answer at design altitude: where is the set of referenced templates declared and how is that set resolved into one assembly operation — including the case where a referenced template itself references further templates — and how is a clash arbitrated when two templates in the assembly claim the same ground?
+A repository is assembled from one or more independently-applied templates, whether at seed time or by adding a template into an existing repository (`cpt-frontx-fr-cli-seed-repository`, `cpt-frontx-fr-cli-add-template-to-repository`). One way to express that assembly is to let a template's manifest declare other templates it references as a preset, and have the CLI transitively resolve and apply that declared set as part of one operation. Under the AI-driven workflow this tool serves — the AI composes the call from `frontx list --json` and the CLI executes it deterministically — a manifest-declared reference graph would be a hidden dependency the AI's call never named: the CLI could pull in templates the invocation itself does not mention, so the change actually applied would not be fully described by the call that requested it. Separately, once a repository can apply the same template more than once at different locations — two microfrontends from one `@frontx/template-mfe`, each on its own page — each applied instance needs an identity distinct from the template it came from, and that identity must not require the tool to generate or persist anything beyond what the caller already supplies. What should identify an applied instance, and how should a request to apply several templates together be expressed and executed, so that every application is fully described by an explicit, inspectable call rather than by resolving a manifest-declared reference graph or by replaying a previously saved plan?
 
 ## Decision Drivers
 
-* **Single-operation assembly** — applying a preset must deliver every referenced template in one step, so the developer never has to chase down and apply referenced templates individually.
-* **Declared, inspectable references** — the set of referenced templates must be an explicit, authored property of the template, not inferred by convention or filesystem scanning, so what a preset assembles is reviewable before it is applied.
-* **Arbitrary reference depth** — a referenced template is itself a first-class template and may legitimately reference further templates; resolution must handle references to any depth without a special case bounded to one level, and must detect a reference cycle rather than recurse without bound.
-* **Conflict arbitration by declared ownership** — when two templates in the assembly claim the same ground, the result must be decided by their declared ownership boundaries and refused if they clash, not by application order or a silent merge.
-* **Fail-before-write atomicity** — an assembly that cannot be resolved cleanly, or whose templates conflict, must be reported before any files are written, so a partial or conflicted assembly never lands on disk.
+* **AI composes, CLI executes, deterministically** — the call an AI or developer issues must be the complete description of what gets applied; no manifest-declared reference may pull in a template the call itself did not name.
+* **Identity without new bookkeeping** — a normalized target already uniquely names where one template-owner is applied; an applied instance needs no separate generated identifier to track alongside it.
+* **A one-shot selection, not persisted execution state** — a batch is the record of what the caller decided to apply now, not a saved plan whose staleness against a changed target must be tracked between preview and materialization.
+* **Preview stays optional and stateless** — a developer or AI should be able to preview an intended batch's resolution, ownership, and conflicts without that preview writing anything or becoming an artifact `apply` must later reconcile against.
+* **Idempotent re-application** — applying the same template to the same target a second time must be safe by default; an intentional overwrite of an already-applied instance is a distinct, explicitly-invoked operation.
+* **Minimal but sufficient contract surface** — the batch-application contract should carry exactly what materialization needs and no generated instance identifiers, plan files, or content fingerprints beyond that.
 
 ## Considered Options
 
-* **Manifest-declared reference resolution with ownership-boundary conflict arbitration** — each template declares its referenced templates in its manifest; the CLI resolves the declared references transitively into the full set of templates to apply, detecting cycles, and arbitrates any clash between two templates in the assembly through their declared ownership boundaries via the pre-flight conflict check, refusing before any write.
-* **Single-level reference declaration, no transitive walk** — a template may declare referenced templates, but only the directly-referenced ones are resolved; a referenced template's own references are ignored.
-* **Convention-based discovery** — the set of referenced templates is inferred from filesystem layout or naming rather than declared, and resolved by scanning.
+* **Manifest-declared transitive preset composition** — a template's manifest declares other templates it references as a preset; the CLI resolves those references transitively into the full set to apply.
+* **Explicit instance specifications with a persisted, fingerprinted execution plan** — an `assemble` step writes an execution plan to disk, generating an `instanceId` for each requested application and recording a content fingerprint per target; `apply` reads that saved plan, checks each target's fingerprint for staleness against what `assemble` last saw, and refuses or re-derives on mismatch before materializing from the plan.
+* **Explicit target-keyed batch, no saved plan** — a batch input names, for each registered template, the target or targets to apply it to (`{"templates": {"<manifestName>": ["<target>", ...]}}`); `assemble` is a stateless preview that runs the same resolution, ownership, and conflict checks `apply` will run but writes nothing; `apply` re-derives and re-validates directly from the batch input at call time and materializes it; an applied instance's identity is simply its normalized target.
 
 ## Decision Outcome
 
-Chosen option: **Manifest-declared reference resolution with ownership-boundary conflict arbitration**, because it is the only option that satisfies single-operation assembly, declared inspectability, and arbitrary depth together while keeping the result deterministic. The referenced templates are declared in the template manifest, whose contract is decided in `cpt-frontx-adr-template-manifest-contract`; the CLI reads those declarations and resolves each referenced template through the one shared resolver decided in `cpt-frontx-adr-template-acquisition-and-location`.
+Chosen option: **Explicit target-keyed batch, no saved plan**, because it is the only option that keeps every application fully described by the call that requested it while adding no identity or plan-state concept beyond what the caller already supplies. The batch input — a file or stdin payload shaped `{"templates": {"<manifestName>": ["<target>", ...]}}` — is the AI's or developer's selection after reading `frontx list --json`; it is not a saved execution plan the tool must later validate for staleness. `assemble` accepts this batch and reports resolution, effective ownership, and conflicts as a **preview that writes nothing**; `apply` accepts the same shape and **independently repeats every check `assemble` performs** before materializing, so `apply` never trusts a prior `assemble` run and needs no persisted plan, fingerprint, or generated identifier to reconcile against it. The identity of an applied instance is its **unique normalized target**: one target names exactly one owning template, and applying the same template to two different targets — two microfrontends from one `@frontx/template-mfe` — produces two independent applied instances distinguished only by their targets, with no `instanceId` or `registryPath` introduced to name them separately.
 
-Reference resolution is **transitive**: a referenced template may itself declare further references, and the CLI resolves them to their full depth, so depth is a property of the preset, not a fixed limit in the tool; a reference cycle is detected and reported rather than recursed without bound. Conflict arbitration is **by declared ownership boundary, not by application order**: the resolved set of templates is handed to the pre-flight conflict check (`cpt-frontx-adr-assembly-conflict-prevention`), which compares each pair's declared ownership boundaries (`cpt-frontx-adr-template-ownership-boundary-declaration`) and, if two templates claim the same ground, refuses the whole assembly before any file is written. There is no order-dependent or silent merge; a clash is reported with the contesting templates and the contested ground. The single-level option fails the arbitrary-depth driver; convention-based discovery fails the declared-inspectability driver and makes the composition implicit and unreviewable.
+This contract declares no `referencedTemplates` field and no transitive resolver: a template does not name other templates to be applied alongside it. Composition of several templates into one assembly is expressed only as an explicit batch naming every target the caller wants populated, resolved and checked once at the point of `apply`. Re-applying the same template to the same target a second time is an **idempotent no-op determined by record, not by content**: `apply` checks only whether that target is already listed under that template's name in `.frontx/project.json`, and if so takes no action — no disk read, no content comparison, no existing-content reconciliation against what is actually sitting at that target. A target a project developer has since edited is still a recorded, applied instance; the edit does not un-record it, so re-issuing the same batch remains a no-op for that target and never blocks or re-triggers on the retry. A deliberate overwrite of an already-applied instance's content is available only through the separate upgrade mechanism (`cpt-frontx-adr-project-upgrade-mechanism`), never through a repeated `apply`. The existing-content protocol — reporting a target's content as `identicalFiles`, `contentConflicts`, or `additionalPaths` — applies exclusively to a target **not yet recorded** under the applying template's name: only there does `apply` have reason to inspect what is already on disk before writing, because only there is there no record yet to make the decision by. `additionalPaths` block the apply until the caller passes `--adopt-existing` or registers the paths via `ownership add` and retries, and content that differs from what the template would write is never silently overwritten.
 
-The scope of this decision is how a preset's referenced templates are declared and resolved into one assembly operation, to arbitrary depth with cycle detection, and that clashes are arbitrated by the pre-flight ownership-boundary check. It does not decide the manifest's shape (`cpt-frontx-adr-template-manifest-contract`), how a single template reference resolves to its source (`cpt-frontx-adr-template-acquisition-and-location`), the conflict check's own mechanism (`cpt-frontx-adr-assembly-conflict-prevention`), or how an already-applied template is upgraded (`cpt-frontx-adr-project-upgrade-mechanism`).
+The manifest-declared preset option is rejected because a reference the manifest resolves transitively is exactly the hidden dependency the AI-composes/CLI-executes model forbids: the applied set would no longer equal the set the call named. The persisted, fingerprinted execution-plan option is rejected because it introduces two new identity and state concepts — a generated `instanceId` and a saved plan with per-target fingerprints — to solve a problem the unique-target identity and a stateless, re-validating `apply` already solve without them; carrying a plan that can go stale between `assemble` and `apply` is exactly the transient bookkeeping this decision avoids by having `apply` re-derive everything at call time.
+
+The scope of this decision is what identifies an applied instance (its normalized target), how a batch of templates-to-targets is expressed and consumed by `assemble` and `apply`, that `assemble` never writes, that `apply` never trusts a prior `assemble` run, and that re-applying an already-applied target is a no-op. It does not decide the concrete shape of the ownership-boundary declaration a batch's conflict check compares (`cpt-frontx-adr-template-ownership-boundary-declaration`), the mechanism by which an intentional overwrite of an applied instance is computed and approved (`cpt-frontx-adr-project-upgrade-mechanism`), or the field-level schema of the project-state file that records each applied target (owned by its FEATURE per `cpt-frontx-adr-contract-schema-ownership`).
 
 ### Consequences
 
-* Good, because a developer gets a complete assembly in a single operation, with every referenced template resolved for them.
-* Good, because the referenced set is an explicit, reviewable manifest declaration rather than an implicit convention, so what a preset assembles is knowable before applying.
-* Good, because transitive resolution makes depth a property of the preset, so deeply composed presets need no special handling and no arbitrary depth cap.
-* Good, because clashes are arbitrated by declared ownership boundaries and refused before any write, so the assembly is deterministic and never silently merged.
-* Bad, because transitive resolution must detect a reference cycle and report it rather than recurse without bound.
-* Bad, because a genuine ownership clash between two referenced templates is refused rather than reconciled, so a preset author must arrange references whose boundaries do not intersect.
+* Good, because every applied change is fully described by the batch the caller supplied — no manifest-declared reference can introduce a template the call did not name, preserving the AI-composes/CLI-executes determinism.
+* Good, because an applied instance needs no generated identifier: its normalized target already uniquely names it, and applying the same template to several targets needs no new identity concept to distinguish the instances.
+* Good, because `assemble` stays a pure, side-effect-free preview, so previewing a batch is safe to run repeatedly and never drifts into a stale-plan state that must be reconciled later.
+* Good, because `apply` re-validates independently of any prior `assemble`, so there is no second, persisted state that can fall out of sync with the repository it describes.
+* Good, because re-applying an already-applied target is a harmless no-op, so an accidental repeat of a batch cannot silently overwrite work; intentional overwrite has one explicit path, the upgrade mechanism.
+* Bad, because a preset-shaped combination of templates is not a single manifest-declared reference the tool expands automatically: whoever selects templates must name the same combination explicitly in the batch every time it is wanted.
+* Bad, because without a saved plan, `apply` fully repeats `assemble`'s resolution, ownership, and conflict checks at materialization time, doing that work twice whenever both commands are run in sequence on the same batch.
+* Bad, because record-determined idempotency means a repeated `apply` cannot repair a recorded target whose on-disk content has been deleted or corrupted outside the CLI: the record alone marks it applied, so `apply` never re-reads or rewrites it, and drift between the record and reality is never detected or fixed by this path. Repairing such a target today means `delete`ing it (under its own explicit confirmation, which removes both the record and the content) and then re-`apply`ing it fresh; `upgrade` (`cpt-frontx-adr-project-upgrade-mechanism`) does not repair it either, because content that differs from the baseline on disk while the candidate also differs from the baseline classifies as doubly-changed and refuses the whole upgrade with `CONTENT_CONFLICT` rather than overwriting it — drift repair is deliberately outside what either `apply` or `upgrade` does.
 
 ### Confirmation
 
-Compliance is confirmed by a continuous-integration check on the CLI package: a fixture preset that references templates two or more levels deep is applied, and the check asserts every transitively-referenced template is present in the single assembly. A second fixture introduces a reference cycle and asserts it is detected and reported rather than recursing. A third fixture constructs two referenced templates that claim the same ground and asserts the pre-flight conflict check refuses the assembly before any files are written, naming the contesting templates. Design and code review confirm referenced templates are read from the manifest contract, resolved through the shared resolver, and arbitrated by the ownership-boundary conflict check rather than by application order or filesystem convention.
+Compliance is confirmed by design and code review plus a continuous-integration check on the CLI package: a fixture applies one template to two distinct targets in the same batch and asserts two independent applied instances are recorded, distinguished only by their targets, with no generated `instanceId` or `registryPath` field anywhere in the project state. A second fixture supplies a batch naming only directly-selected templates and targets and asserts that no template outside the batch is applied, confirming there is no manifest-declared reference resolution reintroducing a hidden dependency. A third fixture runs `assemble` on a batch and asserts the repository is byte-identical afterward (nothing written), then runs `apply` on the same batch and asserts it independently re-computes and re-validates rather than reading any artifact `assemble` produced. A fourth fixture runs `apply` twice with the same batch against already-applied targets and asserts the second run is a no-op that leaves every file byte-identical, while a deliberate content change to an applied target is achievable only through the upgrade command. A companion fixture edits a file inside an already-applied target and re-issues the same batch, asserting `apply` performs no disk read or content comparison for that target — it consults only the target's presence in `.frontx/project.json` — and the edit survives untouched, confirming the retry is neither blocked nor reconciled by the edit. A fifth fixture applies into a target **not yet recorded** under the applying template's name and pre-populated with foreign content, and asserts the existing-content report distinguishes `identicalFiles`, `contentConflicts`, and `additionalPaths` for that unrecorded target only, that `additionalPaths` block the apply until `--adopt-existing` or `ownership add` resolves them, and that differing content is never silently overwritten.
 
 ## Pros and Cons of the Options
 
-### Manifest-declared reference resolution with ownership-boundary conflict arbitration
+### Manifest-declared transitive preset composition
 
-Each template declares its references in its manifest; the CLI resolves them transitively through the shared resolver, detects cycles, and arbitrates clashes through the pre-flight ownership-boundary check, refusing before any write.
+A template's manifest declares other templates it references as a preset; the CLI resolves those references transitively into the full set to apply.
 
-* Good, because assembly is explicit, declared, and reviewable.
-* Good, because transitive resolution supports arbitrary reference depth with no special case.
-* Good, because clashes are arbitrated by declared ownership and refused, not merged.
-* Neutral, because it depends on the manifest contract, the shared resolver, and the conflict check, which are separate decisions it composes with.
-* Bad, because it must detect reference cycles, and a genuine ownership clash is refused rather than reconciled.
+* Good, because a preset delivers a whole combination of templates in one operation with no extra step from the developer.
+* Good, because the referenced set is an authored, inspectable property of the manifest.
+* Bad, because a manifest-declared reference is a dependency the AI's call never names, so the applied set can silently exceed what the call actually requested — precisely the hidden-dependency behavior the AI-composes/CLI-executes model forbids.
+* Bad, because whether a combination of templates is semantically sensible to apply together (a microfrontend template referencing a shell) is a judgment about fitness for use, not a mechanical property a manifest reference can encode; collapsing that judgment into a manifest-declared graph blurs a boundary this platform otherwise keeps outside the CLI's mechanics.
 
-### Single-level reference declaration, no transitive walk
+### Explicit instance specifications with a persisted, fingerprinted execution plan
 
-Only directly-referenced templates are resolved; a referenced template's own references are ignored.
+`assemble` writes an execution plan to disk with a generated `instanceId` per requested application and a content fingerprint per target; `apply` reads the saved plan, checks fingerprints for staleness, and materializes from the plan.
 
-* Good, because resolution is simple and cannot recurse or cycle.
-* Good, because the directly-referenced set is still explicit in the manifest.
-* Bad, because a referenced template that is itself a preset cannot deliver its own referenced templates, failing single-operation assembly beyond one level.
-* Bad, because it pushes multi-level assembly back onto the developer to arrange by hand.
+* Good, because a saved plan gives an auditable artifact that captures exactly what a prior `assemble` computed.
+* Good, because a staleness check can catch a target that changed between preview and apply.
+* Neutral, because it still delivers one batch operation over several templates, just through a persisted intermediate rather than a stateless call.
+* Bad, because it introduces `instanceId` and a plan file as new identity and state concepts to steward, when the normalized target already uniquely identifies an applied instance without them.
+* Bad, because a saved plan with fingerprints is a second piece of state that can drift out of sync with the project's actual files, and the staleness handling it requires is exactly the transient bookkeeping a call-time re-derivation avoids.
 
-### Convention-based discovery
+### Explicit target-keyed batch, no saved plan
 
-The referenced set is inferred from filesystem layout or naming rather than declared, and resolved by scanning.
+A batch input names, per registered template, the targets to apply it to; `assemble` previews without writing; `apply` re-derives and re-validates from the batch at call time; identity is the normalized target.
 
-* Good, because a template author writes no explicit reference list.
-* Bad, because the assembly is implicit and not reviewable before applying, failing declared inspectability.
-* Bad, because convention-based inference is fragile and ambiguous, and offers no clean place to arbitrate a clash.
+* Good, because the batch is exactly the caller's selection off `frontx list --json` — nothing hidden, nothing generated.
+* Good, because identity is the target itself, so no `instanceId` or `registryPath` needs to be generated, stored, or kept in sync.
+* Good, because `assemble` is a pure preview and `apply` is self-sufficient, so there is no second state that can go stale between them.
+* Neutral, because `apply` repeats work `assemble` already did when both are run in sequence — an accepted cost of not persisting an intermediate plan.
+* Bad, because there is no separately-persisted approval artifact from `assemble`; approval is implicit in the caller re-supplying the same batch to `apply` after reviewing the preview.
 
 ## More Information
 
-The template manifest that carries the reference declaration is decided in `cpt-frontx-adr-template-manifest-contract`. Resolution of any single template reference to its source is performed by the one shared resolver decided in `cpt-frontx-adr-template-acquisition-and-location`. Clash arbitration among the resolved set is performed by the pre-flight conflict check decided in `cpt-frontx-adr-assembly-conflict-prevention`, comparing the boundaries shaped by `cpt-frontx-adr-template-ownership-boundary-declaration`. Applying a newer template version to an already-applied template is a separate, reviewable concern decided in `cpt-frontx-adr-project-upgrade-mechanism`. These are non-binding pointers to related decisions and are not part of this decision's durable identity.
+This decision fixes no manifest-declared `referencedTemplates` field and no transitive, cycle-detecting resolver, and the pre-flight ownership-boundary conflict check (`cpt-frontx-adr-assembly-conflict-prevention`) runs over an explicit target-keyed batch rather than over a resolver-expanded reference graph.
 
-Applicability of the remaining checklist categories: **PERF** — Not applicable, because this is local developer tooling with no throughput or latency budget bound to the decision. **SEC** — Not applicable, because the decision introduces no secret material and no authentication surface. **REL** — Not applicable, because there is no service-availability target; the assembly runs locally and on demand, and its fail-before-write atomicity is captured under the drivers rather than as a service-reliability concern. **DATA** — Not applicable, because no persistent database or schema is defined here. **OPS** — Not applicable, because there are no runbooks or operational procedures for a local command. **COMPL** — Not applicable, because no regulatory obligation bears on reference resolution. **UX** — addressed implicitly: one operation yields the whole assembly, and a clash is reported clearly. **MAINT** — addressed: an explicit declared reference set is easier to reason about and review than an inferred one. **TEST** — the Confirmation defines the fixtures that exercise transitive resolution, cycles, and clash arbitration; test implementation lives in code, not here. **Review cadence**: revisit if presets routinely require reference-arbitration behavior other than refuse-on-clash, or if reference cycles become a common authoring pattern.
+This decision bounds `cpt-frontx-adr-uniform-template-mechanism` (ADR 0030) on one point: a template arranging others does so through the caller's explicit target-keyed batch, not "by reference" through a manifest field. ADR 0030's core holding is untouched and is reinforced here: the platform still fixes **no template taxonomy**, and install, apply, assemble, conflict-check, and upgrade remain **one mechanism** operating identically over any template — uniform now also in that any combination of templates, however many or however each is shaped, is described and applied through the same batch, never through a per-template or per-preset special case.
+
+The ownership-boundary declaration a batch's conflict check compares is unchanged in kind by this decision and continues to be shaped by `cpt-frontx-adr-template-ownership-boundary-declaration`; how an intentional overwrite of an already-applied instance is computed, reviewed, and approved remains the separate concern decided in `cpt-frontx-adr-project-upgrade-mechanism`. The field-level schema of the project-state file that records each applied target is owned by its FEATURE per `cpt-frontx-adr-contract-schema-ownership`, not by this decision. These are non-binding pointers to related decisions and do not form part of this decision's durable identity.
+
+Applicability of the remaining checklist categories:
+
+* **PERF** — Not applicable, because this is local developer tooling with no throughput or latency budget bound to how a batch is expressed.
+* **SEC** — Not applicable, because a target-keyed batch and a normalized target carry no secret material.
+* **REL** — addressed implicitly: `apply`'s refuse-on-`additionalPaths` and never-silently-overwrite behavior, and `assemble`'s write-nothing guarantee, are this decision's reliability posture; there is no service-availability target for a local command.
+* **DATA** — Not applicable as a complete schema, because the project-state file's field-level shape is owned by its FEATURE per `cpt-frontx-adr-contract-schema-ownership`; this decision fixes only that an applied instance's identity is its target and that no generated instance identifier is introduced.
+* **INT** — addressed: the batch shape is an internal contract between the caller (AI or developer) and the CLI's `assemble`/`apply` commands; it names no external party.
+* **OPS** — Not applicable, because no operational procedure attaches to a local batch call.
+* **MAINT** — addressed directly: removing manifest-declared references and saved, fingerprinted plans collapses two persisted-state concepts into a single call-time-validated one, reducing the surface a maintainer must reason about.
+* **UX** — addressed implicitly: a developer or AI previews a batch with `assemble` and applies the identical batch with `apply`, with no separate plan artifact to track between the two.
+* **BIZ** — Not applicable, because product requirements live in the PRD and are cited here by ID.
+* **COMPL** — Not applicable, because resolving which templates a batch names governs ordering and refusal, not data handling, and imposes no regulatory obligation.
+
+**Review cadence**: revisit if a validated need emerges for a persisted, re-usable plan artifact beyond a call-time batch (for example very large multi-template compositions repeated across sessions), or if a future multi-instance-per-target model requires reintroducing a generated instance identifier this decision retires.
 
 ## Traceability
 
@@ -105,6 +129,8 @@ Applicability of the remaining checklist categories: **PERF** — Not applicable
 
 This decision directly addresses the following requirements and design elements:
 
-* `cpt-frontx-fr-cli-composed-template-resolution` — Transitive, manifest-declared reference resolution through the shared resolver is the mechanism by which a preset's referenced templates are resolved and applied as part of the same assembly operation, with clashes arbitrated by declared ownership boundaries.
-* `cpt-frontx-usecase-scaffold-composed-project` — This decision defines the single assembly operation that delivers a preset's templates, and delegates the "conflicting assembly" alternative flow to the pre-flight ownership-boundary check (report and refuse before any write).
-* `cpt-frontx-component-cli` — The CLI component owns multi-template assembly and preset resolution; this decision constrains how that component resolves a preset into one assembly and arbitrates clashes.
+* `cpt-frontx-fr-cli-seed-repository` — Seeding a repository from one or more templates is expressed as an explicit target-keyed batch applied in one `apply` call, not as a manifest-resolved reference graph.
+* `cpt-frontx-fr-cli-add-template-to-repository` — Adding a template into an existing repository is one more entry in an explicit batch, identified by its target, with no generated instance identifier.
+* `cpt-frontx-fr-cli-assembly-conflict-prevention` — The pre-flight ownership-boundary conflict check now runs over the batch's resolved targets and effective ownership rather than over a transitively-resolved preset reference graph; `assemble` previews this check without writing and `apply` repeats it before materializing.
+* `cpt-frontx-contract-template-manifest` — The manifest contract declares no `referencedTemplates` field: a template does not name other templates to be applied alongside it, and composition is expressed only through the caller's explicit batch.
+* `cpt-frontx-component-cli` — The CLI component's assembly mechanism is constrained by this decision to operate on an explicit, caller-supplied batch identified by target, with `assemble` as a stateless preview and `apply` as the self-sufficient, re-validating materializer.

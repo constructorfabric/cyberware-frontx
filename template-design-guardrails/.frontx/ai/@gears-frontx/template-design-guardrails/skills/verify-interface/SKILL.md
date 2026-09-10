@@ -26,10 +26,11 @@ The shell logs verify-package status in dev, so absence, breakage, and
 cleanliness are distinguishable — trust the lines, not guesses:
 
 - `[verify-packages] none installed — no dev-time verification will run.` —
-  report this as the missing piece and name the remedy (seed the template
-  with `frontx add`, then `npm install`; not `npm ci`, since the shell's
-  committed lockfile predates the template's packages) — do not run these
-  commands yourself; this skill observes, it does not fix.
+  report this as the missing piece and name the remedy (register and apply
+  this template at `src-app/verify_packages`, then `npm install`; not
+  `npm ci`, since the shell's committed lockfile predates the template's
+  packages) — do not run these commands yourself; this skill observes, it
+  does not fix.
 - `[verify-packages] … failed to load: …` — a real error; report it as a
   blocking environment finding with the logged cause.
 - `[design-defects] clean: no objective design defects detected` (or

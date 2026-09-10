@@ -1,7 +1,7 @@
 # FrontX design guardrails
 
-Version: `0.1.0-alpha.0`  
-UI base: `@gears-frontx/ui-kit`  
+Version: `0.1.0-alpha.1`
+UI base: `@gears-frontx/ui-kit`
 Scope: interface generation and advisory design review
 
 ## Before generating a screen
@@ -39,7 +39,14 @@ Rules marked **MUST** are required. **SHOULD** rules may be changed only when th
 
 Use `review-interface`. The v0.1 review is advisory: it returns blockers and prioritized corrections but does not stop delivery. When the assembled application is running in dev mode, use `verify-interface` to turn the review's unverified items — contrast, rendered widths, live states — into observed findings from the runtime design-defect checker this template delivers (the `@gears-frontx/design-verify` workspace package). The package also ships a headless runner — `npm run verify:ui --workspace=@gears-frontx/design-verify` — that drives the checker across a routes × themes × widths matrix over the Chrome DevTools Protocol and emits `findings.json` plus screenshots, so sweep evidence is one command instead of an improvised browser script. Storybook checks, screenshot comparison, and release gates still belong to a separate testing stage.
 
-Install this template into an existing FrontX shell project with `frontx add @gears-frontx/template-design-guardrails <target>`. After installing, run `npm install` — not `npm ci` — once: the shell's committed lockfile predates this template's workspace package, and `npm ci` fails on the out-of-sync lockfile instead of resolving it. In dev the shell reports verify-package load status under `[verify-packages]` and the running checker reports under `[design-defects]`, so absence, breakage, and a clean sweep are distinguishable; if verification cannot proceed, the correct outcome is an explicit environment-unavailable report, not a stalled run.
+Install this template into an existing FrontX shell project by registering its origin and applying it at `src-app/verify_packages` — where this `DESIGN.md` and the template's package land in a scaffolded project, not the project root:
+
+```bash
+frontx register <guardrails-origin>
+frontx apply --input '{"templates":{"@gears-frontx/template-design-guardrails":["src-app/verify_packages"]}}'
+```
+
+After applying, run `npm install` — not `npm ci` — once: the shell's committed lockfile predates this template's workspace package, and `npm ci` fails on the out-of-sync lockfile instead of resolving it. In dev the shell reports verify-package load status under `[verify-packages]` and the running checker reports under `[design-defects]`, so absence, breakage, and a clean sweep are distinguishable; if verification cannot proceed, the correct outcome is an explicit environment-unavailable report, not a stalled run.
 
 When authoring or changing a shell theme, use `create-theme`; theme token format is a contract with the UI kit, and violations render as broken components rather than errors.
 

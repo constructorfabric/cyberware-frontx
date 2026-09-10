@@ -15,7 +15,8 @@ function manifestContent(name: string, version = '1.0.0'): string {
   const manifest: TemplateManifest = {
     name,
     version,
-    ownershipBoundaries: { exclusiveSubtrees: [], sharedFiles: [] },
+    excludedSubtrees: [],
+    description: 'Fixture template for discovery-hook wiring tests.',
   };
   return JSON.stringify(manifest);
 }

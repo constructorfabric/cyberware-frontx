@@ -1,14 +1,6 @@
 {
-  "schemaVersion": "1.0",
   "name": "@gears-frontx/template-design-guardrails",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "Adds a governed interface-generation and design-review contract to an existing FrontX project. The template contributes no runtime screen and owns no application code; it installs a short human-readable entry point, the @gears-frontx/design-verify workspace package (the runtime design-defect checker, the composed-markup axe suite, and the jsx-a11y lint fragment, with their dependencies), plus an AI-extension bundle with procedural skills, detailed design standards, component-state requirements, quality gates, and advisory review workflows.",
-  "ownershipBoundaries": {
-    "exclusiveSubtrees": [
-      "DESIGN.md",
-      ".frontx/ai/@gears-frontx/template-design-guardrails/",
-      "src-app/verify_packages/design-verify/"
-    ],
-    "sharedFiles": []
-  }
+  "excludedSubtrees": []
 }

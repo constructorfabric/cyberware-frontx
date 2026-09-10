@@ -38,6 +38,8 @@ The framework must reach consuming projects through the AI Tooling CLI so that A
 
 **Principles**: `cpt-frontx-principle-template-agnostic-tooling`
 
+**Applicability** (Often-N/A domains for an AI Tooling feature, per the FEATURE checklist's Applicability Context): PERF is addressed by `cpt-frontx-cyber-pilot-kit-frontx-nfr-resource-scale` (kit PRD §6.1) — the discover-at-least-200-resources threshold binds this feature's base-capability declaration surface. SEC and COMPL are not applicable: the kit introduces no authentication surface of its own (kit PRD §6.2, SEC-PRD-001) and no regulatory obligation attaches to a locally installed developer tool. OPS (observability) is not applicable — this feature introduces no logging, metrics, or tracing surface beyond the resource-discovery diagnostics `cpt-frontx-cyber-pilot-kit-frontx-nfr-usability` already requires. UX is addressed by `cpt-frontx-cyber-pilot-kit-frontx-nfr-usability` (kit PRD §6.1) and the declared applicability metadata every public resource carries (§1.1).
+
 ### 1.3 Actors
 
 | Actor | Role in Feature |

@@ -146,7 +146,6 @@ describe('renderStandaloneMfeVitestBase', () => {
   it('exposes the mfeVitestBaseConfig plus defineMfeProject helper', () => {
     expect(rendered).toContain('export const mfeVitestBaseConfig');
     expect(rendered).toContain('export function defineMfeProject');
-    expect(rendered).toContain("'@frontx-test-utils'");
     expect(rendered).toContain('passWithNoTests: false');
     expect(rendered).toContain('testTimeout: COLD_START_TIMEOUT_MS');
     expect(rendered).toContain('hookTimeout: COLD_START_TIMEOUT_MS');

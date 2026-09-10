@@ -45,61 +45,147 @@ one repository can publish several templates:
 ```bash
 frontx install github:acme/my-template@v1.0.0        # template at the repository root
 frontx install github:acme/templates//shell@v1.0.0   # template in the shell/ subtree
-frontx list          # show installed templates and versions
-frontx list --json   # same set, one machine-readable record per entry
+frontx list          # show built-in defaults, this project's registered templates, and the local inventory
+frontx list --json   # {"ok":true,"data":{"defaults":[...],"registered":[...],"installed":[...]}}
 ```
 
 A template is tracked under the identity its own `frontx-template.json` declares, not under
 the repository name. Installing a template whose identity is already taken by a different
 source fails rather than overwriting the installed one.
 
-### 2. Seed a new repository
+### 2. Register a template's origin
+
+Before a project can apply a template, register its origin — this creates
+`.frontx/project.json` on first use:
 
 ```bash
-# frontx seed <templateRef> <targetDir>
-# templateRef is the identity the template's manifest declares, as shown by `frontx list`
-frontx seed @acme/my-template ./my-app
+# A remote origin is pinned to the exact commit the fetch settled on
+frontx register github:acme/my-template@v1.0.0
+
+# A path: origin naming a folder inside the project is recorded as given,
+# unpinned — there is nothing external to pin against
+frontx register path:vendor/my-local-template
 ```
 
-Seeding resolves the template (plus any templates its preset references), runs a
-**pre-flight conflict check** against every template's declared ownership
-boundaries, and only then writes files — recording one provenance record per
-applied template under `./my-app/.frontx/`.
+Registering the identical origin again is a no-op. Registering a *different*
+origin for an already-registered name fails unless `--replace` is given, and
+`--replace` itself refuses once the name has any applied target — `upgrade`
+(below) is how an applied template's origin changes.
 
-`seed` refuses a target that already holds content, naming what it found and
-what to run instead; use `frontx add` (below) for a directory that already has
-content. The exact rule and the reasoning behind it live in
+### 3. Apply the template to a target
+
+`apply` and `assemble` both take an explicit, target-keyed batch —
+`{"templates": {"<name>": ["<target>", ...]}}` — naming, for each already-registered
+template, the target or targets to apply it to:
+
+```bash
+# Preview the batch first — resolves every named template and checks ownership
+# geometry against everything already applied; writes nothing
+frontx assemble --input '{"templates":{"@acme/my-template":["."]}}'
+
+# Apply the identical batch for real
+frontx apply --input '{"templates":{"@acme/my-template":["."]}}'
+```
+
+A repository can be assembled from **multiple independently-registered
+templates**; conflicting assembly is detected and prevented before any file is
+written. `apply` writes only the ground each template declares, and refuses —
+naming the paths — where that ground already holds content the batch does not
+account for, unless `--adopt-existing` is given to adopt it as-is. The exact
+rule and the reasoning behind it live in
 [`architecture/features/cli-scaffolding/FEATURE.md`](architecture/features/cli-scaffolding/FEATURE.md).
 
-### 3. Add a template to an existing repository
+### 4. Or seed a new project from the built-in defaults
+
+`seed` creates `.frontx/project.json`, auto-registers each named template, and
+applies the batch in one call — but it accepts **only the CLI's own built-in
+default templates** (there is nothing else yet registered for a virgin
+directory to resolve a batch against), and in this repository's own build
+those defaults are `path:` origins, which resolve **relative to the directory
+being seeded** — not to this monorepo's checkout, wherever `seed` happens to
+be invoked from. A bare empty target directory has nothing at that relative
+path to resolve against and `seed` refuses it; the template must already be
+vendored into the target first:
 
 ```bash
-frontx add @acme/my-template ./existing-repo
+# Vendor the template into the target directory yourself, then seed on top of
+# it — <default-name> must be one of the CLI's built-in defaults (see the
+# "defaults" set in `frontx list` / `frontx list --json`), and the folder you
+# copy it into must be that default's own path: origin, relative to
+# ./my-app (here, "template-shell" — see that default's own path in
+# `packages/cli/src/generated/official-defaults.ts`). Vendor tracked content
+# only — a plain recursive copy also drags in `node_modules`, `dist`,
+# `dist-lib` and `.frontx` (hundreds of MB in this checkout) and records that
+# folder as the new project's origin.
+mkdir -p ./my-app/template-shell
+# `git -C "$(git rev-parse --show-toplevel)"` rather than a bare `git archive`:
+# a pathspec is resolved against the CALLER's directory, and `git archive`
+# refuses one naming anything outside it, so a bare `git archive HEAD
+# template-shell` only works when standing at the repository root and fails
+# with "pathspec did not match any files" anywhere below it. Anchoring the
+# invocation at the root makes this line work from wherever you are in the
+# checkout; `./my-app` stays relative to that same place.
+git -C "$(git rev-parse --show-toplevel)" archive HEAD template-shell \
+  | tar --strip-components=1 -x -C ./my-app/template-shell
+frontx seed ./my-app --input '{"templates":{"@gears-frontx/frontx-template-shell":["."]}}'
 ```
 
-A repository can be assembled from **multiple independently-applied templates**.
-Conflicting assembly is detected and prevented before any file is written.
+Outside this checkout there is nothing to vendor from, so `register` a remote
+origin and `apply` it instead (above) — the path that works anywhere.
 
-`add` writes only the ground the template declares, and refuses — naming the
-paths — when that ground already holds content no applied template's provenance
-accounts for, so existing work in the directory is either left alone or reported,
-never written over.
+`seed` refuses a directory that already carries a `.frontx/project.json` — a
+project once seeded is extended through `apply`, never re-seeded.
 
-### 4. Upgrade an applied template
+### 5. Upgrade a registered template
 
 ```bash
 # Interactive: review the change set, then approve
-frontx upgrade ./my-app 1.1.0
+frontx upgrade @acme/my-template github:acme/my-template@1.1.0
 
-# Non-interactive (CI): accept automatically
-frontx upgrade ./my-app 1.1.0 --yes
+# Non-interactive (CI/agent): accept automatically
+frontx upgrade @acme/my-template github:acme/my-template@1.1.0 --yes
+
+# Reverse the most recent upgrade, back to the origin it just left
+frontx upgrade @acme/my-template --restore
 ```
 
-Each applied template upgrades **independently**, delivered as a reviewable
-change set. Provenance under `.frontx/` tells the CLI exactly what was
-materialized and by which template.
+Each registered template upgrades **independently**: the CLI diffs every one
+of its applied targets against the new origin's payload, presents the
+resulting whole-file operation plan (`ADD`/`REPLACE`/`REMOVE`/`KEEP_LOCAL`/
+`UNCHANGED` — never a textual diff) for review, and commits it atomically
+across every target once approved. `.frontx/project.json` records the origin
+a name is upgrading (or restoring) away from, so exactly one generation is
+reversible with `--restore`.
 
-### 5. Author and validate a template
+### 6. Delete an applied target
+
+```bash
+frontx delete ./existing-repo/packages/mfe-a
+```
+
+`delete` computes what it would remove and what it would preserve, prompts for
+confirmation (defaulting to No), and only then removes the target's ground
+from disk and its entry from `.frontx/project.json`. `--dry-run` reports the
+same plan without deleting anything or requiring confirmation. Once every
+target under a name has been deleted, `frontx unregister <name>` removes the
+now-targetless registration; unregistering a name that still has applied
+targets is refused, naming them.
+
+### 7. Manage the project's own reserved paths
+
+A project can carve out paths no template may claim:
+
+```bash
+frontx ownership add ./docs
+frontx ownership list
+frontx ownership remove ./docs
+```
+
+These `projectOwnedRoots` are checked by the same conflict check that guards
+`assemble`/`apply`/`seed`, so a batch entry that would land on one is refused
+before anything is written.
+
+### 8. Validate a template, or the project itself
 
 Validate a template's structure — including that its ownership boundaries are
 well-formed — against the publication contract before publishing:
@@ -108,20 +194,43 @@ well-formed — against the publication contract before publishing:
 frontx validate ./path/to/template
 ```
 
+Validate the current project's `.frontx/project.json` against reality — every
+registered origin still resolvable, every recorded version still matching its
+manifest, and no ownership-geometry conflict among recorded targets:
+
+```bash
+frontx validate --project
+```
+
 ### CLI command reference
 
 | Command | Purpose |
 |---------|---------|
 | `frontx install <spec>` | Install a template from `host:owner/repo[//subtree]@ref` into the inventory |
-| `frontx list [--json]` | List installed templates and versions; `--json` emits one machine-readable record per entry, carrying its identity, pinned reference, source address and declared description |
-| `frontx seed <templateRef> <targetDir>` | Seed a **new** repository from a template |
-| `frontx add <templateRef> <targetDir>` | Add a template into an **existing** repository |
-| `frontx upgrade <projectRoot> <version> [--yes] [--json]` | Upgrade an applied template |
-| `frontx validate <templateDir>` | Validate a template for publication |
-| `frontx update-local <identity> <spec>` | Refresh a locally installed template from its source |
+| `frontx list [--json]` | List built-in defaults, this project's registered templates, and the local inventory; `--json` emits `{"ok":true,"data":{"defaults":[...],"registered":[...],"installed":[...]}}` |
+| `frontx register <origin> [--replace] [--json]` | Register a template's origin under the current project |
+| `frontx unregister <name> [--json]` | Unregister a template that has no applied targets |
+| `frontx assemble --input <batch-json> [--json]` | Preview an explicit batch against every registered template's declared ownership; writes nothing |
+| `frontx apply --input <batch-json> [--adopt-existing] [--json]` | Apply an explicit batch into the current project |
+| `frontx seed <dir> --input <batch-json> [--adopt-existing] [--json]` | Bootstrap a **new** project directory from the CLI's built-in default templates only |
+| `frontx upgrade <name> <origin> [--yes] [--json]` | Upgrade a registered template to a new origin (reviewable change set) |
+| `frontx upgrade <name> --restore [--yes] [--json]` | Reverse a template's most recent upgrade |
+| `frontx delete <target> [--yes] [--dry-run] [--json]` | Delete an applied template target; confirmation-gated |
+| `frontx ownership add\|remove\|list <path> [--json]` | Manage the project's own reserved paths (`projectOwnedRoots`) |
+| `frontx validate <templateDir> [--json]` | Validate a template for publication |
+| `frontx validate --project [--json]` | Validate `.frontx/project.json` against the registry, the local inventory, and the filesystem |
+| `frontx update-local <identity> <spec> [--json]` | Refresh a locally installed template from its source |
 | `frontx help` | Show the usage summary |
 
 Exit codes: `0` success, `1` user error, `2` internal error.
+
+A destructive command's `--json` mode never prompts: without `--yes` it
+returns `CONFIRMATION_REQUIRED` with the computed plan, and re-issuing the
+identical command with `--yes` recomputes that plan from scratch before
+acting on it — it never trusts the first call's result. Every command's
+`--json` mode emits exactly one JSON value on stdout — either
+`{"ok":true,"data":...}` or `{"ok":false,"error":{"code","message","details"}}`
+— with a non-zero exit on failure.
 
 ## The Core Framework
 
@@ -221,20 +330,25 @@ Beyond the direct `frontx upgrade` path, the kit **orchestrates** upgrades over
 the CLI's machine-readable command surface (`src/upgrade-orchestration/`):
 
 ```bash
-frontx upgrade ./my-app 1.1.0 --json
+frontx upgrade @acme/my-template github:acme/my-template@1.1.0 --json
 ```
 
-The `--json` surface emits the raw change set and reads a decision back, so the
-kit can layer review gates, migration analysis, and downstream impact assessment
-onto the change set before it is applied.
+There is no stdin exchange: the surface is a two-call protocol. The first
+`--json` invocation above writes nothing and returns `CONFIRMATION_REQUIRED`
+with the computed plan in `details.plan`; approval is expressed by re-issuing
+the identical command with `--yes` appended, which recomputes the plan and
+acts on it. That two-call shape is what lets the kit layer review gates,
+migration analysis, and downstream impact assessment onto the change set
+between the two calls, before anything is applied.
 
 > **Two paths, one engine.** Scaffolding is reachable both ways. State an intent
 > and the kit's scaffolding skill chooses and applies for you; hold a template
-> reference already and `frontx seed` / `frontx add` apply it directly, exactly
-> as before. The kit adds the selection, the plan and the per-unit realization —
-> never a second way to write a project, since both paths end in the same CLI
-> commands. Validating a template (`frontx validate`) remains a direct CLI
-> operation with no kit capability over it.
+> reference already and `frontx register` + `frontx apply` apply it directly,
+> the same CLI path the skill itself drives. The kit adds the selection, the
+> plan and the per-unit realization — never a second way to write a project,
+> since both paths end in the same CLI commands. Validating a template
+> (`frontx validate`) remains a direct CLI operation with no kit capability
+> over it.
 
 ### Roadmap
 

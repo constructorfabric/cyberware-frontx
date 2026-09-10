@@ -1,9 +1,9 @@
 ---
 status: accepted
-date: 2026-07-28
+date: 2026-08-12
 ---
 
-# Source-Spec Syntax for Versioned Template References
+# How a Template Source Is Referenced and What a Stored Reference Holds
 
 <!-- toc -->
 
@@ -29,9 +29,9 @@ date: 2026-07-28
 
 The CLI (`cpt-frontx-component-cli`, the `@gears-frontx/cli` package) resolves every template from an external source by a versioned reference rather than bundling any (the externalization decision, `cpt-frontx-adr-template-acquisition-and-location`). For that resolution to be deterministic, the reference a developer supplies must have a defined shape that names a host, a repository, and an explicit version. The source-spec contract (`cpt-frontx-contract-source-spec`) requires versioned references to templates hosted on the source registry (`cpt-frontx-actor-github`) but deliberately fixes no concrete syntax at the product-requirements level.
 
-A repository is also not the unit of a template. Under the uniform template mechanism (`cpt-frontx-adr-uniform-template-mechanism`), a single repository is the natural home for a family of templates authored, versioned, and released together, and a composed preset (`cpt-frontx-adr-composed-template-resolution`) references sibling templates that have no reason to live in separate repositories. A shape that addresses a repository as a whole would admit exactly one template per repository and force a repository split for a packaging reason rather than an ownership reason.
+A repository is also not the unit of a template. Under the uniform template mechanism (`cpt-frontx-adr-uniform-template-mechanism`), a single repository is the natural home for a family of templates authored, versioned, and released together, and sibling templates a caller applies together in one batch (`cpt-frontx-adr-composed-template-resolution`) have no reason to live in separate repositories. A shape that addresses a repository as a whole would admit exactly one template per repository and force a repository split for a packaging reason rather than an ownership reason.
 
-What concrete shape should a versioned source-spec take, so that a reference is unambiguous, version-pinned, able to address a template occupying a subtree of a repository, and consistent with the host-prefixed reference form already established across the platform substrate?
+A template can also live inside the project's own tree rather than on an external registry, and a reference is not only typed once but stored and re-resolved later, so what a stored reference holds decides whether a later re-resolution returns the same content. What concrete shape should a reference take, so that it is unambiguous, able to address a template occupying a subtree of a repository, and consistent with the host-prefixed form already established across the platform substrate; what form addresses a template inside the project itself; and what value should a project actually store, so that re-resolving it later is guaranteed to return what it returned the first time?
 
 ## Decision Drivers
 
@@ -39,7 +39,7 @@ What concrete shape should a versioned source-spec take, so that a reference is 
 * **Explicit, mandatory version pin** — the reference must carry an explicit version selector (a tag, branch, or commit) so acquisition is reproducible (`cpt-frontx-fr-cli-template-install`), rather than defaulting to a moving target.
 * **Several templates in one repository** — a reference must be able to name one template among several published from the same repository at the same version, so repository topology follows ownership rather than the addressing scheme.
 * **One reference vocabulary** — the platform substrate already expresses external sources in a host-prefixed `host:owner/repo` form, and its own kit installer already addresses a subtree with a `//` segment; reusing both keeps one mental model across the ecosystem instead of introducing a second reference vocabulary.
-* **One value that travels as one value** — a reference is stored and re-resolved, not only consumed once: a provenance record retains it (`cpt-frontx-adr-project-provenance-record`) and an upgrade re-resolves through it, so every part of it must travel together through every surface that carries it.
+* **One value that travels as one value** — a reference is stored and re-resolved, not only consumed once: the project state document retains a registered template's origin (`cpt-frontx-adr-project-provenance-record`) and an upgrade re-resolves through it, so every part of it must travel together through every surface that carries it.
 * **Deterministic parse** — every delimiter position must be fixed by rule, so any reference either splits into its parts one way only or is rejected; no input may split two plausible ways.
 * **Acquisition mechanism unchanged** — subtree selection must be a filter applied to acquired content, not a second transport, so the externalized-acquisition decision (`cpt-frontx-adr-template-acquisition-and-location`) and its single shared resolver stay intact.
 * **Human-writable and parseable** — the shape must be short enough to type and copy by hand yet structured enough to parse deterministically into its parts.
@@ -77,7 +77,13 @@ The `host:` prefix and the `@ref` position are extension points: additional sour
 
 Subtree selection is a filter applied to content already acquired by the existing mechanism: whole-repository acquisition and the single shared resolver are untouched, and only the materialization step narrows to the matched subtree, re-rooted so that the template's own paths are relative to itself and a template is unaware of where in a repository it lives.
 
-The full-URL option splits one logical reference into inputs that can disagree, must be cross-validated, and must be carried together through every surface that stores or re-resolves a reference — provenance records and a preset's declared sibling references among them; it is also more verbose to write and copy. The bare-name option infers host and version, forfeiting the unambiguous-origin and explicit-version-pin drivers, and can only source a subtree from the template's own configuration, which is unavailable to a reference that must name one template among several before any content is fetched. The repository-per-template option answers the addressing question by forbidding the case, imposing repository proliferation as the price of packaging and leaving a composed preset's siblings spread across repositories that must then be versioned in lockstep by convention.
+The full-URL option splits one logical reference into inputs that can disagree, must be cross-validated, and must be carried together through every surface that stores or re-resolves a reference — the project state document's `origin` field among them; it is also more verbose to write and copy. The bare-name option infers host and version, forfeiting the unambiguous-origin and explicit-version-pin drivers, and can only source a subtree from the template's own configuration, which is unavailable to a reference that must name one template among several before any content is fetched. The repository-per-template option answers the addressing question by forbidding the case, imposing repository proliferation as the price of packaging and leaving a family of sibling templates spread across repositories that must then be versioned in lockstep by convention.
+
+**A second origin kind: `path:<relative-path>`.** A template can also live inside the project's own tree rather than on an external registry, and that case is addressed by a second, deliberately distinct form: `path:<relative-path>`, naming a folder inside the project. It carries no host, no repository and no `@ref`, because none of them exist for it. The two forms are distinguished by their prefix and never by guessing: a reference is either a `host:`-prefixed remote token or a `path:`-prefixed local one, and anything else is rejected rather than reinterpreted. A local path must resolve inside the project root under the same fail-closed canonicalization every other CLI-checked path is subject to (`cpt-frontx-adr-assembly-conflict-prevention`); a path a symlink or a `..` segment could carry outside the root is refused.
+
+**What a stored reference holds.** A reference is typed once but stored and re-resolved many times — by a drift check, by an apply-time auto-install, by an upgrade reading its baseline — and all three depend on re-resolution returning the same content. The `@ref` position a developer *types* may name a tag, a branch, or a commit; what a project *stores* is never that typed ref. It is the exact immutable value the resolver's fetch settled on: a commit SHA for a git-hosted source, an exact package version for a package-registry-hosted one. A stored reference therefore names nothing that can move, and re-resolving it at any later point is guaranteed to fetch identical content. No lock file, no separate revision record and no content hash travels beside it: reproducibility is a property of the value stored, not of a second mechanism kept in sync with it.
+
+A `path:` origin is **not** pinned, because it has no separate versioned publication to resolve to an immutable form: the path is stored exactly as given, and what it resolves to is whatever that folder holds at the moment it is read. Editing the folder after the fact changes nothing about any target already applied from it — content moves onto an applied target only through an explicit `upgrade` (`cpt-frontx-adr-project-upgrade-mechanism`), never automatically. This asymmetry is deliberate: a remote origin can be made reproducible and therefore is, and a local one cannot be, so the model says so rather than fabricating a pin that would not mean anything.
 
 This decision fixes the reference shape only. Which value identifies a template once several templates share a repository is not decided here: the manifest declares a template's identity (`cpt-frontx-adr-template-manifest-contract`), and the field-level schema of that declaration belongs to the owning FEATURE per `cpt-frontx-adr-contract-schema-ownership`. Resolving a source-spec is the responsibility of the shared resolver established by the externalization decision.
 
@@ -127,7 +133,7 @@ A complete repository URL accompanied by distinct version and subdirectory argum
 * Good, because each part is explicitly labelled and self-describing, and no delimiter constrains what a subtree path may contain.
 * Good, because a full URL is unambiguous about transport and host.
 * Bad, because independent inputs can disagree and must be cross-validated wherever a reference is stored or re-resolved.
-* Bad, because every surface that carries a reference must be widened to carry the extra values — provenance records, a preset's declared sibling references, and command arguments.
+* Bad, because every surface that carries a reference must be widened to carry the extra values — the project state document's `origin` field, a caller's batch, and command arguments.
 * Bad, because it diverges from the host-prefixed shape established in the substrate, introducing a second reference vocabulary.
 
 ### Bare name resolved against a default registry
@@ -147,7 +153,7 @@ The token names a repository only; a template that must be addressable gets its 
 * Good, because it requires no subtree rule in the shape or in any parser.
 * Good, because each template's version history is unambiguously its own.
 * Bad, because it forces repository proliferation for a packaging reason rather than an ownership reason.
-* Bad, because a composed preset's sibling templates end up in separate repositories that must be kept version-aligned by convention rather than by construction.
+* Bad, because a family of sibling templates ends up in separate repositories that must be kept version-aligned by convention rather than by construction.
 
 ## More Information
 
@@ -157,9 +163,20 @@ The determinism of the repository-path split rests on a property of the admitted
 
 Integration analysis (**INT**): the source-spec is a client-supplied contract (`cpt-frontx-contract-source-spec`, direction required-from-client). Its consumer is the CLI's reference parser and shared resolver; its producer is any developer or tool that names a template. Version-compatibility intent is additive: the subtree segment is optional, so additional hosts and selector kinds are introduced without invalidating references already written, and any change to the shape that is not backward-compatible follows the platform evolvability requirement. A reference is also stored and re-resolved rather than only consumed once: a provenance record retains it (`cpt-frontx-adr-project-provenance-record`), so a reference that carries a subtree must re-resolve to the same subtree at upgrade time. No external integration partner consumes this shape beyond the source registry it addresses.
 
-**SEC** — addressed: the subtree segment is the only developer- or third-party-supplied path fragment in a reference, and it reaches local filesystem selection and re-rooting. It arrives not only by hand but inside a third-party manifest, since a composed preset declares its sibling references (`cpt-frontx-adr-composed-template-resolution`). This decision therefore fixes as a property of the shape that a subtree segment MUST be usable as a repository-relative path and MUST resolve within the acquired content root; a segment that does not is rejected, and no path outside that root is ever written. The reference carries no secret material.
+**SEC** — addressed: the subtree segment is the only developer- or third-party-supplied path fragment in a reference, and it reaches local filesystem selection and re-rooting. It arrives only from the caller — typed by a developer, or composed into a batch by an agent acting for one — never from inside another template's manifest, because no manifest declares a reference to any other template (`cpt-frontx-adr-composed-template-resolution`). This decision therefore fixes as a property of the shape that a subtree segment MUST be usable as a repository-relative path and MUST resolve within the acquired content root; a segment that does not is rejected, and no path outside that root is ever written. The reference carries no secret material.
 
-Applicability of the remaining checklist categories: **PERF** — Not applicable at decision altitude, because parsing a short reference carries no throughput or latency budget; the acquisition cost of sibling templates is recorded as a consequence rather than as a performance target. **REL** — Not applicable, because there is no service availability target for a parsed reference. **DATA** — Not applicable, because no persistent schema is defined here; the reference is a transient input shape, and the record that stores it is decided in `cpt-frontx-adr-project-provenance-record`. **OPS** — Not applicable, because no operational procedure attaches to a reference shape. **MAINT** — addressed: one addressing vocabulary shared with the substrate, and one repository able to hold a family of templates, reduce both cognitive load and repository sprawl. **UX** — addressed: the reference remains a single compact, copy-pasteable token. **BIZ** — Not applicable, because product requirements live in the PRD and are cited here by ID.
+Applicability of the remaining checklist categories:
+
+* **PERF** — Not applicable at decision altitude, because parsing a short reference carries no throughput or latency budget; the acquisition cost of sibling templates is recorded as a consequence rather than as a performance target.
+* **REL** — Not applicable, because there is no service availability target for a parsed reference.
+* **DATA** — Not applicable, because no persistent schema is defined here; the reference is a transient input shape, and the record that stores it is decided in `cpt-frontx-adr-project-provenance-record`.
+* **OPS** — Not applicable, because no operational procedure attaches to a reference shape.
+* **MAINT** — addressed: one addressing vocabulary shared with the substrate, and one repository able to hold a family of templates, reduce both cognitive load and repository sprawl.
+* **UX** — addressed: the reference remains a single compact, copy-pasteable token.
+* **BIZ** — Not applicable, because product requirements live in the PRD and are cited here by ID.
+* **COMPL** — Not applicable, because a reference names a repository, an optional subtree and a version selector; none of the three is regulated content.
+
+**Review cadence**: revisit when a host beyond the one source registry this shape was written against has to be addressed — such a change touches the `host:` prefix's admissible values rather than the shape itself, and this decision should say so explicitly when it happens.
 
 ## Traceability
 
@@ -172,6 +189,5 @@ This decision directly addresses the following requirements and design elements:
 * `cpt-frontx-fr-cli-template-install` — The mandatory `@ref` version selector is what makes installation by versioned reference deterministic and reproducible, and it stays so when the referenced template occupies a subtree rather than a whole repository.
 * `cpt-frontx-fr-cli-template-update-local` — Bounded local update accepts a versioned reference as input, so its input surface carries this shape, including the substitution risk recorded in the consequences.
 * `cpt-frontx-fr-cli-template-list` — The inventory a developer lists may hold several templates acquired from one repository. The subtree distinguishes the references that acquired them, not the identities they are listed under: identity remains what each manifest declares (`cpt-frontx-adr-template-manifest-contract`), so two references differing only in subtree yield two entries when their manifests declare different identities, and a collision when they declare the same one.
-* `cpt-frontx-fr-cli-composed-template-resolution` — A preset's declared sibling references are the motivating case for addressing templates that share a repository, and they carry the shape this decision fixes.
 * `cpt-frontx-contract-project-provenance` — A provenance record stores the reference that re-resolves an applied template, so a stored reference must retain its subtree for a later upgrade to re-resolve the same template rather than the repository root.
 * `cpt-frontx-actor-github` — The `host:` prefix names the source registry generically, and the referenced subtree is selected from content acquired from that registry by the existing acquisition mechanism, which this decision leaves unchanged.

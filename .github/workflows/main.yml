@@ -9,7 +9,10 @@ on:
 # Every job here only reads the repo: nothing pushes, comments, or releases —
 # upload-artifact needs no contents scope. Declared once at the workflow level
 # (with persist-credentials: false on each checkout) so the default read/write
-# token never reaches repository-controlled scripts.
+# token never reaches repository-controlled scripts. The token is present at all
+# only to clear the anonymous rate limit on GitHub API calls (see
+# studio-validate*'s own GITHUB_TOKEN comment), which read-only contents access
+# is enough for.
 permissions:
   contents: read
 
@@ -196,15 +199,17 @@ jobs:
   #
   # The template-shell/template-mfe split (#470) produced two kinds of
   # template, and both need covering:
-  #   - self-contained (template-shell): root package.json and lockfile of its
-  #     own, validated standalone by the glob loop below, which deliberately
-  #     avoids hardcoding template names;
-  #   - add-only overlay (template-mfe): no root package.json, no tooling of
-  #     its own. It cannot be validated in place — its packages' file: links
-  #     resolve to template-mfe/packages/* (which does not exist), and their
-  #     vite/vitest configs import out of the shell. The only way to run their
-  #     checks is to compose the pair the way `frontx add` does and validate
-  #     the result, which the second step does.
+  #   - self-contained (template-shell): a root package.json of its own
+  #     publishable identity and lockfile, validated standalone by the glob
+  #     loop below, which deliberately avoids hardcoding template names;
+  #   - add-only overlay (template-mfe): no root package.json of its own
+  #     publishable identity, no tooling of its own. It cannot be validated in
+  #     place — its packages' file: links resolve to template-mfe/packages/*
+  #     (which does not exist), and their vite/vitest configs import out of
+  #     the shell. The only way to run their checks is to compose the pair the
+  #     way `frontx register`/`frontx apply` does and validate the result,
+  #     which the second step
+  #     does.
   template-validate:
     name: Template Validate
     runs-on: ubuntu-latest
@@ -251,19 +256,32 @@ jobs:
     - name: Install ecosystem toolchain
       run: npm ci
 
-    # Split the templates by what their manifests CLAIM, not by what happens to
-    # sit on disk. A template that declares "package.json" among its ownership
-    # boundaries owns its own tooling and is validated standalone; one that does
-    # not is an add-only overlay and is only meaningful composed onto a shell.
+    # Split the templates by an observable fact on disk, cross-checked against
+    # each manifest's own identity — the current four-field manifest contract
+    # (cpt-frontx-adr-template-manifest-contract) declares no ownership
+    # category at all any more (schemaVersion/ownershipBoundaries were retired
+    # this checkpoint), so there is nothing left in a manifest to read for
+    # this decision. A template that ships a root package.json under its OWN
+    # publishable identity (the package.json's own "name" equals the
+    # manifest's own "name") owns its own tooling and is validated standalone;
+    # one that does not is an add-only overlay and is only meaningful composed
+    # onto a shell.
     #
-    # Disk presence is the wrong test. #489 adds a root package.json to
-    # template-mfe as a monorepo-only build harness, deliberately absent from
-    # the manifest so it never ships into a seeded project. A plain `-f` check
-    # would route the overlay down the self-contained path and then fail on the
-    # arch:deps / lint / test:unit scripts a build harness has no reason to
-    # define. Reading the manifest keeps both halves correct without loosening
-    # those calls to --if-present, which would let a real template lose a script
-    # and go quietly unchecked — the failure this job exists to prevent.
+    # Bare disk presence (a plain `-f package.json` check) is the wrong test on
+    # its own: #489 adds a root package.json to template-mfe as a
+    # monorepo-only dev harness (`frontx-template-mfe-monorepo-harness`,
+    # unscoped, `private: true` — see that file's own header), deliberately
+    # never declared as the template's shipped identity so registering and
+    # applying the template never copies it anywhere. A bare presence check
+    # would route that overlay down the self-contained path and then fail on
+    # the arch:deps / lint /
+    # test:unit scripts a dev harness has no reason to define. The identity
+    # cross-check is what tells "my own root package.json" apart from "a
+    # foreign package.json that happens to sit here" without reviving the
+    # retired ownership category or guessing from excludedSubtrees's emptiness
+    # (which declares reserved ground for a NESTED template, not "do I own my
+    # own tooling" — a template with nothing to reserve is not thereby an
+    # overlay).
     - name: Classify templates
       run: |
         set -euo pipefail
@@ -272,20 +290,11 @@ jobs:
           const selfContained = [], overlays = [];
           for (const dir of fs.readdirSync(".").filter((d) => d.startsWith("template-")).sort()) {
             if (!fs.existsSync(dir + "/frontx-template.json")) continue;
-            const b = JSON.parse(fs.readFileSync(dir + "/frontx-template.json", "utf8")).ownershipBoundaries || {};
-            // sharedFiles ownership (a region-union or exclusive merge into a file this
-            // template does not fully own) is not implemented below: classification only
-            // checks exclusiveSubtrees, and the composition step only copies
-            // exclusiveSubtrees — neither consults compose-shared-files.ts the way
-            // assembler.ts does. Refusing here turns "silently misclassified as
-            // self-contained" / "silently uncomposed" into a loud failure the day a
-            // manifest actually declares one, instead of half-implementing the contract
-            // for a case nothing exercises yet (both shipped manifests use `[]` today).
-            if ((b.sharedFiles || []).length) {
-              throw new Error(dir + " declares ownershipBoundaries.sharedFiles, which this job does not classify or compose — extend \"Classify templates\" and \"Validate shell + overlay composition\" to handle it before adding one");
-            }
-            const claims = b.exclusiveSubtrees || [];
-            (claims.includes("package.json") ? selfContained : overlays).push(dir);
+            const manifest = JSON.parse(fs.readFileSync(dir + "/frontx-template.json", "utf8"));
+            const pkgPath = dir + "/package.json";
+            const ownsRootPackageJson = fs.existsSync(pkgPath)
+              && JSON.parse(fs.readFileSync(pkgPath, "utf8")).name === manifest.name;
+            (ownsRootPackageJson ? selfContained : overlays).push(dir);
           }
           if (!selfContained.length) throw new Error("no self-contained template found");
           console.log("self-contained: " + selfContained.join(" "));
@@ -328,8 +337,50 @@ jobs:
           )
         done
 
+    # Proves the "no self-nesting" guard below actually rejects the shape it
+    # exists to catch, rather than being trusted on the strength of a comment.
+    # PR #586's review is the reason this exists: the doubled-path defect
+    # (`src-app/mfe_packages/src-app/mfe_packages/...`) shipped past a
+    # count-only version of that check because a doubled tree still has a
+    # positive package count, and nothing in this job's history had ever
+    # driven the fixed check through a tree it should reject. Calls the SAME
+    # `.github/scripts/assert-overlay-not-doubled.sh` the real step below
+    # calls, on synthetic fixtures that cost nothing to build (no npm, no
+    # real templates) — a future edit that guts the shared script is caught
+    # here, not by a reviewer reading it a second time. Run BEFORE the real
+    # composition step so a broken guard is caught here, against a fixture
+    # built for exactly this purpose, rather than trusted to correctly police
+    # the real overlay tree the next step composes.
+    - name: Self-test composition guard against a doubled tree
+      run: |
+        set -euo pipefail
+        guard=".github/scripts/assert-overlay-not-doubled.sh"
+        fixture="$RUNNER_TEMP/composition-guard-selftest"
+        rm -rf "$fixture" && mkdir -p "$fixture"
+
+        # Doubled case: the overlay's own target path exists a second time
+        # inside itself — exactly the shape the real defect produced. The
+        # guard MUST reject this; if it does not, the guard is broken.
+        mkdir -p "$fixture/doubled/dest/some/target"
+        if "$guard" "$fixture/doubled/dest" "some/target" "selftest-overlay"; then
+          echo "::error::composition guard accepted a doubled tree it exists to reject — self-test failed"
+          exit 1
+        fi
+        echo "==> guard correctly rejected a doubled tree"
+
+        # Correct case: the target path exists exactly once (no self-nested
+        # copy). The guard MUST accept this; if it does not, it now rejects
+        # ordinary correct compositions too.
+        mkdir -p "$fixture/correct/dest"
+        if ! "$guard" "$fixture/correct/dest" "some/target" "selftest-overlay"; then
+          echo "::error::composition guard rejected a correctly-rooted tree — self-test failed"
+          exit 1
+        fi
+        echo "==> guard correctly accepted a non-doubled tree"
+
     # Composes the overlays onto the shell and runs the shell's checks over the
-    # union — the tree a real `frontx seed shell && frontx add mfe` produces.
+    # union — the tree a real `frontx register`/`frontx apply` of the shell
+    # followed by the mfe template produces.
     # This is what actually covers the MFE packages: the shell's eslint config
     # has an src-app/mfe_packages/** block, its dependency-cruiser config has
     # no-cross-mfe-imports, and its test:unit ends in
@@ -340,9 +391,39 @@ jobs:
     #
     # Nothing in the manifests says which shell an overlay belongs to, so this
     # requires exactly one self-contained template and composes every overlay
-    # onto it. The subtrees copied are read from each overlay's own
-    # exclusiveSubtrees, mirroring the assembler's ownership semantics
-    # (packages/cli/src/scaffold/assembler.ts) rather than guessing at paths.
+    # onto it. There is no manifest-declared subtree list to read any more —
+    # the four-field contract has no field for "where does my content land"
+    # (composition is now driven by the caller's explicit application, not by
+    # one template naming the other, cpt-frontx-adr-template-manifest-contract
+    # §1.2).
+    #
+    # Each overlay's payload is now re-rooted at its OWN template root — it is
+    # exactly what a real `frontx apply <template> <target>` would place under
+    # whatever target the caller names, with no ownership prefix inside it any
+    # more (the doubled-prefix defect this repo's three real templates carried
+    # until this fix). That means the target is not something this job can
+    # read off the overlay's directory structure the way the old subtree-per-
+    # subtree copy did — it is an application-time decision, same as a real
+    # `apply` call needs a caller to supply one. OVERLAY_TARGETS below mirrors
+    # the target map this repo has actually decided for its own templates
+    # (see the manifest cutover's decomposition); a new overlay needs an entry
+    # added here for the same reason a real deployment needs an operator to
+    # choose where it lands — there is no way to derive it structurally, and a
+    # missing entry fails the step rather than silently skipping composition.
+    #
+    # What lands at that target is the overlay's whole PAYLOAD: every
+    # top-level entry the overlay has, files included, excluding only
+    # `frontx-template.json` (never payload) and `.frontx` (the CLI-reserved
+    # namespace an AI-extension bundle is delivered through by a separate
+    # mechanism) and `node_modules` (install-time output) — the same
+    # structural fact `cpt-frontx-feature-template-manifest`'s own §1.2 payload
+    # definition and `validate-content-self-containment.ts` already rely on.
+    # Top-level files (template-mfe's README.md, template-design-guardrails's
+    # DESIGN.md) are copied too, unlike the old subtree-only copy: a real
+    # `apply` places them under the target like everything else, and there is
+    # no shell-root collision to dodge any more now that each overlay owns a
+    # target the shell has reserved for it (`excludedSubtrees`) instead of
+    # landing loose at the shell's root.
     - name: Validate shell + overlay composition
       env:
         # PULL REQUESTS ONLY: on a develop push, main.yml and publish-packages.yml
@@ -368,116 +449,115 @@ jobs:
           exit 1
         fi
 
+        declare -A OVERLAY_TARGETS=(
+          [template-mfe]="src-app/mfe_packages"
+          [template-design-guardrails]="src-app/verify_packages"
+        )
+
         # Every check below is a silent no-op if an overlay did not land —
         # eslint just matches no files, test:unit finds no extra workspaces.
         # That vacuous pass is the exact failure mode this job exists to
         # catch, so each overlay's own contribution is counted as it lands,
-        # not folded into one total afterwards: a subtree that exists but
-        # holds no package.json (a docs-only directory, say) must not be
-        # hidden by another overlay's packages passing the count for
-        # everyone.
+        # not folded into one total afterwards: a target that exists but holds
+        # no package.json must not be hidden by another overlay's packages
+        # passing the count for everyone. Both overlays this repo ships today
+        # contribute at least one package.json (template-mfe's four fixture
+        # apps, template-design-guardrails's design-verify package), so there
+        # is no "manifest-only, zero packages by design" exemption here any
+        # more — a future pure-docs overlay would need one added back
+        # alongside its OVERLAY_TARGETS entry above.
+        #
+        # A bare COUNT of package.json files under $dest is not enough: the
+        # doubled-path defect this job exists to catch
+        # (`src-app/mfe_packages/src-app/mfe_packages/...`, shipped past the
+        # count-only version of this check because a doubled tree still has a
+        # positive count) needed an EXACT expected path per package, so a
+        # package landing one directory level deeper than intended still
+        # fails. OVERLAY_PACKAGES is that explicit expectation, paths relative
+        # to the overlay's own root — same fail-closed shape as
+        # OVERLAY_TARGETS above: a new overlay, or a new package inside an
+        # existing one, needs an entry added here for the same reason.
+        declare -A OVERLAY_PACKAGES=(
+          [template-mfe]="demo-mfe/package.json _blank-mfe/package.json widgets-fixture-a/package.json widgets-fixture-b/package.json"
+          [template-design-guardrails]="design-verify/package.json"
+        )
+
+        # nullglob turns a top-level pattern that matches nothing (should
+        # never happen — caught below by overlay_count) into zero iterations
+        # instead of a literal, unexpanded pattern string.
+        shopt -s nullglob
+
         composed_total=0
         for overlay in $OVERLAY_TEMPLATES; do
-          subtrees="$(node -e '
-            const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-            const s = m.ownershipBoundaries && m.ownershipBoundaries.exclusiveSubtrees;
-            if (!s || !s.length) {
-              console.error("no exclusiveSubtrees declared in " + process.argv[1]);
-              process.exit(1);
-            }
-            console.log(s.join("\n"));
-          ' "$overlay/frontx-template.json")"
-
-          overlay_count=0
-          overlay_has_pkg=0
-          while read -r subtree; do
-            [ -n "$subtree" ] || continue
-            # A declared subtree is usually a directory, but 0d22fe81 started
-            # declaring template-mfe's own README.md as its own
-            # exclusiveSubtree entry, alongside the four MFE package
-            # directories, once "the whole mfe_packages directory" stopped
-            # being one claim — so this branches on which the tree actually
-            # has, rather than assuming a directory the way `-d` alone did.
-            # Probed against the source subtree, not the copy landing in
-            # $shell below: a template like template-design-guardrails ships
-            # no root package.json (it's a docs/AI bundle) yet still owns an
-            # installable package subtree (src-app/verify_packages/*). Root
-            # package.json alone would misclassify it as manifest-only and
-            # skip the zero-count guard, so any subtree — file or directory —
-            # that contains a package.json counts as code-bearing.
-            if [ -n "$(find "$overlay/$subtree" -not -path '*/node_modules/*' \
-              -name package.json -print -quit 2>/dev/null)" ]; then
-              overlay_has_pkg=1
-            fi
-            if [ -d "$overlay/$subtree" ]; then
-              # The ground has to be free before anything is written, the way
-              # `refuseUnlessGroundFree` requires it of a real `frontx add`:
-              # every copy below is an overwrite, so a destination that already
-              # holds content means the shell and this overlay both claim it and
-              # the composition under test is not the one a developer would get.
-              # Asked before `mkdir -p`, which would otherwise create the very
-              # path being asked about.
-              if [ -e "$shell/${subtree%/}" ]; then
-                echo "::error::$overlay's exclusiveSubtree '$subtree' is already occupied in $shell"
-                exit 1
-              fi
-              echo "==> Overlaying $overlay/$subtree"
-              # Copy the *contents* into the destination: `cp -R src dest`
-              # nests under dest when dest already exists, which would bury
-              # the packages a level deeper than the count below looks.
-              mkdir -p "$shell/${subtree%/}"
-              cp -R "$overlay/$subtree/." "$shell/${subtree%/}/"
-            elif [ -f "$overlay/$subtree" ]; then
-              if [ -e "$shell/$subtree" ]; then
-                echo "::error::$overlay's exclusiveSubtree '$subtree' is already occupied in $shell"
-                exit 1
-              fi
-              echo "==> Overlaying $overlay/$subtree (file)"
-              mkdir -p "$shell/$(dirname "$subtree")"
-              cp "$overlay/$subtree" "$shell/$subtree"
-            else
-              # A declared subtree that isn't there means the manifest and
-              # the tree disagree.
-              echo "::error::$overlay declares exclusiveSubtree '$subtree', which does not exist"
-              exit 1
-            fi
-            # Each MFE ships a standalone package-lock.json whose file:
-            # targets point into template-mfe/packages/*, which does not
-            # exist. npm ignores nested locks inside a workspace, but drop
-            # them so nothing reads them — from the subtree just copied, not
-            # a hardcoded mfe_packages path. A no-op for a file subtree that
-            # isn't itself named package-lock.json.
-            find "$shell/${subtree%/}" -not -path '*/node_modules/*' \
-              -name package-lock.json -delete
-            # Counted from the subtree just copied, not a hardcoded
-            # `src-app/mfe_packages` path — the manifest already told us
-            # where this overlay's content landed. A no-op (0) for a file
-            # subtree that isn't itself package.json.
-            subtree_count="$(find "$shell/${subtree%/}" -not -path '*/node_modules/*' \
-              -name package.json 2>/dev/null | wc -l)"
-            overlay_count=$((overlay_count + subtree_count))
-          done <<< "$subtrees"
-
-          # A manifest-only overlay — none of its declared exclusiveSubtrees
-          # contains a package.json anywhere, root or nested — ships docs and
-          # an AI bundle, never an MFE package; zero packages is its correct
-          # contribution, not the vacuous pass the guard below catches for
-          # code overlays. An overlay whose subtrees do contain a
-          # package.json falls through to that guard even without one at its
-          # own template root.
-          if [ "$overlay_has_pkg" -eq 0 ]; then
-            echo "==> $overlay is manifest-only; composed without MFE packages (by design)"
-            continue
-          fi
-
-          if [ "$overlay_count" -eq 0 ]; then
-            echo "::error::$overlay's exclusiveSubtrees exist but contain no MFE package (no package.json found)"
+          target="${OVERLAY_TARGETS[$overlay]:-}"
+          if [ -z "$target" ]; then
+            echo "::error::$overlay has no declared composition target — add it to OVERLAY_TARGETS in this step"
             exit 1
           fi
-          echo "==> $overlay contributed $overlay_count MFE package(s)"
+
+          dest="$shell/$target"
+          mkdir -p "$dest"
+          echo "==> Overlaying $overlay onto $target"
+          for entry in "$overlay"/*; do
+            name="$(basename "$entry")"
+            # `.frontx` is never matched by this glob by default (bash does
+            # not expand `*` over dot-prefixed names without `dotglob`, which
+            # this step does not set) — the explicit skip below is the same
+            # rule stated defensively, not relied on twice.
+            [ "$name" = ".frontx" ] && continue
+            [ "$name" = "node_modules" ] && continue
+            [ "$name" = "frontx-template.json" ] && continue
+            cp -R "$entry" "$dest/"
+          done
+
+          # Each MFE ships a standalone package-lock.json whose file:
+          # targets point into template-mfe/packages/*, which does not
+          # exist. npm ignores nested locks inside a workspace, but drop
+          # them so nothing reads them — from the target just populated, not
+          # a hardcoded mfe_packages path.
+          find "$dest" -not -path '*/node_modules/*' \
+            -name package-lock.json -delete
+
+          # Exact-path assertion, not a count: each declared package must
+          # exist at precisely $dest/<relative path> — the path
+          # OVERLAY_PACKAGES says a correctly-rooted payload produces. A
+          # doubled-prefix defect would land it one (or more) directories
+          # deeper instead, which a `find -name package.json | wc -l` count
+          # cannot distinguish from the correct tree (both are non-zero) but
+          # this can.
+          packages="${OVERLAY_PACKAGES[$overlay]:-}"
+          if [ -z "$packages" ]; then
+            echo "::error::$overlay has no declared expected packages — add it to OVERLAY_PACKAGES in this step"
+            exit 1
+          fi
+
+          overlay_count=0
+          for rel in $packages; do
+            if [ ! -f "$dest/$rel" ]; then
+              echo "::error::$overlay's payload landed at $target but the expected package $rel is missing — not found at $dest/$rel"
+              exit 1
+            fi
+            overlay_count=$((overlay_count + 1))
+          done
+
+          # No self-nesting: composing $overlay's payload into $target must
+          # never reproduce $target's own path again inside itself. This is
+          # exactly the doubled-path defect's shape
+          # (`src-app/mfe_packages/src-app/mfe_packages/...` — the overlay's
+          # payload still carrying its own ownership-prefixed root instead of
+          # being rooted at the overlay's top level) and is checked
+          # independently of the exact-path assertion above, since a defect
+          # that duplicated only SOME of a target's segments (not deep enough
+          # to also miss a declared package) would otherwise pass it.
+          # Delegated to the shared script (rather than inlined here) so the
+          # "Self-test composition guard against a doubled tree" step earlier
+          # in this job exercises the identical check, not a copy of it.
+          .github/scripts/assert-overlay-not-doubled.sh "$dest" "$target" "$overlay"
+
+          echo "==> $overlay contributed $overlay_count package(s) at $target"
           composed_total=$((composed_total + overlay_count))
         done
-        echo "==> Composed $composed_total MFE package(s) into $shell"
+        echo "==> Composed $composed_total package(s) into $shell"
 
         # Captured before the `cd` below, because everything after it runs from
         # $RUNNER_TEMP and still has to reach this checkout's scripts.
@@ -573,6 +653,10 @@ jobs:
       # on demand) — materialize it before invoking studio.py directly.
       - name: Bootstrap Constructor Studio runtime
         run: cfs update -y --no-interactive --with-kits yes
+        env:
+          # cfs resolves the Studio release via the GitHub API; anonymous
+          # requests from shared runner IPs hit the rate limit (HTTP 403).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate artifacts and traceability
         run: python3 .cf-studio/.core/skills/studio/scripts/studio.py validate
@@ -596,6 +680,10 @@ jobs:
 
       - name: Bootstrap Constructor Studio runtime
         run: cfs update -y --no-interactive --with-kits yes
+        env:
+          # cfs resolves the Studio release via the GitHub API; anonymous
+          # requests from shared runner IPs hit the rate limit (HTTP 403).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate installed kits
         run: python3 .cf-studio/.core/skills/studio/scripts/studio.py validate-kits
@@ -619,6 +707,10 @@ jobs:
 
       - name: Bootstrap Constructor Studio runtime
         run: cfs update -y --no-interactive --with-kits yes
+        env:
+          # cfs resolves the Studio release via the GitHub API; anonymous
+          # requests from shared runner IPs hit the rate limit (HTTP 403).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check spec coverage thresholds
         # Threshold rebased for the post-split ecosystem repo. The framework/

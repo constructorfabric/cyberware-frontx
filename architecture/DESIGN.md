@@ -29,7 +29,7 @@ status: final
 - [4. Additional context](#4-additional-context)
   - [Technology stack alignment](#technology-stack-alignment)
   - [Capacity and NFR thresholds](#capacity-and-nfr-thresholds)
-  - [Non-applicable checklist categories](#non-applicable-checklist-categories)
+  - [Applicability of the remaining checklist categories](#applicability-of-the-remaining-checklist-categories)
   - [Member Pointers](#member-pointers)
 - [5. Traceability](#5-traceability)
 
@@ -70,7 +70,7 @@ This table maps non-functional requirements from the PRD to specific design/arch
 |--------|-------------|--------------|-----------------|-----------------------|
 | `cpt-frontx-nfr-evolvability` | Versioned releases without lockstep upgrades | Per-concern independent versioning across all artifacts | Independently published, per-concern versioned artifacts, each on its own semver line and cadence; a breaking change is bounded to that artifact's own major version, and cross-artifact compatibility on the single coupled edge (`mfes → gts-plugin`) is expressed as a satisfiable semver range rather than a matched version number (`cpt-frontx-adr-artifact-versioning-and-distribution`). | Per-artifact semver discipline; a compatibility check asserting the `mfes → gts-plugin` range is satisfiable and not exact-pinned (no duplicate-runtime skew); a registry-side deprecation cycle (published notice + minimum window) before any removal. |
 | `cpt-frontx-nfr-scalability-ceiling` | No architectural cap on integrated units | Per-concern independent versioning; runtime boundaries | The distribution and boundary architecture imposes no structural ceiling, so integration scales to the PRD operational floors governed only by performance thresholds (`cpt-frontx-adr-artifact-versioning-and-distribution`). | Load test registering the PRD operational floors of microfrontends and type definitions against one application without architectural failure. |
-| `cpt-frontx-nfr-evolvability` | Versioned releases without lockstep upgrades | The CLI's change-set & upgrade engine, owned by the [CLI's member DESIGN](../packages/cli/architecture/DESIGN.md) | The single authoritative change-set engine applies a template-version transition as a reviewed, approvable, non-destructive and reversible change set computed against that applied template's own provenance record, so each applied template in a repository adopts a newer version on its own cadence without a forced, destructive rewrite; the reviewed change equals the applied change (`cpt-frontx-adr-project-upgrade-mechanism`, `cpt-frontx-adr-cli-internal-decomposition`). | End-to-end upgrade test asserting the applied file set equals the approved change set, that a declined upgrade writes nothing, and that an applied upgrade is reversible. |
+| `cpt-frontx-nfr-evolvability` | Versioned releases without lockstep upgrades | The CLI's change-set & upgrade engine, owned by the [CLI's member DESIGN](../packages/cli/architecture/DESIGN.md) | The single authoritative change-set engine moves every target recorded under a template name atomically as one unit, computed against the baseline recorded for that name in the single project-state file `.frontx/project.json`, so each registered template in a repository adopts a newer version on its own cadence without a forced rewrite of targets not asked to move (`cpt-frontx-adr-project-upgrade-mechanism`, `cpt-frontx-adr-project-provenance-record`, `cpt-frontx-adr-cli-internal-decomposition`). The same decision fixes the reviewed, approvable, non-destructive, and reversible discipline this transition satisfies: a three-way whole-file classification computes the change set that is reviewed and applied only on approval, and a successful upgrade stays reversible for one generation through the same engine run in the other direction (`cpt-frontx-adr-project-upgrade-mechanism`). | An end-to-end test asserts the applied change set equals the approved one, that a declined upgrade writes nothing, and that an applied upgrade is reversible for one generation (`cpt-frontx-adr-project-upgrade-mechanism`); `upgrade` moves exactly the targets recorded under a template name, computed against the `project.json` baseline, and no other target. |
 | `cpt-frontx-nfr-evolvability` | Versioned releases without lockstep upgrades | The AI Tooling Framework's base kit and extension host, owned by the [kit's member DESIGN](../packages/cyber-pilot-kit-frontx/architecture/DESIGN.md) | Template-sourced expertise plus automatic discovery-and-activation lets each template's AI capabilities evolve and ship on the template's own line while the base kit stays solution-agnostic, so agent capability tracks installed-template versions rather than a lockstep framework release (`cpt-frontx-adr-solution-ai-content-placement`, `cpt-frontx-adr-extension-discovery-activation`, `cpt-frontx-adr-ai-tooling-internal-decomposition`). | Discovery test asserting a newly installed template version activates its bundled extension without a base-kit release, and that removing the template deactivates only its extension. |
 
 #### Architecture Decision Records
@@ -103,15 +103,16 @@ Published libraries:
 CLI (projects orchestration):
 
 * `cpt-frontx-adr-template-acquisition-and-location` — Externalizes templates and resolves them by source-spec at runtime.
-* `cpt-frontx-adr-source-spec-syntax` — Defines the versioned source-spec syntax for template acquisition, including the optional subtree segment that lets one repository publish several addressable templates.
 * `cpt-frontx-adr-uniform-template-mechanism` — Establishes one uniform mechanism that operates over any template, each template declaring what it produces.
-* `cpt-frontx-adr-template-manifest-contract` — Defines the template manifest publication contract declaring identity, version, ownership boundaries, and referenced templates.
-* `cpt-frontx-adr-template-ownership-boundary-declaration` — Defines the two-tier ownership-boundary declaration (exclusive subtrees plus shared-file region ownership with a declared merge) - owned by the CLI member tree, `packages/cli/architecture/ADR/`.
-* `cpt-frontx-adr-assembly-conflict-prevention` — Detects and refuses conflicting assembly before any write via a pre-flight intersection check and a post-materialization boundary-honesty guard.
-* `cpt-frontx-adr-composed-template-resolution` — Assembles a repository from one or more templates and resolves a preset's referenced templates transitively in one operation.
-* `cpt-frontx-adr-project-provenance-record` — Records provenance per applied template, one record per applied template with no single whole-repository origin.
-* `cpt-frontx-adr-project-upgrade-mechanism` — Upgrades each applied template independently as a reviewable, non-destructive change set.
-* `cpt-frontx-adr-cli-internal-decomposition` — Decomposes the single `@gears-frontx/cli` package into internal template-resolver, pre-publish-validator, assembler, conflict-checker, provenance-recorder, and change-set-&-upgrade-engine components.
+* `cpt-frontx-adr-cli-internal-decomposition` — Decomposes the single `@gears-frontx/cli` package into internal template-resolver, pre-publish-validator, registration, assembler, conflict-checker, provenance-recorder, and change-set-&-upgrade-engine components.
+* `cpt-frontx-adr-template-manifest-contract` — Fixes the template manifest at exactly `name`, `version`, a required `description`, and `excludedSubtrees`, with `description` as the sole carrier of selection and usage semantics.
+* `cpt-frontx-adr-project-provenance-record` — Keeps template registration, applied-instance provenance, and project-owned exclusions in one Git-tracked `.frontx/project.json` document, and fixes how an entry enters and leaves it.
+* `cpt-frontx-adr-template-ownership-boundary-declaration` — Defines ownership as a template's whole target minus the subtractions that record enumerates, arbitrating lifecycle rather than content; the enumeration is stated once there, not copied here. The record itself lives in the CLI member tree, `packages/cli/architecture/ADR/`.
+* `cpt-frontx-adr-composed-template-resolution` — Expresses composition as an explicit target-keyed batch that `assemble` previews statelessly and `apply` re-validates and materializes, with no manifest-declared preset and no saved execution plan.
+* `cpt-frontx-adr-assembly-conflict-prevention` — Treats ancestor/descendant containment as a conflict, alongside exact-path equality, over canonicalized, fail-closed targets, while admitting deliberate nesting at or inside declared `excludedSubtrees`.
+* `cpt-frontx-adr-source-spec-syntax` — Fixes the shape of a template reference — a host-prefixed remote token with an optional subtree segment, or a `path:` origin inside the project — and fixes that a stored remote origin holds the immutable value the resolver actually fetched, never the movable ref supplied.
+* `cpt-frontx-adr-project-upgrade-mechanism` — Upgrades every target recorded under a registered template name atomically, as one unit, using that name's own `{origin, version}` entry in `.frontx/project.json` as the baseline.
+* `cpt-frontx-adr-cli-machine-readable-output` — Standardizes every command's `--json` output as one discriminated-union envelope (`{ok: true, data}` / `{ok: false, error}`) drawn from a shared vocabulary of error codes.
 
 AI Tooling (projects orchestration):
 
@@ -129,7 +130,7 @@ The ecosystem is partitioned into three layers — **published libraries**, **te
 **Membership is a property, not a list.** A candidate belongs to a layer if it satisfies that layer's stated property; where a mechanical check derives a concrete list of current members, that list is a derived artifact of the check and never the authoritative statement of membership. This is what admits members this repository does not own: the architecture states the role and the contract, and does not hold the member's artifacts. The three properties:
 
 * **Published libraries** — a unit is a member if it is published for independent consumption under its own version, and its consumers integrate it by declaring a dependency on it. A member of this layer is consumed as a dependency; it is not copied, and it does not drive a project's lifecycle.
-* **Templates** — a unit is a member if it is applied to produce or extend a project, delivering content the receiving project then owns. A member of this layer is copied rather than depended upon, and what it claims is declared in its manifest (`cpt-frontx-adr-template-manifest-contract`).
+* **Templates** — a unit is a member if it is applied to produce or extend a project, delivering content the receiving project then owns. A member of this layer is copied rather than depended upon: it owns its entire applied target by default, and its manifest declares only the subtrees excluded from that ownership (`cpt-frontx-adr-template-manifest-contract`, `cpt-frontx-adr-template-ownership-boundary-declaration`).
 * **Projects orchestration** — a unit is a member if it acts on a project's lifecycle across the other two layers: creating, assembling, upgrading, or reasoning about a project rather than being part of the artifact a project ships.
 
 A candidate satisfying more than one of these is a defect in the candidate, not an ambiguity in the partition: the three roles are how a unit reaches a consumer, and a unit that both ships as a dependency and is copied as content should be split.
@@ -169,7 +170,7 @@ graph TD
 |-------|---------------|------------|
 | Published libraries | Runtime substrate, type-system provider, protocol surface, telemetry — consumed as versioned dependencies; the core subset stays UI-framework- and type-format-agnostic | TypeScript npm packages; module-federation runtime with lazy import (`@gears-frontx/mfes`); concrete type-definition specification confined to `@gears-frontx/gts-plugin`; transport as a peer dependency of `@gears-frontx/api` |
 | Templates | Producing and extending project content the receiving project owns | Externally hosted template repositories resolved by versioned source-spec; manifest publication contract |
-| Projects orchestration | Template and repository lifecycle (install, apply, assemble, upgrade) and AI-agent orchestration over it | Node.js CLI (`@gears-frontx/cli`); Constructor Studio kit (`cyber-pilot-kit-frontx`); GitHub source registry; npm package registry |
+| Projects orchestration | Template and repository lifecycle (install, apply, assemble, upgrade) and AI-agent orchestration over it | Node.js CLI (`@gears-frontx/cli`); Constructor Studio kit (`cyber-pilot-kit-frontx`, published as npm package `@gears-frontx/cyber-pilot-kit-frontx`); GitHub source registry; npm package registry |
 | Outside the layers | Build internals (never published) and non-package repository code | Private `@gears-frontx/*` configuration packages; `scripts/` tooling |
 
 Applications and microfrontends composed on top of the published libraries choose their UI technology freely — any UI framework (React, Vue, Svelte, vanilla JavaScript) over TypeScript; the platform constrains none of that choice. Each layer's technology choices align with the boundary constraints owned by the member DESIGNs and the NFRs: the runtime substrate stays UI-framework- and type-format-agnostic (MFES-1..MFES-5, owned by the [runtime's member DESIGN](../packages/mfes/architecture/DESIGN.md)) so it supports any UI stack, and the type-system provider is the only core library permitted a concrete type-definition specification (GTS-PLUGIN-1 and GTS-PLUGIN-2, owned by the [plugin's member DESIGN](../packages/gts-plugin/architecture/DESIGN.md)).
@@ -403,11 +404,19 @@ The technology stack per layer is recorded in §1.3 (`cpt-frontx-tech-ecosystem-
 
 Root capacity is expressed as an absence of structural caps. Concrete runtime or SDK thresholds belong to the member PRD that owns the behavior.
 
-### Non-applicable checklist categories
+### Applicability of the remaining checklist categories
 
-- Database and data architecture are not applicable at root altitude.
-- Hosted infrastructure operations are not applicable at root altitude.
-- Security and privacy behavior are owned by members and consuming applications unless a root contract explicitly states otherwise.
+- **DATA** — Not applicable at root altitude: the root defines no database or data architecture of its own; each member owns the data it holds.
+- **OPS** — Not applicable at root altitude: the root operates no hosted infrastructure; distribution and operation belong to each member.
+- **SEC** — Owned by members and consuming applications unless a root contract explicitly states otherwise; the root declares no authentication, authorization or secret-handling surface of its own.
+- **PERF** — Not applicable at root altitude: the root defines no runtime behavior of its own to profile; per-artifact performance thresholds are owned by each member's PRD and DESIGN.
+- **REL** — Addressed narrowly: the root's own reliability property is that the governance guard (§3.6) fails loudly on missing classification or artifact-chain accounting rather than passing silently; runtime reliability belongs to each member.
+- **MAINT** — Addressed: federated artifact ownership (§1.3) and per-concern independent versioning keep each artifact's maintenance concerns local to its own semver line, so a root-level change never forces a lockstep update across members.
+- **UX** — Not applicable at root altitude: the root ships no end-user or developer-facing surface of its own; CLI and AI-tooling developer experience is owned by their member PRDs and DESIGNs.
+- **INT** — Addressed: the root's integration surface is the layer model itself (§1.3) and the member-facing contracts §3.5 records; the root integrates with nothing outside the ecosystem on its own account.
+- **TEST** — Addressed: the root's only testable property is its governance guard (§3.6), which fails continuous integration on an unclassified package or an unaccounted artifact chain; every other behaviour under test belongs to a member.
+- **COMPL** — Not applicable at root altitude: no regulated data category and no regulatory obligation attaches to a layer model and its governance rules.
+- **BIZ** — Not applicable at root altitude: product requirements live in the PRD and are cited here by ID; this DESIGN adds no independent business rationale of its own.
 
 ### Member Pointers
 

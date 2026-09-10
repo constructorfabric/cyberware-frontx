@@ -10,19 +10,6 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { joinWithinRoot } from '@gears-frontx/test-support/path-guard';
 import { createLocalFetchFn } from '../local-fetch';
-import { TemplateInventory } from '../../inventory/TemplateInventory';
-import { FsInventoryIndex } from '../fs-inventory-index';
-import { FsContentStore } from '../fs-content-store';
-import { createFsReadContentItemsFn } from '../fs-read-content-items';
-import { createFsWriteFileFn, createFsReadProjectFileFn } from '../fs-project-io';
-import { createFsProvenanceWriteFn } from '../provenance-io';
-import { installCommand } from '../../commands/install';
-import { seedRepository } from '../../commands/seed-repository';
-import { createFsReadTargetDirFn } from '../fs-target-dir';
-
-// The real on-disk template this repository ships — the FIXTURE the P16
-// final done-gate also assembles OFFLINE via this same adapter.
-const TEMPLATE_SHELL_DIR = path.resolve(__dirname, '../../../../../template-shell');
 
 function makeTmpDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -95,67 +82,16 @@ describe('createLocalFetchFn — TEST-ONLY local content adapter', () => {
   });
 });
 
-describe('offline e2e — frontx install + seed assemble the real template-shell/ OFFLINE (no network)', () => {
-  it('materializes template-shell into a project via the local adapter + the real install/seed pipeline', async () => {
-    expect(fs.existsSync(path.join(TEMPLATE_SHELL_DIR, 'frontx-template.json'))).toBe(true);
-
-    const inventoryRoot = makeTmpDir('frontx-local-fetch-inventory-');
-    const targetDir = makeTmpDir('frontx-local-fetch-target-');
-    try {
-      const inventory = new TemplateInventory(new FsInventoryIndex(inventoryRoot), new FsContentStore(inventoryRoot));
-      const fetchFn = createLocalFetchFn(TEMPLATE_SHELL_DIR);
-
-      const installResult = await installCommand('local:gears-frontx/frontx-template-shell@offline', inventory, fetchFn);
-      expect(installResult.ok).toBe(true);
-
-      const lookupFn = (name: string) => inventory.lookup(name);
-      const readContentFn = createFsReadContentItemsFn(inventoryRoot);
-      const writeFileFn = createFsWriteFileFn();
-      const provenanceWriteFn = createFsProvenanceWriteFn();
-      const readProjectFileFn = createFsReadProjectFileFn();
-
-      // Identity is the manifest's own declared `name`
-      // ("@gears-frontx/frontx-template-shell", `template-shell/frontx-template.json`),
-      // not the repository segment ("frontx-template-shell") the source-spec named.
-      const templateIdentity = '@gears-frontx/frontx-template-shell';
-      const seedResult = await seedRepository(
-        templateIdentity,
-        targetDir,
-        lookupFn,
-        readContentFn,
-        writeFileFn,
-        provenanceWriteFn,
-        createFsReadTargetDirFn(),
-        readProjectFileFn,
-      );
-
-      expect(seedResult.ok).toBe(true);
-      if (!seedResult.ok) return;
-      expect(seedResult.appliedTemplates).toEqual([templateIdentity]);
-
-      // Representative files inside declared exclusive subtrees materialize as REAL on-disk files.
-      expect(fs.existsSync(joinWithinRoot(targetDir, 'package.json'))).toBe(true);
-      expect(fs.existsSync(joinWithinRoot(targetDir, 'src', 'index.ts'))).toBe(true);
-      expect(fs.readFileSync(joinWithinRoot(targetDir, 'src', 'index.ts'), 'utf-8')).toBe(
-        fs.readFileSync(path.join(TEMPLATE_SHELL_DIR, 'src', 'index.ts'), 'utf-8'),
-      );
-
-      // Provenance was written OFFLINE, per the same materialize path a real install uses.
-      const provenance = JSON.parse(fs.readFileSync(joinWithinRoot(targetDir, '.frontx', 'provenance.json'), 'utf-8')) as Array<{
-        templateIdentity: string;
-      }>;
-      expect(provenance.map((r) => r.templateIdentity)).toEqual([templateIdentity]);
-
-      // No network / build-artifact directories were ever pulled into the target.
-      expect(fs.existsSync(joinWithinRoot(targetDir, 'node_modules'))).toBe(false);
-      expect(fs.existsSync(joinWithinRoot(targetDir, 'dist'))).toBe(false);
-      // F-8: template-shell/.omc/ is real agent-state on disk today, and .omo/
-      // is the same class; neither may be seeded as declared template content.
-      expect(fs.existsSync(joinWithinRoot(targetDir, '.omc'))).toBe(false);
-      expect(fs.existsSync(joinWithinRoot(targetDir, '.omo'))).toBe(false);
-    } finally {
-      fs.rmSync(inventoryRoot, { recursive: true, force: true });
-      fs.rmSync(targetDir, { recursive: true, force: true });
-    }
-  });
-});
+// The offline e2e describe block this file used to carry here (`frontx
+// install` + the OLD `seedRepository(templateRef, targetDir, ...)` against
+// the real on-disk `template-shell/`) exercised a command signature checkpoint
+// 3 retires entirely (`commands/seed-repository.ts`'s REWRITE header comment):
+// the new `seedRepository(dir, batch, adoptExisting, deps)` takes a batch and
+// a project-state document, not a bare `templateRef`, and has no
+// `appliedTemplates`/provenance.json shape to assert on. A real end-to-end
+// equivalent for the new model would need `dir` to itself resolve
+// `path:template-shell`'s relative origin against this monorepo's checkout —
+// which only holds when `dir` IS this checkout, not an arbitrary disposable
+// tmp directory this suite creates — so it is not reproduced here; the new
+// seed/apply/assemble pipeline's own fixture-backed coverage lives in
+// `__tests__/entry-flows.test.ts` and `__tests__/cli.test.ts` instead.

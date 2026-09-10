@@ -13,6 +13,11 @@ export type {
   ResourceBodyReader,
 } from './types.js';
 
+// Project's single state document (`.frontx/project.json`) — read by both
+// F16 (AI-extension trust gate) and F17 (upgrade orchestration).
+export { selectTemplateEntry } from './project-state.js';
+export type { PreviousOrigin, TemplateEntry, ProjectStateDocument } from './project-state.js';
+
 // F16 Template AI-Extension Contract & Discovery/Activation
 export { EXTENSION_CATEGORIES, AiExtensionLifecycleState } from './extensions/types.js';
 export type {
@@ -20,6 +25,7 @@ export type {
   AiExtensionEntry,
   AiExtensionBundle,
   StructuralError,
+  TrustDenial,
   LifecycleResult,
   CapabilityContribution,
   ComposedCapabilitySet,
@@ -30,6 +36,7 @@ export { scanAndComposeExtensions } from './extensions/scan.js';
 export type { BaseCapabilities } from './extensions/scan.js';
 export {
   transitionBundledToDiscovered,
+  transitionBundledToDenied,
   transitionFromDiscovered,
   transitionValidatedToActivated,
   runExtensionLifecycle,
@@ -59,14 +66,13 @@ export type { OrchestrationLifecycleStateValue } from './upgrade-orchestration/s
 export { orchestrateAiDrivenUpgrade } from './upgrade-orchestration/orchestrate.js';
 export type { OrchestrationDeps, OrchestrationResult } from './upgrade-orchestration/orchestrate.js';
 export { createInvokeUpgradeCommand } from './upgrade-orchestration/invoke-upgrade-command.js';
-export type { InvokeUpgradeCommandOptions, SpawnFn } from './upgrade-orchestration/invoke-upgrade-command.js';
-export { selectProvenanceRecord } from './upgrade-orchestration/types.js';
+export type { InvokeUpgradeCommandOptions, SpawnFn, SpawnOptions } from './upgrade-orchestration/invoke-upgrade-command.js';
+export { resolveTargetOrigin } from './upgrade-orchestration/types.js';
 export type {
   ChangeSet,
   ChangeKind,
   CleanEntry,
   ConflictEntry,
-  ProvenanceRecord,
   ChangeImpactAnalysis,
   ChangeImpactEntry,
   DownstreamEffectAssessment,

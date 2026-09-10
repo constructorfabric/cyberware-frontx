@@ -39,7 +39,7 @@ The layer partition only keeps members decoupled while its rules bind new arriva
 
 **Requirements**: `cpt-frontx-fr-layer-member-governance`
 
-**Principles**: None — this feature enforces the §2.2 governance constraints rather than realizing a §2.1 principle.
+**Principles**: `cpt-frontx-principle-federated-artifacts`, `cpt-frontx-principle-property-based-membership` — realized by enforcement rather than by structure, which is the only way a principle of this kind is realized at all. Total classification is what keeps membership a property of the role a unit plays rather than of whether someone remembered it, and requiring each member to be registered as its own child system with its artifact kinds enforced — or covered by a path-anchored debt ignore that records its removal criterion — is what keeps artifact ownership federated instead of drifting into an honour system. The root DECOMPOSITION records this feature as their coverage; an earlier revision of this line claimed none, which left both principles with no realizing feature anywhere.
 
 ### 1.3 Actors
 

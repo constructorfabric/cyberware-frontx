@@ -21,7 +21,8 @@ function validManifest(overrides = {}) {
   return JSON.stringify({
     name: 'tpl',
     version: '1.0.0',
-    ownershipBoundaries: { exclusiveSubtrees: [], sharedFiles: [] },
+    excludedSubtrees: [],
+    description: 'Establishes the project shell and contributes the build toolchain.',
     ...overrides,
   });
 }
@@ -98,10 +99,11 @@ describe('runCli', () => {
   it('fails when a template carries a content self-containment violation', async () => {
     const root = await makeRoot();
     await mkdir(path.join(root, 'template-shell'), { recursive: true });
-    await writeFile(
-      path.join(root, 'template-shell', 'frontx-template.json'),
-      validManifest({ ownershipBoundaries: { exclusiveSubtrees: ['package.json'], sharedFiles: [] } }),
-    );
+    // No separate declaration needed: the four-field contract's payload is
+    // the whole candidate directory by default, minus the manifest itself
+    // and any declared `excludedSubtrees` - `package.json` is inspected
+    // simply by being there.
+    await writeFile(path.join(root, 'template-shell', 'frontx-template.json'), validManifest());
     await writeFile(
       path.join(root, 'template-shell', 'package.json'),
       JSON.stringify({ dependencies: { '@gears-frontx/api': 'file:../../packages/api' } }),

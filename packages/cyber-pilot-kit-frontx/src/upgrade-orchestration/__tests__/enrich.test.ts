@@ -11,8 +11,10 @@ import { enrichUpgradeChangeSet, computeChangeImpact, computeDownstreamEffects }
 import type { ChangeSet, SelectedTemplate } from '../types.js';
 
 const SELECTED_TEMPLATE: SelectedTemplate = {
-  templateIdentity: 'my-template',
-  currentVersion: '1.0.0',
+  name: 'my-template',
+  origin: 'path:./templates/my-template',
+  version: '1.0.0',
+  targets: ['apps/web'],
 };
 
 const RESOLVED_CHANGESET: ChangeSet = {
@@ -68,10 +70,15 @@ describe('enrichUpgradeChangeSet (pure enrichment over an already-computed chang
     expect(result.package.downstreamAssessment).toBeDefined();
   });
 
-  // inst-extract-provenance / inst-combine-results — enrichment reflects the SELECTED applied
-  // template's provenance record (identity + current version), not any other record
-  it('combines the SELECTED applied template\'s identity and current version into the enriched package', () => {
-    const otherSelection: SelectedTemplate = { templateIdentity: 'other-template', currentVersion: '3.4.0' };
+  // inst-extract-provenance / inst-combine-results — enrichment reflects the SELECTED template's
+  // templates[name] entry (name, origin, version, targets), not any other entry in the document
+  it('combines the SELECTED template\'s name, origin, version, and targets into the enriched package', () => {
+    const otherSelection: SelectedTemplate = {
+      name: 'other-template',
+      origin: 'path:./templates/other-template',
+      version: '3.4.0',
+      targets: ['apps/admin'],
+    };
     const result = enrichUpgradeChangeSet(RESOLVED_CHANGESET, otherSelection);
     expect(result.status).toBe('enriched');
     if (result.status !== 'enriched') return;

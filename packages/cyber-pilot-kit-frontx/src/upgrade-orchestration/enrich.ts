@@ -61,12 +61,13 @@ export function computeDownstreamEffects(changeSet: ChangeSet): DownstreamEffect
  * Enriches an already-computed change set (received from the `frontx
  * upgrade` command surface, cpt-frontx-algo-ai-upgrade-orchestration-enrich
  * `inst-receive-changeset`) with change-impact analysis and downstream-effect
- * assessment, combined against the SELECTED applied template's identity and
- * current version (extracted by the caller from that template's provenance
- * record, `inst-extract-provenance`) so the resulting review package
- * reflects the SELECTED applied template, not any other record in the
- * project's provenance set. Contains no engine logic of its own — it is a
- * pure function over the change set the SINGLE F14 engine produced
+ * assessment, combined against the SELECTED template's name, current
+ * `origin`/`version`, and every target listed under it (extracted by the
+ * caller from that template's `templates[name]` entry,
+ * `inst-extract-provenance`) so the resulting review package reflects the
+ * SELECTED template, not any other entry in the project's single state
+ * document. Contains no engine logic of its own — it is a pure function over
+ * the change set the SINGLE F14 engine produced
  * (cpt-frontx-dod-ai-upgrade-orchestration-single-engine).
  */
 export function enrichUpgradeChangeSet(changeSet: ChangeSet, selectedTemplate: SelectedTemplate): EnrichmentResult {

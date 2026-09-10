@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
-import { renderWithProviders } from '@frontx-test-utils/renderWithProviders';
+import { renderWithProviders } from '@gears-frontx/mfe-test-support/renderWithProviders';
 import { TextLoader } from './TextLoader';
 
 const mockUseTranslation = vi.fn();

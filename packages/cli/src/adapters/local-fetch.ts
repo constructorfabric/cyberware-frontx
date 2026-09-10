@@ -1,7 +1,11 @@
 // TEST-ONLY — this file carries NO `@cpt` marker and traces to NO FEATURE
 // instruction. It is NOT product behavior: it introduces no new source-spec
-// host or grammar and does not change the `FetchFn` seam's signature
-// (`packages/cli/src/resolver/types.ts`, `(url: string) => Promise<string>`).
+// host or grammar. The `FetchFn` seam (`packages/cli/src/resolver/types.ts`)
+// widened to `(url: string) => Promise<string | FetchResult>` so an adapter
+// CAN report a pin (`inst-resolve-pin`); this adapter still returns a bare
+// `Promise<string>` — it has no pin to report, a `path:` origin's own
+// resolution never even reaches a `FetchFn` — which remains a valid,
+// narrower realization of that seam.
 //
 // It realizes that EXISTING seam with a local-directory adapter so
 // `frontx install` + `frontx seed` can assemble the on-disk
@@ -17,7 +21,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { BUNDLE_MARKER } from '../bundle/envelope';
-import type { FetchFn } from '../resolver/types';
 
 /** Directory names never included in the local bundle: build and dependency
  * artifacts, plus the agent session-state directories (`.omc/`, `.omo/`) that
@@ -52,7 +55,18 @@ export interface LocalFetchOptions {
  * failures reject the returned promise, matching the real `FetchFn`
  * contract's error path (`resolveToInventory`'s `inst-resolve-fetch-fail`).
  */
-export function createLocalFetchFn(localDir: string, options: LocalFetchOptions = {}): FetchFn {
+// Declared return type is narrower than `FetchFn` itself (a plain
+// `Promise<string>` producer rather than `Promise<string | FetchResult>`):
+// this adapter never has a pin to report, and a `string`-returning function
+// is still assignable everywhere a `FetchFn` is expected (return-type
+// covariance), so every call site that consumes this fake's result directly
+// as a string — this is a TEST-ONLY adapter used that way throughout its own
+// test suite — keeps compiling without a `typeof` narrowing it has no reason
+// to perform.
+export function createLocalFetchFn(
+  localDir: string,
+  options: LocalFetchOptions = {},
+): (url: string) => Promise<string> {
   const excludedDirs = options.excludedDirs ?? DEFAULT_EXCLUDED_DIRS;
 
   return async function localFetch(_url: string): Promise<string> {

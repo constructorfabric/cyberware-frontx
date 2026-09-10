@@ -3,8 +3,18 @@
 // @cpt-state:cpt-frontx-state-template-resolution-inventory-lifecycle:p1
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { InventoryState } from '../inventory/types';
 import type { InventoryEntry, InventoryIndexPort } from '../inventory/types';
+import { INVENTORY_STORE_ROOT_LABEL } from './fs-installed-content-path';
+import {
+  readFileIfRegular,
+  resolvePathKind,
+  resolveNearestExistingAncestor,
+  isInside,
+  PathContainmentError,
+  NotRegularFileError,
+} from './fs-project-io';
 
 const INDEX_FILENAME = 'index.json';
 
@@ -66,15 +76,201 @@ export class FsInventoryIndex implements InventoryIndexPort {
     return path.join(this.root, INDEX_FILENAME);
   }
 
+  // `readFileIfRegular` (`./fs-project-io.ts`) is the SAME guard every other
+  // read seam in this package now goes through: a plain `existsSync` +
+  // `readFileSync` pair here — `existsSync` follows a symlink to decide
+  // "does something answer at this path", and answers `true` for a FIFO
+  // exactly as readily as for a real index file — used to reach an
+  // unconditional `readFileSync`, which blocks forever on a FIFO with no
+  // writer attached and hangs `list` (and every other command that touches
+  // the local inventory) with no stdout, no stderr, and no exit. Reusing the
+  // shared primitive rather than restating this check a fourth time is the
+  // whole point: it is the one place this exact class of bug has already
+  // been fixed, and fixing it again here independently is how it drifts.
+  //
+  // `readFileIfRegular` only ever answers WHAT KIND of thing stands at
+  // `indexPath`, following whatever symlink is there to decide — never
+  // WHERE that symlink leads. A symlink to a regular file living outside the
+  // local inventory store root therefore resolves to `'file'` exactly as
+  // readily as an ordinary in-store document, and every caller here
+  // (`record`, `lookup`, `update`, `all`, `getState`, `toJSON`) would report
+  // content this CLI does not own as if it were tracked local inventory.
+  // `resolveContainedIndexPath` below is called FIRST, for that reason —
+  // the SAME containment proof `assertIndexPathIsSafeToWrite` already
+  // requires before every WRITE to this file, required here before every
+  // READ of it too, through the identical primitive rather than a second,
+  // independently formulated check.
+  //
+  // @cpt-begin:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-lookup-guard
+  // @cpt-begin:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-lookup-guard-fail
+  // Content this store itself wrote could still be unusable in two further
+  // ways `readFileIfRegular` cannot see, because both are about what the
+  // bytes SAY rather than what kind of filesystem entry holds them: the file
+  // is a regular file but its content is not valid JSON (hand-edited, or
+  // truncated by an interrupted write before this module's own atomic
+  // rename existed), or it parses but is not the `Record<string,
+  // InventoryEntry>` shape every caller here assumes — a stray `{"precious":
+  // "..."}` used to reach `install`'s own nesting check
+  // (`pathsNest(entry.name, ...)` in `TemplateInventory.ts`) with
+  // `entry.name` silently `undefined`, crashing with a raw `TypeError` at the
+  // CLI's top-level catch: exit 2, no `--json` envelope. Both are now refused
+  // here, once, for every caller (`record`, `lookup`, `update`, `all`,
+  // `getState`, `toJSON`) rather than left for whichever caller's own
+  // downstream logic happens to dereference the bad shape first.
   private readAll(): Record<string, InventoryEntry> {
-    if (!fs.existsSync(this.indexPath)) return {};
-    const raw = fs.readFileSync(this.indexPath, 'utf-8');
-    if (raw.trim() === '') return {};
-    return JSON.parse(raw) as Record<string, InventoryEntry>;
+    const resolvedIndex = this.resolveContainedIndexPath('read');
+    const raw = readFileIfRegular(resolvedIndex);
+    if (raw === null || raw.trim() === '') return {};
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new InvalidInventoryIndexError(this.indexPath, 'its content is not valid JSON');
+    }
+    return validateInventoryIndexShape(parsed, this.indexPath);
+  }
+  // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-lookup-guard-fail
+  // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-lookup-guard
+
+  // The ONE containment proof both `readAll` above and
+  // `assertIndexPathIsSafeToWrite` below run before touching `indexPath` at
+  // all — `resolveNearestExistingAncestor`/`isInside` (`./fs-project-io.ts`),
+  // the SAME primitives every other adapter's own containment check in this
+  // package reuses, rather than a second, independently formulated one for
+  // the read side and a third for the write side. Returns the RESOLVED
+  // index path (itself, for the ordinary non-symlinked case; the real
+  // document a symlink at `indexPath` aliases otherwise) so a write-side
+  // caller can publish onto it directly, exactly as `createFsWriteProjectStateFn`
+  // (`./fs-project-io.ts`) already does for `.frontx/project.json`.
+  private resolveContainedIndexPath(action: 'read' | 'write'): string {
+    const resolvedRoot = resolveNearestExistingAncestor(path.resolve(this.root));
+    const resolvedIndex = resolveNearestExistingAncestor(path.resolve(this.indexPath));
+    if (resolvedRoot === null || resolvedIndex === null || !isInside(resolvedRoot, resolvedIndex)) {
+      throw new PathContainmentError(this.indexPath, this.root, INVENTORY_STORE_ROOT_LABEL, action);
+    }
+    return resolvedIndex;
   }
 
-  private writeAll(entries: Record<string, InventoryEntry>): void {
-    fs.mkdirSync(this.root, { recursive: true });
-    fs.writeFileSync(this.indexPath, JSON.stringify(entries, null, 2), 'utf-8');
+  // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-index-guard
+  // @cpt-begin:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-index-guard-fail
+  // @cpt-begin:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-index-guard
+  // @cpt-begin:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-index-guard-fail
+  // Shared by `record` (install, `inst-resolve-index`) and `update`
+  // (`update-local`, `inst-bupd-index-update`) — both write through this one
+  // method, so the guard lives here once rather than twice.
+  //
+  // Two facts are confirmed before anything is written, neither of which the
+  // old bare `fs.mkdirSync` + `fs.writeFileSync` pair below ever checked:
+  //
+  // 1. `indexPath`, symlinks resolved, still resolves inside `this.root`. A
+  //    symlink AT `index.json` pointing OUTSIDE the store is not ground this
+  //    CLI owns — reusing `resolveNearestExistingAncestor`/`isInside`
+  //    (`./fs-project-io.ts`) rather than a lexical `path.relative` check is
+  //    what catches this: the escape is only visible once the link is
+  //    actually followed. `PathContainmentError` is the SAME typed refusal
+  //    `apply`/`seed`/`delete` already throw for an escaping project write,
+  //    reused here rather than a second containment error invented for the
+  //    inventory store, and it is already mapped to `INVALID_PATH` at the
+  //    CLI's top-level catch.
+  // 2. Whatever currently stands at `indexPath` — once containment is
+  //    settled — is either absent or an ordinary regular file. The inventory
+  //    store root IS ground this CLI owns, so a directory, FIFO, socket, or
+  //    device standing there is never silently reclaimed by deleting it: read
+  //    seams in this package already refuse exactly this set of shapes
+  //    (`readFileIfRegular` above) rather than treat them as "nothing here",
+  //    and the write side refuses them for the identical reason — a shape a
+  //    read would refuse to open is not a shape a write should destroy either.
+  //    `NotRegularFileError` is reused rather than a bespoke write-side type,
+  //    since it is already mapped to `CONTENT_CONFLICT`.
+  // Returns the RESOLVED index path (`resolveContainedIndexPath` above) so
+  // `writeAll` below can publish onto the real destination directly, rather
+  // than re-resolving the identical walk a second time.
+  private assertIndexPathIsSafeToWrite(): string {
+    const resolvedIndex = this.resolveContainedIndexPath('write');
+    const kind = resolvePathKind(this.indexPath);
+    if (kind !== 'absent' && kind !== 'file') {
+      throw new NotRegularFileError(this.indexPath, kind);
+    }
+    return resolvedIndex;
   }
+  // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-index-guard-fail
+  // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-index-guard
+  // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-index-guard-fail
+  // @cpt-end:cpt-frontx-algo-template-resolution-resolve-to-inventory:p1:inst-resolve-index-guard
+
+  // Writes through a temp file beside the index's RESOLVED destination, then
+  // `fs.renameSync`s it into place — the SAME write-through-temp-file-then-
+  // rename discipline `createFsWriteProjectStateFn` (`./fs-project-io.ts`)
+  // already uses for its own single-document store.
+  private writeAll(entries: Record<string, InventoryEntry>): void {
+    const resolvedIndex = this.assertIndexPathIsSafeToWrite();
+    // @cpt-begin:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-index-resolve-write-destination
+    // `resolvedIndex` is `indexPath` itself for the ordinary, non-symlinked
+    // case, and the REAL document a symlink at `indexPath` aliases otherwise
+    // — the guard step just above already proved it resolves inside
+    // `this.root`, using this SAME `resolveNearestExistingAncestor` walk
+    // (`resolveContainedIndexPath`), so trusting it again here costs nothing
+    // new. `fs.renameSync` does not follow a symlink standing at its
+    // destination: renaming onto `this.indexPath` directly would replace the
+    // link itself and orphan the real document it named, still holding the
+    // OLD index with nothing in the report saying so — the same defect
+    // `.frontx/project.json`'s own writer (`createFsWriteProjectStateFn`,
+    // `./fs-project-io.ts`) was already fixed to avoid. Publishing onto the
+    // RESOLVED destination instead keeps the link intact and updates the
+    // real document it names.
+    fs.mkdirSync(path.dirname(resolvedIndex), { recursive: true });
+    const tempPath = path.join(path.dirname(resolvedIndex), `.${INDEX_FILENAME}.${crypto.randomUUID()}.tmp`);
+    fs.writeFileSync(tempPath, JSON.stringify(entries, null, 2), 'utf-8');
+    fs.renameSync(tempPath, resolvedIndex);
+    // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-index-resolve-write-destination
+  }
+}
+
+/**
+ * `index.json` was read as a regular file, but its content is not usable as
+ * the local inventory index: either it is not valid JSON at all, or it
+ * parses to something other than a `Record<string, InventoryEntry>`. Typed,
+ * rather than a raw `JSON.parse` `SyntaxError` or a downstream `TypeError`
+ * from a caller dereferencing a missing field, so the CLI's top-level catch
+ * can report this as the same structured `CONTENT_CONFLICT` refusal every
+ * other "the disk holds something this operation cannot work with" fact in
+ * this package already reports, rather than an internal-error exit with no
+ * `--json` envelope at all.
+ */
+export class InvalidInventoryIndexError extends Error {
+  readonly filePath: string;
+
+  constructor(filePath: string, reason: string) {
+    super(`Local inventory index at "${filePath}" is not valid: ${reason}.`);
+    this.name = 'InvalidInventoryIndexError';
+    this.filePath = filePath;
+  }
+}
+
+// The one non-empty-string field every entry must carry to be minimally
+// usable by the callers who read `all()`/`lookup()` directly (`install`'s own
+// `pathsNest(entry.name, ...)` nesting check, in particular) — `status` is
+// deliberately NOT checked against the `InventoryState` enum here: a future
+// state this reader predates should not turn an otherwise-valid entry into a
+// hard refusal, and no caller in this package dereferences `status` without
+// first defaulting an unrecognized value the way `getState` already does for
+// a genuinely absent entry.
+const REQUIRED_STRING_FIELDS: ReadonlyArray<keyof InventoryEntry> = ['name', 'source', 'ref', 'content'];
+
+function validateInventoryIndexShape(parsed: unknown, filePath: string): Record<string, InventoryEntry> {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new InvalidInventoryIndexError(filePath, 'it must be a JSON object mapping template name to entry');
+  }
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      throw new InvalidInventoryIndexError(filePath, `the entry for "${key}" is not an object`);
+    }
+    const entry = value as Record<string, unknown>;
+    for (const field of REQUIRED_STRING_FIELDS) {
+      if (typeof entry[field] !== 'string' || entry[field] === '') {
+        throw new InvalidInventoryIndexError(filePath, `the entry for "${key}" is missing a valid "${field}" field`);
+      }
+    }
+  }
+  return parsed as Record<string, InventoryEntry>;
 }

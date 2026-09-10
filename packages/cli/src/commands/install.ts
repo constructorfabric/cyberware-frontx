@@ -4,10 +4,24 @@
 import type { FetchFn } from '../resolver/types';
 import { TemplateInventory } from '../inventory/TemplateInventory';
 import type { DiscoveryHookResult, ExtensionDiscoveryHook } from '../discovery/types';
+import type { ErrorCode } from '../envelope';
 
 export interface InstallCommandResult {
   ok: boolean;
   message: string;
+  /**
+   * The dictionary code the failure reported, when the underlying inventory
+   * failure carried one. Absent on success and on a failure that has no coded
+   * origin (a source-spec that will not parse, refused here rather than by a
+   * resolver).
+   *
+   * The whole chain has to carry it or the last link cannot report it: the
+   * resolver refuses a legacy manifest with `INVALID_MANIFEST`, and until this
+   * field existed the code was dropped three times over — at the inventory
+   * boundary, here, and at the dispatcher, which had no `--json` envelope to
+   * put it in at all.
+   */
+  code?: ErrorCode;
   discovery?: DiscoveryHookResult;
 }
 
@@ -27,7 +41,7 @@ export async function installCommand(
 ): Promise<InstallCommandResult> {
   const result = await inventory.install(spec, fetchFn);
   if (!result.ok) {
-    return { ok: false, message: result.error.message };
+    return { ok: false, code: result.error.code, message: result.error.message };
   }
 
   const message = `Installed ${result.value.name}@${result.value.ref}`;

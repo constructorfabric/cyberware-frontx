@@ -45,7 +45,7 @@ export class TemplateInventory {
     if (!parseResult.ok) {
       // @cpt-begin:cpt-frontx-flow-template-resolution-install:p1:inst-install-parse-reject
       // @cpt-begin:cpt-frontx-state-template-resolution-inventory-lifecycle:p1:inst-state-parse-fail-loop
-      return { ok: false, error: { message: parseResult.error.message } };
+      return { ok: false, error: { code: 'INVALID_INPUT', message: parseResult.error.message } };
       // @cpt-end:cpt-frontx-state-template-resolution-inventory-lifecycle:p1:inst-state-parse-fail-loop
       // @cpt-end:cpt-frontx-flow-template-resolution-install:p1:inst-install-parse-reject
     }
@@ -53,7 +53,7 @@ export class TemplateInventory {
 
     // @cpt-begin:cpt-frontx-flow-template-resolution-install:p1:inst-install-resolve
     // @cpt-begin:cpt-frontx-state-template-resolution-inventory-lifecycle:p1:inst-state-to-resolved
-    const resolveResult = await resolveToInventory(parseResult.value, fetchFn);
+    const resolveResult = await resolveToInventory({ kind: 'remote', ref: parseResult.value }, { fetchFn });
     // @cpt-end:cpt-frontx-state-template-resolution-inventory-lifecycle:p1:inst-state-to-resolved
     // @cpt-end:cpt-frontx-flow-template-resolution-install:p1:inst-install-resolve
 
@@ -62,7 +62,7 @@ export class TemplateInventory {
     if (!resolveResult.ok) {
       // @cpt-begin:cpt-frontx-flow-template-resolution-install:p1:inst-install-reach-fail
       // @cpt-begin:cpt-frontx-state-template-resolution-inventory-lifecycle:p1:inst-state-fetch-fail-loop
-      return { ok: false, error: { message: resolveResult.error.message } };
+      return { ok: false, error: { message: resolveResult.error.message, code: resolveResult.error.code } };
       // @cpt-end:cpt-frontx-state-template-resolution-inventory-lifecycle:p1:inst-state-fetch-fail-loop
       // @cpt-end:cpt-frontx-flow-template-resolution-install:p1:inst-install-reach-fail
     }
@@ -96,6 +96,7 @@ export class TemplateInventory {
       return {
         ok: false,
         error: {
+          code: 'REGISTRATION_CONFLICT',
           message:
             `Template identity "${record.name}" is already installed from "${occupant.source}", ` +
             `so "${record.source}" was not installed. Run "frontx update-local ${record.name} ${record.source}" ` +
@@ -111,6 +112,7 @@ export class TemplateInventory {
       return {
         ok: false,
         error: {
+          code: 'REGISTRATION_CONFLICT',
           message:
             `Template identity "${record.name}" would be materialized inside the content path of the ` +
             `installed template "${nesting.name}", or the other way round, so "${record.source}" was not ` +
@@ -200,6 +202,7 @@ export class TemplateInventory {
       return {
         ok: false,
         error: {
+          code: 'TEMPLATE_NOT_REGISTERED',
           message: `Template not found in local inventory: "${name}". Install it first with the install command.`,
         },
       };
@@ -216,14 +219,14 @@ export class TemplateInventory {
     // @cpt-begin:cpt-frontx-flow-template-resolution-update-local:p1:inst-update-parse-check
     if (!parseResult.ok) {
       // @cpt-begin:cpt-frontx-flow-template-resolution-update-local:p1:inst-update-parse-reject
-      return { ok: false, error: { message: parseResult.error.message } };
+      return { ok: false, error: { code: 'INVALID_INPUT', message: parseResult.error.message } };
       // @cpt-end:cpt-frontx-flow-template-resolution-update-local:p1:inst-update-parse-reject
     }
     // @cpt-end:cpt-frontx-flow-template-resolution-update-local:p1:inst-update-parse-check
 
     // @cpt-begin:cpt-frontx-flow-template-resolution-update-local:p1:inst-update-fetch
     // @cpt-begin:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-fetch
-    const resolveResult = await resolveToInventory(parseResult.value, fetchFn);
+    const resolveResult = await resolveToInventory({ kind: 'remote', ref: parseResult.value }, { fetchFn });
     // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-fetch
     // @cpt-end:cpt-frontx-flow-template-resolution-update-local:p1:inst-update-fetch
 
@@ -232,7 +235,7 @@ export class TemplateInventory {
     if (!resolveResult.ok) {
       // @cpt-begin:cpt-frontx-flow-template-resolution-update-local:p1:inst-update-reach-fail
       // @cpt-begin:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-fetch-fail
-      return { ok: false, error: { message: resolveResult.error.message } };
+      return { ok: false, error: { message: resolveResult.error.message, code: resolveResult.error.code } };
       // @cpt-end:cpt-frontx-algo-template-resolution-bounded-update:p1:inst-bupd-fetch-fail
       // @cpt-end:cpt-frontx-flow-template-resolution-update-local:p1:inst-update-reach-fail
     }
@@ -254,6 +257,7 @@ export class TemplateInventory {
       return {
         ok: false,
         error: {
+          code: 'REGISTRATION_CONFLICT',
           message:
             `Source-spec "${record.source}" resolves to the template "${record.name}", ` +
             `not to "${existing.name}", so the installed template was left unchanged. ` +

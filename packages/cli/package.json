@@ -20,10 +20,15 @@
     "dist"
   ],
   "scripts": {
+    "generate:official-defaults": "node ../../scripts/generate-cli-official-defaults.mjs",
+    "prebuild": "npm run generate:official-defaults",
     "build": "tsup",
+    "pretype-check": "npm run generate:official-defaults",
     "type-check": "tsc --noEmit",
+    "pretype-check:test": "npm run generate:official-defaults",
     "type-check:test": "tsc -p tsconfig.test.json",
     "test": "npm run test:unit",
+    "pretest:unit": "npm run generate:official-defaults",
     "test:unit": "vitest --run --passWithNoTests=false"
   },
   "devDependencies": {

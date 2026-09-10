@@ -1,9 +1,22 @@
 // @cpt-state:cpt-frontx-state-template-ai-extensions-extension-lifecycle:p1
 import { describe, it, expect } from 'vitest';
-import { runExtensionLifecycle, transitionBundledToDiscovered, transitionFromDiscovered, transitionValidatedToActivated } from '../lifecycle.js';
+import {
+  runExtensionLifecycle,
+  transitionBundledToDenied,
+  transitionBundledToDiscovered,
+  transitionFromDiscovered,
+  transitionValidatedToActivated,
+} from '../lifecycle.js';
 import { AiExtensionLifecycleState } from '../types.js';
 
 describe('AiExtension lifecycle', () => {
+  it('BUNDLED -> DENIED when the identity carries no registered origin, reporting the denial', () => {
+    const denied = transitionBundledToDenied('untrusted-template');
+    expect(denied.state).toBe(AiExtensionLifecycleState.DENIED);
+    expect(denied.denial.identity).toBe('untrusted-template');
+    expect(denied.denial.reason).toMatch(/no registered, pinned origin/);
+  });
+
   it('BUNDLED -> DISCOVERED when a bundle entry is located', () => {
     const raw = { id: 'skill-1', category: 'skills', path: 'skills/skill-1.md' };
     const discovered = transitionBundledToDiscovered(raw);

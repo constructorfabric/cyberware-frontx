@@ -1,111 +1,113 @@
-# FrontX MFE Packages
+# Microfrontends — `frontx-template-mfe` territory
 
-Microfrontend (MFE) packages for a FrontX application: `demo-mfe` (Hello World,
-Profile, Current Theme, UIKit Elements, Widgets Host), `_blank-mfe` (a minimal
-scaffold to copy for a new MFE), and two widget fixtures (`widgets-fixture-a`,
-`widgets-fixture-b`).
+> **TARGET AUDIENCE:** Project developers adding or maintaining an MFE package
+> **PURPOSE:** What lives under this directory and how to add a new package to it
 
-All four declare `"templateExample": true` and so stay out of the application a
-project builds on this template **by default**;
-`FRONTX_INCLUDE_TEMPLATE_EXAMPLES=1` puts them back. See
-[`src-app/mfe_packages/README.md`](src-app/mfe_packages/README.md), the
-package-level reference for that rule. They cannot be run from this monorepo
-either way: the shell template holds no `src-app/mfe_packages/` of its own, so
-these packages first reach a runnable shell when `frontx add` puts them into one.
+Everything under `src-app/mfe_packages/` belongs to the `frontx-template-mfe`
+template — the shell scans this directory but never names a package inside it
+(see the shell's `mfe-package-contract` AI guideline for the exact contract a
+package here must satisfy).
 
-## Add-only — requires `template-shell`
+## Precondition: requires an applied `template-shell`
 
-This template is **add-only**. It claims ownership of no root `package.json`, no
-build/test/lint tooling, and no `src-app/app/` host — those are owned by
-[`frontx-template-shell`](../template-shell/README.md). Seeding this template into
-an empty directory produces a repository with no host to mount its MFEs into.
+This directory is **add-only**. It ships with `frontx-template-mfe`, which has
+no root `package.json`, no build/test/lint tooling, and no host application —
+those are owned by `frontx-template-shell`. A package here declares exact
+published versions of its FrontX dependencies (`@gears-frontx/react`,
+`@gears-frontx/framework`, `@gears-frontx/frontx-template-shell` itself, …)
+alongside its ordinary third-party ones, and installs them all from the
+registry — there are no `file:` paths to dangle.
+What an applied shell actually supplies is the **runtime host**: the
+`src-app/app/` shell that mounts these MFEs, and — at build/dev time — the
+`frontxMfGts` plugin loaded from `@gears-frontx/frontx-template-shell/build/mf-gts`.
+Without an applied shell there is no host to mount into and no plugin to load,
+even though `npm install` alone would succeed.
 
-Each MFE pins its `@gears-frontx/*` dependencies to exact published versions, so a
-seeded project installs them from the registry like any other dependency.
-
-The `package.json` next to this README is **not part of the template**: it is a
-monorepo dev harness, deliberately absent from `frontx-template.json`'s
-`ownershipBoundaries`, so `frontx add` never copies it anywhere. Inside this
-monorepo the pins above would fetch registry tarballs instead of resolving to
-local source, so the harness redirects each pinned name to its local source
-via `overrides`. It redirects rather than re-declares, so the installed
-versions still satisfy the pins.
-
-This makes local edits to `template-shell/packages/*` (`react`, `auth`,
-`framework`, `i18n`, `state`) visible immediately, since the MFE packages
-import those names directly and the override resolves straight to that
-source. It does the same for direct imports of `packages/api`,
-`packages/gts-plugin`, and `packages/mfes`. **It does not** reach edits to
-those same three packages through `@gears-frontx/frontx-template-shell`'s own
-pre-built `dist-lib/build/mf-gts` — `template-shell/package.json` pins
-`gts-plugin`/`mfes`/`api` to their own published versions with no local
-override of its own, so whatever `frontxMfGts` bundles at `template-shell`'s
-build time reflects those registry versions, not edits made here, until
-`template-shell` is rebuilt. The same not-part-of-the-template status applies
-to `frontx-template.json` and this README — a template directory holds
-shipped payload *and* authoring machinery, and the manifest's boundaries are
-what separate the two.
-
-Bootstrap order for working in this monorepo. Installing the harness alone is
-**not** sufficient: an MFE's `vite.config.ts` loads `frontxMfGts`, which reaches
-into the shell's own subpackages, and each of those resolves through a `dist/`
-that does not exist until built.
+`seed` bootstraps a project from the CLI's built-in official defaults, which
+only resolve inside this monorepo checkout. Anywhere else, `register` a
+remote origin for each template and `apply` it — the path that works in a
+fresh external folder too:
 
 ```bash
-# 1. ecosystem packages this repo owns (api, mfes, gts-plugin, …)
-npm ci && npm run build:packages
-
-# 2. the shell, whole — `build` composes the steps in the order they depend on
-#    each other, publishable package first so the subpackages can type-check
-#    against its declarations
-cd template-shell && npm install && npm run build
-
-# 3. the MFEs
-cd ../template-mfe && npm install
+mkdir my-app && cd my-app
+frontx register <shell-origin>
+frontx apply --input '{"templates":{"@gears-frontx/frontx-template-shell":["."]}}'
+frontx register <mfe-origin>
+frontx apply --input '{"templates":{"@gears-frontx/frontx-template-mfe":["src-app/mfe_packages"]}}'
+npm install   # required after applying a new template — the workspace glob
+              # picks up the new packages, so the lock must be regenerated
 ```
 
-Use `template-shell`'s own `npm run build` rather than calling its `build:package`
-and `build:packages` by hand: those two are order-sensitive in a way that is easy
-to get backwards. `build:packages` type-checks against declarations the
-publishable package emits, so running it first fails on `@gears-frontx/framework`
-in a clean checkout. `npm run build` already sequences them correctly, along with
-the MFE and manifest steps that follow.
+**Upgrading a multi-template repository is supported.** `frontx upgrade`
+operates on one registered template name across every target it has been
+applied to, so `@gears-frontx/frontx-template-shell` and `@gears-frontx/frontx-template-mfe` upgrade
+independently by name once both are applied to the same repo — there is no
+restriction on upgrading after a second template has been added.
 
-If step 2 fails on `@gears-frontx/framework` with `TS2307: Cannot find module
-'@gears-frontx/frontx-template-shell'`, the shell's self-link is missing from its
-own `node_modules`. An incremental `npm install` over an existing tree does not
-always restore it, and Node hides the problem — it resolves the package through
-the `exports` self-reference, so only the type build notices. `rm -rf
-template-shell/node_modules && npm install` recreates the link.
+## Add your own MFE
 
-For a seeded project (not this monorepo), the shell is a published, already-built
-package, so plain `npm install` is sufficient there:
+Copy the blank scaffold and adjust it — there is no registry file to edit;
+`generate:mfe-manifests` / `dev:all` (shell scripts) discover packages by
+scanning this directory. Drop the scaffold's example flag in the same step,
+since a copy that keeps the flag is invisible to the shell and nothing fails to
+tell you so:
 
 ```bash
-frontx seed frontx-template-shell ./my-app
-frontx add frontx-template-mfe ./my-app
-cd my-app && npm install   # required after every `add` — the shell's lock is
-                            # regenerated without MFE workspaces (see the
-                            # shell's own README)
+NEW=src-app/mfe_packages/my-mfe
+cp -r src-app/mfe_packages/_blank-mfe "$NEW"
+node -e 'const f=process.argv[1],fs=require("fs"),m=JSON.parse(fs.readFileSync(f,"utf8"));delete m.templateExample;fs.writeFileSync(f,JSON.stringify(m,null,2)+"\n")' "$NEW/mfe.json"
 ```
 
-## What it contributes
+Then, inside `my-mfe/`:
 
-- `src-app/mfe_packages/*` — one directory per MFE package, each with its own
-  `package.json` (port in `dev`/`preview` via `--port <N>`), `mfe.json` manifest,
-  and `vite.config.ts` wired for Module Federation + the shell's `frontxMfGts`
-  build plugin. See the shell's `mfe-package-contract` AI guideline for the full
-  contract every package here conforms to.
-- An AI-extension bundle (`.frontx/ai/@gears-frontx/frontx-template-mfe/`) with
-  the `add-mfe-package` skill, its workflow, a GTS ID conventions guideline, and
-  a GTS ID patterns reference artifact — for scaffolding additional MFE
-  packages that follow the same shape.
-- `src-app/mfe_packages/README.md` — lands in the seeded project alongside the
-  MFE packages, documenting the add-only precondition and how to add a new
-  package from inside that project.
+1. **`package.json`** — rename it (`name`, and the `dev`/`preview` scripts'
+   `vite preview --port <N>` to a port no other package here already uses).
+2. **`mfe.json`** — declare your entries and extensions (screen, sidebar, popup,
+   or overlay) with GTS IDs following this template's ID conventions guideline.
+3. **`vite.config.ts`** — keep the `frontxMfGts` build plugin wired, and add
+   your lifecycle modules to the Module Federation `exposes` map so the shell
+   can load them at runtime.
 
-## Not covered here
+Existing packages here for reference: `demo-mfe` (`:3001`, a full worked
+example — Hello World, Profile, Theme, UIKit, Widgets Host), `_blank-mfe`
+(`:3099`, the copy-from scaffold), and `widgets-fixture-a` / `widgets-fixture-b`
+(`:3201` / `:3202`, widgets mounting into `demo-mfe`'s widgets domain).
 
-Host application, build/test/lint tooling, root configs, and the `packages/`
-solution libraries (`react`, `framework`, `state`, `i18n`, `studio`, `auth`) all
-live in `template-shell`.
+## Reference packages do not run in your application
+
+**This section is the package-level reference for this rule** - it ships next to
+the packages it governs, and the human-facing surfaces (both template READMEs and
+QUICK_START) point here rather than restating it.
+
+Three agent-facing surfaces carry their own copy, because each is read on its own
+with nothing else loaded, so a pointer in one of them would be a dead end:
+[the `add-mfe-package` skill](../../.frontx/ai/@gears-frontx/frontx-template-mfe/skills/add-mfe-package/SKILL.md),
+[its workflow](../../.frontx/ai/@gears-frontx/frontx-template-mfe/workflows/add-mfe-package-workflow.md),
+and the shell's own
+`.frontx/ai/@gears-frontx/frontx-template-shell/guidelines/mfe-package-contract.md`
+(under `template-shell/` in the template monorepo), which is the snapshot of what
+the scanners check. A change to the behaviour has to reach all of them.
+
+Every package listed above declares `"templateExample": true` in its `mfe.json`.
+They ship to be read and copied, so the shell's three package scanners leave
+them out: `generate:mfe-manifests` keeps them out of the aggregate the host
+registers from, `dev:all` neither builds nor serves them, and `type-check:mfe`
+skips them too. Your application's menu holds the screens you added and
+nothing else.
+
+To run them anyway - to watch a worked example rather than read it - set
+`FRONTX_INCLUDE_TEMPLATE_EXAMPLES` to `1` for the command:
+
+```bash
+FRONTX_INCLUDE_TEMPLATE_EXAMPLES=1 npm run dev:all
+```
+
+That flag is why the copy command above strips it, and a copy that keeps
+it still installs and still runs its own tests, because it is the thing new
+packages are copied from and has to stay usable. Type-checking is the
+exception: `type-check:mfe` skips a flagged package by default, the same as
+the other two scanners, so it type-checks only when the run sets
+`FRONTX_INCLUDE_TEMPLATE_EXAMPLES=1`. What reports the skip is a single line in
+the `generate:mfe-manifests` / `dev:all` / `type-check:mfe` output naming the
+packages left out. Inside the running application there is no sign of it at
+all - the screen is simply not in the menu.

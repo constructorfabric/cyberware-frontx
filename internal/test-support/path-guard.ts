@@ -89,14 +89,15 @@ export function joinWithinRoot(root: string, ...segments: string[]): string {
   // `!startsWith('..' + path.sep)`) is also a deliberate correction of the
   // same naive substring-only `startsWith('..')` pattern, which would
   // false-positive-reject a legitimate segment like `'..hidden'`. That naive
-  // pattern appears in two places this helper does NOT replace:
-  // `resolvePackageJsonPathWithinRoot` in
-  // `scripts/check-test-dependency-versions.mjs`, and `assertWithinRoot` in
-  // `packages/cli/src/adapters/fs-installed-content-path.ts` (production
-  // code, `cpt-frontx-algo-template-resolution-bounded-update` boundary
-  // invariant). Fixing either of those copies is out of scope for issue
-  // #597 — this comment exists so the known bug is not left documented only
-  // in this file's own copy.
+  // pattern still appears in `resolvePackageJsonPathWithinRoot` in
+  // `scripts/check-test-dependency-versions.mjs`, which this helper does NOT
+  // replace; fixing that copy is out of scope for issue #597, and this
+  // comment exists so the known bug is not left documented only in this
+  // file's own copy. The second copy this comment used to name —
+  // `assertWithinRoot` in `packages/cli/src/adapters/fs-installed-content-
+  // path.ts` — no longer does string arithmetic at all: it resolves symlinks
+  // against the real filesystem, because a lexical check let a symlink
+  // INSIDE the inventory store write outside it.
   const isInsideRoot =
     relativeToRoot === '' ||
     (relativeToRoot !== '..' &&

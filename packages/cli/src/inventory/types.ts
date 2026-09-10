@@ -3,7 +3,10 @@
 // @cpt-dod:cpt-frontx-dod-template-resolution-list-inventory:p1
 // @cpt-dod:cpt-frontx-dod-template-resolution-bounded-local-update:p1
 
+import type { ErrorCode } from '../envelope';
+
 // @cpt-begin:cpt-frontx-state-template-resolution-inventory-lifecycle:p1:inst-state-to-resolved
+
 export enum InventoryState {
   UNRESOLVED = 'UNRESOLVED',
   RESOLVED = 'RESOLVED',
@@ -22,6 +25,21 @@ export interface InventoryEntry {
 
 export interface InventoryError {
   message: string;
+  /**
+   * The dictionary code the underlying failure reported, when it reported one
+   * (`cpt-frontx-adr-uniform-cli-json-envelope`'s vocabulary). Optional
+   * because not every inventory failure originates from a coded one — a
+   * source-spec that will not parse is refused here, not by a resolver.
+   *
+   * It exists because dropping it silently downgraded a refusal: the resolver
+   * refuses a legacy manifest with `INVALID_MANIFEST`, this boundary
+   * flattened the error to its message alone, and `register` — having never
+   * received a code — fell back to `ORIGIN_UNAVAILABLE`, telling a caller the
+   * origin was unreachable when in fact it was reached and its manifest
+   * refused. The local `path:` branch propagated the code correctly the whole
+   * time, so the two halves of one command disagreed about the same failure.
+   */
+  code?: ErrorCode;
 }
 
 export type InventoryResult<T> =

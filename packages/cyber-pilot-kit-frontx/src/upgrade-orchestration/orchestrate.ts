@@ -12,7 +12,7 @@
 // dependency (DESIGN §3.4; ADR-0027 `cpt-frontx-adr-ai-driven-upgrade-orchestration`).
 import { enrichUpgradeChangeSet } from './enrich.js';
 import { OrchestrationLifecycleState, type OrchestrationLifecycleStateValue } from './state.js';
-import { selectProvenanceRecord } from './types.js';
+import { resolveTargetOrigin } from './types.js';
 import type {
   ChangeSet,
   EnrichedReviewPackage,
@@ -21,6 +21,11 @@ import type {
   ReadProvenanceFn,
   ReviewDecision,
 } from './types.js';
+// The project's single state document shape and its NAMED-template lookup
+// are promoted to the neutral `src/project-state.ts` (F16's AI-extension
+// trust gate reads the SAME document) — imported directly rather than
+// re-exported through this package's own `types.ts`.
+import { selectTemplateEntry } from '../project-state.js';
 
 // All dependencies are injected. `invokeUpgradeCommand` MUST drive the F14
 // engine strictly through the `frontx upgrade` command/invocation surface —
@@ -36,23 +41,39 @@ export interface OrchestrationDeps {
 export type OrchestrationResult =
   | { status: 'applied'; targetVersion: string; reviewPackage: EnrichedReviewPackage; lifecycleHistory: readonly OrchestrationLifecycleStateValue[] }
   | { status: 'declined'; reviewPackage: EnrichedReviewPackage; lifecycleHistory: readonly OrchestrationLifecycleStateValue[] }
-  | { status: 'provenance-missing'; message: string }
+  | { status: 'project-invalid'; code: 'PROJECT_INVALID'; message: string }
+  | { status: 'template-not-registered'; code: 'TEMPLATE_NOT_REGISTERED'; message: string }
+  | { status: 'target-not-applied'; code: 'TARGET_NOT_APPLIED'; message: string }
+  | { status: 'origin-unavailable'; code: 'ORIGIN_UNAVAILABLE'; message: string }
+  // A genuine refusal from the command surface's FIRST, unconfirmed call —
+  // `CONTENT_CONFLICT`, `TARGET_CONFLICT`, `PROJECT_INVALID`, or any other
+  // non-`CONFIRMATION_REQUIRED` `ok:false` code the engine can return before
+  // a change set is ever computed (`InvokeUpgradeCommandFn`'s
+  // `'resolution-failed'` status). `onChangeSet` is never invoked for this
+  // status, so it is recognized by `commandResult.status` directly, never
+  // inferred from the absence of a review package — that inference is what
+  // used to fold this refusal into `'empty-changeset'` below. `code` is
+  // relayed verbatim rather than flattened into `message`, mirroring
+  // `UpgradeCommandJsonResult.code`'s own optionality: it is always present
+  // for a real refusal, and only absent for an incomplete test double.
+  | { status: 'resolution-failed'; code?: string; message: string }
   | { status: 'empty-changeset' }
   | { status: 'apply-failed'; message: string; lifecycleHistory: readonly OrchestrationLifecycleStateValue[] };
 
 // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-request-upgrade
 /**
- * AI-driven upgrade orchestration: reads the project's provenance record SET
- * and selects the NAMED applied template to upgrade, drives the SINGLE F14
- * CLI change-set engine through its `frontx upgrade` command surface,
- * enriches its output with change-impact analysis and downstream-effect
- * assessment, enforces an unconditional review gate before any apply, and
- * applies or declines (cpt-frontx-flow-ai-upgrade-orchestration-upgrade).
+ * AI-driven upgrade orchestration: reads the project's single state document
+ * and selects the NAMED template's entry to upgrade, drives the SINGLE F14
+ * CLI change-set engine through its `frontx upgrade <templateName>
+ * <new-origin>` command surface, enriches its output with change-impact
+ * analysis and downstream-effect assessment, enforces an unconditional
+ * review gate before any apply, and applies or declines
+ * (cpt-frontx-flow-ai-upgrade-orchestration-upgrade).
  *
- * `appliedTemplateName` is the applied template's identity as recorded in
- * its own provenance record (`inst-request-upgrade`) — the developer either
- * names it directly or the AI first lists the applied templates from
- * provenance so one can be chosen.
+ * `appliedTemplateName` is the registered template's name as keyed in the
+ * project's single state document's `templates` map (`inst-request-upgrade`)
+ * — the developer either names it directly or the AI first lists the
+ * registered templates from that document so one can be chosen.
  */
 export async function orchestrateAiDrivenUpgrade(
   projectRoot: string,
@@ -65,76 +86,139 @@ export async function orchestrateAiDrivenUpgrade(
   const lifecycleHistory: OrchestrationLifecycleStateValue[] = [OrchestrationLifecycleState.PROVENANCE_READ];
 
   // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-read-provenance
-  // Reads the FULL provenance record SET (one record per applied template —
-  // `cpt-frontx-contract-project-provenance`), never a single
-  // whole-repository origin record.
-  const provenanceSet = await deps.readProvenance(projectRoot);
+  // Reads the project's single state document
+  // (`cpt-frontx-contract-project-provenance`) — one document, keyed by
+  // registered template name, never a per-target origin/version.
+  const projectState = await deps.readProvenance(projectRoot);
   // @cpt-end:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-read-provenance
 
-  // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-check-provenance
-  // Selects the record for the NAMED applied template from the set; absent
-  // when provenance is unreadable OR the set holds no matching record.
-  const selectedRecord = provenanceSet ? selectProvenanceRecord(provenanceSet, appliedTemplateName) : undefined;
-  if (!selectedRecord) {
-    // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-provenance-missing
+  // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-check-provenance-unreadable
+  if (!projectState) {
+    // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-provenance-unreadable
     return {
-      status: 'provenance-missing',
-      message: provenanceSet
-        ? `No provenance record found for applied template "${appliedTemplateName}" — AI-driven upgrade cannot proceed.`
-        : 'No provenance record set found in project — AI-driven upgrade cannot proceed.',
+      status: 'project-invalid',
+      code: 'PROJECT_INVALID',
+      message: "The project's single state document (.frontx/project.json) is absent or unreadable — AI-driven upgrade cannot proceed.",
     };
-    // @cpt-end:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-provenance-missing
+    // @cpt-end:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-provenance-unreadable
   }
-  // @cpt-end:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-check-provenance
+  // @cpt-end:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-check-provenance-unreadable
+
+  // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-check-not-registered
+  // Looks up the NAMED template's entry in the document's `templates` map;
+  // absent when the document holds no matching entry for that name.
+  const selectedEntry = selectTemplateEntry(projectState, appliedTemplateName);
+  if (!selectedEntry) {
+    // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-provenance-not-registered
+    return {
+      status: 'template-not-registered',
+      code: 'TEMPLATE_NOT_REGISTERED',
+      message: `No "templates[${JSON.stringify(appliedTemplateName)}]" entry found in the project's single state document — AI-driven upgrade cannot proceed.`,
+    };
+    // @cpt-end:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-provenance-not-registered
+  }
+  // @cpt-end:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-check-not-registered
+
+  // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-check-no-targets
+  if (selectedEntry.targets.length === 0) {
+    // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-provenance-no-targets
+    return {
+      status: 'target-not-applied',
+      code: 'TARGET_NOT_APPLIED',
+      message: `"${appliedTemplateName}" is registered but its "targets" array is empty — no applied target to upgrade; AI-driven upgrade cannot proceed.`,
+    };
+    // @cpt-end:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-provenance-no-targets
+  }
+  // @cpt-end:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-check-no-targets
 
   // @cpt-begin:cpt-frontx-algo-ai-upgrade-orchestration-enrich:p1:inst-extract-provenance
-  // Extract the SELECTED applied template's identity and current version
-  // from its provenance record — the command surface receives only
-  // projectRoot/targetVersion and resolves its own provenance internally
-  // when computing the change set; this orchestration layer's extraction is
-  // what makes the enriched review package reflect the SELECTED template.
-  const { templateIdentity, scaffoldedFromVersion } = selectedRecord;
-  const selectedTemplate = { templateIdentity, currentVersion: scaffoldedFromVersion };
+  // Extract the SELECTED template's name, its current `origin`/`version`,
+  // and every target listed under it from its `templates[name]` entry — the
+  // command surface receives projectRoot/templateName/targetVersion and
+  // resolves its own baseline internally when computing the change set;
+  // this orchestration layer's extraction is what makes the enriched review
+  // package reflect the SELECTED template, `targets` included.
+  const selectedTemplate = {
+    name: appliedTemplateName,
+    origin: selectedEntry.origin,
+    version: selectedEntry.version,
+    targets: selectedEntry.targets,
+  };
   // @cpt-end:cpt-frontx-algo-ai-upgrade-orchestration-enrich:p1:inst-extract-provenance
 
   let reviewPackage: EnrichedReviewPackage | undefined;
   let sawEmptyChangeSet = false;
 
+  // The target version's RESOLVED origin, rebased onto the origin this name
+  // is currently recorded at. `inst-invoke-engine` asks for the resolved
+  // origin, and the engine reads its second argument as a source-spec, so
+  // the bare version this orchestration takes as input cannot travel there
+  // unchanged (`resolveTargetOrigin`).
+  const resolvedTarget = resolveTargetOrigin(selectedEntry.origin, targetVersion);
+  if (!resolvedTarget.ok) {
+    return { status: 'origin-unavailable', code: 'ORIGIN_UNAVAILABLE', message: resolvedTarget.message };
+  }
+
   // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-invoke-enrichment
   // @cpt-begin:cpt-frontx-algo-ai-upgrade-orchestration-enrich:p1:inst-invoke-engine
-  const commandResult = await deps.invokeUpgradeCommand(projectRoot, targetVersion, async (changeSet: ChangeSet) => {
-    // @cpt-end:cpt-frontx-algo-ai-upgrade-orchestration-enrich:p1:inst-invoke-engine
-    // @cpt-begin:cpt-frontx-algo-ai-upgrade-orchestration-enrich:p1:inst-receive-changeset
-    const enrichment = enrichUpgradeChangeSet(changeSet, selectedTemplate);
-    // @cpt-end:cpt-frontx-algo-ai-upgrade-orchestration-enrich:p1:inst-receive-changeset
+  // Invokes the engine via `upgrade <templateName> <new-origin>`, passing the
+  // selected template's name and the target version's resolved origin
+  // directly (§1.1) — so the engine validates the new origin against every
+  // target listed under that name as one atomic unit, and neither layer can
+  // name a template the other did not.
+  const commandResult = await deps.invokeUpgradeCommand(
+    projectRoot,
+    appliedTemplateName,
+    resolvedTarget.origin,
+    async (changeSet: ChangeSet) => {
+      // @cpt-end:cpt-frontx-algo-ai-upgrade-orchestration-enrich:p1:inst-invoke-engine
+      // @cpt-begin:cpt-frontx-algo-ai-upgrade-orchestration-enrich:p1:inst-receive-changeset
+      const enrichment = enrichUpgradeChangeSet(changeSet, selectedTemplate);
+      // @cpt-end:cpt-frontx-algo-ai-upgrade-orchestration-enrich:p1:inst-receive-changeset
 
-    if (enrichment.status === 'empty') {
-      sawEmptyChangeSet = true;
-      // The command surface still requires a decision; declining is a safe
-      // no-op signal — the empty-changeset short-circuit below is what the
-      // caller actually observes.
-      return 'declined' satisfies ReviewDecision;
-    }
+      if (enrichment.status === 'empty') {
+        sawEmptyChangeSet = true;
+        // The command surface still requires a decision; declining is a safe
+        // no-op signal — the empty-changeset short-circuit below is what the
+        // caller actually observes.
+        return 'declined' satisfies ReviewDecision;
+      }
 
-    reviewPackage = enrichment.package;
+      reviewPackage = enrichment.package;
 
-    // @cpt-begin:cpt-frontx-state-ai-upgrade-orchestration-lifecycle:p1:inst-to-analyzed
-    lifecycleHistory.push(OrchestrationLifecycleState.ANALYZED);
-    // @cpt-end:cpt-frontx-state-ai-upgrade-orchestration-lifecycle:p1:inst-to-analyzed
+      // @cpt-begin:cpt-frontx-state-ai-upgrade-orchestration-lifecycle:p1:inst-to-analyzed
+      lifecycleHistory.push(OrchestrationLifecycleState.ANALYZED);
+      // @cpt-end:cpt-frontx-state-ai-upgrade-orchestration-lifecycle:p1:inst-to-analyzed
 
-    // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-present-review
-    const decision = await deps.presentEnrichedReview(reviewPackage);
-    // @cpt-end:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-present-review
+      // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-present-review
+      const decision = await deps.presentEnrichedReview(reviewPackage);
+      // @cpt-end:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-present-review
 
-    // @cpt-begin:cpt-frontx-state-ai-upgrade-orchestration-lifecycle:p1:inst-to-reviewed
-    lifecycleHistory.push(OrchestrationLifecycleState.REVIEWED);
-    // @cpt-end:cpt-frontx-state-ai-upgrade-orchestration-lifecycle:p1:inst-to-reviewed
+      // @cpt-begin:cpt-frontx-state-ai-upgrade-orchestration-lifecycle:p1:inst-to-reviewed
+      lifecycleHistory.push(OrchestrationLifecycleState.REVIEWED);
+      // @cpt-end:cpt-frontx-state-ai-upgrade-orchestration-lifecycle:p1:inst-to-reviewed
 
-    return decision;
-  });
+      return decision;
+    },
+  );
   // @cpt-end:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-invoke-enrichment
 
   // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-check-changeset
+  // Checked BEFORE the empty-changeset fallback below: a genuine refusal
+  // from the command surface's first call (`CONTENT_CONFLICT`,
+  // `TARGET_CONFLICT`, `PROJECT_INVALID`, ...) never invokes `onChangeSet`
+  // either, so `reviewPackage` is `undefined` for it too — the exact same
+  // shape a real no-op (`commandResult.status === 'noop'`) leaves behind.
+  // Distinguishing them by `commandResult.status` here is what keeps a real
+  // refusal from reaching the caller as "there is nothing to update."
+  if (!commandResult.ok && commandResult.status === 'resolution-failed') {
+    return {
+      status: 'resolution-failed',
+      code: commandResult.code,
+      message: commandResult.message ?? 'The upgrade command surface refused to resolve a change set.',
+    };
+  }
+
   if (sawEmptyChangeSet || !reviewPackage) {
     // @cpt-begin:cpt-frontx-flow-ai-upgrade-orchestration-upgrade:p1:inst-empty-changeset
     return { status: 'empty-changeset' };

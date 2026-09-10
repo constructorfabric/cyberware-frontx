@@ -404,9 +404,18 @@ describe('kit self-validation — routing and scaffolding entry points (cpt-fron
   it('names the executable commands it drives the CLI through, in the scaffolding document', () => {
     const body = shippedBody(SCAFFOLDING_ID);
 
+    // The commands the scaffolding flow actually drives, per
+    // `cpt-frontx-flow-ai-project-scaffolding-scaffold-from-intent`: read the
+    // installed set, register each template it selects, then materialize them
+    // as ONE explicit batch. An earlier revision of this test pinned `frontx
+    // seed` and `frontx add` instead — `add` no longer exists at all, and
+    // `seed` accepts only the CLI's official defaults, which this flow never
+    // uses. Asserting a retired command kept the document stale by making the
+    // correction fail the suite.
     expect(body).toContain('frontx list --json');
-    expect(body).toContain('frontx seed');
-    expect(body).toContain('frontx add');
+    expect(body).toContain('frontx register');
+    expect(body).toContain('frontx apply');
+    expect(body).not.toContain('frontx add');
   });
 
   // Selection reads the installed set at invocation time; a document that named

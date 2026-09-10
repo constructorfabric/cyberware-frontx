@@ -1,0 +1,45 @@
+{
+  "name": "@gears-frontx/blank-mfe",
+  "private": true,
+  "version": "0.2.0-alpha.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite build && vite preview --port 3099",
+    "build": "vite build",
+    "type-check": "tsc --noEmit",
+    "preview": "vite preview --port 3099",
+    "test": "npm run test:unit",
+    "test:unit": "vitest --run --passWithNoTests=false",
+    "test:unit:watch": "vitest --watch"
+  },
+  "dependencies": {
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "@gears-frontx/frontx-template-shell": "0.1.0-alpha.4",
+    "@gears-frontx/react": "0.2.0-alpha.7",
+    "@gears-frontx/ui-kit": "0.4.0-alpha.2",
+    "@tanstack/react-query": "5.101.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.3.4",
+    "@module-federation/vite": "1.20.5",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.0.3",
+    "@testing-library/dom": "10.4.1",
+    "@testing-library/react": "16.3.2",
+    "vite": "6.4.3",
+    "vitest": "4.1.4",
+    "jsdom": "26.1.0",
+    "typescript": "5.9.3",
+    "@gears-frontx/mfe-test-support": "0.1.0-alpha.0",
+    "@gears-frontx/framework": "0.2.0-alpha.5",
+    "@gears-frontx/auth": "0.2.0-alpha.2",
+    "@gears-frontx/state": "0.2.0-alpha.1",
+    "@gears-frontx/mfes": "0.3.0-alpha.4",
+    "@gears-frontx/gts-plugin": "0.3.0-alpha.4",
+    "@gears-frontx/api": "0.3.0-alpha.2",
+    "@gears-frontx/i18n": "0.2.0-alpha.1",
+    "@reduxjs/toolkit": "2.12.0",
+    "react-redux": "^9.2.0"
+  }
+}

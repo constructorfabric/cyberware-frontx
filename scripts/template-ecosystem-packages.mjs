@@ -92,7 +92,7 @@ import { findTemplateDirs } from './template-discovery.mjs';
  * sync-guard test in `template-ecosystem-packages.test.mjs` rather than by
  * hope (#492 review finding 2's "unguarded duplicated literal" class).
  */
-export const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
+export const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies', 'overrides'];
 
 /**
  * @typedef {{ dir: string; name: string; version: string }} EcosystemPackage
@@ -311,6 +311,35 @@ export function pinSitesIn(packageJson, reportedFile, isEcosystemScopeName) {
       // would be the same declaration, so the comparison could only ever
       // report a package as drifted from its own version.
       if (packageName === selfName) continue;
+      // `overrides` (unlike the other four fields) may carry an OBJECT value
+      // when the override targets a dependency-OF-a-dependency rather than
+      // the top-level package, e.g.
+      // `{"foo": {".": "1.2.3", "bar": "1.2.3"}}`. Walked one level deep for
+      // every field — a no-op for the other four, whose values are never
+      // objects — mirroring `extractPackageJsonSpecifiers`
+      // (`packages/cli/src/manifest/validate-content-self-containment.ts`),
+      // whose own comment explains why one level is the right bound. Without
+      // this, adding `overrides` to the field list above would scan only its
+      // flat entries and silently under-report a nested pin, which is the
+      // same "more convenient to skip" failure the CLI-side registry
+      // deliberately closed. The nested site is reported as
+      // `overrides["parent"]["nested"]` — `field` carries the parent, and
+      // `packageName` the nested key, which is exactly how the drift
+      // reporter already formats a site (`template-pin-drift-check.mjs`).
+      if (typeof range === 'object' && range !== null && !Array.isArray(range)) {
+        for (const [nestedName, nestedRange] of Object.entries(/** @type {Record<string, unknown>} */ (range))) {
+          if (nestedName === selfName) continue;
+          if (typeof nestedRange !== 'string' || !isExactRegistryVersionPin(nestedRange)) continue;
+          if (!isEcosystemScopeName(nestedName)) continue;
+          sites.push({
+            file: reportedFile,
+            field: `${field}["${packageName}"]`,
+            packageName: nestedName,
+            pinnedVersion: nestedRange,
+          });
+        }
+        continue;
+      }
       if (typeof range !== 'string' || !isExactRegistryVersionPin(range)) continue;
       if (!isEcosystemScopeName(packageName)) continue;
       sites.push({ file: reportedFile, field, packageName, pinnedVersion: range });

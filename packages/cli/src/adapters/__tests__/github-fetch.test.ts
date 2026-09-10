@@ -62,7 +62,8 @@ describe('createGithubFetchFn', () => {
     const manifestJson = JSON.stringify({
       name: 'acme-widgets',
       version: '1.0.0',
-      ownershipBoundaries: { exclusiveSubtrees: [], sharedFiles: [] },
+      excludedSubtrees: [],
+      description: 'Fixture template for GitHub fetch resolution tests.',
     });
     const fetchImpl = vi.fn(async () =>
       makeGithubTarballResponse({ 'frontx-template.json': manifestJson, 'src/index.ts': 'export {};' }),
@@ -74,7 +75,7 @@ describe('createGithubFetchFn', () => {
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
 
-    const resolved = await resolveToInventory(parsed.value, fetchFn);
+    const resolved = await resolveToInventory({ kind: 'remote', ref: parsed.value }, { fetchFn });
 
     expect(resolved.ok).toBe(true);
     if (resolved.ok) {
@@ -124,10 +125,143 @@ describe('createGithubFetchFn', () => {
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
 
-    const resolved = await resolveToInventory(parsed.value, fetchFn);
+    const resolved = await resolveToInventory({ kind: 'remote', ref: parsed.value }, { fetchFn });
     expect(resolved.ok).toBe(false);
     if (!resolved.ok) {
       expect(resolved.error.message).toContain('Failed to fetch template from registry');
+    }
+  });
+
+  // inst-resolve-pin — the tarball's own top-level `<owner>-<repo>-<sha>/`
+  // segment is the immutable pin, captured for free from content already
+  // fetched. The resolved `source` records the SHA, never the typed
+  // `@v1.0.0` the developer wrote, while the fetch URL itself still
+  // addresses the typed ref (that is what must be fetched).
+  it('(e) captures the tarball\'s top-level SHA as the pin, and the resolved source-spec records it instead of the typed ref', async () => {
+    const sha = '1234567890123456789012345678901234567890'; // 40 hex chars
+    const manifestJson = JSON.stringify({
+      name: 'acme-widgets',
+      version: '1.0.0',
+      excludedSubtrees: [],
+      description: 'Fixture template for GitHub fetch pin tests.',
+    });
+    const gzipped = zlib.gzipSync(
+      makeGithubTarball({ 'frontx-template.json': manifestJson }, `acme-my-template-${sha}`),
+    );
+    const fetchImpl = vi.fn(async () => new Response(gzipped, { status: 200, statusText: 'OK' })) as unknown as typeof fetch;
+
+    const fetchFn = createGithubFetchFn({ fetchImpl });
+
+    const parsed = parseSourceSpec('github:acme/my-template@v1.0.0');
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    const resolved = await resolveToInventory({ kind: 'remote', ref: parsed.value }, { fetchFn });
+
+    expect(resolved.ok).toBe(true);
+    if (resolved.ok) {
+      expect(resolved.value.source).toBe(`github:acme/my-template@${sha}`);
+    }
+    // The fetch itself still addresses the TYPED ref — the pin does not
+    // exist until this very fetch returns, so it cannot steer its own URL.
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.github.com/repos/acme/my-template/tarball/v1.0.0',
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  // inst-resolve-pin — owner and repo may themselves contain `-`, so the SHA
+  // must be read as the LAST `-`-separated component, not a fixed-offset
+  // slice that would misfire on `ac-me-my-templ-ate-<sha>`.
+  it('(f) recovers the correct SHA when the owner and repository segments themselves contain hyphens', async () => {
+    const sha = 'abcdef0123abcdef0123abcdef0123abcdef0123'; // 40 hex chars
+    const manifestJson = JSON.stringify({
+      name: 'acme-widgets',
+      version: '1.0.0',
+      excludedSubtrees: [],
+      description: 'Fixture template for GitHub fetch pin tests.',
+    });
+    const gzipped = zlib.gzipSync(
+      makeGithubTarball({ 'frontx-template.json': manifestJson }, `ac-me-my-templ-ate-${sha}`),
+    );
+    const fetchImpl = vi.fn(async () => new Response(gzipped, { status: 200, statusText: 'OK' })) as unknown as typeof fetch;
+
+    const fetchFn = createGithubFetchFn({ fetchImpl });
+
+    const parsed = parseSourceSpec('github:ac-me/my-templ-ate@v2.0.0');
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    const resolved = await resolveToInventory({ kind: 'remote', ref: parsed.value }, { fetchFn });
+
+    expect(resolved.ok).toBe(true);
+    if (resolved.ok) {
+      expect(resolved.value.source).toBe(`github:ac-me/my-templ-ate@${sha}`);
+    }
+  });
+
+  // inst-resolve-pin — a root segment whose last component is not hex-like
+  // (or is the wrong length) yields NO pin: a wrong pin recorded as though
+  // immutable is worse than none, so resolution falls back to the typed ref
+  // rather than trusting a bogus candidate.
+  // REGRESSION, found by a live fetch and not by any fixture: GitHub's tarball
+  // root carries the ABBREVIATED sha, not the 40-character form. A real fetch
+  // of this repository produced `gs-layer-gears-frontx-ee3d661/` — seven
+  // characters — which a 40-only pattern rejected, so pinning silently never
+  // fired in production while every unit test passed against a synthetic
+  // 40-char fixture.
+  it('accepts the 7-character abbreviated sha GitHub actually emits in the tarball root', async () => {
+    const gzipped = zlib.gzipSync(
+      makeGithubTarball({ 'frontx-template.json': '{"name":"t","version":"1.0.0","excludedSubtrees":[],"description":"d"}' }, 'gs-layer-gears-frontx-ee3d661'),
+    );
+    const fetchFn = createGithubFetchFn({
+      fetchImpl: async () => new Response(gzipped, { status: 200, statusText: 'OK' }),
+    });
+
+    const result = await fetchFn('https://api.github.com/repos/gs-layer/gears-frontx/tarball/develop');
+
+    expect(typeof result).not.toBe('string');
+    if (typeof result === 'string') return;
+    expect(result.pinnedRef).toBe('ee3d661');
+  });
+
+  // The floor still holds: something too short to be any sha is not a pin, so
+  // a stray trailing segment cannot be recorded as though immutable.
+  it('reports no pin for a trailing component too short to be a sha', async () => {
+    const gzipped = zlib.gzipSync(makeGithubTarball({ 'frontx-template.json': '{"name":"t","version":"1.0.0","excludedSubtrees":[],"description":"d"}' }, 'owner-repo-1'));
+    const fetchFn = createGithubFetchFn({
+      fetchImpl: async () => new Response(gzipped, { status: 200, statusText: 'OK' }),
+    });
+
+    const result = await fetchFn('https://api.github.com/repos/owner/repo/tarball/develop');
+
+    if (typeof result === 'string') return;
+    expect(result.pinnedRef).toBeUndefined();
+  });
+
+  it('(g) yields no pin, and falls back to the typed ref, when the top-level segment\'s last component is not a valid hex SHA', async () => {
+    const manifestJson = JSON.stringify({
+      name: 'acme-widgets',
+      version: '1.0.0',
+      excludedSubtrees: [],
+      description: 'Fixture template for GitHub fetch pin tests.',
+    });
+    // Last component is hex-shaped but only 6 characters — too short to be a
+    // real commit SHA, and must not be half-trusted.
+    const gzipped = zlib.gzipSync(makeGithubTarball({ 'frontx-template.json': manifestJson }, 'acme-my-template-abc123'));
+    const fetchImpl = vi.fn(async () => new Response(gzipped, { status: 200, statusText: 'OK' })) as unknown as typeof fetch;
+
+    const fetchFn = createGithubFetchFn({ fetchImpl });
+
+    const parsed = parseSourceSpec('github:acme/my-template@v1.0.0');
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    const resolved = await resolveToInventory({ kind: 'remote', ref: parsed.value }, { fetchFn });
+
+    expect(resolved.ok).toBe(true);
+    if (resolved.ok) {
+      expect(resolved.value.source).toBe('github:acme/my-template@v1.0.0');
     }
   });
 

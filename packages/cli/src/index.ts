@@ -23,8 +23,14 @@ export type { DiscoveryHookContext, DiscoveryHookResult, ExtensionDiscoveryHook 
 export { createFsBackedDiscoveryHook } from './discovery/fs-hook';
 export type { FsExtensionDiscovery } from './discovery/fs-hook';
 
-export { listCommand, listJsonEnvelope } from './commands/list';
-export type { ListEntry, ListJsonEnvelope, ListCommandOptions } from './commands/list';
+export { listCommand, buildListCatalog, listCatalogEnvelope, formatListHuman } from './commands/list';
+export type {
+  ListEntry,
+  ListCatalog,
+  DefaultTemplateEntry,
+  RegisteredTemplateEntry,
+  CatalogResolveDeps,
+} from './commands/list';
 
 export { updateLocalCommand } from './commands/update-local';
 export type { UpdateLocalResult } from './commands/update-local';
@@ -34,22 +40,37 @@ export { validateContentSelfContainment } from './manifest/validate-content-self
 export { validateCommand } from './commands/validate';
 export type {
   TemplateManifest,
-  OwnershipBoundary,
-  SharedFileEntry,
-  ReferencedTemplate,
   ManifestViolation,
   ManifestValidationResult,
   ManifestValidationState,
   ReadFileFn,
-  ListContentOwnedFilesFn,
+  ListPayloadFilesFn,
+  ResolveDeclaredExclusionFn,
 } from './manifest/types';
 export type { ReadManifestResult } from './manifest/validate-contract';
-export { createFsReadFileFn, createFsListContentOwnedFilesFn } from './adapters/fs-project-io';
+// The now-legacy ownership/reference shapes the four-field contract retired
+// (cpt-frontx-adr-template-manifest-contract) are NOT re-exported here:
+// every consumer of `./manifest/legacy-ownership.ts` — the composition/
+// assembly/upgrade code still migrating off the five-category shape, and
+// this package's own tests — imports it by its own relative path, and
+// nothing outside this package depends on `@gears-frontx/cli` at all
+// (the kit's `no-cli-package-edge` test enforces exactly that boundary).
+// Putting a transitional, internal-only shape on the public barrel would
+// invite an external dependency on something meant to be retired, not
+// preserve one that already exists.
+// The read-side counterpart to pre-publish validation
+// (cpt-frontx-algo-template-manifest-refuse-legacy): refuses a manifest
+// declaring any undeclared field outright. Wired into `manifest/validate-
+// contract.ts`'s `readManifestFromContent`, which calls
+// `refuseLegacyManifest` before its own contract check, so every command
+// that reads a manifest through it — `register`, `validate`, the assembler,
+// the upgrade engine's payload resolution — refuses a legacy-shaped
+// manifest already.
+export { refuseLegacyManifest } from './manifest/refuse-legacy';
+export type { ManifestRefusal, RefuseLegacyResult, ParsedManifestJson } from './manifest/refuse-legacy';
+export { createFsReadFileFn, createFsListPayloadFilesFn, createFsResolveDeclaredExclusionFn } from './adapters/fs-project-io';
 export type { ValidateCommandResult } from './commands/validate';
-export { MANIFEST_FILENAME, MANIFEST_SCHEMA_VERSION } from './manifest/types';
-
-export { scaffoldComposedProject } from './scaffold/composed';
-export type { ComposedScaffoldResult } from './scaffold/composed';
+export { MANIFEST_FILENAME } from './manifest/types';
 
 // F12 kindless assembler core (cpt-frontx-algo-cli-scaffolding-uniform-apply,
 // cpt-frontx-state-cli-scaffolding-assembly-op) — the ONE apply path both
@@ -57,23 +78,13 @@ export type { ComposedScaffoldResult } from './scaffold/composed';
 // checker (P29) and the entry flows (P30) build on this surface.
 export { uniformApply } from './scaffold/assembler';
 export type { UniformApplyResult } from './scaffold/assembler';
-export { AssemblyOpState, runAssemblyOp } from './scaffold/state';
-export type {
-  AssemblyOpInput,
-  AssemblyOpResult,
-  AssemblyAbortReason,
-  BoundaryConflictEntry,
-  ConflictVerdict,
-  ConflictVerdictFn,
-  MaterializeAssemblyFn,
-  OccupiedBoundaryEntry,
-} from './scaffold/state.js';
+// `scaffold/state.ts`'s `runAssemblyOp` driver and its input/verdict types
+// are no longer re-exported: that driver has zero real callers, and the
+// `uniformApply` rewrite made it impossible to wire to at all. It also
+// carried this state machine's transition markers, which would make the
+// machine look implemented by code nothing invokes while the live pipeline
+// (`commands/apply.ts`) carries no markers for it.
 
-// F12 pre-flight assembly conflict checker (P29) — the sole authority for
-// boundary-collision arbitration (cpt-frontx-algo-cli-scaffolding-conflict-check,
-// cpt-frontx-dod-cli-scaffolding-conflict-check). Fills the `conflictVerdictFn`
-// seam `runAssemblyOp` (above) drives through.
-export { checkAssemblyConflicts } from './scaffold/conflict';
 // `ReadProjectFileFn` is intentionally NOT re-exported from here again: it is
 // the same shape as upgrade's `ReadProjectFileFn` (already exported below),
 // redeclared locally in `scaffold/types.ts` only to avoid a cross-feature
@@ -87,75 +98,121 @@ export type {
   StagedAssembly,
 } from './scaffold/types.js';
 
-export { resolveComposition } from './composition/resolve';
-export { CompositionResolutionState } from './composition/state';
-export type { CompositionEntry, CompositionSetResult } from './composition/types';
 
-export { writeProvenance } from './provenance/write';
-export type { WriteProvenanceResult } from './provenance/write';
-export type { ProvenanceRecord, ProvenanceWriteFn } from './provenance/types';
-export { PROVENANCE_RELATIVE_PATH, provenancePath } from './provenance/contract';
 
-// F12 shared-file region composer (cpt-frontx-algo-cli-scaffolding-compose-shared-files,
-// cpt-frontx-dod-cli-scaffolding-compose-shared-files) — the sole authority
-// materializeAssembly (below) delegates to for writing every target
-// repository file, so no per-contribution write can silently clobber another
-// contributor's owned region.
-export { composeSharedFiles, groupContributionsByPath } from './scaffold/compose-shared-files';
-export type { ComposeSharedFilesResult, ExtractedRegion, MaterializedFile } from './scaffold/compose-shared-files';
-
-// F12 entry flows (P30) — cpt-frontx-flow-cli-scaffolding-seed-repository and
-// cpt-frontx-flow-cli-scaffolding-add-template. Both WIRE the P14 uniform-apply
-// path and the P29 pre-flight conflict checker above; neither re-implements
-// them. materializeAssembly realizes the shared boundary-declared-assembly DoD
-// (cpt-frontx-dod-cli-scaffolding-boundary-declared-assembly) AND delegates to
-// composeSharedFiles for the shared-file region composition DoD
-// (cpt-frontx-dod-cli-scaffolding-compose-shared-files).
-export {
-  isUserFixableMaterializeFailure,
-  materializeAssembly,
-  occupiedBoundariesFromProvenance,
-} from './scaffold/materialize';
-export type { MaterializeResult, ReadProvenanceRecordsFn } from './scaffold/materialize';
+// The uniform batch model's own command surface: `assemble` (stateless
+// preview), `apply` (the ONE materialization mechanism, realizing
+// cpt-frontx-flow-cli-scaffolding-add-template), and `seed`
+// (cpt-frontx-flow-cli-scaffolding-seed-repository, which wraps `apply`'s
+// own pipeline rather than duplicating it). These three retire the OLD
+// `seedRepository`/`addTemplate` command surface.
+export { resolveAndCheckBatch, runApplyPipeline } from './commands/apply';
+export type { ApplyBatchOutcome, ApplyBatchTargetRef, ApplyPipelineDeps, ResolveAndCheckDeps, ResolveAndCheckOutcome } from './commands/apply';
+export { assembleBatch } from './commands/assemble';
+export type { AssembleOutcome, AssemblePreviewEntry } from './commands/assemble';
 export { seedRepository } from './commands/seed-repository';
-export type { SeedRepositoryResult, ReadTargetDirFn } from './commands/seed-repository';
-export { createFsReadTargetDirFn } from './adapters/fs-target-dir';
-export { addTemplate } from './commands/add-template';
-export type { AddTemplateResult, ReadTargetPathStateFn, TargetPathState } from './commands/add-template';
+export type { SeedRepositoryDeps, SeedRepositoryOutcome } from './commands/seed-repository';
+export { OFFICIAL_DEFAULT_TEMPLATES, officialDefaultOrigin } from './commands/official-defaults';
+export { createFsReadInstalledContentFn, createFsReadExistingContentFn } from './adapters/fs-existing-content';
+// `TargetPathState`/`ReadTargetPathStateFn` still live in `./commands/add-
+// template` — see that file's own header comment for why (`ownership.ts`'s
+// own, unmoved, import of this exact path).
+export type { ReadTargetPathStateFn, TargetPathState } from './commands/add-template';
 export { createFsReadTargetPathStateFn } from './adapters/fs-target-path';
 
 // F14 Upgrade Change-Set Engine (cpt-frontx-dod-upgrade-changeset-single-engine)
-// There is exactly ONE engine. Direct CLI invocation uses these canonical
-// modules internally. F17 AI-driven orchestration does NOT import these
-// modules or take a compile-time package dependency on this package for its
-// engine access — it reaches this same engine only through the `frontx
-// upgrade` command/invocation surface (`upgradeCommand`, ./commands/upgrade.js),
-// per DESIGN §3.4 ("orchestrates ... through its command surface ... NOT by
-// linking its engine").
-export { upgradeChangeSetReviewApproval } from './upgrade/flow';
-export type { UpgradeFlowResult, UpgradeFlowDeps } from './upgrade/flow';
-export { computeChangeSet } from './upgrade/compute';
-export type { ComputeResult } from './upgrade/compute';
-export { applyChangeSet } from './upgrade/apply';
-export type { ApplyResult } from './upgrade/apply';
-export { rollbackChangeSet } from './upgrade/rollback';
-export type { RollbackResult } from './upgrade/rollback';
-export { ChangeSetLifecycleState } from './upgrade/state';
+// There is exactly ONE engine — the whole-file, name-atomic mechanism
+// `cpt-frontx-adr-project-upgrade-mechanism` establishes, replacing the
+// retired region-union engine (`upgrade/compute.ts`/`apply.ts`/`rollback.ts`,
+// since deleted) entirely. Direct CLI invocation uses these
+// canonical modules internally, through `commands/upgrade.ts`'s own
+// dispatch surface; any external orchestrator reaches this same engine only
+// through the `frontx upgrade` command/invocation surface (`upgradeCommand`,
+// ./commands/upgrade.js), per DESIGN §3.4 ("... through its command surface
+// ... NOT by linking its engine") — never by importing these modules
+// directly for its own second implementation.
+export { upgradeToOrigin, restorePreceding } from './upgrade/flow';
+export type { UpgradeEngineDeps, UpgradeFlowOutcome } from './upgrade/flow';
+export { validateUpgrade } from './upgrade/validate';
+export type { ValidateInput, ValidateOutcome } from './upgrade/validate';
+export { classifyTarget } from './upgrade/classify';
+export type { ClassifyInput, ClassifyResult } from './upgrade/classify';
+export { commitUpgrade } from './upgrade/commit';
+export type { CommitDeps, CommitOutcome } from './upgrade/commit';
+export { createResolvePayloadFn, versionMatchesRecorded } from './upgrade/payload';
+export type { ResolvePayloadDeps } from './upgrade/payload';
 export type {
-  ChangeKind,
-  CleanEntry,
-  ConflictEntry,
-  ChangeSet,
-  ProjectSnapshot,
-  ReadProvenanceFn,
+  UpgradePlan,
+  UpgradeOperation,
+  UpgradeOpKind,
+  UpgradeSkippedPath,
+  SkipReason,
+  OriginVersion,
+  ResolvedPayload,
+  ResolvePayloadResult,
+  ResolvePayloadFn,
+  DiskEntry,
+  ReadDiskEntryFn,
+  ListDiskFilesFn,
+  WriteDiskFileFn,
+  RenameDiskFileFn,
+  UnlinkDiskFileFn,
+  PresentUpgradePlanFn,
+  UpgradeRefusalCode,
+  UpgradeRefusal,
   ReadProjectFileFn,
   WriteProjectFileFn,
   RemoveProjectFileFn,
-  WriteProvenanceFn,
-  PresentAndGetApprovalFn,
 } from './upgrade/types';
+export {
+  createFsReadDiskEntryFn,
+  createFsListDiskFilesFn,
+  createFsWriteDiskFileFn,
+  createFsRenameDiskFileFn,
+  createFsUnlinkDiskFileFn,
+} from './adapters/fs-upgrade-io';
 
 // F14 command/invocation surface — the ONLY integration path F17 (and any
 // other external artifact) should use to drive the change-set engine.
 export { upgradeCommand } from './commands/upgrade';
-export type { UpgradeCommandResult } from './commands/upgrade';
+export type { UpgradeCommandFlags, UpgradeCommandOutcome, UpgradeDirection } from './commands/upgrade';
+
+// F19 project state, registration & ownership management
+// (cpt-frontx-feature-composed-provenance) — `register`/`unregister` own
+// the manifest-keyed `templates[name]` entries of `.frontx/project.json`,
+// and `ownership add|remove|list` own its `projectOwnedRoots` exceptions.
+export { registerTemplate } from './commands/register';
+export type { RegisterOutcome, RegisterInventoryPort } from './commands/register';
+export { unregisterTemplate } from './commands/unregister';
+export type { UnregisterOutcome } from './commands/unregister';
+export { ownershipAdd, ownershipRemove, ownershipList } from './commands/ownership';
+export type {
+  OwnershipAddOutcome,
+  OwnershipRemoveOutcome,
+  OwnershipListOutcome,
+  OwnershipInventoryPort,
+} from './commands/ownership';
+
+// F19 delete (cpt-frontx-flow-cli-scaffolding-delete-target) — the deletion-
+// plan algorithm (cpt-frontx-algo-cli-scaffolding-delete-plan) that computes
+// what would be removed/preserved for an applied target, and the command
+// that gates its execution on explicit confirmation.
+export { computeDeletionPlan } from './scaffold/delete-plan';
+export type { DeletionPlanResult, DeletePlanInventoryPort, ListTargetFilesFn } from './scaffold/delete-plan';
+export { createFsListTargetFilesFn } from './adapters/fs-project-io';
+export { deleteTarget } from './commands/delete';
+export type {
+  DeleteOutcome,
+  DeleteCommandFlags,
+  ConfirmDeletionFn,
+  RemoveTargetFileFn,
+  RemoveAiBundleFn,
+} from './commands/delete';
+
+// F19 `validate --project` (cpt-frontx-flow-composed-provenance-validate-
+// project, cpt-frontx-algo-composed-provenance-validate-project) — checks
+// `.frontx/project.json` against reality (the registry, the local
+// inventory, and the filesystem), not only against its own structural
+// shape.
+export { validateProject } from './commands/validate-project';
+export type { ValidateProjectDeps, ValidateProjectOutcome, ValidateProjectErrorCode } from './commands/validate-project';

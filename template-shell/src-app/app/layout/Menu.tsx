@@ -243,8 +243,9 @@ export const Menu: React.FC<MenuProps> = ({ children }) => {
             // direct children are <li> (axe: list, impact serious).
             <li className="list-none px-3 py-4 text-sm text-muted-foreground">
               No screens yet. If this project has no{' '}
-              <code className={hintCodeClass}>src-app/mfe_packages/</code> directory, run{' '}
-              <code className={hintCodeClass}>frontx add frontx-template-mfe</code> and{' '}
+              <code className={hintCodeClass}>src-app/mfe_packages/</code> directory, register and
+              apply <code className={hintCodeClass}>@gears-frontx/frontx-template-mfe</code> at{' '}
+              <code className={hintCodeClass}>src-app/mfe_packages</code>, then run{' '}
               <code className={hintCodeClass}>npm install</code> to get it. Then add a package by
               copying the <code className={hintCodeClass}>_blank-mfe</code> scaffold, and delete{' '}
               <code className={hintCodeClass}>templateExample</code> from the copy&rsquo;s{' '}
