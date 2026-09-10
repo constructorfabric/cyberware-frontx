@@ -511,8 +511,8 @@ export async function composeSharedFiles(
   // caller in this CLI's own command surface (`cli.ts` never dispatches to
   // it) — its sole caller is `__tests__/composition.test.ts`, which passes a
   // null-returning stub of its own, not a real adapter (review #500).
-  // TODO(#489): make this parameter required once the template-mfe-harness
-  // branch merges — kept optional for now only because
+  // TODO(#489): make this parameter required once the pending #489 branch
+  // merges — kept optional for now only because
   // `__tests__/template-split.e2e.test.ts` (edited on that branch) calls
   // `seedRepository`/`addTemplate` without supplying it.
   readProjectFileFn: ReadProjectFileFn = async () => null,

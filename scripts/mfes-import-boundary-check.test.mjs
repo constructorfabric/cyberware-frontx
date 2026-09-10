@@ -176,10 +176,10 @@ describe('findMfesImportSites', () => {
     expect(findMfesImportSites(content, 'a.ts')).toEqual([]);
   });
 
-  // Round 4: the exact end-to-end shape the reviewer reproduced on
-  // template-shell/vitest.shared.ts — a glob string carrying `/*` above a
-  // real import, an ordinary JSDoc below it. The round-3 strip deleted
-  // everything between the two as one giant "comment", import included.
+  // Round 4: the exact end-to-end shape the reviewer reproduced on a shared
+  // vitest config file — a glob string carrying `/*` above a real import, an
+  // ordinary JSDoc below it. The round-3 strip deleted everything between
+  // the two as one giant "comment", import included.
   it('reports a concrete import sitting between a glob string literal and a real block comment', () => {
     const content = [
       "const globs = ['src/**'];",
@@ -513,7 +513,7 @@ describe('runCli', () => {
     await writeSource(root, MFES_BARREL_RELATIVE_PATH, CLEAN_BARREL);
     await writeSource(
       root,
-      'template-shell/packages/framework/src/mfe/registry.ts',
+      'packages/gts-plugin/src/mfe/registry.ts',
       "import { createMfeRegistryFactory, type MfeRegistryFactory } from '@gears-frontx/mfes'\n",
     );
     const { exitCode, output } = run(root);
@@ -528,24 +528,24 @@ describe('runCli', () => {
       MFES_BARREL_RELATIVE_PATH,
       `${CLEAN_BARREL}\nexport { DefaultMfeRegistry } from './runtime/DefaultMfeRegistry';\n`,
     );
-    await writeSource(root, 'template-shell/src/app.ts', 'export {}\n');
+    await writeSource(root, 'packages/cli/src/app.ts', 'export {}\n');
     const { exitCode, output } = run(root);
     expect(exitCode).toBe(1);
     expect(output).toContain('DefaultMfeRegistry');
     expect(output).toContain('barrel exports concrete implementation');
   });
 
-  it('fails when a consumer couples to a concrete class — the exact #540 template-shell coupling', async () => {
+  it('fails when a consumer couples to a concrete class — the exact #540 coupling', async () => {
     const root = await makeRoot();
     await writeSource(root, MFES_BARREL_RELATIVE_PATH, CLEAN_BARREL);
     await writeSource(
       root,
-      'template-shell/packages/framework/src/mfe/registry.ts',
+      'packages/gts-plugin/src/mfe/registry.ts',
       "import { DefaultMfeRegistryFactory } from '@gears-frontx/mfes'\nexport const f = new DefaultMfeRegistryFactory()\n",
     );
     const { exitCode, output } = run(root);
     expect(exitCode).toBe(1);
-    expect(output).toContain('template-shell/packages/framework/src/mfe/registry.ts'.split('/').join(path.sep));
+    expect(output).toContain('packages/gts-plugin/src/mfe/registry.ts'.split('/').join(path.sep));
     expect(output).toContain('DefaultMfeRegistryFactory');
   });
 
@@ -560,10 +560,10 @@ describe('runCli', () => {
     );
     await writeSource(
       root,
-      'template-shell/node_modules/@gears-frontx/mfes/dist/index.js',
+      'packages/cli/node_modules/@gears-frontx/mfes/dist/index.js',
       "export { DefaultMfeRegistry } from '@gears-frontx/mfes/internal'\n",
     );
-    await writeSource(root, 'template-shell/src/app.ts', 'export {}\n');
+    await writeSource(root, 'packages/cli/src/app.ts', 'export {}\n');
     expect(run(root).exitCode).toBe(0);
   });
 
@@ -572,7 +572,7 @@ describe('runCli', () => {
     await writeSource(root, MFES_BARREL_RELATIVE_PATH, CLEAN_BARREL);
     await writeSource(
       root,
-      'template-shell/packages/framework/src/mfe/registry.ts',
+      'packages/gts-plugin/src/mfe/registry.ts',
       "import { createMfeRegistryFactory, type MfeRegistryFactory } from '@gears-frontx/mfes'\n",
     );
     // As vitest.scripts.config.mjs documents, `.claude/worktrees/*` can hold a
@@ -580,7 +580,7 @@ describe('runCli', () => {
     // pre-#540 concrete factory must not fail a local guard run.
     await writeSource(
       root,
-      '.claude/worktrees/stale/template-shell/packages/framework/src/mfe/registry.ts',
+      '.claude/worktrees/stale/packages/gts-plugin/src/mfe/registry.ts',
       "import { DefaultMfeRegistryFactory } from '@gears-frontx/mfes'\nexport const f = new DefaultMfeRegistryFactory()\n",
     );
     const { exitCode, output } = run(root);
@@ -590,7 +590,7 @@ describe('runCli', () => {
 
   it('fails closed when the barrel is missing', async () => {
     const root = await makeRoot();
-    await writeSource(root, 'template-shell/src/app.ts', 'export {}\n');
+    await writeSource(root, 'packages/cli/src/app.ts', 'export {}\n');
     const { exitCode, output } = run(root);
     expect(exitCode).toBe(1);
     expect(output).toContain('barrel not found');
@@ -627,21 +627,21 @@ describe('findConsumerFiles', () => {
     const root = await makeRoot();
     await writeSource(root, 'packages/mfes/src/index.ts', 'export {}\n');
     await writeSource(root, 'packages/gts-plugin/src/plugin.ts', 'export {}\n');
-    await writeSource(root, 'template-shell/README.md', 'prose\n');
-    await writeSource(root, 'template-shell/src/app.tsx', 'export {}\n');
+    await writeSource(root, 'packages/cli/README.md', 'prose\n');
+    await writeSource(root, 'packages/cli/src/app.tsx', 'export {}\n');
     // Root tooling is not a consumer of the runtime package — and this guard's
     // own test fixtures quote the statements the guard forbids.
     await writeSource(root, 'scripts/some-guard.test.mjs', "import { DefaultMfeRegistry } from '@gears-frontx/mfes'\n");
     expect(findConsumerFiles(root)).toEqual([
+      path.join('packages', 'cli', 'src', 'app.tsx'),
       path.join('packages', 'gts-plugin', 'src', 'plugin.ts'),
-      path.join('template-shell', 'src', 'app.tsx'),
     ]);
   });
 
   it('does not walk dot-directories, such as a stale .claude/worktrees/* repo copy', async () => {
     const root = await makeRoot();
-    await writeSource(root, 'template-shell/src/app.tsx', 'export {}\n');
-    await writeSource(root, '.claude/worktrees/stale/template-shell/src/app.ts', 'export {}\n');
-    expect(findConsumerFiles(root)).toEqual([path.join('template-shell', 'src', 'app.tsx')]);
+    await writeSource(root, 'packages/cli/src/app.tsx', 'export {}\n');
+    await writeSource(root, '.claude/worktrees/stale/packages/cli/src/app.ts', 'export {}\n');
+    expect(findConsumerFiles(root)).toEqual([path.join('packages', 'cli', 'src', 'app.tsx')]);
   });
 });

@@ -2,8 +2,8 @@
  * Local test fixtures: minimal mock plugins for exercising api-surface behavior.
  *
  * These are intentionally NOT the "real" RestMockPlugin/SseMockPlugin/MockEventSource
- * shipped to app authors — those are template-owned (template-shell/src/api/plugins,
- * template-shell/src/api/mocks) and out of scope for the ecosystem package. The tests
+ * shipped to app authors — those are template-owned (in the consuming template's own
+ * src/api/plugins and src/api/mocks) and out of scope for the ecosystem package. The tests
  * in this directory only need *some* plugin that can short-circuit a request/connection
  * to exercise RestProtocol/SseProtocol plugin-chain, retry, and endpoint-descriptor
  * behavior — so we keep a small local implementation built purely from @gears-frontx/api's

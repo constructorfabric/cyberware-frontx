@@ -49,6 +49,18 @@ frontx list          # show installed templates and versions
 frontx list --json   # same set, one machine-readable record per entry
 ```
 
+`acme` above is a placeholder: any repository can publish templates. The FrontX
+templates are published from
+[`constructorfabric/gears-frontx-templates`](https://github.com/constructorfabric/gears-frontx-templates),
+addressed the same way — by a source-spec naming the repository, the template
+directory and a ref:
+
+```bash
+frontx install github:<owner>/<templates-repo>//<template>@<ref>
+```
+
+See that repository's README for the templates it publishes and the ref to pin.
+
 A template is tracked under the identity its own `frontx-template.json` declares, not under
 the repository name. Installing a template whose identity is already taken by a different
 source fails rather than overwriting the installed one.
@@ -69,7 +81,7 @@ applied template under `./my-app/.frontx/`.
 `seed` refuses a target that already holds content, naming what it found and
 what to run instead; use `frontx add` (below) for a directory that already has
 content. The exact rule and the reasoning behind it live in
-[`architecture/features/cli-scaffolding/FEATURE.md`](architecture/features/cli-scaffolding/FEATURE.md).
+[`packages/cli/architecture/features/cli-scaffolding/FEATURE.md`](packages/cli/architecture/features/cli-scaffolding/FEATURE.md).
 
 ### 3. Add a template to an existing repository
 
@@ -252,8 +264,8 @@ all template-specific capabilities arrive through template bundles.
 To work on the ecosystem packages themselves, clone this repository:
 
 ```bash
-git clone https://github.com/cyberfabric/FrontX.git
-cd FrontX
+git clone https://github.com/constructorfabric/gears-frontx.git
+cd gears-frontx
 npm ci
 npm run build:packages   # build every ecosystem package
 ```

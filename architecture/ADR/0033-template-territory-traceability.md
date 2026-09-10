@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-08-04
+date: 2026-09-10
 ---
 
 # Which Artifact Tree Specifies Template-Territory Code, and What Its Traceability Markers Mean
@@ -27,7 +27,7 @@ date: 2026-08-04
 
 ## Context and Problem Statement
 
-The repository's architecture artifacts describe the FrontX ecosystem — the published packages, the CLI, and the AI tooling kit — while the template subtrees — the top-level directories carrying a `frontx-template.json` manifest, which is how the repository defines a template — hold template payload the CLI resolves and applies into a developer's repository, not ecosystem contract. That payload still carries `@cpt-` traceability markers from the pre-ecosystem-redesign artifact generation, whose FEATUREs (`feature-request-lifecycle`, `feature-react-bindings`, `feature-state-management` and their peers) were archived and then deleted, so the markers name instruction IDs no artifact defines. Reviewers reading a marked template file reasonably infer a specified contract behind it and open a gap report when they cannot find one. Which artifact tree, if any, specifies template-territory code, and what status do the `@cpt-` markers already sitting in it have?
+The repository's architecture artifacts describe the FrontX ecosystem — the published packages, the CLI, and the AI tooling kit — while template territory — a top-level directory carrying a `frontx-template.json` manifest, which is how a template is identified — holds template payload the CLI resolves and applies into a developer's repository, not ecosystem contract. Template territory is published from a repository of its own (`cpt-frontx-adr-template-acquisition-and-location`), so none of it sits here; the question below is which artifact tree specifies template-territory code, and the answer holds wherever that code lives. That payload carries `@cpt-` traceability markers from the pre-ecosystem-redesign artifact generation, whose FEATUREs (`feature-request-lifecycle`, `feature-react-bindings`, `feature-state-management` and their peers) were archived and then deleted, so the markers name instruction IDs no artifact defines. Reviewers reading a marked template file reasonably infer a specified contract behind it and open a gap report when they cannot find one. Which artifact tree, if any, specifies template-territory code, and what status do the `@cpt-` markers already sitting in it have?
 
 ## Decision Drivers
 
@@ -35,7 +35,7 @@ The repository's architecture artifacts describe the FrontX ecosystem — the pu
 * **Template content is not ecosystem content** — the ecosystem's tooling deliberately carries no bundled template or solution content (`cpt-frontx-principle-template-agnostic-tooling`); its specification should draw the same line, or the decoupling holds in code but not in the artifacts.
 * **A marker is a claim** — a `@cpt-` marker asserts that a numbered instruction specifies the marked region; a marker that names nothing is a false claim to every reader, whether or not any validator reads it.
 * **Silence must be legible** — that template internals are unspecified is a deliberate position, and it must be discoverable from the artifacts rather than inferred from a validator's exclusion list.
-* **No premature specification** — writing FEATUREs for template internals now would fix contracts for code whose ownership is still moving (the template split), and it is the larger, harder-to-undo commitment of the available options.
+* **No specification without ownership** — writing FEATUREs for template internals would fix contracts, from here, for code this repository neither holds nor releases, and it is the larger, harder-to-undo commitment of the available options.
 
 ## Considered Options
 
@@ -46,26 +46,26 @@ The repository's architecture artifacts describe the FrontX ecosystem — the pu
 
 ## Decision Outcome
 
-Chosen option: **Template territory is outside the ecosystem artifact universe; markers there are non-authoritative residue, removed as files are touched**, because it is the only option that keeps one subject per artifact tree, retires the false claims the stale markers make, and commits to no specification the template's ownership is not yet settled enough to support.
+Chosen option: **Template territory is outside the ecosystem artifact universe; markers there are non-authoritative residue, removed as files are touched**, because it is the only option that keeps one subject per artifact tree, retires the false claims the stale markers make, and commits this tree to no specification of code it does not own.
 
 The **ecosystem artifact tree specifies the ecosystem's own artifacts** — the published packages, the CLI, and the AI tooling kit. Template subtrees are payload the CLI resolves, applies, and upgrades through the uniform mechanism (`cpt-frontx-adr-uniform-template-mechanism`); what they contain internally is the template's own business, bounded by the ownership declaration it publishes (`cpt-frontx-adr-template-ownership-boundary-declaration`), not an ecosystem contract. Consequently **no ecosystem FEATURE is authored to back template-internal code**, and no artifact in this tree is extended to cover it.
 
 The `@cpt-` markers presently in template territory are **residue of the archived pre-redesign generation and bind nothing**: they are not authoritative, they are not evidence that a contract was specified, and they must not be read as traceability. **No new markers are added to template territory**, and when a template file is otherwise modified, **every residue marker that file carries is removed** — the rule is uniform, needs no separate sweep, and leaves no half-covered file behind. The strip is mechanical, and review should keep marker-only deletion easy to distinguish from substantive change. Where template code has behaviour a consumer depends on — a hook's observable status lifecycle, for instance — that behaviour is documented **at code altitude, in the code and its package documentation**, which is the reader's location and carries no claim of upstream specification.
 
-The scope of this decision is which artifact tree specifies template-territory code and the standing of `@cpt-` markers found there. It does not decide the boundary a template declares (`cpt-frontx-adr-template-ownership-boundary-declaration`), how the CLI applies or upgrades a template (`cpt-frontx-adr-uniform-template-mechanism`, `cpt-frontx-adr-project-upgrade-mechanism`), nor whether the template will eventually carry an artifact tree of its own — that is deliberately deferred (see More Information).
+The scope of this decision is which artifact tree specifies template-territory code and the standing of `@cpt-` markers found there. It does not decide the boundary a template declares (`cpt-frontx-adr-template-ownership-boundary-declaration`), how the CLI applies or upgrades a template (`cpt-frontx-adr-uniform-template-mechanism`, `cpt-frontx-adr-project-upgrade-mechanism`), nor whether the repository that owns template territory authors an artifact tree of its own, which is that repository's decision to make (see More Information).
 
 ### Consequences
 
 * Good, because each artifact tree keeps one subject: the ecosystem's artifacts are described by the ecosystem's artifacts, and template payload is not smuggled into them.
 * Good, because a `@cpt-` marker recovers its meaning inside the specified universe: there it names a live instruction; residue in paths the registry ignores is retired by the rule above.
 * Good, because the position is now stated in the artifacts, so the next reviewer who finds a marked-but-unspecified template file reads a decision instead of filing a gap.
-* Good, because it commits to no specification of code whose ownership is still moving, leaving the template's own artifact tree available as a later, deliberate step.
-* Bad, because template territory keeps residue markers until each file is otherwise touched, so the payload stays in a mixed state for as long as that takes.
+* Good, because it commits to no specification of code this repository does not own, and leaves any artifact tree over template internals to the repository that owns them.
+* Bad, because residue markers stay in template payload until each file is otherwise touched, so the payload stays in a mixed state for as long as that takes, on the owning repository's schedule rather than this one's.
 * Bad, because behaviour documented only at code altitude is easier to change without review than behaviour fixed by a numbered instruction, so a consumer-visible change in template payload rests on code review alone.
 
 ### Confirmation
 
-Compliance is confirmed by the artifact registry and by review. The registry admits only the ecosystem's own source paths to traceability scanning and excludes the template subtrees, so no template file is scanned for markers and no marker there is validated; `cfs validate` passing therefore never depends on template payload. Review confirms that no FEATURE in this tree names a path under a template subtree, that a change adding a `@cpt-` marker to template territory is refused, and that a change modifying an already-marked template file removes every residue marker that file carries while keeping the mechanical marker deletion easy to distinguish from substantive change and documenting any consumer-visible behaviour at code altitude in the same change.
+Compliance is confirmed by the artifact registry and by review. The registry admits only the ecosystem's own source paths to traceability scanning, so `cfs validate` passing never depends on template payload; here that holds by absence, since no top-level directory in this repository carries a `frontx-template.json` manifest and so no template territory exists here for the registry to exclude. A manifest under a package's test fixtures is ecosystem test data, not template territory, and stays inside the artifact chain like any other source the registry scans. Review confirms that no artifact in this tree specifies template internals and that no FEATURE in it names a path inside template territory. The rule's other half is confirmed where the payload lives: review in the owning repository confirms that no new `@cpt-` marker is added to template territory, and that a change modifying an already-marked file removes every residue marker that file carries, keeping the mechanical deletion easy to distinguish from substantive change and documenting any consumer-visible behaviour at code altitude in the same change.
 
 ## Pros and Cons of the Options
 
@@ -76,7 +76,7 @@ The ecosystem tree specifies ecosystem artifacts only; template payload is unspe
 * Good, because one artifact tree keeps one subject, matching the tooling's own template-agnostic separation.
 * Good, because it retires false traceability claims rather than preserving them.
 * Good, because the removal rule is uniform and needs no repository-wide sweep to be consistent.
-* Neutral, because it leaves the template's own artifact tree as an open, deferred option.
+* Neutral, because it leaves any artifact tree over template internals to the repository that owns them.
 * Bad, because the payload stays mixed until files are touched, and code-altitude documentation is weaker protection than a numbered instruction.
 
 ### Extend the ecosystem artifact tree to cover template internals
@@ -86,7 +86,7 @@ Revive the archived feature areas as live FEATUREs, with DECOMPOSITION entries a
 * Good, because every marker in the repository would resolve to a live instruction.
 * Good, because consumer-visible template behaviour would be fixed by numbered instructions.
 * Bad, because it re-imports template payload into an artifact tree whose subject is the ecosystem, giving one tree two subjects and two reasons to change.
-* Bad, because it is the largest and least reversible option, fixing contracts for code whose ownership is still in motion.
+* Bad, because it is the largest and least reversible option, fixing contracts for code this repository does not own.
 * Bad, because doing it for one hook, rather than for every archived feature area at once, produces an arbitrary island of specified code inside unspecified payload.
 
 ### Keep the residue markers and rely on the scan exclusion alone
@@ -103,11 +103,11 @@ Author a separate nested artifact tree owned by the template and re-point the pa
 
 * Good, because it would specify template behaviour without mixing subjects, and would give the markers a legitimate home.
 * Neutral, because it is the natural destination if template internals ever need specified contracts.
-* Bad, because it is premature while template ownership is still moving, and it is a large authoring commitment ahead of any demonstrated need.
+* Bad, because it would specify, from here, code this repository does not own, and it is a large authoring commitment ahead of any demonstrated need.
 
 ## More Information
 
-**Deferred deliberately**: whether template territory gets an artifact tree of its own is **not decided here**. It is deferred until template ownership has settled and template internals present a contract a consumer depends on across versions — at which point this decision must be revisited through the repository's ADR lifecycle, markers may be reintroduced against IDs from that tree, and the registry's scanning scope is revisited in the same step. Deciding it now would fix contracts for code whose ownership is in motion.
+**What this decision leaves to another owner**: template territory lives in a repository of its own, under its own governance (`cpt-frontx-adr-template-acquisition-and-location`). Whether that repository authors an artifact tree over the templates it publishes is its decision, not this one's, and not a question this repository holds open. This decision fixes two things only: that the ecosystem artifact tree does not specify template internals, and that a `@cpt-` marker found in template payload binds nothing.
 
 The uniform mechanism by which the CLI treats any template is decided in `cpt-frontx-adr-uniform-template-mechanism`; the boundary a template declares over what it owns in `cpt-frontx-adr-template-ownership-boundary-declaration`. These are non-binding pointers and do not form part of this decision's durable identity.
 
@@ -123,4 +123,4 @@ This decision directly addresses the following requirements and design elements:
 * `cpt-frontx-principle-template-agnostic-tooling` — The ecosystem's tooling bundles no template or solution content; this decision draws the same line through the artifacts, keeping template payload outside the specification of the ecosystem's own artifacts.
 * `cpt-frontx-principle-ownership-bounded-composition` — What a template contains internally falls inside the boundary that template declares and owns; this decision keeps that content out of the ecosystem tree rather than specifying it from outside the owner.
 * `cpt-frontx-adr-uniform-template-mechanism` — Templates are payload the tooling resolves, applies, and upgrades uniformly without branching on type; this decision is the artifact-side consequence: the ecosystem specifies the mechanism, not any template's internals.
-* `cpt-frontx-nfr-evolvability` — Retiring markers that bind nothing, and declining to fix contracts for code whose ownership is still moving, keeps the artifacts an accurate description of what is specified and leaves the template free to evolve on its own cadence.
+* `cpt-frontx-nfr-evolvability` — Retiring markers that bind nothing, and declining to fix contracts for code this repository does not own, keeps the artifacts an accurate description of what is specified and leaves each template free to evolve on its own cadence.

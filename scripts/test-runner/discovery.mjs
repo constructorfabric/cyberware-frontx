@@ -4,11 +4,9 @@
  * Root workspaces are discovered from package.json so `test:unit` packages
  * register automatically and this script cannot drift when new packages land.
  *
- * The host app + its nested MFEs are template territory (relocated to the
- * self-contained `template-shell/` by Phase 11 template-move, later split
- * from its MFE content into the sibling `template-mfe/` in issue #470) and
- * are no longer discovered here; `template-shell` runs its own tests via its
- * own package.json `test:unit` script.
+ * The host app + its nested MFEs are template territory, which lives in its
+ * own repository and is not discovered here; each template runs its own
+ * tests via its own package.json `test:unit` script.
  */
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -68,8 +66,8 @@ export async function loadProjects(repoRoot = defaultRepoRoot) {
  * here: this repository has no `src/mfe_packages` of its own. Every other
  * failure to read it — EACCES, EIO, a path that turns out to be a file — reaches
  * the caller, because swallowing it would report a clean run over a tree this
- * never managed to read. `template-shell/scripts/run-mfe-type-checks.ts` draws
- * the same line for its own MFE scan.
+ * never managed to read. The consuming template's own `run-mfe-type-checks.ts`
+ * draws the same line for its own MFE scan.
  *
  * @param {{ repoRoot?: string; readdir?: (path: string, options: { withFileTypes: true }) => Promise<DirEntryLike[]> }} [options]
  * @returns {Promise<import('./common.mjs').MfeProject[]>}

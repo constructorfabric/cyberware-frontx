@@ -1,8 +1,0 @@
-{
-  "$id": "gts://gts.frontx.mfes.comm.shared_property.v1~frontx.mfes.comm.language.v1~",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "allOf": [{ "$ref": "gts://gts.frontx.mfes.comm.shared_property.v1~" }],
-  "properties": {
-    "value": { "type": "string", "enum": ["en", "es", "fr", "de", "it", "pt", "nl", "ru", "pl", "uk", "cs", "ar", "he", "fa", "ur", "tr", "zh", "zh-TW", "ja", "ko", "vi", "th", "id", "hi", "bn", "sv", "da", "no", "fi", "el", "ro", "hu", "ms", "tl", "ta", "sw"] }
-  }
-}

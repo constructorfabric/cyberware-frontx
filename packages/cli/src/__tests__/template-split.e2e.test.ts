@@ -1,14 +1,14 @@
 // TEST-ONLY — this file carries NO `@cpt` marker and traces to NO FEATURE
 // instruction, same as `adapters/__tests__/local-fetch.test.ts` (the pattern
-// it extends to two real, split templates instead of one).
+// it extends to two small synthetic templates instead of one).
 //
-// Issue #470 / phase 3 — first real multi-template run of the offline
-// install/seed/add pipeline against the REAL on-disk `template-shell/` +
-// `template-mfe/` (phase 2's split, already accepted). SSOT:
-// `.omc/plans/issue-470-boundary-design.md` §0 (facts F1-F18), §5 (risks),
-// §6 (fixture definitions 1, 2, 3, 4, 5, 6 — this file). Fixtures 7 and 9
-// (known-defect pinning) live in `template-split.pinning.test.ts`; fixture 8
-// (a CI job) is explicitly out of phase 3's scope.
+// First real multi-template run of the offline install/seed/add pipeline,
+// exercised against two small, self-contained SYNTHETIC fixture templates
+// checked in under `__tests__/fixtures/` (`fixture-shell/`, `fixture-overlay/`)
+// rather than the real product templates, which now live in a separate
+// repository. Fixtures 7 and 9
+// (known-defect pinning, now correctness assertions) live in
+// `template-split.pinning.test.ts`.
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -23,27 +23,25 @@ import { pathWithinSubtree } from '../paths/relative-path';
 import type { ContributionEntry, StagedAssembly } from '../scaffold/types';
 import type { ProvenanceRecord } from '../provenance/types';
 import {
-  TEMPLATE_MFE_DIR,
-  TEMPLATE_MFE_IDENTITY,
-  TEMPLATE_SHELL_DIR,
-  TEMPLATE_SHELL_IDENTITY,
+  FIXTURE_OVERLAY_DIR,
+  FIXTURE_OVERLAY_IDENTITY,
+  FIXTURE_SHELL_DIR,
+  FIXTURE_SHELL_IDENTITY,
   isPathWithinExclusiveSubtrees,
   listRealFiles,
   makeTmpDir,
   readManifest,
-  setupShellAndMfeInventory,
+  setupShellAndOverlayInventory,
   sha256,
 } from './helpers/template-split-fixtures';
-import type { ShellMfeHarness } from './helpers/template-split-fixtures';
+import type { ShellOverlayHarness } from './helpers/template-split-fixtures';
 
-// Each fixture here drives the real install/seed/add pipeline across the whole
-// on-disk `template-shell/` and `template-mfe/` trees — reading, hashing and
-// re-materializing every declared file — so one of them costs seconds of real
-// filesystem work, not the milliseconds vitest's 5s default is sized for. That
-// default leaves so little headroom over the actual cost that a fixture fails
-// on how loaded the machine is rather than on what the CLI did. The budget is
-// set from the work the fixtures perform; it is not a retry, and a fixture that
-// exceeds it is genuinely stuck rather than merely slow.
+// Each fixture here drives the real install/seed/add pipeline across both
+// small fixture template trees — reading, hashing and re-materializing every
+// declared file — so a fixture can still cost real (if now much smaller)
+// filesystem work. The budget is set from the work the fixtures perform, not
+// as a retry; a fixture that exceeds it is genuinely stuck rather than merely
+// slow.
 vi.setConfig({ testTimeout: 20_000 });
 
 // Tracks every tmp dir created by the current test so `afterEach` can sweep
@@ -51,7 +49,7 @@ vi.setConfig({ testTimeout: 20_000 });
 // independent of execution order (no test relies on another's leftovers,
 // and none leaks a tmp dir into the next one).
 let tmpDirs: string[] = [];
-let harness: ShellMfeHarness | undefined;
+let harness: ShellOverlayHarness | undefined;
 
 function trackedTmpDir(prefix: string): string {
   const dir = makeTmpDir(prefix);
@@ -66,30 +64,28 @@ afterEach(() => {
   harness = undefined;
 });
 
-describe('Fixture 1 — union fidelity: seed frontx-template-shell + add frontx-template-mfe materializes byte-identical to template-shell/ + template-mfe/, nothing extra', () => {
+describe('Fixture 1 — union fidelity: seed fixture-shell + add fixture-overlay materializes byte-identical to fixture-shell/ + fixture-overlay/, nothing extra', () => {
   it('every declared file lands byte-for-byte; no extra files besides .frontx/provenance.json; 2 provenance records with the right identities', async () => {
-    const shellManifest = readManifest(TEMPLATE_SHELL_DIR);
-    const mfeManifest = readManifest(TEMPLATE_MFE_DIR);
-    const shellSourceFiles = listRealFiles(TEMPLATE_SHELL_DIR);
-    const mfeSourceFiles = listRealFiles(TEMPLATE_MFE_DIR);
+    const shellManifest = readManifest(FIXTURE_SHELL_DIR);
+    const overlayManifest = readManifest(FIXTURE_OVERLAY_DIR);
+    const shellSourceFiles = listRealFiles(FIXTURE_SHELL_DIR);
+    const overlaySourceFiles = listRealFiles(FIXTURE_OVERLAY_DIR);
     const shellDeclared = shellSourceFiles.filter((p) =>
       isPathWithinExclusiveSubtrees(p, shellManifest.ownershipBoundaries.exclusiveSubtrees),
     );
-    const mfeDeclared = mfeSourceFiles.filter((p) =>
-      isPathWithinExclusiveSubtrees(p, mfeManifest.ownershipBoundaries.exclusiveSubtrees),
+    const overlayDeclared = overlaySourceFiles.filter((p) =>
+      isPathWithinExclusiveSubtrees(p, overlayManifest.ownershipBoundaries.exclusiveSubtrees),
     );
 
-    // Sanity precondition (§1.5's audited "0 intersections" claim, re-checked
-    // live rather than trusted from the doc): "union fidelity" is only a
-    // well-formed question if the two declarations never double-claim the
-    // same target path.
-    expect(shellDeclared.filter((p) => mfeDeclared.includes(p))).toEqual([]);
+    // Sanity precondition: "union fidelity" is only a well-formed question if
+    // the two declarations never double-claim the same target path.
+    expect(shellDeclared.filter((p) => overlayDeclared.includes(p))).toEqual([]);
 
-    harness = await setupShellAndMfeInventory();
+    harness = await setupShellAndOverlayInventory();
     const targetDir = trackedTmpDir('frontx-split-f1-target-');
 
     const seedResult = await seedRepository(
-      TEMPLATE_SHELL_IDENTITY,
+      FIXTURE_SHELL_IDENTITY,
       targetDir,
       harness.lookupFn,
       harness.readContentFn,
@@ -100,7 +96,7 @@ describe('Fixture 1 — union fidelity: seed frontx-template-shell + add frontx-
     expect(seedResult.ok).toBe(true);
 
     const addResult = await addTemplate(
-      TEMPLATE_MFE_IDENTITY,
+      FIXTURE_OVERLAY_IDENTITY,
       targetDir,
       harness.lookupFn,
       harness.listInstalledFn,
@@ -113,17 +109,17 @@ describe('Fixture 1 — union fidelity: seed frontx-template-shell + add frontx-
     expect(addResult.ok).toBe(true);
 
     const targetFiles = listRealFiles(targetDir).filter((p) => p !== path.join('.frontx', 'provenance.json'));
-    const expectedFiles = [...shellDeclared, ...mfeDeclared].sort();
+    const expectedFiles = [...shellDeclared, ...overlayDeclared].sort();
     expect(targetFiles.sort()).toEqual(expectedFiles);
 
     for (const relPath of shellDeclared) {
       expect(fs.readFileSync(path.join(targetDir, relPath), 'utf-8'), `shell file "${relPath}"`).toBe(
-        fs.readFileSync(path.join(TEMPLATE_SHELL_DIR, relPath), 'utf-8'),
+        fs.readFileSync(path.join(FIXTURE_SHELL_DIR, relPath), 'utf-8'),
       );
     }
-    for (const relPath of mfeDeclared) {
-      expect(fs.readFileSync(path.join(targetDir, relPath), 'utf-8'), `mfe file "${relPath}"`).toBe(
-        fs.readFileSync(path.join(TEMPLATE_MFE_DIR, relPath), 'utf-8'),
+    for (const relPath of overlayDeclared) {
+      expect(fs.readFileSync(path.join(targetDir, relPath), 'utf-8'), `overlay file "${relPath}"`).toBe(
+        fs.readFileSync(path.join(FIXTURE_OVERLAY_DIR, relPath), 'utf-8'),
       );
     }
 
@@ -131,17 +127,17 @@ describe('Fixture 1 — union fidelity: seed frontx-template-shell + add frontx-
       fs.readFileSync(path.join(targetDir, '.frontx', 'provenance.json'), 'utf-8'),
     ) as ProvenanceRecord[];
     expect(provenance).toHaveLength(2);
-    expect(provenance.map((r) => r.templateIdentity)).toEqual([TEMPLATE_SHELL_IDENTITY, TEMPLATE_MFE_IDENTITY]);
+    expect(provenance.map((r) => r.templateIdentity)).toEqual([FIXTURE_SHELL_IDENTITY, FIXTURE_OVERLAY_IDENTITY]);
   });
 });
 
-describe('Fixture 2 (CLI part) — seed frontx-template-shell alone into an empty target', () => {
-  it('completes ok, touches zero mfe-territory files, writes exactly one provenance record (npm install/type-check is phase 4 scope, not run here)', async () => {
-    harness = await setupShellAndMfeInventory();
+describe('Fixture 2 (CLI part) — seed fixture-shell alone into an empty target', () => {
+  it('completes ok, touches zero overlay-territory files, writes exactly one provenance record (npm install/type-check is out of scope here)', async () => {
+    harness = await setupShellAndOverlayInventory();
     const targetDir = trackedTmpDir('frontx-split-f2-target-');
 
     const seedResult = await seedRepository(
-      TEMPLATE_SHELL_IDENTITY,
+      FIXTURE_SHELL_IDENTITY,
       targetDir,
       harness.lookupFn,
       harness.readContentFn,
@@ -152,27 +148,27 @@ describe('Fixture 2 (CLI part) — seed frontx-template-shell alone into an empt
 
     expect(seedResult.ok).toBe(true);
     if (!seedResult.ok) return;
-    expect(seedResult.appliedTemplates).toEqual([TEMPLATE_SHELL_IDENTITY]);
+    expect(seedResult.appliedTemplates).toEqual([FIXTURE_SHELL_IDENTITY]);
 
     expect(fs.existsSync(path.join(targetDir, 'package.json'))).toBe(true);
     expect(fs.existsSync(path.join(targetDir, 'src-app', 'mfe_packages'))).toBe(false);
-    expect(fs.existsSync(path.join(targetDir, '.frontx', 'ai', '@gears-frontx', 'frontx-template-mfe'))).toBe(false);
+    expect(fs.existsSync(path.join(targetDir, '.frontx', 'ai', '@fixture', 'overlay'))).toBe(false);
 
     const provenance = JSON.parse(
       fs.readFileSync(path.join(targetDir, '.frontx', 'provenance.json'), 'utf-8'),
     ) as ProvenanceRecord[];
     expect(provenance).toHaveLength(1);
-    expect(provenance[0].templateIdentity).toBe(TEMPLATE_SHELL_IDENTITY);
+    expect(provenance[0].templateIdentity).toBe(FIXTURE_SHELL_IDENTITY);
   });
 });
 
-describe('Fixture 3 — add-only integrity: seed shell, hash every file, add mfe, no shell file changed byte-for-byte', () => {
-  it('shell files are untouched by the add; mfe content lands; provenance grows to 2 records', async () => {
-    harness = await setupShellAndMfeInventory();
+describe('Fixture 3 — add-only integrity: seed shell, hash every file, add overlay, no shell file changed byte-for-byte', () => {
+  it('shell files are untouched by the add; overlay content lands; provenance grows to 2 records', async () => {
+    harness = await setupShellAndOverlayInventory();
     const targetDir = trackedTmpDir('frontx-split-f3-target-');
 
     const seedResult = await seedRepository(
-      TEMPLATE_SHELL_IDENTITY,
+      FIXTURE_SHELL_IDENTITY,
       targetDir,
       harness.lookupFn,
       harness.readContentFn,
@@ -193,7 +189,7 @@ describe('Fixture 3 — add-only integrity: seed shell, hash every file, add mfe
     );
 
     const addResult = await addTemplate(
-      TEMPLATE_MFE_IDENTITY,
+      FIXTURE_OVERLAY_IDENTITY,
       targetDir,
       harness.lookupFn,
       harness.listInstalledFn,
@@ -207,7 +203,7 @@ describe('Fixture 3 — add-only integrity: seed shell, hash every file, add mfe
 
     for (const relPath of preAddFiles) {
       const postHash = sha256(fs.readFileSync(path.join(targetDir, relPath), 'utf-8'));
-      expect(postHash, `shell file "${relPath}" must be byte-unchanged after add-mfe`).toBe(preAddHashes.get(relPath));
+      expect(postHash, `shell file "${relPath}" must be byte-unchanged after add-overlay`).toBe(preAddHashes.get(relPath));
     }
 
     expect(fs.existsSync(path.join(targetDir, 'src-app', 'mfe_packages', 'demo-mfe', 'mfe.json'))).toBe(true);
@@ -216,18 +212,18 @@ describe('Fixture 3 — add-only integrity: seed shell, hash every file, add mfe
       fs.readFileSync(path.join(targetDir, '.frontx', 'provenance.json'), 'utf-8'),
     ) as ProvenanceRecord[];
     expect(provenance).toHaveLength(2);
-    expect(provenance.map((r) => r.templateIdentity)).toEqual([TEMPLATE_SHELL_IDENTITY, TEMPLATE_MFE_IDENTITY]);
+    expect(provenance.map((r) => r.templateIdentity)).toEqual([FIXTURE_SHELL_IDENTITY, FIXTURE_OVERLAY_IDENTITY]);
   });
 });
 
-describe("Fixture 4 — conflict-check on REAL templates: a synthetic 'mfe-dup' contests mfe's already-occupied ground", () => {
-  it('REFUSES the add with zero new files, naming the contested ground and both real contestants', async () => {
-    harness = await setupShellAndMfeInventory();
+describe("Fixture 4 — conflict-check: a synthetic 'overlay-dup' contests fixture-overlay's already-occupied ground", () => {
+  it('REFUSES the add with zero new files, naming the contested ground and both contestants', async () => {
+    harness = await setupShellAndOverlayInventory();
     const targetDir = trackedTmpDir('frontx-split-f4-target-');
     const dupSourceDir = trackedTmpDir('frontx-split-f4-dup-src-');
 
     const seedResult = await seedRepository(
-      TEMPLATE_SHELL_IDENTITY,
+      FIXTURE_SHELL_IDENTITY,
       targetDir,
       harness.lookupFn,
       harness.readContentFn,
@@ -237,7 +233,7 @@ describe("Fixture 4 — conflict-check on REAL templates: a synthetic 'mfe-dup' 
     );
     expect(seedResult.ok).toBe(true);
     const addResult = await addTemplate(
-      TEMPLATE_MFE_IDENTITY,
+      FIXTURE_OVERLAY_IDENTITY,
       targetDir,
       harness.lookupFn,
       harness.listInstalledFn,
@@ -250,19 +246,19 @@ describe("Fixture 4 — conflict-check on REAL templates: a synthetic 'mfe-dup' 
     expect(addResult.ok).toBe(true);
 
     // Synthetic contestant: a distinct template identity that claims the
-    // SAME exclusive subtree mfe already occupies — a REAL conflict against
-    // a REAL applied template, not two hand-rolled unit-test manifests.
+    // SAME exclusive subtree fixture-overlay already occupies — a conflict
+    // against a REAL applied template, not two hand-rolled unit-test manifests.
     fs.writeFileSync(
       path.join(dupSourceDir, 'frontx-template.json'),
       JSON.stringify({
         schemaVersion: '1.0',
-        name: 'frontx-template-mfe-dup',
+        name: 'fixture-overlay-dup',
         version: '0.1.0-alpha.0',
         ownershipBoundaries: { exclusiveSubtrees: ['src-app/mfe_packages/'], sharedFiles: [] },
       }),
     );
     const dupInstall = await installCommand(
-      'local:gears-frontx/frontx-template-mfe-dup@offline',
+      'local:fixture-org/fixture-overlay-dup@offline',
       harness.inventory,
       createLocalFetchFn(dupSourceDir),
     );
@@ -271,7 +267,7 @@ describe("Fixture 4 — conflict-check on REAL templates: a synthetic 'mfe-dup' 
     const filesBefore = listRealFiles(targetDir).sort();
 
     const dupAddResult = await addTemplate(
-      'frontx-template-mfe-dup',
+      'fixture-overlay-dup',
       targetDir,
       harness.lookupFn,
       harness.listInstalledFn,
@@ -286,27 +282,26 @@ describe("Fixture 4 — conflict-check on REAL templates: a synthetic 'mfe-dup' 
     if (dupAddResult.ok) return;
     expect(dupAddResult.reason).toBe('conflict');
     if (dupAddResult.reason === 'conflict') {
-      // Derived from the real, on-disk template-mfe manifest — same pattern as
-      // Fixture 5's shell case below — rather than pinned to a snapshot: mfe
-      // claims five separate exclusive subtrees nested under
-      // 'src-app/mfe_packages/' (refactor(template-mfe): claim the packages it
-      // ships, not the whole mfe_packages directory), so the dup's one broad
-      // claim collides with each of them separately, and a report naming only
-      // one would leave the rest for the developer to rediscover.
-      const mfeSubtrees = readManifest(TEMPLATE_MFE_DIR).ownershipBoundaries.exclusiveSubtrees;
-      const swallowed = mfeSubtrees.filter((subtree) =>
+      // Derived from the fixture-overlay manifest itself — same pattern as
+      // Fixture 5's shell case below — rather than pinned to a snapshot:
+      // fixture-overlay claims two separate exclusive subtrees nested under
+      // 'src-app/mfe_packages/', so the dup's one broad claim collides with
+      // each of them separately, and a report naming only one would leave the
+      // rest for the developer to rediscover.
+      const overlaySubtrees = readManifest(FIXTURE_OVERLAY_DIR).ownershipBoundaries.exclusiveSubtrees;
+      const swallowed = overlaySubtrees.filter((subtree) =>
         pathWithinSubtree(subtree, 'src-app/mfe_packages/'),
       );
       // A derived oracle with no floor under it would pass against a manifest
       // that had stopped declaring anything under `src-app/mfe_packages/`: an
       // empty expectation matches an empty report, and the multi-conflict
-      // property the comment above describes would go untested. More than one
-      // is the standing fact this case exists for.
+      // property this case exists for would go untested. More than one is the
+      // standing fact this fixture's manifest guarantees.
       expect(swallowed.length).toBeGreaterThan(1);
       expect(dupAddResult.conflicts).toEqual(
         swallowed.map((subtree) => ({
           ground: `src-app/mfe_packages/ overlaps ${subtree}`,
-          contestants: ['frontx-template-mfe-dup', TEMPLATE_MFE_IDENTITY],
+          contestants: ['fixture-overlay-dup', FIXTURE_OVERLAY_IDENTITY],
         })),
       );
     }
@@ -315,21 +310,21 @@ describe("Fixture 4 — conflict-check on REAL templates: a synthetic 'mfe-dup' 
   });
 });
 
-describe('Fixture 5 — the conflict check arbitrates nesting and spelling against the REAL shell declaration', () => {
-  // Both cases are read directly from the real, on-disk template-shell
-  // manifest (not a hand-copied literal) so they track that manifest's actual
-  // declared boundary rather than a stale assumption about it, and so the
-  // expected conflicts are derived from it rather than pinned to a snapshot a
-  // future boundary edit would falsify.
-  const shellManifest = readManifest(TEMPLATE_SHELL_DIR);
+describe('Fixture 5 — the conflict check arbitrates nesting and spelling against the fixture-shell declaration', () => {
+  // Both cases are read directly from the fixture-shell manifest (not a
+  // hand-copied literal) so they track that manifest's actual declared
+  // boundary rather than a stale assumption about it, and so the expected
+  // conflicts are derived from it rather than pinned to a snapshot a future
+  // boundary edit would falsify.
+  const shellManifest = readManifest(FIXTURE_SHELL_DIR);
   const shellSubtrees = shellManifest.ownershipBoundaries.exclusiveSubtrees;
   const shellContribution: ContributionEntry = {
-    templateName: 'frontx-template-shell',
+    templateName: 'fixture-shell',
     files: [],
     ownershipBoundaries: shellManifest.ownershipBoundaries,
   };
 
-  it('refuses a claim on "src-app/", which contains the real shell-owned "src-app/app/", naming every shell subtree it swallows', () => {
+  it('refuses a claim on "src-app/", which contains the shell-owned "src-app/app/", naming every shell subtree it swallows', () => {
     expect(shellSubtrees).toContain('src-app/app/');
 
     const nestedClaim: ContributionEntry = {
@@ -355,12 +350,12 @@ describe('Fixture 5 — the conflict check arbitrates nesting and spelling again
         .filter((subtree) => pathWithinSubtree(subtree, 'src-app/'))
         .map((subtree) => ({
           ground: subtree === 'src-app/' ? subtree : `${subtree} overlaps src-app/`,
-          contestants: ['frontx-template-shell', 'nested-claim-fixture'],
+          contestants: ['fixture-shell', 'nested-claim-fixture'],
         })),
     );
   });
 
-  it('refuses the same ground under a different spelling — a claim on "src" against the real shell-owned "src/"', () => {
+  it('refuses the same ground under a different spelling — a claim on "src" against the shell-owned "src/"', () => {
     expect(shellSubtrees).toContain('src/');
 
     const misspelledClaim: ContributionEntry = {
@@ -379,16 +374,16 @@ describe('Fixture 5 — the conflict check arbitrates nesting and spelling again
     // claim without sharing a path segment, so a comparison that refused them
     // too would be refusing assemblies that are actually disjoint.
     expect(verdict.conflicts).toEqual([
-      { ground: 'src/ overlaps src', contestants: ['frontx-template-shell', 'slash-mismatch-fixture'] },
+      { ground: 'src/ overlaps src', contestants: ['fixture-shell', 'slash-mismatch-fixture'] },
     ]);
   });
 });
 
-describe('Fixture 6 — declaration coverage: every real file in template-shell/ and template-mfe/ is declared or explicitly allow-listed', () => {
-  it('template-shell/: zero files outside the declared boundary and the {frontx-template.json} allow-list', () => {
-    const manifest = readManifest(TEMPLATE_SHELL_DIR);
+describe('Fixture 6 — declaration coverage: every file in fixture-shell/ and fixture-overlay/ is declared or explicitly allow-listed', () => {
+  it('fixture-shell/: zero files outside the declared boundary and the {frontx-template.json} allow-list', () => {
+    const manifest = readManifest(FIXTURE_SHELL_DIR);
     const allowList = new Set(['frontx-template.json']);
-    const uncovered = listRealFiles(TEMPLATE_SHELL_DIR).filter(
+    const uncovered = listRealFiles(FIXTURE_SHELL_DIR).filter(
       (p) => !allowList.has(p) && !isPathWithinExclusiveSubtrees(p, manifest.ownershipBoundaries.exclusiveSubtrees),
     );
     expect(uncovered).toEqual([]);
@@ -397,27 +392,26 @@ describe('Fixture 6 — declaration coverage: every real file in template-shell/
   // The allow-list is the de-facto register of files that live in a template
   // directory WITHOUT being part of the template: authoring and delivery
   // machinery, never shipped. `frontx-template.json` (the manifest itself) and
-  // `README.md` were already here; `package.json` / `package-lock.json` join
-  // them as the monorepo build harness — the workspace root that lets these
-  // MFE packages resolve their @gears-frontx dependencies in a repo that has
-  // no workspace root above them. A seeded project resolves the same names
-  // through the shell's root manifest, so the harness has nothing to do there.
-  // Contrast template-shell, which DECLARES its README.md and package.json and
-  // therefore ships them.
-  it('template-mfe/: zero files outside the declared boundary and the {frontx-template.json, README.md, package.json, package-lock.json} allow-list', () => {
-    const manifest = readManifest(TEMPLATE_MFE_DIR);
+  // `README.md` are the fixture's own authoring notes; `package.json` /
+  // `package-lock.json` stand in for a monorepo build harness that a real
+  // split overlay template needs to resolve its own workspace packages in a
+  // repo with no workspace root above them, while a seeded project resolves
+  // the same names through the shell's root manifest. Contrast fixture-shell,
+  // which DECLARES its README.md and package.json and therefore ships them.
+  it('fixture-overlay/: zero files outside the declared boundary and the {frontx-template.json, README.md, package.json, package-lock.json} allow-list', () => {
+    const manifest = readManifest(FIXTURE_OVERLAY_DIR);
     const allowList = new Set(['frontx-template.json', 'README.md', 'package.json', 'package-lock.json']);
-    const uncovered = listRealFiles(TEMPLATE_MFE_DIR).filter(
+    const uncovered = listRealFiles(FIXTURE_OVERLAY_DIR).filter(
       (p) => !allowList.has(p) && !isPathWithinExclusiveSubtrees(p, manifest.ownershipBoundaries.exclusiveSubtrees),
     );
     expect(uncovered).toEqual([]);
   });
 
   // Allow-listing only says "ignore this file". This says the stronger thing
-  // the harness depends on: template-mfe must never CLAIM a root package.json.
-  // Claiming it would collide with template-shell's exclusive subtree and turn
-  // a development-only file into an ownership assertion — reviving exactly the
-  // inferred-ownership model ADR-0031 rejected.
+  // the harness depends on: an add-only overlay template must never CLAIM a
+  // root package.json. Claiming it would collide with the shell's exclusive
+  // subtree and turn a development-only file into an ownership assertion —
+  // reviving exactly the inferred-ownership model ADR-0031 rejected.
   //
   // The assembler (`isWithinDeclaredBoundaries` in scaffold/assembler.ts)
   // includes a file for exclusiveSubtrees by whole path segments
@@ -428,8 +422,8 @@ describe('Fixture 6 — declaration coverage: every real file in template-shell/
   // exclusiveSubtrees is checked through the same predicate the assembler calls
   // (`isPathWithinExclusiveSubtrees`); sharedFiles stays a plain membership
   // check since that half of the assembler's test really is exact-equality.
-  it('template-mfe/: the harness manifest stays undeclared — no claim on package.json or package-lock.json', () => {
-    const { exclusiveSubtrees, sharedFiles } = readManifest(TEMPLATE_MFE_DIR).ownershipBoundaries;
+  it('fixture-overlay/: the overlay manifest stays undeclared — no claim on package.json or package-lock.json', () => {
+    const { exclusiveSubtrees, sharedFiles } = readManifest(FIXTURE_OVERLAY_DIR).ownershipBoundaries;
     const sharedFilePaths = sharedFiles.map((entry: { path: string }) => entry.path);
     expect(isPathWithinExclusiveSubtrees('package.json', exclusiveSubtrees)).toBe(false);
     expect(isPathWithinExclusiveSubtrees('package-lock.json', exclusiveSubtrees)).toBe(false);

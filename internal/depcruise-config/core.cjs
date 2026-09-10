@@ -14,8 +14,9 @@
  *   `cpt-frontx-principle-agnostic-core`).
  *
  * Replaces the former `sdk.cjs` (L1 of the retired SDK -> framework -> react
- * chain); the packages that chain governed now live in `template-shell/`
- * and are enforced by `template-shell/.dependency-cruiser.cjs`.
+ * chain); the packages that chain governed now live in the templates
+ * repository and are enforced by that repository's own
+ * `.dependency-cruiser.cjs`.
  */
 
 const base = require('./base.cjs');

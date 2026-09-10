@@ -1,6 +1,6 @@
 {
   "name": "@gears-frontx/cli",
-  "version": "0.3.0-alpha.5",
+  "version": "0.3.0-alpha.6",
   "description": "Template resolution CLI for FrontX SDK — zero bundled template content",
   "type": "module",
   "main": "./dist/index.cjs",

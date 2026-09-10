@@ -6,7 +6,7 @@ API communication protocols and service registry for FrontX applications.
 
 This package is part of the **Core Framework layer** (`architecture/DESIGN.md` §1.3), alongside `@gears-frontx/mfes` and `@gears-frontx/gts-plugin`. It ships zero `@gears-frontx/*` runtime dependencies and can be used independently — only shared build-time config (`@gears-frontx/eslint-config`, `@gears-frontx/depcruise-config`) appears under devDependencies, and nothing under `src/` may import them. It has `axios` as a peer dependency.
 
-Enforced by `npm run arch:edges` (manifest edges) and `npm run arch:deps:core` (import graph). This package predates the current boundary model as "SDK Layer (L1)" of the retired SDK -> framework -> react chain; those packages now live in `template-shell/`.
+Enforced by `npm run arch:edges` (manifest edges) and `npm run arch:deps:core` (import graph).
 
 ## Core Concepts
 

@@ -43,41 +43,47 @@ const FRAMEWORK_NAMES = ['react', 'vue', 'angular', 'svelte'];
 // flagged every resource whose description merely named the CLI. No FrontX
 // solution or template is called "studio" — the term appears nowhere in the
 // PRD, DESIGN, or DECOMPOSITION. Re-add it only as a concrete, prefixed name
-// (e.g. `frontx-studio`) via SPECIFIC_TEMPLATE_NAMES below, never as a bare word.
+// (e.g. `frontx-studio`) in this list, never as a bare word.
 const SOLUTION_TERMS = [...FRAMEWORK_NAMES, 'template', 'solution', 'screenset'];
 
-// Known specific template/solution NAMES that must never appear in shipped
+// A concrete template package name that must never appear in shipped
 // base-kit resource BODIES (cpt-frontx-adr-solution-ai-content-placement).
-// Unlike SOLUTION_TERMS above (generic concept words checked against
-// manifest id/description only), this list targets concrete product names
-// so that legitimate abstract use of words like "template" inside base
-// guidelines/skills is not falsely flagged.
-// Old names are kept (never removed) so the guard still catches historical
-// leaks in content authored before issue #470's shell/mfe split; new names
-// are added alongside for the current product identities.
-const SPECIFIC_TEMPLATE_NAMES = [
-  'frontx-template-standard',
-  'template-standard',
-  'frontx-template-shell',
-  'template-shell',
-  'frontx-template-mfe',
-  'template-mfe',
-];
-
-// What a shipped resource BODY is scanned against: the concrete template
-// identities above plus the framework names. The DoD this enforces excludes
-// "any concrete template, solution, or framework" from base-kit content
-// (cpt-frontx-dod-ai-project-scaffolding-declared-skill-surface), and template
-// identities alone left the framework half unenforced over bodies.
+// This repository is deliberately unaware of what templates exist in the
+// templates repository (cpt-frontx-adr-template-acquisition-and-location), so
+// this cannot be a maintained list of known names — the check has to
+// recognize the SHAPE of a template package identity instead. Every template
+// package name follows the same shape: the word "template" hyphen-joined to
+// a flavor word, optionally prefixed with "frontx-"; this pattern catches
+// that shape structurally, including names never seen here.
 //
-// Exported with `findForbiddenSolutionName` below so a caller needing
-// per-document granularity reuses this list AND its matching rule instead of
-// transcribing either. A second hand-maintained copy diverges from the day it
-// is written, which is exactly the defect this export exists to prevent.
+// Deliberately narrower than the bare "template" word in SOLUTION_TERMS
+// above: `template-<word>` requires the hyphenated compound, so legitimate
+// abstract prose ("this is template territory") does not trip it, while an
+// actual package identity always does.
+//
+// Two more carve-outs, each load-bearing against this base kit's OWN shipped
+// prose:
+// - A leading `<` excludes a PLACEHOLDER token like `.frontx/ai/<template-identity>/`:
+//   angle brackets mark a variable standing in for a real identity, never a
+//   literal one, so nothing here is a name to forbid.
+// - The flavor word "specific" excludes the adjective compound
+//   "template-specific" (as in "template-specific content"), the same
+//   deliberate carve-out SOLUTION_TERMS above documents for "studio": a
+//   generic English word the base uses constantly, not a product identity.
+const TEMPLATE_PACKAGE_NAME_PATTERN = /(?<![a-z0-9-])(?<!<)(?:frontx-)?template-(?!specific\b)[a-z][a-z0-9-]*/i;
+
+// What a shipped resource BODY is scanned against: the structural template
+// package pattern above plus the framework names. The DoD this enforces
+// excludes "any concrete template, solution, or framework" from base-kit
+// content (cpt-frontx-dod-ai-project-scaffolding-declared-skill-surface), and
+// the template pattern alone left the framework half unenforced over bodies.
 //
 // @internal - exported for this package's own self-validation suite, not part
 // of the kit's published surface; `src/index.ts` does not re-export it.
-export const FORBIDDEN_BODY_NAMES: readonly string[] = [...SPECIFIC_TEMPLATE_NAMES, ...FRAMEWORK_NAMES];
+export const FORBIDDEN_BODY_PATTERNS: readonly RegExp[] = [
+  TEMPLATE_PACKAGE_NAME_PATTERN,
+  ...FRAMEWORK_NAMES.map((name) => new RegExp(`(?<![a-z0-9])${name}(?![a-z0-9])`, 'i')),
+];
 
 // @cpt-begin:cpt-frontx-algo-ai-kit-packaging-manifest-validation:p1:inst-check-required-fields
 function checkRequiredFields(manifest: unknown, violations: ValidationViolation[]): manifest is KitManifest {
@@ -354,10 +360,11 @@ function checkSolutionContent(entry: unknown, prefix: string, violations: Valida
  * @param text - a shipped resource body, or any excerpt of one
  */
 export function findForbiddenSolutionName(text: string): string | undefined {
-  return FORBIDDEN_BODY_NAMES.find((name) => {
-    const re = new RegExp(`(?<![a-z0-9])${name}(?![a-z0-9])`, 'i');
-    return re.test(text);
-  });
+  for (const pattern of FORBIDDEN_BODY_PATTERNS) {
+    const match = text.match(pattern);
+    if (match) return match[0];
+  }
+  return undefined;
 }
 
 function checkResourceBodyContent(

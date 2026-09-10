@@ -122,7 +122,7 @@ describe('validateContentSelfContainment - absolute / drive-prefixed / home-rela
   it('an absolute `compilerOptions.baseUrl` is a violation, even for an otherwise in-root `paths` entry', async () => {
     const { listContentOwnedFiles, readFile } = fakeTemplate({
       'tsconfig.json': JSON.stringify({
-        compilerOptions: { baseUrl: '/Users/me/monorepo/template-standard', paths: { '@gears-frontx/state': ['./packages/state/src/index.ts'] } },
+        compilerOptions: { baseUrl: '/Users/me/monorepo/fixture-shell', paths: { '@gears-frontx/state': ['./packages/state/src/index.ts'] } },
       }),
     });
     const result = await validateContentSelfContainment('template', manifest(['tsconfig.json']), listContentOwnedFiles, readFile);
@@ -384,13 +384,13 @@ describe('validateContentSelfContainment - tsconfig `paths` mappings', () => {
     expect(result.status).toBe('VALIDATED');
   });
 
-  // The sharpest false-positive risk the completed registry brings, and a live
-  // one: `template-shell/packages/react/tsconfig.test.json` really does declare
-  // `rootDir: '../..'`, which climbs exactly two levels from `packages/react` and
-  // lands ON the template root - inside, legally. `..`-segment counting is what
-  // makes that a pass; any check that flagged an ascending path by its text would
-  // turn `npm run validate:templates` red on a template that is correct.
-  it("a `rootDir` climbing exactly to the template root is NOT a violation (template-shell's live shape)", async () => {
+  // The sharpest false-positive risk the completed registry brings: a nested
+  // package's tsconfig can legitimately declare `rootDir: '../..'`, which
+  // climbs exactly two levels from `packages/react` and lands ON the template
+  // root - inside, legally. `..`-segment counting is what makes that a pass;
+  // any check that flagged an ascending path by its text would turn this
+  // validation red on a template that is correct.
+  it("a `rootDir` climbing exactly to the template root is NOT a violation (a real-world nested-package shape)", async () => {
     const { listContentOwnedFiles, readFile } = fakeTemplate({
       'packages/react/tsconfig.test.json': JSON.stringify({
         extends: '../../tsconfig.json',

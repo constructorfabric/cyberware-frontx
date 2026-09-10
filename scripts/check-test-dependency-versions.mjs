@@ -89,16 +89,6 @@ export const skipDirectories = new Set([
   '.turbo',
   '.cache',
   '.next',
-  // Self-contained templates (issue #470 split the formerly-combined
-  // template directory into a shell + mfe pair; Phase 11 template-move):
-  // each manages its own test tooling versions independently now that
-  // neither is a root workspace.
-  'template-shell',
-  'template-mfe',
-  // Bundled scaffold content shipped by the CLI (never installed/run inside
-  // this repo) — same "templates/ is not a live workspace" convention already
-  // used by eslint.config.js's `packages/**/templates/**` ignore.
-  'templates',
   // Disposable Claude Code agent worktrees (`.claude/worktrees/*`) are full
   // repo checkouts — walking into them would double-count every workspace's
   // package.json against a stale copy of this same dependency policy.
@@ -389,10 +379,9 @@ function getDeclaredDependencyVersion(options) {
 
 /**
  * Hard cap on recursion depth when walking the repo for package manifests.
- * The deepest real path in this monorepo is ~7 directories under the root
- * (e.g. `packages/cli/template-sources/project/.../package.json`); 20 is a
- * generous ceiling that still stops a pathological tree from blowing the
- * stack or running for minutes on a broken symlink farm.
+ * The deepest real path in this monorepo is ~7 directories under the root;
+ * 20 is a generous ceiling that still stops a pathological tree from
+ * blowing the stack or running for minutes on a broken symlink farm.
  */
 const maxWalkDepth = 20;
 

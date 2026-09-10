@@ -152,6 +152,12 @@ frontx add @acme/web-app ./existing-repo
 frontx upgrade ./my-app 1.1.0
 ```
 
+`acme` above is a placeholder: any repository can publish templates. The FrontX
+templates are published from
+[`constructorfabric/gears-frontx-templates`](https://github.com/constructorfabric/gears-frontx-templates).
+See that repository's README for the templates it publishes and the source-spec
+to install one.
+
 The CLI records each applied template's provenance under the project's
 `.frontx/` and can upgrade each independently. See [QUICK_START.md](QUICK_START.md)
 for the full command walkthrough and AI-tooling usage.
@@ -205,7 +211,8 @@ template bundles.
 
 This repository ships the **ecosystem** — the runtime, type system, API layer,
 CLI, and AI kit. What an application *becomes* is defined by templates, which
-live and version outside this repository.
+live and version outside this repository, in the templates repository linked
+above.
 
 ```bash
 FrontX/                              # Ecosystem repository root
@@ -218,8 +225,6 @@ FrontX/                              # Ecosystem repository root
 │   ├── ui-kit/                     # Published library (standalone): UI components (artifact chain is recorded debt)
 │   ├── cli/                        # Projects orchestration: template-resolution CLI (`frontx`)
 │   └── cyber-pilot-kit-frontx/     # Projects orchestration: AI Tooling Kit
-├── template-shell/                 # Reference template: app shell (developed here, applied via `frontx seed`)
-├── template-mfe/                   # Reference template: add-only MFE bundle (applied via `frontx add`)
 ├── internal/                       # Internal build/lint config workspaces
 ├── scripts/                        # Architecture, version-policy, and test tooling
 └── tsconfig.json                   # TypeScript config (ecosystem packages only)
@@ -231,8 +236,8 @@ To work on the ecosystem packages themselves — the runtime, type system, API
 layer, CLI, and AI kit:
 
 ```bash
-git clone https://github.com/cyberfabric/FrontX.git
-cd FrontX
+git clone https://github.com/constructorfabric/gears-frontx.git
+cd gears-frontx
 npm ci
 npm run build:packages       # build all ecosystem packages
 npm run test:unit            # unit tests across packages/* and scripts/

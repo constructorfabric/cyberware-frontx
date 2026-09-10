@@ -276,7 +276,7 @@ export function validateWatchTargets(targets, projectNames, parallel) {
       `Pass --project=<name> or a path under one project root. Available: ${projectNames}.\n` +
       'Examples:\n' +
       '  npm run test:unit:watch -- --project=repo-scripts\n' +
-      '  npm run test:unit:watch -- scripts/link-template-ecosystem.test.mjs',
+      '  npm run test:unit:watch -- scripts/ecosystem-pin-drift-check.test.mjs',
   );
 }
 

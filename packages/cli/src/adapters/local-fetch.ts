@@ -4,9 +4,9 @@
 // (`packages/cli/src/resolver/types.ts`, `(url: string) => Promise<string>`).
 //
 // It realizes that EXISTING seam with a local-directory adapter so
-// `frontx install` + `frontx seed` can assemble the on-disk
-// `template-shell/` OFFLINE (no network / no GitHub publish) for e2e
-// exercise of the real materialize path. It walks a local directory and
+// `frontx install` + `frontx seed` can assemble an on-disk template
+// directory OFFLINE (no network / no GitHub publish) for e2e exercise of
+// the real materialize path. It walks a local directory and
 // emits the exact bundle envelope `FsContentStore`
 // (`packages/cli/src/adapters/fs-content-store.ts`) already materializes —
 // `{ "$frontxTemplateFiles": { <relative path>: <file text>, ... } }` — the
@@ -21,10 +21,10 @@ import type { FetchFn } from '../resolver/types';
 
 /** Directory names never included in the local bundle: build and dependency
  * artifacts, plus the agent session-state directories (`.omc/`, `.omo/`) that
- * can sit inside a template source tree during local development. The real
- * template-shell `.gitignore` excludes all of them too — none is declared
- * template content, and bundling one would seed a developer's repository with
- * another session's scratch state. */
+ * can sit inside a template source tree during local development. A
+ * template's own `.gitignore` typically excludes all of them too — none is
+ * declared template content, and bundling one would seed a developer's
+ * repository with another session's scratch state. */
 const DEFAULT_EXCLUDED_DIRS = new Set([
   'node_modules',
   'dist',

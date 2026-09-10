@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "name": "@fixture/overlay",
+  "version": "1.0.0",
+  "ownershipBoundaries": {
+    "exclusiveSubtrees": ["src-app/mfe_packages/demo-mfe/", "src-app/mfe_packages/second-mfe/"],
+    "sharedFiles": []
+  }
+}

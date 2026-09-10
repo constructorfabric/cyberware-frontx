@@ -269,9 +269,9 @@ export async function materializeAssembly(
   // Defaults to "nothing already on disk" — see composeSharedFiles for why
   // that default is safe: it reproduces the pre-fix behavior exactly for a
   // caller that has no target repository state to reconcile against.
-  // TODO(#489): make required once the template-mfe-harness branch merges —
-  // see the identical TODO on composeSharedFiles' own default for why it
-  // cannot be done yet.
+  // TODO(#489): make required once the pending #489 branch merges — see the
+  // identical TODO on composeSharedFiles' own default for why it cannot be
+  // done yet.
   readProjectFileFn: ReadProjectFileFn = async () => null,
 ): Promise<MaterializeResult> {
   const composeResult = await composeSharedFiles(assembly, targetDir, writeFileFn, readProjectFileFn, existingProvenance);

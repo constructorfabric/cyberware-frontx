@@ -360,7 +360,7 @@ The system **MUST** report the applied set after applying by reading the target 
 
 - [ ] `p1` - **ID**: `cpt-frontx-dod-ai-project-scaffolding-ecosystem-enabled`
 
-The system **MUST** leave the ecosystem in a state where the capability is reachable and correctly described: every template the repository publishes declares a description, since a capability that selects on declared descriptions demonstrates nothing while no shipped template declares one; and the repository's own developer documentation describes scaffolding as an operation a kit capability drives from a stated intent alongside the direct CLI path, replacing any statement that scaffolding is not a kit capability, since a document contradicting the architecture is a defect even where the code is right (`target`).
+The system **MUST** leave the ecosystem in a state where the capability is reachable and correctly described. A capability that selects on declared descriptions demonstrates nothing while nothing declares one, and the manifest contract makes the description optional, so something has to declare it for the capability to be shown working. This repository publishes no template (`cpt-frontx-adr-template-acquisition-and-location`), so the demonstration rests on fixture template manifests the kit's own tests author, which is what this repository can verify on its own. That a published template declares a description is review-held in the repository that publishes it, which owns it; nothing here can check it and nothing here should claim to. And this repository's own developer documentation describes scaffolding as an operation a kit capability drives from a stated intent alongside the direct CLI path, replacing any statement that scaffolding is not a kit capability, since a document contradicting the architecture is a defect even where the code is right (`target`).
 
 **Implements**:
 - `cpt-frontx-flow-ai-project-scaffolding-scaffold-from-intent`
@@ -372,12 +372,12 @@ The system **MUST** leave the ecosystem in a state where the capability is reach
 
 **Touches**:
 - Entities: `Template`
-- Resource shape: each published template's manifest description (schema owned by `cpt-frontx-feature-template-manifest`)
+- Resource shape: the manifest description a template declares, in a fixture manifest the kit's tests author (schema owned by `cpt-frontx-feature-template-manifest`)
 - Developer documentation: the repository's quick-start description of which operations a kit capability drives
 - No API surface; no persistent database
 
 **Verifiable clauses**:
-- [ ] Every template manifest the repository publishes declares a non-empty description of what that template establishes and contributes
+- [ ] The kit's own tests demonstrate description-based selection over fixture template manifests they author, so the demonstration depends on no template published from anywhere
 - [ ] No developer document states that scaffolding is not a kit capability
 - [ ] The developer documentation names the routing and scaffolding entry points as the intent-driven path, and the direct `frontx` commands as the path that remains available unchanged
 
@@ -400,6 +400,6 @@ The system **MUST** leave the ecosystem in a state where the capability is reach
 - [ ] Every applied template is applied by invoking the installed `frontx` executable; the kit holds no import of `@gears-frontx/cli` and no code path that materializes or modifies a project file. (`target`)
 - [ ] A non-zero exit from an invoked command stops the flow at that command, relays the CLI's own reported reason, names the templates applied before the failure, and invokes no further command and no correction retry. (`target`)
 - [ ] After applying, the applied set is reported from the target directory's provenance record set - identity, applied-from version, and source address per record - and an unreadable record set is reported as an unconfirmed applied set, after which the flow stops and realizes nothing. (`target`)
-- [ ] Every template the repository publishes declares a non-empty manifest description, so the capability is demonstrable against the shipped templates. (`target`)
+- [ ] Description-based selection is demonstrated over fixture template manifests the kit's own tests author. That a published template declares a non-empty manifest description remains review-held in the repository that publishes it, since this one publishes none. (`target`)
 - [ ] No developer document states that scaffolding is not a kit capability; the documentation names the intent-driven path and the unchanged direct CLI path side by side. (`target`)
 - [ ] A project scaffolded through this flow from templates that declare descriptions realizes the stated intent - every unit the intent names is present in the delivered project, carrying the content stated for it - and builds and runs in a browser without errors, verified end to end against the installed templates. (`target`)

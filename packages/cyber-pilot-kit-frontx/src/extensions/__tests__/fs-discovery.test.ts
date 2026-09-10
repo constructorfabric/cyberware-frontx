@@ -65,18 +65,18 @@ describe('discoverExtensionBundlesFromFs (§1.5 id-scoped AI-Extension Bundle Co
 
   it('discovers a scoped npm-style identity (`@scope/name`) bundle root two path segments deep', () => {
     const reader = makeFakeReader({
-      [`${AI_ROOT}/@gears-frontx/frontx-template-shell/extension.json`]: JSON.stringify({
-        id: 'frontx-template-shell-ai-bundle',
+      [`${AI_ROOT}/@gears-frontx/template-c/extension.json`]: JSON.stringify({
+        id: 'template-c-ai-bundle',
         contractVersion: '1.0.0',
         entries: [{ id: 'skill-1', category: 'skills', path: 'skills/skill-1' }],
       }),
-      [`${AI_ROOT}/@gears-frontx/frontx-template-shell/skills/skill-1/SKILL.md`]: '# Skill 1',
+      [`${AI_ROOT}/@gears-frontx/template-c/skills/skill-1/SKILL.md`]: '# Skill 1',
     });
 
     const bundles = discoverExtensionBundlesFromFs(PROJECT_ROOT, reader);
 
     expect(bundles).toHaveLength(1);
-    expect(bundles[0].identity).toBe('@gears-frontx/frontx-template-shell');
+    expect(bundles[0].identity).toBe('@gears-frontx/template-c');
     expect(bundles[0].structuralErrors).toHaveLength(0);
     expect(bundles[0].bundle).toContainEqual({ id: 'skill-1', category: 'skills', path: 'skills/skill-1' });
   });

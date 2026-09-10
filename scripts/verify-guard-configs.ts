@@ -32,12 +32,14 @@
  *
  * The dependency-cruiser side is ecosystem-only (base + core) after the
  * framework/template split: the retired framework/react/screenset configs
- * described packages that emigrated to `template-shell/`, which enforces its
- * own internal layering in its self-owned `.dependency-cruiser.cjs`. The ESLint
- * side still ships the full set because `template-shell/packages/*` consume
- * `@gears-frontx/eslint-config/{framework,react}.js` directly, and this script
- * is the only ecosystem-side check that those published configs still build
- * and load — ecosystem CI does not lint the template.
+ * described packages that emigrated to the templates repository, which now
+ * enforces its own internal layering in its self-owned
+ * `.dependency-cruiser.cjs`. The ESLint side still ships the full set
+ * because the templates in that other repository consume
+ * `@gears-frontx/eslint-config/{framework,react}.js` directly as a published
+ * contract, and this script is the only ecosystem-side check that those
+ * published configs still build and load — ecosystem CI does not lint any
+ * template.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -82,8 +84,9 @@ const ESLINT_CONFIG_DIR = join(REPO_ROOT, 'internal', 'eslint-config', 'dist');
 const DEPCRUISE_CONFIG_DIR = join(REPO_ROOT, 'internal', 'depcruise-config');
 
 // ESLint configs shipped by @gears-frontx/eslint-config. `framework`, `react`,
-// and `screenset` serve `template-shell/packages/*`, which import them
-// directly; `base` and `sdk` serve the ecosystem's own packages.
+// and `screenset` serve template packages in the templates repository,
+// which import them directly; `base` and `sdk` serve the ecosystem's own
+// packages.
 const ESLINT_CONFIG_NAMES = ['base', 'sdk', 'framework', 'react', 'screenset'];
 
 // Depcruise configs shipped by @gears-frontx/depcruise-config. Ecosystem-only.

@@ -722,12 +722,12 @@ describe('discoverWorkspaceProjects + loadProjects (end-to-end discovery)', () =
   });
 
   it('loadProjects composes the static repo-scripts project plus discovered workspaces', async () => {
-    // Phase 11 template-move relocated the host app + its nested MFEs to the
-    // self-contained `template-shell/` (which runs its own tests via its
-    // own package.json; its MFE content later split into the sibling
-    // `template-mfe/` in issue #470), so `discoverMfeProjects` remains a
-    // generic utility (see its own dedicated fixture tests above) that
-    // `loadProjects` no longer composes.
+    // Phase 11 template-move relocated the host app + its nested MFEs to a
+    // self-contained template (which runs its own tests via its own
+    // package.json; its MFE content later split into a sibling template in
+    // issue #470), so `discoverMfeProjects` remains a generic utility (see
+    // its own dedicated fixture tests above) that `loadProjects` no longer
+    // composes.
     //
     // `repo-scripts` is present for a fixture root that has no `scripts/` at
     // all, and that is the point: it is static, not discovered. `scripts/` is

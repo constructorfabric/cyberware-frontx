@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "name": "@fixture/shell",
+  "version": "1.0.0",
+  "ownershipBoundaries": {
+    "exclusiveSubtrees": ["package.json", "README.md", "src/", "src-app/app/"],
+    "sharedFiles": []
+  }
+}

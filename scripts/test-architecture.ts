@@ -2,8 +2,8 @@
 
 /**
  * FrontX Architecture Validation Script (Monorepo)
- * Self-contained after Phase 11 template-move (template relocated to
- * top-level template-shell/; packages/cli preserved as the greenfield CLI).
+ * Self-contained after Phase 11 template-move (the template relocated to its
+ * own top-level directory; packages/cli preserved as the greenfield CLI).
  */
 
 import { execSync } from 'child_process';
@@ -189,9 +189,15 @@ function getEcosystemBoundaryChecks(): ArchCheck[] {
     },
     // @cpt-end:cpt-frontx-constraint-cli-template-independence:p17:inst-dep-cruiser-check
     // @cpt-begin:cpt-frontx-constraint-cli-template-independence:p17:inst-hardcoded-name-check
+    // Structural, not name-keyed: `@gears-frontx/frontx-template` is the
+    // package-naming CONVENTION every template publishes under, not a
+    // specific template's identity — this repository does not know which
+    // templates exist (cpt-frontx-adr-template-acquisition-and-location), so
+    // the check must recognize the shape of a template package reference
+    // rather than enumerate one.
     {
       command:
-        "bash -c '! grep -rn \"frontx-template-shell\\|@gears-frontx/frontx-template\" packages/cli/src/ --include=\"*.ts\" --exclude-dir=generated --exclude-dir=__tests__ | grep -v \"@cpt-\"'",
+        "bash -c '! grep -rn \"@gears-frontx/frontx-template\" packages/cli/src/ --include=\"*.ts\" --exclude-dir=generated --exclude-dir=__tests__ | grep -v \"@cpt-\"'",
       description:
         'CLI-1 (cpt-frontx-constraint-cli-template-independence): cli sources contain no hardcoded template package names (excluding auto-generated version registry)',
     },

@@ -6,10 +6,8 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   dependencyFieldsChanged,
-  discoverManifestOnlyTemplateRoots,
   discoverPackageRoots,
   groupChangedFilesByPackageRoot,
-  hasSubstantiveTemplateChange,
   isDocsOnlyPath,
   runCli,
 } from './version-bump-on-change-check.mjs';
@@ -57,9 +55,8 @@ function commitAll(root, message) {
 }
 
 /**
- * Baseline fixture: two ecosystem packages and one template-shell package,
- * matching this repo's real shape closely enough for `discoverPackageRoots`
- * to exercise both groups.
+ * Baseline fixture: two governed ecosystem packages, matching this repo's
+ * real shape closely enough for `discoverPackageRoots` to exercise it.
  * @param {string} root
  */
 async function writeBaselineFixture(root) {
@@ -71,56 +68,6 @@ async function writeBaselineFixture(root) {
   await writeJson(path.join(root, 'packages', 'mfes', 'package.json'), {
     name: '@gears-frontx/mfes',
     version: '0.3.0-alpha.0',
-  });
-  await writeJson(path.join(root, 'template-shell', 'frontx-template.json'), {});
-  await writeJson(path.join(root, 'template-shell', 'package.json'), {
-    name: '@gears-frontx/frontx-template-shell',
-    version: '0.1.0-alpha.1',
-    workspaces: ['packages/*'],
-  });
-  await writeJson(path.join(root, 'template-shell', 'src', 'entry.ts'), 'export {};\n');
-  await writeJson(path.join(root, 'template-shell', 'packages', 'react', 'package.json'), {
-    name: '@gears-frontx/react',
-    version: '0.2.0-alpha.3',
-  });
-  await writeJson(path.join(root, 'template-mfe', 'frontx-template.json'), {});
-  await writeJson(path.join(root, 'template-mfe', 'package.json'), {
-    name: 'frontx-template-mfe-monorepo-harness',
-    private: true,
-    workspaces: ['src-app/mfe_packages/*'],
-  });
-  await writeJson(path.join(root, 'template-mfe', 'src-app', 'mfe_packages', 'demo-mfe', 'package.json'), {
-    name: '@gears-frontx/demo-mfe',
-    private: true,
-    version: '0.1.0-alpha.0',
-    dependencies: { '@gears-frontx/react': '0.2.0-alpha.3' },
-  });
-}
-
-const MANIFEST_ONLY_DIR = 'template-design-guardrails';
-const MANIFEST_ONLY_NAME = '@gears-frontx/template-design-guardrails';
-
-/**
- * A manifest-only template: frontx-template.json (the only version truth -
- * there is deliberately NO package.json), a DESIGN.md, and the template's own
- * .frontx/ai/<identity>/ bundle subtree. The design-guardrails template shape.
- * Passing `version: null` omits the field entirely (the broken-manifest case).
- * @param {string} root
- * @param {string | null} [version]
- */
-async function writeManifestOnlyTemplateFixture(root, version = '0.1.0-alpha.1') {
-  await writeJson(path.join(root, MANIFEST_ONLY_DIR, 'frontx-template.json'), {
-    schemaVersion: '1.0',
-    name: MANIFEST_ONLY_NAME,
-    ...(version === null ? {} : { version }),
-    ownershipBoundaries: {
-      exclusiveSubtrees: ['DESIGN.md', `.frontx/ai/${MANIFEST_ONLY_NAME}/`],
-      sharedFiles: [],
-    },
-  });
-  await writeFile(path.join(root, MANIFEST_ONLY_DIR, 'DESIGN.md'), '# Design guardrails\n');
-  await writeJson(path.join(root, MANIFEST_ONLY_DIR, '.frontx', 'ai', MANIFEST_ONLY_NAME, 'extension.json'), {
-    skills: ['skills/guardrails.md'],
   });
 }
 
@@ -139,61 +86,51 @@ describe('isDocsOnlyPath', () => {
 });
 
 describe('discoverPackageRoots', () => {
-  it('finds every packages/* directory plus template-shell itself and template-shell/packages/*, excluding template-mfe and its private fixtures entirely', async () => {
+  it('finds every non-private packages/* directory', async () => {
     const root = await makeRepo();
     await writeBaselineFixture(root);
 
-    expect(discoverPackageRoots(root)).toEqual([
-      'packages/api',
-      'packages/mfes',
-      'template-shell',
-      'template-shell/packages/react',
-    ]);
+    expect(discoverPackageRoots(root)).toEqual(['packages/api', 'packages/mfes']);
   });
 
-  // The scope check alone would NOT exclude a template-mfe fixture (its name
-  // IS in the @gears-frontx scope) - only its own `private: true` does. This
-  // proves the exemption is the per-package fact, not a heuristic on
-  // template-mfe's (unscoped) root manifest.
-  it('excludes a scope-qualified fixture package specifically because it is private, not because its template root is unscoped', async () => {
+  it('excludes a private packages/* directory', async () => {
     const root = await makeRepo();
     await writeBaselineFixture(root);
+    await writeJson(path.join(root, 'packages', 'ui-kit', 'package.json'), {
+      name: '@gears-frontx/ui-kit',
+      version: '0.1.0-alpha.0',
+      private: true,
+    });
 
-    const roots = discoverPackageRoots(root);
-    expect(roots).not.toContain('template-mfe/src-app/mfe_packages/demo-mfe');
+    expect(discoverPackageRoots(root)).not.toContain('packages/ui-kit');
   });
 });
 
 describe('groupChangedFilesByPackageRoot', () => {
   it('buckets each changed file under the package root that owns it, dropping files that match no root', () => {
-    const roots = ['packages/api', 'template-shell/packages/react'];
+    const roots = ['packages/api', 'packages/mfes'];
     const files = [
       'packages/api/src/index.js',
       'packages/api/package.json',
-      'template-shell/packages/react/src/hooks.ts',
+      'packages/mfes/src/registry.ts',
       'README.md',
-      'template-shell/package.json',
     ];
 
     const grouped = groupChangedFilesByPackageRoot(files, roots);
 
     expect(grouped.get('packages/api')).toEqual(['packages/api/src/index.js', 'packages/api/package.json']);
-    expect(grouped.get('template-shell/packages/react')).toEqual(['template-shell/packages/react/src/hooks.ts']);
+    expect(grouped.get('packages/mfes')).toEqual(['packages/mfes/src/registry.ts']);
     expect(grouped.size).toBe(2);
   });
 
-  // The nesting scenario change #1 introduces: template-shell is now ALSO a
-  // governed root, so a file under its packages/react subdirectory matches
-  // BOTH `template-shell/` and `template-shell/packages/react/` as prefixes.
-  // The longer (more specific) root must win.
   it('attributes a nested file to the longer (more specific) root, not the also-matching parent', () => {
-    const roots = ['template-shell', 'template-shell/packages/react'];
-    const files = ['template-shell/packages/react/src/hooks.ts', 'template-shell/src/index.ts'];
+    const roots = ['packages/mfes', 'packages/mfes/sub-widget'];
+    const files = ['packages/mfes/sub-widget/src/index.ts', 'packages/mfes/src/index.ts'];
 
     const grouped = groupChangedFilesByPackageRoot(files, roots);
 
-    expect(grouped.get('template-shell/packages/react')).toEqual(['template-shell/packages/react/src/hooks.ts']);
-    expect(grouped.get('template-shell')).toEqual(['template-shell/src/index.ts']);
+    expect(grouped.get('packages/mfes/sub-widget')).toEqual(['packages/mfes/sub-widget/src/index.ts']);
+    expect(grouped.get('packages/mfes')).toEqual(['packages/mfes/src/index.ts']);
   });
 });
 
@@ -262,74 +199,6 @@ describe('hasSubstantiveChange + versionAt (via runCli)', () => {
       version: '0.3.0-alpha.1',
     });
     commitAll(root, 'change api src with bump');
-
-    expect(run(root).exitCode).toBe(0);
-  });
-
-  // The #574 scenario this gate exists to catch: template-shell/packages/react
-  // is exactly where an ADR-0033-relocated package's source lives.
-  it('fails when template-shell/packages/react changes without a bump, the #574 scenario', async () => {
-    const root = await makeRepo();
-    await writeBaselineFixture(root);
-    commitAll(root, 'base');
-    git(root, ['checkout', '-q', '-b', 'feature']);
-    await writeJson(path.join(root, 'template-shell', 'packages', 'react', 'src', 'index.ts'), 'export {};\n');
-    commitAll(root, 'change react src without bump');
-
-    const { exitCode, output } = run(root);
-    expect(exitCode).toBe(1);
-    expect(output).toContain('template-shell/packages/react');
-  });
-
-  // Change #1: template-shell itself is now governed (it publishes dist-lib
-  // built from its own src/, and is exact-pinned by template-mfe fixtures -
-  // the same #574 shape as its packages/react member).
-  it('fails when template-shell\'s own src/ changes without a bump to template-shell\'s own version', async () => {
-    const root = await makeRepo();
-    await writeBaselineFixture(root);
-    commitAll(root, 'base');
-    git(root, ['checkout', '-q', '-b', 'feature']);
-    await writeJson(path.join(root, 'template-shell', 'src', 'entry.ts'), 'export const y = 1;\n');
-    commitAll(root, 'change template-shell src without bump');
-
-    const { exitCode, output } = run(root);
-    expect(exitCode).toBe(1);
-    expect(output).toContain('template-shell is still at');
-  });
-
-  // The nesting scenario change #1 introduces at the integration level: a
-  // change confined to template-shell/packages/react/src must attribute (and
-  // demand a bump) at that package, never at the also-matching parent
-  // template-shell - the longest-prefix fix in `groupChangedFilesByPackageRoot`
-  // is what this end-to-end test guards.
-  it('attributes a template-shell/packages/react-only change to that package, not to the parent template-shell', async () => {
-    const root = await makeRepo();
-    await writeBaselineFixture(root);
-    commitAll(root, 'base');
-    git(root, ['checkout', '-q', '-b', 'feature']);
-    await writeJson(path.join(root, 'template-shell', 'packages', 'react', 'src', 'index.ts'), 'export {};\n');
-    await writeJson(path.join(root, 'template-shell', 'packages', 'react', 'package.json'), {
-      name: '@gears-frontx/react',
-      version: '0.2.0-alpha.4',
-    });
-    commitAll(root, 'change and bump react only');
-
-    // react bumped, template-shell itself untouched and unchanged - must pass,
-    // proving the change was never also attributed to (and demanded a bump
-    // from) the parent template-shell root.
-    expect(run(root).exitCode).toBe(0);
-  });
-
-  it('ignores a change inside a template-mfe fixture package entirely - pinned consumers, not this gate\'s concern', async () => {
-    const root = await makeRepo();
-    await writeBaselineFixture(root);
-    commitAll(root, 'base');
-    git(root, ['checkout', '-q', '-b', 'feature']);
-    await writeJson(
-      path.join(root, 'template-mfe', 'src-app', 'mfe_packages', 'demo-mfe', 'src', 'App.tsx'),
-      'export {};\n',
-    );
-    commitAll(root, 'change mfe fixture');
 
     expect(run(root).exitCode).toBe(0);
   });
@@ -438,7 +307,7 @@ describe('hasSubstantiveChange + versionAt (via runCli)', () => {
 
   // Zero discovered roots is never a silent pass: an empty discovery means
   // the gate is broken, and "0 governed packages, all fine" is exactly what
-  // a real pass would also print. Same rule as template-pin-drift-check.
+  // a real pass would also print. Same rule as ecosystem-pin-drift-check.
   it('fails when discovery finds no governed packages at all', async () => {
     const root = await makeRepo();
     await writeFile(path.join(root, 'notes.txt'), 'no packages here\n');
@@ -465,7 +334,7 @@ describe('hasSubstantiveChange + versionAt (via runCli)', () => {
 
     const { exitCode, output } = run(root);
     expect(exitCode).toBe(0);
-    expect(output).toContain('none of 4 governed package(s) and 0 manifest-only template(s) had substantive changes');
+    expect(output).toContain('none of 2 governed package(s) had substantive changes');
   });
 
   it('counts only the packages with substantive changes in the success line', async () => {
@@ -482,7 +351,7 @@ describe('hasSubstantiveChange + versionAt (via runCli)', () => {
 
     const { exitCode, output } = run(root);
     expect(exitCode).toBe(0);
-    expect(output).toContain('every one of 1 governed root(s) with substantive changes');
+    expect(output).toContain('every one of 1 governed package(s) with substantive changes');
   });
 
   it('fails loudly, naming the base ref, when the merge base cannot be resolved', async () => {
@@ -500,197 +369,6 @@ describe('hasSubstantiveChange + versionAt (via runCli)', () => {
     });
     expect(exitCode).toBe(1);
     expect(lines.join('\n')).toContain('origin/does-not-exist');
-  });
-});
-
-describe('discoverManifestOnlyTemplateRoots', () => {
-  it('returns only the template roots with no package.json, not the manifest+package.json ones', async () => {
-    const root = await makeRepo();
-    // Mixed fixture: template-shell and template-mfe both carry a manifest AND
-    // a package.json; only the guardrails template is manifest-only.
-    await writeBaselineFixture(root);
-    await writeManifestOnlyTemplateFixture(root);
-
-    expect(discoverManifestOnlyTemplateRoots(root)).toEqual([MANIFEST_ONLY_DIR]);
-  });
-});
-
-describe('hasSubstantiveTemplateChange', () => {
-  const templateRoot = MANIFEST_ONLY_DIR;
-
-  it('exempts frontx-template.json itself - the bump edit must not force a second bump', () => {
-    expect(hasSubstantiveTemplateChange(templateRoot, [`${templateRoot}/frontx-template.json`])).toBe(false);
-  });
-
-  it('exempts a docs-only file', () => {
-    expect(hasSubstantiveTemplateChange(templateRoot, [`${templateRoot}/DESIGN.md`])).toBe(false);
-  });
-
-  it('counts any other file under the root', () => {
-    expect(hasSubstantiveTemplateChange(templateRoot, [`${templateRoot}/.frontx/ai/x/extension.json`])).toBe(true);
-  });
-});
-
-// A manifest-only template has no package.json - by design, nothing
-// installable - so its version truth is the "version" field of
-// frontx-template.json itself. The gate must (a) never crash or false-fail on
-// such a template's mere presence, and (b) still hold its changes to the
-// bump-on-change contract, against the manifest version rather than a
-// package.json one.
-describe('manifest-only template (frontx-template.json carries the version)', () => {
-  it('discovers the manifest-only root, and still passes, when only other packages change', async () => {
-    const root = await makeRepo();
-    await writeBaselineFixture(root);
-    await writeManifestOnlyTemplateFixture(root);
-    commitAll(root, 'base');
-    git(root, ['checkout', '-q', '-b', 'feature']);
-    await writeJson(path.join(root, 'packages', 'api', 'src', 'index.js'), 'export const x = 2;\n');
-    await writeJson(path.join(root, 'packages', 'api', 'package.json'), {
-      name: '@gears-frontx/api',
-      version: '0.3.0-alpha.1',
-    });
-    commitAll(root, 'change and bump api only');
-
-    expect(discoverManifestOnlyTemplateRoots(root)).toContain(MANIFEST_ONLY_DIR);
-    expect(run(root).exitCode).toBe(0);
-  });
-
-  it("fails when a manifest-only template's bundle content changes without a frontx-template.json version bump", async () => {
-    const root = await makeRepo();
-    await writeBaselineFixture(root);
-    await writeManifestOnlyTemplateFixture(root);
-    commitAll(root, 'base');
-    git(root, ['checkout', '-q', '-b', 'feature']);
-    await writeJson(path.join(root, MANIFEST_ONLY_DIR, '.frontx', 'ai', MANIFEST_ONLY_NAME, 'extension.json'), {
-      skills: ['skills/guardrails.md', 'skills/review.md'],
-    });
-    commitAll(root, 'change guardrails bundle without bump');
-
-    const { exitCode, output } = run(root);
-    expect(exitCode).toBe(1);
-    expect(output).toContain(MANIFEST_ONLY_DIR);
-  });
-
-  it("passes when a manifest-only template's content change comes with a frontx-template.json version bump", async () => {
-    const root = await makeRepo();
-    await writeBaselineFixture(root);
-    await writeManifestOnlyTemplateFixture(root);
-    commitAll(root, 'base');
-    git(root, ['checkout', '-q', '-b', 'feature']);
-    await writeManifestOnlyTemplateFixture(root, '0.1.0-alpha.2');
-    await writeJson(path.join(root, MANIFEST_ONLY_DIR, '.frontx', 'ai', MANIFEST_ONLY_NAME, 'extension.json'), {
-      skills: ['skills/guardrails.md', 'skills/review.md'],
-    });
-    commitAll(root, 'change guardrails bundle and bump the manifest version');
-
-    expect(run(root).exitCode).toBe(0);
-  });
-
-  it('passes a commit that touches ONLY frontx-template.json - a bump alone is never substantive', async () => {
-    const root = await makeRepo();
-    await writeBaselineFixture(root);
-    await writeManifestOnlyTemplateFixture(root);
-    commitAll(root, 'base');
-    git(root, ['checkout', '-q', '-b', 'feature']);
-    await writeJson(path.join(root, MANIFEST_ONLY_DIR, 'frontx-template.json'), {
-      schemaVersion: '1.0',
-      name: MANIFEST_ONLY_NAME,
-      version: '0.1.0-alpha.2',
-      ownershipBoundaries: {
-        exclusiveSubtrees: ['DESIGN.md', `.frontx/ai/${MANIFEST_ONLY_NAME}/`],
-        sharedFiles: [],
-      },
-    });
-    commitAll(root, 'bump the manifest version alone');
-
-    expect(run(root).exitCode).toBe(0);
-  });
-
-  // The .md exemption is INTENTIONAL: a manifest-only template's docs edits
-  // inherit the same isDocsOnlyPath decision as everywhere else in this gate,
-  // deliberately - DESIGN.md prose changing alone demands no bump.
-  it('passes a commit that touches only DESIGN.md with no bump - the docs-only exemption is inherited on purpose', async () => {
-    const root = await makeRepo();
-    await writeBaselineFixture(root);
-    await writeManifestOnlyTemplateFixture(root);
-    commitAll(root, 'base');
-    git(root, ['checkout', '-q', '-b', 'feature']);
-    await writeFile(path.join(root, MANIFEST_ONLY_DIR, 'DESIGN.md'), '# Design guardrails, revised\n');
-    commitAll(root, 'docs-only edit to the template');
-
-    const { exitCode, output } = run(root);
-    expect(exitCode).toBe(0);
-    // The success line counts BOTH kinds of governed root, not just packages.
-    expect(output).toContain('none of 4 governed package(s) and 1 manifest-only template(s) had substantive changes');
-  });
-
-  // Mirror of the package bump-then-revert case: the manifest version is read
-  // from the two endpoint blobs, so an intermediate bump that a later commit
-  // reverts must still fail.
-  it('fails when a frontx-template.json bump is reverted later in the same PR (bump-then-revert)', async () => {
-    const root = await makeRepo();
-    await writeBaselineFixture(root);
-    await writeManifestOnlyTemplateFixture(root);
-    commitAll(root, 'base');
-    git(root, ['checkout', '-q', '-b', 'feature']);
-    await writeManifestOnlyTemplateFixture(root, '0.1.0-alpha.2');
-    await writeJson(path.join(root, MANIFEST_ONLY_DIR, '.frontx', 'ai', MANIFEST_ONLY_NAME, 'extension.json'), {
-      skills: ['skills/guardrails.md', 'skills/review.md'],
-    });
-    commitAll(root, 'change bundle and bump');
-    await writeManifestOnlyTemplateFixture(root, '0.1.0-alpha.1');
-    // Re-assert the substantive bundle content so ONLY the version reverts.
-    await writeJson(path.join(root, MANIFEST_ONLY_DIR, '.frontx', 'ai', MANIFEST_ONLY_NAME, 'extension.json'), {
-      skills: ['skills/guardrails.md', 'skills/review.md'],
-    });
-    commitAll(root, 'revert the bump');
-
-    const { exitCode, output } = run(root);
-    expect(exitCode).toBe(1);
-    expect(output).toContain(MANIFEST_ONLY_DIR);
-  });
-
-  // Governance is classified at the MERGE BASE: a PR that adds a package.json
-  // to a previously manifest-only template must not thereby flip the root out
-  // of manifest governance in the same PR that changes its content.
-  it('still demands a manifest bump when the same PR adds a package.json to a previously manifest-only template', async () => {
-    const root = await makeRepo();
-    await writeBaselineFixture(root);
-    await writeManifestOnlyTemplateFixture(root);
-    commitAll(root, 'base');
-    git(root, ['checkout', '-q', '-b', 'feature']);
-    await writeJson(path.join(root, MANIFEST_ONLY_DIR, 'package.json'), {
-      name: 'design-guardrails-harness',
-      private: true,
-    });
-    await writeJson(path.join(root, MANIFEST_ONLY_DIR, '.frontx', 'ai', MANIFEST_ONLY_NAME, 'extension.json'), {
-      skills: ['skills/guardrails.md', 'skills/review.md'],
-    });
-    commitAll(root, 'add a package.json and change the bundle, no manifest bump');
-
-    const { exitCode, output } = run(root);
-    expect(exitCode).toBe(1);
-    expect(output).toContain(MANIFEST_ONLY_DIR);
-  });
-
-  // A manifest that EXISTS but has no version must fail loudly, not silently
-  // exempt the root the way a genuinely absent manifest (new/removed package)
-  // does - conflating the two would ungoverned the template forever.
-  it('fails loudly, naming the root, when frontx-template.json declares no version at either ref', async () => {
-    const root = await makeRepo();
-    await writeBaselineFixture(root);
-    await writeManifestOnlyTemplateFixture(root, null);
-    commitAll(root, 'base');
-    git(root, ['checkout', '-q', '-b', 'feature']);
-    await writeJson(path.join(root, MANIFEST_ONLY_DIR, '.frontx', 'ai', MANIFEST_ONLY_NAME, 'extension.json'), {
-      skills: ['skills/guardrails.md', 'skills/review.md'],
-    });
-    commitAll(root, 'change bundle under a versionless manifest');
-
-    const { exitCode, output } = run(root);
-    expect(exitCode).toBe(1);
-    expect(output).toContain(`${MANIFEST_ONLY_DIR}/frontx-template.json`);
-    expect(output).toContain('no usable "version"');
   });
 });
 
