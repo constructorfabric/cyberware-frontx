@@ -14,11 +14,14 @@
 - [3. Processes / Business Logic (CDSL)](#3-processes--business-logic-cdsl)
   - [Realm-Global Singleton Resolution](#realm-global-singleton-resolution)
   - [Fan-Out Subscription Dispatch](#fan-out-subscription-dispatch)
-  - [Route-Owner Resolution By Longest Matching Declared Prefix](#route-owner-resolution-by-longest-matching-declared-prefix)
+  - [Grammar Parse](#grammar-parse)
+  - [Grammar Serialize](#grammar-serialize)
+  - [Name Validity And Equality](#name-validity-and-equality)
+  - [Domain-Key Composition](#domain-key-composition)
 - [4. States (CDSL)](#4-states-cdsl)
   - [No Feature-Owned State Machine](#no-feature-owned-state-machine)
 - [5. Definitions of Done](#5-definitions-of-done)
-  - [Single Realm-Shared History With Fan-Out Subscription And Prefix-Resolution Primitive](#single-realm-shared-history-with-fan-out-subscription-and-prefix-resolution-primitive)
+  - [Single Realm-Shared History With Fan-Out Subscription And URL Grammar Codec](#single-realm-shared-history-with-fan-out-subscription-and-url-grammar-codec)
   - [Imperative Navigation Surface Outside The UI Tree](#imperative-navigation-surface-outside-the-ui-tree)
 - [6. Acceptance Criteria](#6-acceptance-criteria)
 
@@ -33,13 +36,13 @@
 
 *Navigation substrate* in this document names this agnostic core component alone, not the whole published package: `@gears-frontx/routing` is this core plus the Route Ownership Signal component specified in the sibling FEATURE (root DESIGN and ADR 0002 use the same term at package granularity — a broader use than this FEATURE's own; see the package's own [DESIGN §1.1](../../DESIGN.md#11-architectural-vision)). The Engine Provider is not part of this package at all: it is a separately published member (`cpt-frontx-feature-routing-engine-provider`) — the ecosystem provides a default implementation of it — that consumes this component's contract from outside.
 
-The Navigation Substrate is exactly one navigation-history instance per realm, reachable by the host and by every independently bundled microfrontend, with one real subscription against the browser's own navigation history fanned out to every listener — a fan-out its own `push`/`replace` calls also trigger directly, as a second dispatch path alongside that one subscription; the full reasoning for both dispatch triggers, including why a `go` call is observed through the subscription rather than dispatched directly, belongs to §3 (Fan-Out Subscription Dispatch), not repeated here. It exposes that history's `push`, `replace`, `go`, `location`, and `subscribe` — its own `NavigationHistory` contract — for use outside any mounted UI-framework component tree, and it carries the primitive that names which declared route owner a local remainder of the URL belongs to, at whatever domain level and axis a consumer applies it to — the longest matching declared prefix, respecting path-segment boundaries. It carries no dependency on a concrete router engine or UI framework whatsoever; `NavigationHistory` is deliberately narrower than what any concrete engine's own history contract typically requires — a separately published engine-provider package is responsible for adapting one into the other, never this component.
+The Navigation Substrate is exactly one navigation-history instance per realm, reachable by the host and by every independently bundled microfrontend, with one real subscription against the browser's own navigation history fanned out to every listener — a fan-out its own `push`/`replace` calls also trigger directly, as a second dispatch path alongside that one subscription; the full reasoning for both dispatch triggers, including why a `go` call is observed through the subscription rather than dispatched directly, belongs to §3 (Fan-Out Subscription Dispatch), not repeated here. It exposes that history's `push`, `replace`, `go`, `location`, and `subscribe` — its own `NavigationHistory` contract — for use outside any mounted UI-framework component tree, and it owns the URL grammar codec every domain in the tree is addressed through: parsing the query string into an ordered list of entries and serializing that list back into a URL (`cpt-frontx-routing-adr-domain-occupancy-addressing-granularity`), together with the name-validity and name-equality rule every domain key and extension token is checked against and the domain-key-composition function a nested domain's own mounting level calls to compose its own key. Which declared extension a domain's own entries actually resolve to is a separate concern this component never performs — the sibling Route Ownership Signal FEATURE (`cpt-frontx-feature-routing-route-ownership-signal`) exposes that resolution, built on top of this codec, never re-implementing it. It carries no dependency on a concrete router engine or UI framework whatsoever; `NavigationHistory` is deliberately narrower than what any concrete engine's own history contract typically requires — a separately published engine-provider package is responsible for adapting one into the other, never this component.
 
 ### 1.2 Purpose
 
 Independently bundled units cannot share a compile-time singleton — each is its own module graph, built and shipped on its own schedule. A composed application built from such units still needs exactly one navigation history: programmatic navigation performed through `pushState` produces no `popstate` event, so it is invisible to any second copy of a history-managing module that did not perform the call itself. Left alone, two independently bundled copies of this package would each construct their own history instance, and a `push`/`replace`/`go` issued through one would leave the other holding a stale `location` — the two copies, and the routers built on top of them, would drift out of agreement with each other and with the address bar. The Navigation Substrate exists to make that divergence structurally impossible: every unit in the realm reaches the same instance, by construction, rather than by convention. How the substrate's own fan-out stays visible to every subscriber despite that same `pushState`/`popstate` gap is §3's own concern (Fan-Out Subscription Dispatch), not this one's.
 
-**Requirements**: `cpt-frontx-routing-fr-single-navigation-substrate`, `cpt-frontx-routing-fr-imperative-navigation`, `cpt-frontx-routing-fr-route-ownership-signal`, `cpt-frontx-routing-nfr-agnostic-core`
+**Requirements**: `cpt-frontx-routing-fr-single-navigation-substrate`, `cpt-frontx-routing-fr-imperative-navigation`, `cpt-frontx-routing-fr-route-ownership-signal`, `cpt-frontx-routing-fr-engine-provider-port`, `cpt-frontx-routing-nfr-agnostic-core`
 
 **Principles**: `cpt-frontx-routing-principle-single-history-authority`
 
@@ -54,6 +57,7 @@ Independently bundled units cannot share a compile-time singleton — each is it
 - **PRD**: [PRD.md](../../PRD.md)
 - **Design**: [DESIGN.md](../../DESIGN.md)
 - **Component**: `cpt-frontx-component-routing-navigation-substrate`
+- **ADR**: `cpt-frontx-routing-adr-domain-occupancy-addressing-granularity` — the normative URL grammar this feature's codec algorithms implement.
 - **Constraints**: `cpt-frontx-constraint-routing-no-engine-leak`, `cpt-frontx-constraint-routing-no-intra-ecosystem-dependency`
 - **Dependencies**: None — this feature is the ecosystem-facing foundation of the package; `cpt-frontx-feature-routing-route-ownership-signal` and `cpt-frontx-feature-routing-engine-provider` both depend on it.
 
@@ -62,7 +66,7 @@ Independently bundled units cannot share a compile-time singleton — each is it
 Field-level shape of `NavigationHistory`'s own `location` value and of the notification its `subscribe` callback receives, per `cpt-frontx-adr-contract-schema-ownership` (owned contract role in DESIGN, decision rationale in the ADR, field-level schema here in the owning FEATURE — this feature owns the `NavigationHistory` contract, `cpt-frontx-component-routing-navigation-substrate`).
 
 **Location shape** — the shape `NavigationHistory`'s own `location` member exposes, and the shape carried inside every subscriber notification below:
-- **Path** — the pathname component of the current URL; the value the longest-matching-prefix primitive (`cpt-frontx-algo-routing-navigation-substrate-prefix-resolution`) matches against.
+- **Path** — the shell subroute: the pathname component of the current URL, everything between the first `/` and `?`. This package never interprets it for occupancy — it is the shell's own private territory, copied verbatim by the grammar codec on every parse and every write (`cpt-frontx-routing-adr-domain-occupancy-addressing-granularity`).
 - **Search** — the current URL's query string.
 - **Hash** — the current URL's fragment.
 
@@ -82,7 +86,14 @@ This shape is `NavigationHistory`'s own notification, internal to this contract 
 - **`replace(path)`** — accepts a path string composed exactly like `push`'s own argument and overwrites the current history entry with it, leaving every entry before and after the current one untouched.
 - **`go(delta)`** — accepts a signed step count (negative for back, positive for forward) and moves through existing history entries; observed asynchronously through the underlying browser subscription (§3, Fan-Out Subscription Dispatch) rather than dispatched directly at the call site.
 
-**Prefix-equivalence predicate** — published as its own callable entry point, alongside the owner-resolution primitive it shares its rule with: given two declared prefixes, it normalizes each into its own list of non-empty path segments (`cpt-frontx-algo-routing-navigation-substrate-prefix-resolution`, step 3.1) and reports whether the two lists are identical, segment by segment, under the same character-by-character, case-sensitive comparison that primitive itself uses (Segment-equality rule, §3). A domain's own consumer calls this predicate at route-owner registration time to check two candidate declared prefixes for a same-prefix conflict (PRD §11), applying the identical rule the resolution primitive itself applies at navigation time rather than approximating it with a separate comparison of its own.
+**Name-equality predicate** — published as its own callable entry point, alongside the name-validity check it shares its alphabet rule with (`cpt-frontx-algo-routing-navigation-substrate-name-validity`): given two candidate `name`-alphabet values — two extension tokens, or two domain-name segments — it reports whether they are identical, character-by-character, under the same case-sensitive comparison the grammar's own `name` production requires (there is no percent-decoding to normalize away, because `name` admits no percent-escapes in the first place). A domain's own consumer calls this predicate at registration time to check two candidate extension tokens for a same-token conflict (PRD §11), applying the identical rule the parser itself applies when it decides whether a later entry's extension token duplicates an earlier one under the same domain key, rather than approximating it with a separate comparison of its own.
+
+**Grammar codec shapes** — the ordered entry list every parse produces and every serialize consumes, per `cpt-frontx-routing-adr-domain-occupancy-addressing-granularity`:
+
+- **Parse result** — the shell subroute and the hash, each copied verbatim from the input and returned untouched; an ordered list of entries, each carrying its own `domainKey`, its own `extension`, and its own ordered list of `params` (`{name, value}` pairs, in the order encountered, later occurrences of a duplicate name overwriting the value in place); and an ordered list of warnings, each naming the raw text of the entry it concerns and which of the parse-time edge rules it was produced by (malformed entry, duplicate parameter, duplicate extension). A well-formed input with zero entries parses to an empty entry list, not an error.
+- **Serialize input** — the identical shape: a shell subroute, a hash, and an ordered entry list of `{domainKey, extension, params}`. Serializing is this parse result's own inverse for every entry the parser actually kept, for canonical input only — never fed a raw parse warning, only the entries that survived them. A bare `param-name` with no `=` and a `param-name=` with an explicit, empty value both parse to the identical empty-string value (§9 of the URL grammar's own edge rules), and the serializer always re-emits that value as a bare name; a parse→serialize round-trip is therefore byte-exact only when the input already used the canonical bare form for every empty value, not when it used the explicit `k=` form. This feature does not claim "own inverse" unqualified.
+
+A caller that already holds a parse result may pass it to serialize unchanged to reproduce the original URL exactly (Worked example 7.1, below), and a caller that only ever constructs entries programmatically never touches parse at all.
 
 **Entry-carried state — not part of this contract**: a concrete engine's own history contract may let a caller attach an opaque state value to a history entry alongside its path. `NavigationHistory` carries no such member: `push` and `replace` take a path alone, and the Location shape above carries no state field. This is a stated limitation of the substrate's own contract, not an omission from this description — a replacement engine provider that needs entry-carried state gets it from its own engine's contract, never by reading it back out of `NavigationHistory`.
 
@@ -92,16 +103,18 @@ This shape is `NavigationHistory`'s own notification, internal to this contract 
 
 A conforming provider **MUST** accept, as its construction input:
 - The navigation substrate's `NavigationHistory` instance (`location`, `subscribe`, `push`, `replace`, `go`) — the same realm-shared instance every other unit reads and writes, never a copy or a wrapper that diverges from it.
-- The `basepath` assigned to the microfrontend it is mounted for — host-assigned when the microfrontend is composed, deployment-supplied or absent when it is served standalone. `basepath` is defined only for a level whose own carrier is the pathname: a level whose own carrier is a parallel-axis key's own entry value does not, in this release, hand a `basepath` to an engine-provider package for a constructed, mounted router — projecting a provider-constructed router inside a parallel-axis occupant's own zone is deferred until a first real consumer needs one, exactly as this package defers projecting a concurrently-occupied domain (`cpt-frontx-adr-extension-domain-occupancy`).
+- The **entry address** this occupant was mounted at — its own domain key and its own extension, `{domainKey, extension}` — assigned by the enclosing level the moment it mounts the unit in a composed application, or its absence entirely when the unit is served standalone, with no entry address at all. An entry address is uniform across every domain in the tree, at any depth and any occupant count — there is no separate case for a domain holding one occupant against a domain holding several, and no case that withholds an entry address from a nested domain's own occupant (`cpt-frontx-routing-adr-domain-occupancy-addressing-granularity`).
 - The microfrontend's own route tree, carried as an opaque value this feature never inspects and imposes no shape on.
 
 A conforming provider is responsible for producing, from those inputs:
 - Its own concrete engine's history-contract object, derived from `NavigationHistory` — deriving whatever members that engine's own contract requires beyond `location`/`subscribe`/`push`/`replace`/`go`, and translating `NavigationHistory`'s own subscriber notification (Subscriber notification shape, above) into whatever shape its own engine's `subscribe` callback expects. This feature names no concrete engine and mandates no particular translation target; it constrains only what a provider receives from the substrate, never how a provider's own engine wants that input reshaped.
-- A constructed, mounted router, scoped to the given `basepath` when one is supplied, matching only the remainder of the URL beneath it.
+- A constructed, mounted router, scoped to the given entry address when one is supplied, reading and writing only that one entry's own payload — never a sibling occupant's entry under the same domain key, and never an entry under another domain key, and never a bare top-level query-string key of its own: a bare key is exactly the flat namespace per-occupant addressing exists to eliminate (`cpt-frontx-routing-fr-per-occupant-addressable-parameters`).
+
+**Subscription and lifecycle obligations.** A conforming provider **MUST** register exactly one `subscribe` callback against `NavigationHistory` per router it constructs — never more than one for the same router — and **MUST** invoke that subscription's own release when the unit owning that router unmounts, so a torn-down router's callback stops receiving the fan-out. A provider **MUST** originate every location change through `push`, `replace`, or `go` on the shared `NavigationHistory` instance, and **MUST NOT** add a dispatch of its own alongside any of them: `push`/`replace` already dispatch the substrate's fan-out directly and `go` already arrives through the browser's own `popstate` (`cpt-frontx-algo-routing-navigation-substrate-fanout-dispatch`), so a compensating dispatch of the provider's own would deliver one navigation to every subscriber twice. The constructed router **MUST** read the already-current `location` at construction rather than starting from a blank route, so no blank frame appears between mount and first render at any domain (§3.6 of this package's own DESIGN).
 
 **Diagnostic of mismatch**: a provider that cannot accept `NavigationHistory` as-is — for example, one whose own engine's history contract requires a constructor argument this port does not supply — fails at construction rather than at first navigation: it cannot receive the shared history, so the microfrontend's routing does not initialize. This failure is local to the microfrontend that adopted the mismatched provider; it does not reach the substrate, the host, or a sibling microfrontend.
 
-This shape is the port's normative contract, binding on every conforming provider. A provider's own adaptation of it into a concrete engine's history and subscriber-notification shapes is a worked example of satisfying this schema, not a restatement of it — the ecosystem's own default provider records its worked example in its own FEATURE (`cpt-frontx-feature-routing-engine-provider` §1.5), which points back here for the normative form rather than repeating it.
+This shape is the port's normative contract, binding on every conforming provider, and is this package's single normative statement of the engine-provider port — no other artifact in this package or in a provider's own package restates it as normative. A provider's own adaptation of it into a concrete engine's history and subscriber-notification shapes is a worked example of satisfying this schema, not a restatement of it — the ecosystem's own default provider records its worked example in its own FEATURE (`cpt-frontx-feature-routing-engine-provider` §1.5), which points back here for the normative form rather than repeating it.
 
 ## 2. Actor Flows (CDSL)
 
@@ -127,13 +140,13 @@ User-facing interactions that start with an actor and describe the end-to-end fl
    2. [ ] - `p1` - Caller retains the returned unsubscribe function for later teardown - `inst-retain-unsubscribe`
 3. [ ] - `p1` - **IF** the caller also needs to act immediately — independently of step 2, and commonly alongside it, since a typical caller both reads or writes the URL once now and subscribes for later changes - `inst-branch-immediate`
    1. [ ] - `p1` - Caller reads `location` for the current URL, or calls `push`/`replace`/`go` to change it - `inst-immediate-call`
-4. [ ] - `p1` - **IF** the caller needs to know which declared unit currently owns the resulting pathname - `inst-branch-owner`
-   1. [ ] - `p1` - Caller invokes the longest-matching-prefix resolution primitive, passing its own set of declared identifier-to-prefix pairs as a plain argument (`cpt-frontx-algo-routing-navigation-substrate-prefix-resolution`) - `inst-resolve-owner`
-5. [ ] - `p1` - **RETURN** control to the caller; any subscribed listener across the realm is notified through the same fan-out the caller's own call reached - `inst-return`
+4. [ ] - `p1` - **RETURN** control to the caller; any subscribed listener across the realm is notified through the same fan-out the caller's own call reached - `inst-return`
+
+Which declared extension currently owns an entry the caller reads from `location` is not this flow's own concern: that resolution is the Route Ownership Signal's own public entry point, built on the grammar codec below rather than duplicated here (`cpt-frontx-feature-routing-route-ownership-signal`).
 
 ## 3. Processes / Business Logic (CDSL)
 
-Internal system functions that do not interact with actors directly. All three are the building blocks the Route Ownership Signal (`cpt-frontx-feature-routing-route-ownership-signal`) and the Engine Provider (`cpt-frontx-feature-routing-engine-provider`) are built on.
+Internal system functions that do not interact with actors directly. All six are the building blocks the Route Ownership Signal (`cpt-frontx-feature-routing-route-ownership-signal`) and the Engine Provider (`cpt-frontx-feature-routing-engine-provider`) are built on.
 
 ### Realm-Global Singleton Resolution
 
@@ -185,36 +198,115 @@ Internal system functions that do not interact with actors directly. All three a
 
 **Rationale**: Exactly one subscription reaches the browser's navigation-history API regardless of how many listeners the realm accumulates, and that subscription lives from instance construction onward rather than from a first `subscribe` call, so every listener's fan-out — and every reader's `location` — traces back to that same single, already-live subscription. Dispatch has two triggers rather than one because the browser's own `popstate` event never fires for a `pushState`/`replaceState` call made through this same instance — without step 3's direct dispatch, this instance's own `push` and `replace` would be invisible to every subscriber, including the very Route Ownership Signal observer that depends on observing them. `go` deliberately stays out of that direct path: it does eventually raise `popstate`, only asynchronously, so folding it into step 3 would notify subscribers with a `location` that does not yet reflect the completed move — step 2's subscription, the same one back/forward relies on, is what observes `go` correctly. The snapshot-and-defer rules in step 4 are what make a listener free to unsubscribe or navigate from inside its own callback without corrupting the round it is currently part of: the snapshot fixes which callbacks are eligible for the round, but a callback's own release always wins over a still-pending, not-yet-invoked slot the snapshot reserved for it — an invocation already completed earlier in the same round is never undone, only one still pending is ever skipped.
 
-### Route-Owner Resolution By Longest Matching Declared Prefix
+### Grammar Parse
 
-- [ ] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-prefix-resolution`
+- [ ] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-grammar-parse`
 
-**Input**: A pathname — in practice, whatever local remainder of the URL a caller supplies: a domain level's own remainder beneath its base for an axial caller, or a parallel axis's own carried local path for a parallel caller; this primitive treats either one the same way and carries no notion of which kind of caller supplied it. The set of declared identifier-to-prefix pairs, supplied by the caller as a plain argument.
+**Input**: A URL string, or the caller's already-split shell subroute, query string, and hash.
 
-**Output**: The identifier of the route owner whose declared prefix is the longest match for the pathname, together with that specific matched declared prefix — returned as a fact of this resolution, for the caller's own convenience, even though a route owner declares exactly one prefix for as long as its registration exists (PRD §11) and the matched prefix is therefore always derivable from the identifier alone once resolved — or a "no owner" result when no declared prefix matches.
+**Output**: The shell subroute and the hash, each copied verbatim from the input; an ordered list of entries, each `{domainKey, extension, params}` with `params` itself an ordered list of `{name, value}` pairs; and an ordered list of warnings, each naming the raw entry text it concerns and which rule produced it. Parsing never throws — a malformed entry is dropped and reported, every other entry is kept (`cpt-frontx-routing-adr-domain-occupancy-addressing-granularity`).
 
 **Steps**:
-1. [ ] - `p1` - Read the current set of declared identifier-to-prefix pairs from the caller-supplied argument - `inst-read-declared-prefixes`
-2. [ ] - `p1` - Normalize the pathname into its list of non-empty path segments — split on the path-segment separator (`/`) and discard every empty piece the split produces, so a leading, trailing, or repeated separator contributes nothing to the list; the application root and the empty string both normalize to the empty list - `inst-normalize-pathname`
-3. [ ] - `p1` - **FOR EACH** declared prefix - `inst-foreach-candidate`
-   1. [ ] - `p1` - Normalize that declared prefix into its own list of non-empty path segments by the same rule as step 2 - `inst-normalize-prefix`
-   2. [ ] - `p1` - **IF** the prefix's segment list is a prefix of the pathname's segment list — every segment in the prefix's list appears in the pathname's list at the same position, in order, including the case where the two lists are equal - `inst-if-segment-prefix-match`
-      1. [ ] - `p1` - Add it to the set of matching candidates, recording the number of segments in its list - `inst-collect-candidate`
-4. [ ] - `p1` - **IF** the set of matching candidates is non-empty - `inst-if-candidates`
-   1. [ ] - `p1` - Select the candidate with the greatest number of matched segments — never by the declared prefix's string length, which a trailing or repeated separator would otherwise distort - `inst-select-longest`
-   2. [ ] - `p1` - **RETURN** that candidate's identifier and its declared prefix, as the route owner and its matched prefix - `inst-return-owner`
-5. [ ] - `p1` - **ELSE** - `inst-else-no-candidates`
-   1. [ ] - `p1` - **RETURN** the "no owner" result - `inst-return-no-owner`
+1. [ ] - `p1` - Split the input into the shell subroute (everything before the first `?`), the query string (between `?` and `#`, or the rest of the string if no `#` is present), and the hash (everything from `#` onward, or absent) - `inst-split-url`
+2. [ ] - `p1` - Copy the shell subroute and the hash into the output unchanged; this package never inspects either one further - `inst-copy-verbatim`
+3. [ ] - `p1` - **IF** the query string is empty — including a URL whose `?` is present with nothing after it (e.g. `/en?`), which is a present, empty query string, not the absence of one - `inst-if-empty-query`
+   1. [ ] - `p1` - **RETURN** an empty entry list, no warnings, and the copied shell subroute and hash - `inst-return-empty`
+4. [ ] - `p1` - Split the query string on `&` into raw entry strings, preserving their left-to-right order - `inst-split-entries`
+5. [ ] - `p1` - **FOR EACH** raw entry string, in order - `inst-foreach-raw-entry`
+   0. [ ] - `p1` - **IF** this raw entry string is empty — produced by two consecutive `&` characters (`a=b&&c=d`) or a trailing `&` at the end of the query string — silently skip it and continue to the next raw entry string: no warning is recorded for an empty raw entry, unlike every other malformed case this algorithm reports - `inst-skip-empty-raw-entry`
+   1. [ ] - `p1` - Split it on `;` into its head segment and zero or more param segments - `inst-split-on-semicolon`
+   2. [ ] - `p1` - **IF** the head segment carries no `=`, or the text before that `=` (the candidate domain key) does not conform to the `domain-key` production — an odd count of `.`-separated segments, each segment matching the `name` alphabet — or the text after it (the candidate extension) does not match the `name` alphabet - `inst-if-malformed-head`
+      1. [ ] - `p1` - Drop this entry, record a warning citing its raw text and "malformed entry", and continue to the next raw entry string - `inst-drop-malformed`
+   3. [ ] - `p1` - Set `domainKey` and `extension` from the head segment's own two sides of its first `=` - `inst-set-domain-key-extension`
+   4. [ ] - `p1` - **IF** `extension` already appears in an entry already kept for this same `domainKey` earlier in this same parse - `inst-if-duplicate-extension`
+      1. [ ] - `p1` - Drop this entry (the first occurrence already kept stands), record a warning citing its raw text and "duplicate extension", and continue to the next raw entry string - `inst-drop-duplicate-extension`
+   5. [ ] - `p1` - **FOR EACH** param segment, in order - `inst-foreach-param-segment`
+      1. [ ] - `p1` - **IF** the segment carries no `=`, set that param's `name` to the whole segment, percent-decoded, and its `value` to the empty string - `inst-bare-param`
+      2. [ ] - `p1` - **ELSE** set `name` and `value` from the segment's own two sides of its first `=`, each percent-decoded once - `inst-keyed-param`
+      3. [ ] - `p1` - Percent-decoding replaces each `%XX` escape with the byte it encodes and leaves every other character, including a raw `+`, exactly as read — this grammar performs no form-style `+`-to-space decoding; a run of one or more consecutive `%XX` escapes is assembled as a run of raw bytes and decoded together as UTF-8, so a multi-byte character split across consecutive escapes decodes to the one character it encodes, not to several - `inst-decode-once`
+      4. [ ] - `p1` - **IF** a `%` in this segment is not followed by two hexadecimal digits (a malformed escape, e.g. `%zz` or a trailing `%`), or the bytes a run of `%XX` escapes assembles are not valid UTF-8 - `inst-if-malformed-escape`
+         1. [ ] - `p1` - Drop the *whole entry* this segment belongs to — not only this one param — record a warning citing the entry's raw text and "malformed entry", and continue to the next raw entry string, abandoning whatever params of this entry were already collected - `inst-drop-entry-malformed-escape`
+      5. [ ] - `p1` - **IF** a param of this same `name` was already collected earlier in this same entry - `inst-if-duplicate-param`
+         1. [ ] - `p1` - Overwrite that earlier param's value with this one's, in its original position, and record a warning citing this entry's raw text and "duplicate parameter" - `inst-overwrite-duplicate-param`
+      6. [ ] - `p1` - **ELSE** append `{name, value}` to this entry's own ordered `params` list - `inst-append-param`
+   6. [ ] - `p1` - Append `{domainKey, extension, params}` to the output entry list, in this raw entry string's own position - `inst-append-entry`
+6. [ ] - `p1` - **RETURN** the entry list, the warnings collected, and the copied shell subroute and hash - `inst-return-parsed`
 
-**Declared-prefix validity note**: A declared prefix normalizes (step 3.1) into one or more non-empty path segments; a prefix that normalizes to the empty segment list — an empty string, or a bare `/` — is not a valid declaration, and this primitive does not treat one as a candidate that matches every pathname. Catching an invalid declaration is the same registration-time responsibility that catches a same-prefix conflict (PRD §11), not a matching-time concern of this primitive: the set of declared pairs this primitive receives is assumed free of a prefix that normalizes to the empty list, exactly as it is assumed free of two prefixes that normalize to the identical non-empty list (Equivalent-prefix precondition, below). A zone whose own root carries no declared occupant simply has no declared prefix that matches an empty local remainder there, and that remainder resolves through the ordinary matching rule (steps 4–5) to "no owner" like any other unmatched remainder — the consumer's own fallback for that state, the same fallback an index-route redirect at the engine-provider level already relies on.
+**Rationale**: Malformed-entry, duplicate-extension, and duplicate-parameter are three independent edge rules the grammar deliberately resolves differently — a malformed entry is discarded outright because there is no well-formed fact to keep; a duplicate extension under one domain key keeps the first occurrence because entries are an ordered list a domain reads meaning from; a duplicate parameter name keeps the last occurrence because parameters are a map, the same rule `URLSearchParams` itself would apply if this grammar's own delimiters let it be used at all. Every rule reports a warning rather than throwing, because a consumer resolving an existing, possibly bookmarked URL cannot recover from a thrown parse error the way it can from a dropped or overwritten entry.
 
-**Trailing-separator note**: A declared prefix of `/a/` normalizes to the same single-segment list as `/a` (step 3.1 discards the empty piece the trailing separator produces), so the two declared forms match identically — both match `/a` itself and `/a/b`, and neither matches `/ab`, whose only segment is `ab`, not `a`.
+### Grammar Serialize
 
-**Segment-equality rule**: Two segments are equal exactly when they are equal character-by-character on the raw pathname — no percent-decoding of a percent-escaped sequence, and case-sensitive comparison. This is the rule steps 3.1–3.2 use to decide whether a prefix's segment list matches, and it is also the rule PRD §11 means by "the *same* prefix" when it defines a same-prefix conflict between two declared route owners: two declared prefixes conflict exactly when this rule normalizes them to the identical segment list.
+- [ ] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-grammar-serialize`
 
-**Equivalent-prefix precondition**: The set of declared pairs this primitive receives is assumed free of two prefixes that normalize to the identical segment list under the rule above — catching that conflict is the host's own responsibility at route-owner registration (PRD §11), not this primitive's. An input set that violates this precondition is invalid input this primitive does not defend against: which of the two equivalently-normalized candidates it selects in that case is unspecified, and not guaranteed to be deterministic across calls.
+**Input**: A shell subroute, an ordered entry list of `{domainKey, extension, params}` (`params` itself ordered), and a hash — the identical shape `cpt-frontx-algo-routing-navigation-substrate-grammar-parse` produces.
 
-**Boundary note**: This is the matching primitive alone — naming an owner and its matched prefix, or naming "no owner." It performs no mounting, no unmounting, and no URL reflection. Route Ownership Signal exposes this same primitive as its own public entry point and builds an observable signal of ownership changes on top of it (`cpt-frontx-feature-routing-route-ownership-signal`), without re-implementing the matching rule; mounting, unmounting, and any reconciliation between the URL and what is actually mounted are the consumer's own responsibility, never this primitive's or that feature's. Route Ownership Signal calls this primitive once per domain level and once per axis a level projects, each time against that call's own local remainder; the primitive itself carries no notion of level or axis at all — that structure exists only in how a caller chooses to invoke it, never in the primitive's own state.
+**Output**: A URL string, or a thrown error naming the offending entry when the input violates a structural invariant this package itself enforces on write.
+
+**Steps**:
+1. [ ] - `p1` - **FOR EACH** entry in the input list - `inst-foreach-entry-validate`
+   1. [ ] - `p1` - **IF** `domainKey` does not conform to the `domain-key` production, or `extension` does not match the `name` alphabet - `inst-if-invalid-tokens`
+      1. [ ] - `p1` - **THROW** an error naming this entry - `inst-throw-invalid-tokens`
+   2. [ ] - `p1` - **IF** this entry's own `params` list carries two params of the identical `name` - `inst-if-duplicate-param-name`
+      1. [ ] - `p1` - **THROW** an error naming this entry - `inst-throw-duplicate-param`
+   3. [ ] - `p1` - **IF** an entry earlier in this same input list already carries the identical `domainKey` and `extension` - `inst-if-duplicate-extension-serialize`
+      1. [ ] - `p1` - **THROW** an error naming both entries — serializing a duplicate extension under one domain key is an error, never a silent first-wins, because a caller assembling a list to serialize controls the whole list and has no need of the parser's own tolerance for a stray URL it does not control - `inst-throw-duplicate-extension`
+2. [ ] - `p1` - **FOR EACH** entry, in the input list's own order - `inst-foreach-entry-build`
+   1. [ ] - `p1` - Start this entry's own text with `domainKey` + `"="` + `extension` - `inst-build-head`
+   2. [ ] - `p1` - **FOR EACH** param in this entry's own `params`, in order - `inst-foreach-param-build`
+      1. [ ] - `p1` - Append `";"` + the percent-encoded param name - `inst-append-param-name`
+      2. [ ] - `p1` - **IF** the param's value is non-empty - `inst-if-nonempty-value`
+         1. [ ] - `p1` - Append `"="` + the percent-encoded param value - `inst-append-param-value`
+      3. [ ] - `p1` - **ELSE** append nothing further for this param — a bare name with no `=` is a complete, empty-valued param - `inst-append-bare`
+   3. [ ] - `p1` - Percent-encode a param name or value by escaping `;`, `=`, `&` as `%3B`, `%3D`, `%26`; `#` as `%23`; `%` as `%25`; `+` and space as `%2B` and `%20`; and every non-ASCII character as its UTF-8 bytes, each percent-escaped; every other character — the `pchar-safe` set — is left raw - `inst-percent-encode`
+3. [ ] - `p1` - Join the built entry texts with `"&"` - `inst-join-entries`
+4. [ ] - `p1` - **IF** the input entry list is empty - `inst-if-zero-entries`
+   1. [ ] - `p1` - **RETURN** the shell subroute alone, followed by the hash if one is present, with no `"?"` at all - `inst-return-bare-subroute`
+5. [ ] - `p1` - **ELSE** - `inst-else-nonzero-entries`
+   1. [ ] - `p1` - **RETURN** the shell subroute, `"?"`, the joined entry texts, and the hash if one is present - `inst-return-full-url`
+
+**Rationale**: Serialize enforces at write time exactly the invariants parse tolerates at read time, and for the opposite reason: a caller building an entry list controls every entry in it, so a duplicate extension, a duplicate parameter name, or a malformed token is a programming error to surface immediately rather than a stray input to recover from. The zero-entries case emits no trailing `?` (grammar draft example 7.8) because a bare shell subroute is a valid, fully resolved state — every domain at zero occupants — not a partial or error state calling for a placeholder query string.
+
+### Name Validity And Equality
+
+- [ ] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-name-validity`
+
+**Input**: Either (a) a candidate string to validate as a `name`; (b) a raw `presentation.route` value to normalize into an extension token; or (c) two candidate `name`-alphabet values to compare for equality.
+
+**Output**: (a) a boolean, valid or not; (b) the normalized extension token, or "not routable" when the input carries no route at all or its normalized form is not a valid `name`; (c) a boolean, equal or not.
+
+**Steps**:
+1. [ ] - `p1` - **Validity (a)**: **RETURN** true only if the candidate is non-empty, its first character is a lowercase letter `a`–`z`, and every remaining character is a lowercase letter, a digit `0`–`9`, or `-`; **RETURN** false otherwise — this rejects `.`, `/`, `;`, `=`, `&`, `#`, any upper-case letter, and any percent-escape, none of which the `name` production admits - `inst-validate-name`
+2. [ ] - `p1` - **Extension-token derivation (b)**: **IF** the input carries no route at all - `inst-if-no-route`
+   1. [ ] - `p1` - **RETURN** "not routable" - `inst-return-not-routable-absent`
+3. [ ] - `p1` - **ELSE** strip exactly one leading `/` from the route value, if present, to produce a candidate - `inst-strip-leading-slash`
+   1. [ ] - `p1` - **IF** that candidate satisfies Validity (a) - `inst-if-candidate-valid`
+      1. [ ] - `p1` - **RETURN** the candidate as the extension token - `inst-return-token`
+   2. [ ] - `p1` - **ELSE** - `inst-else-candidate-invalid`
+      1. [ ] - `p1` - **RETURN** "not routable" - `inst-return-not-routable-invalid`
+4. [ ] - `p1` - **Equality (c)**: **RETURN** true only if the two candidates are identical character-by-character; **RETURN** false otherwise — no percent-decoding is applied, because a value satisfying Validity (a) already carries no percent-escape to decode - `inst-name-equality`
+
+**Rationale**: All three operations share one alphabet rule, published together because every caller of one is a caller a domain-key or extension-token decision already reaches: observer creation and the URL back-projection helper validate a consumer-supplied token synchronously with (a); a domain's own consumer derives its own registered extensions from `presentation.route` with (b) before ever handing them to an observer; and a domain's own consumer checks two candidate extension tokens for a same-token conflict at registration time with (c), using the identical rule the parser applies when deciding whether a later entry's extension duplicates an earlier one (`cpt-frontx-routing-adr-occupant-reference-boundary`; PRD §11).
+
+### Domain-Key Composition
+
+- [ ] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-domain-key-compose`
+
+**Input**: The enclosing entry's own `domainKey`; the enclosing entry's own `extension`; the nested domain's own locally-chosen `name`.
+
+**Output**: The composed domain key for the nested domain, or a thrown error naming which of the three inputs — the enclosing `domainKey`, the enclosing `extension`, or the nested domain's own `name` — failed validity.
+
+**Steps**:
+1. [ ] - `p1` - **IF** the given `domainKey` does not conform to the `domain-key` production — an odd count of `.`-separated segments, each segment satisfying the name-validity check (`cpt-frontx-algo-routing-navigation-substrate-name-validity`, Validity) - `inst-if-invalid-parent-key`
+   1. [ ] - `p1` - **THROW** an error naming `domainKey` as invalid - `inst-throw-invalid-parent-key`
+2. [ ] - `p1` - **IF** the given `extension` does not satisfy the name-validity check - `inst-if-invalid-parent-extension`
+   1. [ ] - `p1` - **THROW** an error naming `extension` as invalid - `inst-throw-invalid-parent-extension`
+3. [ ] - `p1` - **IF** `name` does not satisfy the name-validity check - `inst-if-invalid-name`
+   1. [ ] - `p1` - **THROW** an error naming `name` as invalid - `inst-throw-invalid-name`
+4. [ ] - `p1` - **RETURN** `domainKey` + `"."` + `extension` + `"."` + `name` - `inst-return-composed-key`
+
+**Invariant**: A root domain key has one segment; this function's own output always has the enclosing key's own segment count plus two, so a domain key's segment count is odd at every depth by induction — a root key is one segment, and every composition step adds exactly two. This is the invariant `cpt-frontx-algo-routing-navigation-substrate-grammar-parse` checks when it rejects a domain key with an even segment count as malformed (Grammar Parse, step 5.2): an even count can only arise from a hand-written or corrupted URL, never from this function's own output.
+
+**Rationale**: The mounting level supplies all three parts rather than this function deriving any of them, because only that level knows the enclosing entry's own domain key and extension at the moment it mounts the occupant whose zone contains the nested domain — this function's own contribution is composing them correctly and rejecting an invalid locally-chosen name before an ill-formed key ever reaches the URL, never discovering any of the three parts itself (§2.3, O2 of the package DESIGN).
 
 ## 4. States (CDSL)
 
@@ -224,23 +316,28 @@ Not applicable. The Navigation Substrate itself is stateless beyond the realm-gl
 
 ## 5. Definitions of Done
 
-### Single Realm-Shared History With Fan-Out Subscription And Prefix-Resolution Primitive
+### Single Realm-Shared History With Fan-Out Subscription And URL Grammar Codec
 
 - [ ] `p1` - **ID**: `cpt-frontx-dod-routing-navigation-substrate-shared-history`
 
-The system **MUST** expose exactly one navigation-history instance per realm and per `NavigationHistory` contract version, resolved through a version-carrying realm-global key so that every independently bundled copy of this package built against the same contract version converges on the same instance, **MUST** register that instance's one underlying browser navigation-history subscription at construction rather than deferring it to a first `subscribe` call, **MUST** dispatch its fan-out both on that one underlying subscription — which also observes a `go` call made through this instance, asynchronously, the same way it observes back/forward — and directly from its own `push`/`replace` calls — since neither raises the `popstate` event the underlying subscription listens for — to every listener registered at the start of that dispatch round whose registration still stands at the moment the round reaches it — a listener that unsubscribes after the round's own snapshot was taken but before its own slot is reached is skipped rather than invoked — without letting one listener's error, or a listener that unsubscribes or navigates mid-round, corrupt delivery to the rest, and **MUST** expose the longest-matching-declared-prefix resolution primitive, taking the pathname and a caller-supplied set of declared identifier-to-prefix pairs as plain arguments, matching by segment-list prefix on the pathname and the declared prefix both normalized into their non-empty path segments, and returning the matched owner together with its specific matched declared prefix, or a "no owner" result when nothing matches.
+The system **MUST** expose exactly one navigation-history instance per realm and per `NavigationHistory` contract version, resolved through a version-carrying realm-global key so that every independently bundled copy of this package built against the same contract version converges on the same instance, **MUST** register that instance's one underlying browser navigation-history subscription at construction rather than deferring it to a first `subscribe` call, **MUST** dispatch its fan-out both on that one underlying subscription — which also observes a `go` call made through this instance, asynchronously, the same way it observes back/forward — and directly from its own `push`/`replace` calls — since neither raises the `popstate` event the underlying subscription listens for — to every listener registered at the start of that dispatch round whose registration still stands at the moment the round reaches it — a listener that unsubscribes after the round's own snapshot was taken but before its own slot is reached is skipped rather than invoked — without letting one listener's error, or a listener that unsubscribes or navigates mid-round, corrupt delivery to the rest, and **MUST** expose the URL grammar codec: a parser that turns a URL into the shell subroute, the hash, and an ordered entry list — dropping a malformed entry with a warning, keeping the first occurrence of a duplicate extension under one domain key with a warning, and keeping the last value of a duplicate parameter name with a warning, never throwing — and a serializer that is that parser's own inverse for every entry it kept, for canonical input (a round-trip is byte-exact only when the input already used the canonical bare form for an empty parameter value, never for the explicit `k=` form, since the serializer always re-emits a bare name), throwing on a duplicate extension, a duplicate parameter name, or an invalid token, and emitting the bare shell subroute with no trailing `?` for zero entries — together with the name-validity, name-equality, and domain-key-composition functions every domain key and extension token in that grammar is checked against and composed through.
 
 **Implements**:
 - `cpt-frontx-flow-routing-navigation-substrate-imperative-navigation`
 - `cpt-frontx-algo-routing-navigation-substrate-singleton-resolution`
 - `cpt-frontx-algo-routing-navigation-substrate-fanout-dispatch`
-- `cpt-frontx-algo-routing-navigation-substrate-prefix-resolution`
+- `cpt-frontx-algo-routing-navigation-substrate-grammar-parse`
+- `cpt-frontx-algo-routing-navigation-substrate-grammar-serialize`
+- `cpt-frontx-algo-routing-navigation-substrate-name-validity`
+- `cpt-frontx-algo-routing-navigation-substrate-domain-key-compose`
 
 **Addresses**:
 - `cpt-frontx-routing-fr-single-navigation-substrate`
-- `cpt-frontx-routing-fr-route-ownership-signal` (the prefix-resolution primitive this DoD exposes is what that requirement's owner-resolution step, exposed publicly by `cpt-frontx-feature-routing-route-ownership-signal`, invokes)
+- `cpt-frontx-routing-fr-route-ownership-signal` (the grammar codec this DoD exposes is what that requirement's own entry-resolution step, exposed publicly by `cpt-frontx-feature-routing-route-ownership-signal`, parses its input from and serializes its back-projection into)
+- `cpt-frontx-routing-fr-engine-provider-port` (the `NavigationHistory` contract this DoD exposes is exactly what a conforming provider's own construction input accepts, per §1.5's Engine-provider port shape)
 - `cpt-frontx-routing-nfr-agnostic-core`
 - `cpt-frontx-routing-principle-single-history-authority`
+- `cpt-frontx-routing-principle-control-boundary`
 
 **Constraints**: `cpt-frontx-constraint-routing-no-engine-leak`, `cpt-frontx-constraint-routing-no-intra-ecosystem-dependency`
 
@@ -271,7 +368,33 @@ The system **MUST** expose `push`, `replace`, `go`, `location`, and `subscribe` 
 - [ ] A listener that throws during dispatch does not prevent delivery to the remaining listeners in the same fan-out round.
 - [ ] A listener that unsubscribes during a dispatch round does not corrupt that round's iteration and receives no further invocation from that round once unsubscribed — the round's snapshot fixes which listeners are eligible for it, but an unsubscribe always wins over a still-pending, not-yet-invoked slot in that same round, without undoing an invocation the round already completed; a listener that triggers a new navigation during a round has that navigation dispatched as a new, later round.
 - [ ] `push`, `replace`, `go`, `location`, and `subscribe` are usable from a caller with no mounted router in its call path.
-- [ ] Given a pathname and a set of declared identifier-to-prefix pairs, both normalized into their non-empty path-segment lists, the resolution primitive returns the identifier whose declared prefix's segment list is the longest matching prefix of the pathname's segment list, together with that specific matched declared prefix — returned as a fact of the resolution, for the caller's own convenience — and a "no owner" result when no declared prefix's segment list matches; a declared prefix of `/user` does not match a pathname of `/users/42` (its only segment, `user`, is not the same as `users`), a declared prefix of `/a/` matches both `/a` and `/a/b` identically to a declared prefix of `/a` (the trailing separator normalizes away), and a declared prefix of `/` or the empty string is not a valid declaration at all — it normalizes to the empty segment list, and this primitive requires one or more segments from a declared prefix — so a zone with no declared occupant at its own root resolves an empty local remainder to "no owner" like any other unmatched remainder.
 - [ ] The `NavigationHistory` contract's `location` shape (path, search, hash) and its subscriber-notification shape (a `location` plus a navigation kind distinguishing `push`, `replace`, and a third kind covering both a history move and an observed third-party addition such as fragment navigation) are as specified in §1.5, and are what the Engine Provider's own subscriber-notification translation (`cpt-frontx-feature-routing-engine-provider`) consumes as input.
 - [ ] By the time any subscriber callback executes for a dispatched round, `NavigationHistory`'s own `location` already reflects the navigation that triggered that round, for both dispatch paths in §3 alike, including a history move observed only asynchronously.
 - [ ] The Navigation Substrate's own module carries no import of a router engine or a UI-framework rendering primitive.
+- [ ] Parsing the pictured URL and serializing the resulting entry list, shell subroute, and hash back unchanged reproduces the original URL exactly (round-trip). An implementation **MUST** reproduce this example as one of its own acceptance scenarios:
+
+  ```
+  /en?screen=dashboard;orientation=left
+     &sheet=tenant-details;tenantId=456
+     &sheet=user-contacts;contactId=123;view=active
+     &widgets=line-a;range=7d
+     &widgets=line-b;range=30d
+     &widgets=pie;metric=revenue
+  ```
+
+  Written on one line, this is exactly the URL in the address bar; the line breaks are typographic.
+- [ ] A payload value containing `&`, `=`, and a space round-trips through parse then serialize unchanged, and the occupant reads its own decoded value correctly:
+
+  ```
+  /en?sheet=search;q=a%26b%3Dc%20d
+  ```
+
+  Parsing this URL yields the param `q` with value `a&b=c d`; serializing that entry list back produces the identical URL text, byte for byte.
+- [ ] Parsing a query string in which every domain is at zero occupants — an empty query string — and serializing the resulting empty entry list back reproduces the bare shell subroute alone, with no trailing `?`:
+
+  ```
+  /en
+  ```
+- [ ] A malformed raw entry — no `=` between a candidate domain key and extension, a token outside the `name` alphabet, or a domain key with an even segment count, e.g. `/en?screen&a.b=x&widgets=line-a;range=7d` — is dropped from the parsed entry list with a warning citing its own raw text; here, `screen` has no `=` at all, and `a.b=x` is its own entry whose candidate domain key `a.b` has an even segment count (two), so both are dropped for that reason, while `widgets=line-a;range=7d` is kept and parsing does not throw.
+- [ ] A query string carrying the parameter `q` twice within one entry, e.g. `sheet=search;q=first;q=second`, parses to a single `q` param holding `second`, with a warning reporting the duplicate; serializing two params of the identical name within one entry throws rather than silently picking one.
+- [ ] A query string carrying the extension `line-a` twice under the same domain key, e.g. `widgets=line-a;range=7d&widgets=line-a;range=30d`, parses to one `widgets=line-a;range=7d` entry — the first occurrence — with a warning reporting the duplicate, and the second raw entry dropped; serializing two entries that share both the identical domain key and the identical extension throws rather than writing a duplicate.
