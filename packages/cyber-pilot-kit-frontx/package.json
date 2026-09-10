@@ -1,6 +1,6 @@
 {
   "name": "@gears-frontx/cyber-pilot-kit-frontx",
-  "version": "0.3.0-alpha.3",
+  "version": "0.3.0-alpha.4",
   "description": "FrontX AI Tooling Kit — ecosystem-level AI capabilities for AI agents working in FrontX projects",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -47,6 +47,6 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "smol-toml": "^1.6.1"
+    "smol-toml": "^1.8.0"
   }
 }
