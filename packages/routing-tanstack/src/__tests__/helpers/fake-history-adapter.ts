@@ -1,0 +1,83 @@
+// Test-only double for `@gears-frontx/routing`'s own `HistoryAdapter`
+// (`@internal` test seam, re-exported from that package's public dist).
+// Copied from that package's own `src/__tests__/history/fake-history-adapter.ts`
+// pattern — not imported across packages, since a package's own
+// `__tests__` tree is not part of its published surface.
+import type { Location } from '@gears-frontx/routing';
+
+function splitPath(path: string): Location {
+  const hashIndex = path.indexOf('#');
+  const withoutHash = hashIndex === -1 ? path : path.slice(0, hashIndex);
+  const hash = hashIndex === -1 ? '' : path.slice(hashIndex + 1);
+
+  const searchIndex = withoutHash.indexOf('?');
+  const pathname = searchIndex === -1 ? withoutHash : withoutHash.slice(0, searchIndex);
+  const search = searchIndex === -1 ? '' : withoutHash.slice(searchIndex + 1);
+
+  return { path: pathname, search, hash };
+}
+
+export class FakeHistoryAdapter {
+  private entries: Location[];
+  private index = 0;
+  private popListeners = new Set<() => void>();
+
+  /** The raw string argument the most recent `pushState`/`replaceState`
+   * call received — the seam a test asserts the single write's exact URL
+   * against, rather than reconstructing one from `getLocation()`. */
+  lastWrite: string | undefined;
+
+  constructor(initialPath = '/') {
+    this.entries = [splitPath(initialPath)];
+  }
+
+  getLocation(): Location {
+    return this.entries[this.index];
+  }
+
+  pushState(path: string): void {
+    this.lastWrite = path;
+    this.entries = this.entries.slice(0, this.index + 1);
+    this.entries.push(splitPath(path));
+    this.index += 1;
+  }
+
+  replaceState(path: string): void {
+    this.lastWrite = path;
+    this.entries[this.index] = splitPath(path);
+  }
+
+  go(delta: number): void {
+    const nextIndex = this.index + delta;
+    if (nextIndex < 0 || nextIndex >= this.entries.length) {
+      return;
+    }
+    this.index = nextIndex;
+    this.firePopAsync();
+  }
+
+  onPop(listener: () => void): () => void {
+    this.popListeners.add(listener);
+    return () => {
+      this.popListeners.delete(listener);
+    };
+  }
+
+  /** Simulates a browser-observed navigation this adapter's own `go` did not
+   * cause: a back/forward step, a third-party `history.go`, or a
+   * fragment-only anchor activation. */
+  simulateExternalPop(path: string): void {
+    this.entries = this.entries.slice(0, this.index + 1);
+    this.entries.push(splitPath(path));
+    this.index += 1;
+    this.firePopAsync();
+  }
+
+  private firePopAsync(): void {
+    queueMicrotask(() => {
+      for (const listener of this.popListeners) {
+        listener();
+      }
+    });
+  }
+}
