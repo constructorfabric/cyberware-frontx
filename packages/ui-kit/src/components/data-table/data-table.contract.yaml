@@ -79,19 +79,20 @@ untyped:
     prop: columns
     claim: columns is an array of @tanstack/react-table ColumnDef objects, generic over TData
     reason: >-
-      ColumnDef carries function-valued fields (header/cell render
-      functions among them) from a third-party package this contract does
-      not own, and it is generic over the row type - a type parameter has
-      no JSON Schema representation either. Declared as a slot rather than
-      enumerated.
+      The schema states that this is an array and stops there. ColumnDef
+      carries function-valued fields (header/cell render functions among
+      them) from a third-party package this contract does not own, and it
+      is generic over the row type the caller picks - so what is IN the
+      array is checked by tsc, and is why the prop is a slot rather than
+      an enumerated shape.
   - about: prop
     prop: data
     claim: data is an array of the caller's own row type
     reason: >-
-      `TData[]` - a generic type parameter, so there is no shape to assert
-      without a concrete consumer. It must be the same `TData` the
-      `columns` were built for; that pairing is a call-site type error, not
-      something this schema can check.
+      `TData[]` - an array, which the schema does state, of a type
+      parameter the caller picks, which it cannot. The rows must be the
+      same `TData` the `columns` were built for; that pairing is a
+      call-site type error, not something this schema can check.
   - about: prop
     prop: selectionSummary
     claim: selectionSummary is a function prop, not data

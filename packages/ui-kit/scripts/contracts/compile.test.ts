@@ -27,7 +27,7 @@ import {
   buildOverlaySchema,
   buildPropsAndRequired,
   buildVocabularyTypes,
-  describeUntypeableProperty,
+  describeUnexpressedType,
   loadElementSurface,
   loadElementSurfaces,
   sharedAttributeConflicts,
@@ -114,49 +114,72 @@ describe('what two element kinds both declare', () => {
   });
 });
 
-describe('a declared prop with no JSON Schema representation', () => {
+describe('a declared prop the schema cannot state in full', () => {
   const { properties, slots } = buildPropsAndRequired("picker", picker, elementSurface);
 
-  it('states its type text next to the slot record that holds it', () => {
+  it('states the kind it can, and the rest next to the slot record that holds it', () => {
     // `selection: Value[]` depends on the component's own type parameter -
     // the same shape as the accordion root's `AccordionValue<Value>`, just
-    // arriving through an own prop. The slot branch's own wording is the
-    // description here; what matters to a reader is that the type text is
-    // in it.
-    expect(properties.selection.type).toBeUndefined();
+    // arriving through an own prop. It is checkably an array; what is in it
+    // is checked by tsc alone, which is what the slot record and the prose
+    // beside it are for.
+    expect(properties.selection.type).toBe('array');
+    expect(properties.selection.items).toBeUndefined();
     expect(properties.selection.description).toContain('Value[]');
     expect(slots.selection.typeText).toBe('Value[]');
   });
 
-  it('describes a function prop the same way', () => {
+  it('types an alias that unwraps to an array of a stated element type, and leaves it undescribed', () => {
+    // What the old text-based classifier got wrong on the accordion root:
+    // the printed alias name matched nothing, so a fully expressible type
+    // was declared inexpressible and slotted.
+    expect(properties.chosen).toEqual({ type: 'array', items: { type: 'string' } });
+    expect(slots.chosen).toBeUndefined();
+  });
+
+  it('describes a function prop, which is a type it can state nothing about', () => {
+    expect(properties.onSelectionChange.type).toBeUndefined();
     expect(properties.onSelectionChange.description).toContain('(next: Value[]) => void');
   });
 
   it('leaves a typed own prop typed and undescribed', () => {
     expect(properties.label).toEqual({ type: 'string' });
   });
+
+  it('carries no module specifier into any property description', () => {
+    const leaking = Object.entries(properties).filter(([, schema]) => schema.description?.includes('import(') === true);
+    expect(leaking.map(([name]) => name)).toEqual([]);
+  });
 });
 
-describe('describeUntypeableProperty', () => {
-  it('describes a schema that asserts nothing', () => {
-    expect(describeUntypeableProperty({}, 'Value[]')).toEqual({
+describe('describeUnexpressedType', () => {
+  it('describes a type the schema states nothing about', () => {
+    expect(describeUnexpressedType({}, 'Value[]', false)).toEqual({
       description: 'TS: Value[]. Not expressible in JSON Schema, checked by tsc.',
     });
   });
 
-  it('leaves a schema that already asserts something alone', () => {
-    // One entry per keyword that constrains a value: a property carrying any
-    // of them already tells a reader what it accepts, and the day the
-    // compiler starts emitting $ref or oneOf this is what stops the rule
-    // from annotating over it.
-    for (const asserting of [{ type: 'string' }, { enum: ['a'] }, { const: 'a' }, { $ref: 'gts://x~' }, { anyOf: [] }, { oneOf: [] }]) {
-      expect(describeUntypeableProperty(asserting, 'Value[]')).toEqual(asserting);
-    }
+  it('describes what is left of a type the schema states only in part', () => {
+    // The claim the wording used to make - "not expressible" of a type that
+    // partly is - is the defect this whole rule came from, so a partly
+    // stated type keeps both halves: the assertion and the prose.
+    expect(describeUnexpressedType({ type: 'array' }, 'ColumnDef<TFeatures, TData>[]', false)).toEqual({
+      type: 'array',
+      description:
+        'TS: ColumnDef<TFeatures, TData>[]. Not fully expressible in JSON Schema; what the type states beyond the kind above is checked by tsc.',
+    });
+  });
+
+  it('leaves a type the schema states in full undescribed', () => {
+    expect(describeUnexpressedType({ type: 'array', items: { type: 'string' } }, 'string[]', true)).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+    });
   });
 
   it('leaves an existing description alone', () => {
     const slot = { description: 'Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots.' };
-    expect(describeUntypeableProperty(slot, 'ReactNode')).toEqual(slot);
+    expect(describeUnexpressedType(slot, 'ReactNode', false)).toEqual(slot);
   });
 });
 

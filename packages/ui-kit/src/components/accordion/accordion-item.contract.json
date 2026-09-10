@@ -16,13 +16,13 @@
       "type": "boolean"
     },
     "onOpenChange": {
-      "description": "TS: ((open: boolean, eventDetails: import(\"@base-ui/react/accordion/index\").AccordionItemChangeEventDetails) => void) | undefined. Not expressible in JSON Schema, checked by tsc."
+      "description": "TS: ((open: boolean, eventDetails: AccordionItemChangeEventDetails) => void) | undefined. Not expressible in JSON Schema, checked by tsc."
     },
     "render": {
-      "description": "TS: import(\"@types/react/index\").ReactElement<unknown, string | import(\"@types/react/index\").JSXElementConstructor<any>> | import(\"@base-ui/react/types/index\").ComponentRenderFn<import(\"@base-ui/react/types/index\").HTMLProps, import(\"@base-ui/react/accordion/index\").AccordionItemState> | undefined. Not expressible in JSON Schema, checked by tsc."
+      "description": "TS: ReactElement<unknown, string | JSXElementConstructor<any>> | ComponentRenderFn<HTMLProps, AccordionItemState> | undefined. Not expressible in JSON Schema, checked by tsc."
     },
     "style": {
-      "description": "TS: import(\"@types/react/index\").CSSProperties | ((state: import(\"@base-ui/react/accordion/index\").AccordionItemState) => import(\"@types/react/index\").CSSProperties | undefined) | undefined. Not expressible in JSON Schema, checked by tsc."
+      "description": "TS: CSSProperties | ((state: AccordionItemState) => CSSProperties | undefined) | undefined. Not expressible in JSON Schema, checked by tsc."
     },
     "value": {
       "description": "TS: any. Not expressible in JSON Schema, checked by tsc."

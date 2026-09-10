@@ -47,8 +47,18 @@ export interface ExtractedProp {
   optional: boolean;
   // checker.typeToString with NoTruncation - the real resolved type, not a
   // guess from the source text (an alias, a generic, an imported type all
-  // print in full instead of "unknown").
+  // print in full instead of "unknown"), and with no module specifier in it
+  // (see printTypeText).
   typeText: string;
+  // What JSON Schema can state about that type, or undefined when it can
+  // state nothing. Derived by the checker here rather than by matching the
+  // printed text downstream: the text is what a reader sees, not what the
+  // type is.
+  //
+  // Required, and allowed to be undefined, rather than optional: `typeText`
+  // and this are two views of one type, and a prop built by hand with only
+  // the first is a prop whose text and schema can disagree in silence.
+  expressed: ExpressedType | undefined;
   // Where the checker found this property declared, normalized to a
   // node_modules-relative or kit-relative path - never an absolute
   // filesystem path, which would make a committed contract machine-specific.
@@ -109,37 +119,161 @@ export interface ComponentExtraction {
   cannotExtract: string[];
 }
 
-// A TS union member's trailing `| undefined` does not change what the prop
-// actually holds; `React.ReactNode` and the bare `ReactNode` name the same
-// type under two different printed spellings depending on how the checker's
-// import context resolves it. Both are normalized away before a type text is
-// compared (own-vs-surface conflict check) or classified (NORMATIVE_TYPES
-// lookup), or the same fact would silently disagree with itself depending on
-// which side happened to print the qualified form.
-export function normalizeTypeText(typeText: string): string {
-  return typeText
-    .replace(/\s*\|\s*undefined\s*$/, '')
-    .replace(/\bReact\.ReactNode\b/g, 'ReactNode')
-    .replace(/\s+/g, ' ')
-    .trim();
+// The JSON Schema a prop's type supports, as much of it as the type really
+// carries. `items` is nested rather than flattened because an array's
+// element type is a type in its own right and answers the same question
+// recursively.
+export interface ExpressedSchema {
+  type?: string;
+  enum?: string[];
+  items?: ExpressedSchema;
 }
 
-// A normalized type text that is nothing but a union of string literals
-// (optionally widened with `| null`, already stripped of `| undefined` by
-// normalizeTypeText) becomes a JSON Schema string enum instead of an
-// annotation-only slot - the same treatment a cva axis gets, extended to a
-// component's own hand-written literal union props.
-export function parseStringLiteralUnion(normalizedTypeText: string): string[] | undefined {
-  const members = normalizedTypeText.split(/\s*\|\s*/).filter((member) => member !== 'null');
-  if (members.length === 0) return undefined;
-  const values: string[] = [];
-  for (const member of members) {
-    const match = /^"((?:[^"\\]|\\.)*)"$/.exec(member);
-    if (!match) return undefined;
-    values.push(match[1].replace(/\\(.)/g, '$1'));
-  }
-  return values;
+export interface ExpressedType {
+  // Never empty: a derivation with nothing to say returns undefined instead,
+  // because `{}` in a props contract reads as "anything goes".
+  schema: ExpressedSchema;
+  // Whether the schema states the WHOLE type. False for an array whose
+  // element shape JSON Schema cannot pin down (`ColumnDef<...>[]`): the
+  // value is checkably an array, and everything else about it is checked by
+  // tsc alone. What a partly-stated type still owes a reader is the prose
+  // naming it - see compile.ts's describeUnexpressedType.
+  complete: boolean;
 }
+
+const EXPRESSION_DEPTH_LIMIT = 6;
+
+// Whether the type constrains nothing at all. `any` and `unknown` accept
+// every value, so an array of them is fully stated by `type: "array"` with
+// no `items` - the absence is the constraint, not a gap in it.
+function constrainsNothing(type: ts.Type): boolean {
+  return (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0;
+}
+
+// A type parameter stands for whatever the CALLER instantiates it with, so
+// the only thing true of every instantiation is its constraint. Its default
+// is not: `<Value = unknown>` binds nobody who writes `<Accordion<string>>`,
+// and a schema derived from a default would reject values the component
+// accepts.
+//
+// A parameter the caller already bound never reaches here - `Chosen` with no
+// type argument is `string[]` by the time the checker hands it over, which
+// is where instantiating a default belongs. What reaches here is a parameter
+// still open at the component's own boundary, so whatever comes back is a
+// bound on the type and never the whole of it.
+function constraintOfTypeParameter(type: ts.Type, checker: ts.TypeChecker): ts.Type | undefined {
+  if ((type.flags & ts.TypeFlags.TypeParameter) === 0) return undefined;
+  const constraint = checker.getBaseConstraintOfType(type);
+  // A parameter constrained by itself (`<T extends T>`) would recurse
+  // forever; one with no constraint says nothing at all.
+  return constraint === undefined || constraint === type ? undefined : constraint;
+}
+
+// The JSON Schema keyword for a type that maps onto exactly one, or
+// undefined when none does. Object shapes are deliberately absent: a plain
+// object with known keys IS expressible in principle, but the object types
+// that reach a kit prop are React's and the primitive libraries' own
+// (CSSProperties, ColumnDef), and inlining a foreign package's whole field
+// list into a committed contract would make the artifact a copy of that
+// package's internals rather than a statement about this component.
+function jsonTypeOf(type: ts.Type): string | undefined {
+  if (type.flags & (ts.TypeFlags.String | ts.TypeFlags.StringLiteral)) return 'string';
+  if (type.flags & (ts.TypeFlags.Number | ts.TypeFlags.NumberLiteral)) return 'number';
+  if (type.flags & (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) return 'boolean';
+  if (type.flags & ts.TypeFlags.Null) return 'null';
+  return undefined;
+}
+
+// What JSON Schema can state about one checker-resolved type, derived from
+// the type itself rather than from its printed name.
+//
+// The defect this replaced was a claim, not a gap: a prop whose printed type
+// did not spell `boolean`, `string`, `number` or a literal union was
+// annotated "Not expressible in JSON Schema", and the accordion root's
+// `value`/`defaultValue` - `AccordionValue<Value>`, which is `Value[]` -
+// were told to a reader that way. The name an alias prints under says
+// nothing about whether a shape is expressible; only the resolved type does.
+//
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-express
+export function expressType(type: ts.Type, checker: ts.TypeChecker, depth = 0): ExpressedType | undefined {
+  if (depth > EXPRESSION_DEPTH_LIMIT) return undefined;
+
+  const constraint = constraintOfTypeParameter(type, checker);
+  if (constraint) {
+    const bound = expressType(constraint, checker, depth + 1);
+    // A bound, never the whole type: the caller may pick something narrower.
+    return bound === undefined ? undefined : { schema: bound.schema, complete: false };
+  }
+
+  if (type.isUnion()) return expressUnion(type, checker, depth);
+
+  if (checker.isTupleType(type)) {
+    // Checkably an array; its positional shape is not something this
+    // compiler states, so the prose still names the full type.
+    return { schema: { type: 'array' }, complete: false };
+  }
+  if (checker.isArrayType(type)) return expressArray(type as ts.TypeReference, checker, depth);
+
+  const jsonType = jsonTypeOf(type);
+  if (jsonType === undefined) return undefined;
+  if (type.isStringLiteral()) return { schema: { type: 'string', enum: [type.value] }, complete: true };
+  // A single boolean or number literal narrows further than its JSON type
+  // does, so the type alone does not state the whole of it.
+  const literal = (type.flags & (ts.TypeFlags.BooleanLiteral | ts.TypeFlags.NumberLiteral)) !== 0;
+  return { schema: { type: jsonType }, complete: !literal };
+}
+
+function expressArray(type: ts.TypeReference, checker: ts.TypeChecker, depth: number): ExpressedType {
+  const element = checker.getTypeArguments(type)[0];
+  if (element === undefined || constrainsNothing(element)) return { schema: { type: 'array' }, complete: true };
+  const expressed = expressType(element, checker, depth + 1);
+  // `items` is added only for an element the schema states in full: a
+  // partial `items` would be a constraint on the element that the element
+  // does not actually have.
+  if (expressed?.complete !== true) return { schema: { type: 'array' }, complete: false };
+  return { schema: { type: 'array', items: expressed.schema }, complete: true };
+}
+
+function expressUnion(type: ts.UnionType, checker: ts.TypeChecker, depth: number): ExpressedType | undefined {
+  // Optionality is carried by the contract's `required` list, so a `|
+  // undefined` member is not part of the shape a present value must have.
+  const members = type.types.filter((member) => (member.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Void)) === 0);
+  if (members.length === 0) return undefined;
+
+  const jsonTypes = new Set<string>();
+  const enumValues: string[] = [];
+  let everyMemberIsAStringLiteral = true;
+  let complete = true;
+
+  for (const member of members) {
+    const expressed = expressType(member, checker, depth + 1);
+    if (expressed?.schema.type === undefined) {
+      // A function, an object, an intersection - and with it the whole
+      // union, because a `type` covering only the members that ARE
+      // expressible would REJECT a value the unexpressible one allows.
+      // `Record<string, any> | Array<any>` is not `type: "array"`.
+      return undefined;
+    }
+    jsonTypes.add(expressed.schema.type);
+    if (expressed.schema.enum !== undefined && expressed.schema.type === 'string') enumValues.push(...expressed.schema.enum);
+    else everyMemberIsAStringLiteral = false;
+    if (!expressed.complete) complete = false;
+  }
+
+  // One JSON type or nothing: a value that may be a string OR null needs
+  // `type` as a list, a shape neither this compiler nor the compatibility
+  // comparison beside it is written for, so such a union is left to prose.
+  if (jsonTypes.size !== 1) return undefined;
+  const [jsonType] = jsonTypes;
+  if (everyMemberIsAStringLiteral && enumValues.length > 0) {
+    return { schema: { type: 'string', enum: enumValues }, complete };
+  }
+  // `boolean` reaches here as the `false | true` union TypeScript models it
+  // as; both members are literals, and together they are the whole type.
+  const wholeBoolean = jsonType === 'boolean' && members.length === 2;
+  return { schema: { type: jsonType }, complete: complete || wholeBoolean };
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-express
 
 interface LiteralEntry {
   name: string;
@@ -758,18 +892,36 @@ function relativeDeclarationFile(absolutePath: string, kitRoot: string): string 
   return relative(kitRoot, absolutePath).split('\\').join('/');
 }
 
-// TypeScript's printer inlines an `import("<absolute path>")` qualifier
-// whenever NoTruncation forces a structural (unnamed) type to print in full
-// and the checker has no nominal name to fall back to - real for DataTable's
-// `columns` (T6), whose element type traces back to an inferred
-// `tableFeatures(...)` return type with no name of its own. Left alone, the
-// printed type text embeds the machine's own absolute filesystem path into a
-// COMMITTED contract - the exact portability bug relativeDeclarationFile
-// above exists to prevent for declaration files, here reused for the same
-// paths when they show up INSIDE a printed type instead of as the
-// declaration location.
-function normalizeImportPathsInTypeText(typeText: string, kitRoot: string): string {
-  return typeText.replace(/import\("([^"]*)"\)/g, (_match, path: string) => `import("${relativeDeclarationFile(path, kitRoot)}")`);
+// A prop's type as a reader should see it: the checker's own printed type,
+// with no module specifier anywhere in it.
+//
+// TypeScript's printer qualifies a type it cannot name in the current scope
+// with `import("<absolute path>")`, which puts two things a consumer has no
+// use for into a COMMITTED artifact: the machine's own filesystem path, and
+// a foreign package's internal file layout (`@base-ui/react/accordion/index`
+// is not how anything imports that type). `CSSProperties` and `ButtonState`
+// are what the type is called; the file it happens to live in is not part of
+// the answer.
+//
+// UseAliasDefinedOutsideCurrentScope is what stops the qualifier being
+// emitted in the first place - the printer keeps the alias name instead of
+// expanding to the import form. The strip below is the guarantee rather than
+// the mechanism: a shape the flag does not cover still must not carry a path
+// into a committed file, and check.ts refuses a contract whose prose
+// contains one.
+//
+// A type PARAMETER is left standing as itself (`Value`, `TData`). It is not
+// a leak: it is the component's own public generic, and substituting its
+// default would print `AccordionValue<unknown>` - false for the caller who
+// writes `<Accordion<string>>`, which is most of them.
+const TYPE_PRINT_FLAGS = ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope;
+
+export function stripModuleSpecifiers(typeText: string): string {
+  return typeText.replace(/import\("[^"]*"\)\./g, '');
+}
+
+function printTypeText(type: ts.Type, location: ts.Node, checker: ts.TypeChecker): string {
+  return stripModuleSpecifiers(checker.typeToString(type, location, TYPE_PRINT_FLAGS));
 }
 
 // True for a call whose resolved callee really is React's own `forwardRef`
@@ -888,23 +1040,18 @@ function loadCompilerOptions(): ts.CompilerOptions {
 // 33.5s, 63 programs 16.0s, one program over all 63 roots 0.73s.
 //
 // One shared program is NOT, however, a free substitution for the per-file
-// programs, and this is the reason the split below exists. Two things
-// checker.typeToString prints are program-global rather than file-local:
-//  - the module specifier inside an `import("...")` type - the same Base UI
-//    event type prints as `import("@base-ui/react/types/index")` out of a
-//    one-root program and `import("@base-ui/react/index")` out of a 63-root
-//    one, because the specifier is chosen from the modules the program can
-//    already reach;
-//  - the ORDER of a union's members, which follows internal type ids and so
-//    follows the order the program bound its files - `"none" | "off" | ...`
-//    became `"off" | "none" | ...`.
-// Both land in a compiled contract, in the prose a property with no schema
-// shape carries. Sharing a program for extraction would therefore make a
-// component's committed artifacts depend on which OTHER components happened
-// to be in the same run - the exact machine-independence the sort in
-// `extractComponent` (N3) and the import-path normalization above already
-// exist to protect. Measured, not assumed: the freshness comparison reports
-// every one of those descriptions as a difference.
+// programs, and this is the reason the split below exists. What
+// checker.typeToString prints is program-global rather than file-local: the
+// ORDER of a union's members follows internal type ids and so follows the
+// order the program bound its files - `"none" | "off" | ...` became `"off" |
+// "none" | ...`. That order lands in a compiled contract, in the prose a
+// property whose type no schema shape states in full carries. Sharing a
+// program for extraction would therefore make a component's committed
+// artifacts depend on which OTHER components happened to be in the same run
+// - the exact machine-independence the sort in `extractComponent` (N3) and
+// the module-specifier strip above already exist to protect. Measured, not
+// assumed: the freshness comparison reports those descriptions as
+// differences.
 //
 // So the split is by what the answer is USED for, not by what is convenient:
 // extraction that produces artifacts keeps its own per-file program, and only
@@ -1010,14 +1157,11 @@ function extractFromSource(source: ts.SourceFile, checker: ts.TypeChecker): Comp
           const ownDeclaration = declarations.find((d) => d.getSourceFile().fileName === source.fileName);
           const declaration = ownDeclaration ?? declarations[0];
           const propType = checker.getTypeOfSymbolAtLocation(prop, param);
-          const typeText = normalizeImportPathsInTypeText(
-            checker.typeToString(propType, param, ts.TypeFormatFlags.NoTruncation),
-            kitRoot,
-          );
           const extracted: ExtractedProp = {
             name: propName,
             optional: (prop.flags & ts.SymbolFlags.Optional) !== 0,
-            typeText,
+            typeText: printTypeText(propType, param, checker),
+            expressed: expressType(propType, checker),
             declarationFile: relativeDeclarationFile(declaration.getSourceFile().fileName, kitRoot),
             jsDocDefault: jsDocDefault(prop),
           };

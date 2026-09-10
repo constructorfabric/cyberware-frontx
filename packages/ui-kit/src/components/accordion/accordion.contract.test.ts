@@ -195,9 +195,10 @@ describe('accordion family: what the schema cannot assert', () => {
   it("the root's untyped statements name the three generic-typed props", () => {
     // The measured defect this closes: an agent shown the root's `value` and
     // `defaultValue` as unconstrained properties concluded they took plain
-    // strings. They are now properties of this contract carrying the
-    // checker's own type text, and each is named by a statement whose subject
-    // says why nothing asserts it.
+    // strings. `AccordionValue<Value>` is `Value[]`, so the schema states
+    // the array - the one fact that rules a plain string out - and the type
+    // text plus a statement of its own carry the half no schema can state,
+    // which is what the elements are.
     const untyped = units[DIRECTORY].meaning.untyped ?? [];
     const props = untyped.filter((entry) => entry.about === 'prop').map((entry) => entry.prop);
     for (const prop of ['value', 'defaultValue', 'onValueChange']) {
@@ -205,7 +206,8 @@ describe('accordion family: what the schema cannot assert', () => {
     }
     const properties = units[DIRECTORY].contract.properties;
     for (const prop of ['value', 'defaultValue']) {
-      expect(properties[prop].type, prop).toBeUndefined();
+      expect(properties[prop].type, prop).toBe('array');
+      expect(properties[prop].items, prop).toBeUndefined();
       expect(properties[prop].description, prop).toContain('AccordionValue<Value>');
     }
   });

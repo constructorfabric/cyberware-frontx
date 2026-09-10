@@ -105,12 +105,17 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
   const declaredProps = new Set(extraction.ownProps.map((prop) => prop.name));
   const slotSchemaMismatches: string[] = [];
   for (const [name, prop] of Object.entries(freshContract.properties)) {
-    const isSlotShaped = prop.type === undefined && prop.enum === undefined;
+    // A slot is a declared prop whose shape the schema does not state in
+    // full, which is not the same as one it says nothing about: `columns`
+    // carries `type: "array"` and is still a slot, because what is IN the
+    // array is checked by tsc alone. The compiler writes prose exactly for
+    // that remainder, so the prose is what the two sides are matched on.
+    const isSlotShaped = prop.description !== undefined;
     const hasSlotEntry = name in freshContract['x-uikit'].slots;
     if (isSlotShaped && declaredProps.has(name) && !hasSlotEntry) {
-      slotSchemaMismatches.push(`"${name}" is an annotation-only declared prop but has no x-uikit.slots entry`);
+      slotSchemaMismatches.push(`"${name}" is a declared prop the schema does not state in full but has no x-uikit.slots entry`);
     } else if (hasSlotEntry && !isSlotShaped) {
-      slotSchemaMismatches.push(`"${name}" has an x-uikit.slots entry but is typed or enumerated in properties`);
+      slotSchemaMismatches.push(`"${name}" has an x-uikit.slots entry but is stated in full by properties`);
     } else if (hasSlotEntry && !declaredProps.has(name)) {
       slotSchemaMismatches.push(`"${name}" has an x-uikit.slots entry but is not a prop ${exportStem} declares itself`);
     }

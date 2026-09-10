@@ -752,15 +752,14 @@ same wording for the two React attributes no JSON Schema type covers (`style`,
 
 **Decisions taken along the way.**
 
-- **The type text keeps its `import("...")` qualifier.** The checker prints
-  `import("@base-ui/react/accordion/index").AccordionValue<Value> | undefined`
-  rather than the bare `AccordionValue<Value>`. Stripping the qualifier
-  would read better, but it names WHERE the type lives, which is the next
-  question a reader has after "what is it", and the path is already
-  node_modules-relative and therefore machine-independent. Stripping it
-  would also have to change `x-uikit.slots`' committed type texts to keep
-  one spelling of one fact, which is a change to every described component's
-  contract for a cosmetic gain.
+- **The type text carries no module specifier.** The checker would print
+  `import("@base-ui/react/accordion/index").AccordionValue<Value> | undefined`;
+  the committed text is the bare `AccordionValue<Value> | undefined`. The
+  qualifier names a foreign package's internal file layout, which is not how
+  anything imports that type and not part of what the type is CALLED, and it
+  is the printer's fallback rather than a fact about the prop. See "What a
+  name is not evidence of" at the end of this file for why that stopped
+  being a cosmetic question.
 - **A description is not a compatibility signal.** `diffPassthroughSchema`
   and `diffOwnPropsSchema` read `type`, `enum`, `required` and property
   presence, and never `description`; gts-ts's own `checkCompatibility` was
@@ -1380,3 +1379,80 @@ is the cheapest thing to propose twice.
 guarantees are unchanged - the same checks, the same pairing rules, the same
 compatibility signals, the same freshness comparison - and no version moved,
 because nothing outside this branch had consumed the previous names.
+
+## What a name is not evidence of
+
+**Observed.** A reviewer's question on the accordion contract - "is it
+correct?" against `defaultValue`, a property with no JSON type and only the
+compiler's prose - turned up two defects in one line of generated text:
+
+```
+TS: import("@base-ui/react/accordion/index").AccordionValue<Value> | undefined.
+Not expressible in JSON Schema, checked by tsc.
+```
+
+The first is a false claim. `AccordionValue<Value>` is `Value[]` - Base UI's
+own alias for an array of item values - and an array is one of the few things
+JSON Schema states plainly. `classifyProviderSafeType` matched the PRINTED
+TEXT against `boolean`, `string`, `number` and a string-literal union, and an
+alias name matches none of those, so a fully checkable list was written down
+as unreachable. The reader who concluded `value` took a plain string had, by
+then, been told twice: once by an empty schema and once by a sentence saying
+no schema could help.
+
+The second is noise standing in for information. `import("@base-ui/react/
+accordion/index")` names a file inside somebody else's package - not how that
+type is imported, not stable across that package's own refactors, and of no
+use to a consumer who wants to know what to pass. `Value`, on the other hand,
+is not noise: it is the component's own public generic.
+
+**Changed.** Classification moved from the printed text to the resolved type.
+`extract.ts`'s `expressType` walks the checker's `ts.Type` and returns the
+schema it supports plus whether that schema is the WHOLE type; `ExtractedProp`
+carries the answer beside the text, as a required field so a hand-built prop
+cannot state one and not the other. Printing uses
+`UseAliasDefinedOutsideCurrentScope` with a strip as the guarantee, and a
+conformance assertion refuses any compiled artifact whose text still names a
+module.
+
+Four properties across the enrolled set gained a type: the accordion root's
+`value` and `defaultValue` (`type: array`), and DataTable's `columns` and
+`data` (the same, and still slots).
+
+**Decisions taken along the way.**
+
+- **A type parameter resolves to its CONSTRAINT and never to its default.**
+  Every instantiation satisfies the constraint; none is bound by a default the
+  caller can override, so `<Value = unknown>` justifies nothing about
+  `<Accordion<string>>`. A default the caller did NOT override is applied by
+  the type system before the extractor sees the type, which is the only place
+  applying one is sound. The same reasoning keeps `Value` and `TData` printed
+  as themselves: substituting `unknown` would read as a claim about the
+  element type, and it would be false.
+- **A partly stated type is a third answer, not a rounding of the other two.**
+  `ColumnDef<...>[]` is checkably an array and unstateable beyond that. Rounded
+  down to "nothing", the schema throws away the one fact it could enforce;
+  rounded up to "everything", the prose disappears and the reader is back to
+  guessing at the element. So a property may carry both a `type` and its type
+  text, the slot record follows "not stated in full" rather than "asserts
+  nothing", and the untyped pairing follows the prose - which is exactly the
+  compiler's record of what it could not state.
+- **A union with one unexpressible member gets no `type` at all.** Halfway
+  through this change `TData`'s constraint (`Record<string, any> | Array<any>`)
+  was compiling to `type: "array"`, because the object member classified as
+  nothing and the array member survived alone. That schema REJECTS a valid row
+  type. A `type` covering some members of a union is not a weaker assertion
+  than the union, it is a different and wrong one.
+- **Objects with known keys stay unexpressed.** They are expressible in
+  principle, and the object types that actually reach a kit prop are
+  `CSSProperties` and `ColumnDef`. Inlining a foreign package's field list into
+  a committed contract would make the artifact a copy of that package's
+  internals, versioned on this branch, wrong on the next release of theirs.
+- **The wording had to move too.** "Not expressible in JSON Schema" said of a
+  property carrying `type: "array"` is the same species of false claim the
+  whole finding is about, so a partly stated type says so instead.
+
+**Cost.** Half a day, most of it deciding how much of a type counts as stated
+rather than writing the walk. Two facts the harness already had - the resolved
+type and its printed name - had been collapsed into one, and separating them
+is what the fix mostly is.

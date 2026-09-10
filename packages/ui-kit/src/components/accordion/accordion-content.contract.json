@@ -19,10 +19,10 @@
       "type": "boolean"
     },
     "render": {
-      "description": "TS: import(\"@types/react/index\").ReactElement<unknown, string | import(\"@types/react/index\").JSXElementConstructor<any>> | import(\"@base-ui/react/types/index\").ComponentRenderFn<import(\"@base-ui/react/types/index\").HTMLProps, import(\"@base-ui/react/accordion/index\").AccordionPanelState> | undefined. Not expressible in JSON Schema, checked by tsc."
+      "description": "TS: ReactElement<unknown, string | JSXElementConstructor<any>> | ComponentRenderFn<HTMLProps, AccordionPanelState> | undefined. Not expressible in JSON Schema, checked by tsc."
     },
     "style": {
-      "description": "TS: import(\"@types/react/index\").CSSProperties | ((state: import(\"@base-ui/react/accordion/index\").AccordionPanelState) => import(\"@types/react/index\").CSSProperties | undefined) | undefined. Not expressible in JSON Schema, checked by tsc."
+      "description": "TS: CSSProperties | ((state: AccordionPanelState) => CSSProperties | undefined) | undefined. Not expressible in JSON Schema, checked by tsc."
     }
   },
   "required": [],

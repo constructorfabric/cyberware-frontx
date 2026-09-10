@@ -38,7 +38,7 @@ import {
   registerContractTypes,
   resolveTargetExtraction,
   CLASSIFICATION_KEY,
-  unassertedPropertyNames,
+  partlyCheckedPropertyNames,
   type CompiledContract,
   type Overlay,
 } from '../../../scripts/contracts/compile';
@@ -240,14 +240,14 @@ describe('button contract conformance', () => {
     expect(contract.properties.render.description).toContain('ComponentRenderFn');
   });
 
-  it('records only the kit\'s own slotted props in x-uikit.slots, not every unasserted property', () => {
-    // Two kinds of property assert nothing, and they are documented in
-    // different places: `icon` is the kit's own slot and its type lives in
-    // x-uikit.slots, while `render`/`style` are the primitive's API and their
-    // types live in their own descriptions plus an untyped_prop assumption.
-    // Both are named by the assumption pairing (see testing.ts); only the
-    // first is a slot.
-    expect(unassertedPropertyNames(contract)).toEqual(['icon', 'render', 'style']);
+  it('records only the kit\'s own slotted props in x-uikit.slots, not every partly checked property', () => {
+    // Two kinds of property go unchecked by the schema, and they are
+    // documented in different places: `icon` is the kit's own slot and its
+    // type lives in x-uikit.slots, while `render`/`style` are the
+    // primitive's API and their types live in their own descriptions plus an
+    // untyped_prop assumption. Both are named by the assumption pairing (see
+    // testing.ts); only the first is a slot.
+    expect(partlyCheckedPropertyNames(contract)).toEqual(['icon', 'render', 'style']);
     expect(Object.keys(contract['x-uikit'].slots)).toEqual(['icon']);
   });
 
@@ -492,7 +492,7 @@ describe('overlay and extraction safety', () => {
 
   it('rejects a declared prop whose type conflicts with the element surface, naming both locations', () => {
     const conflicting = syntheticExtraction([
-      { name: 'disabled', optional: true, typeText: 'string', declarationFile: 'button.tsx' },
+      { name: 'disabled', optional: true, typeText: 'string', declarationFile: 'button.tsx', expressed: { schema: { type: 'string' }, complete: true } },
     ]);
     expect(() => buildPropsAndRequired('button', conflicting, elementSurface)).toThrow(
       /"disabled".*button\.tsx.*declared type "boolean"/s,
@@ -505,7 +505,7 @@ describe('overlay and extraction safety', () => {
     // the same value, so agreement is all that is required, and a reader of
     // `properties` sees every prop the component declares.
     const agreeing = syntheticExtraction([
-      { name: 'disabled', optional: true, typeText: 'boolean | undefined', declarationFile: 'button.tsx' },
+      { name: 'disabled', optional: true, typeText: 'boolean | undefined', declarationFile: 'button.tsx', expressed: { schema: { type: 'boolean' }, complete: true } },
     ]);
     const { properties, required } = buildPropsAndRequired('button', agreeing, elementSurface);
     expect(properties.disabled).toEqual({ type: 'boolean' });
@@ -514,7 +514,7 @@ describe('overlay and extraction safety', () => {
 
   it('rejects an API prop whose type conflicts with the element surface, naming its declaration file', () => {
     const conflicting = syntheticExtraction([], [
-      { name: 'type', optional: true, typeText: 'boolean', declarationFile: '@base-ui/react/internals/types.d.mts' },
+      { name: 'type', optional: true, typeText: 'boolean', declarationFile: '@base-ui/react/internals/types.d.mts', expressed: { schema: { type: 'boolean' }, complete: true } },
     ]);
     expect(() => buildPropsAndRequired('button', conflicting, elementSurface)).toThrow(
       /"type".*@base-ui\/react\/internals\/types\.d\.mts.*element surface/s,
@@ -523,10 +523,10 @@ describe('overlay and extraction safety', () => {
 
   it('leaves a withheld API prop out of properties without touching the declared ones', () => {
     const extraction = syntheticExtraction(
-      [{ name: 'loading', optional: true, typeText: 'boolean | undefined', declarationFile: 'button.tsx' }],
+      [{ name: 'loading', optional: true, typeText: 'boolean | undefined', declarationFile: 'button.tsx', expressed: { schema: { type: 'boolean' }, complete: true } }],
       [
-        { name: 'nativeButton', optional: true, typeText: 'boolean | undefined', declarationFile: '@base-ui/react/internals/types.d.mts' },
-        { name: 'render', optional: true, typeText: 'ReactElement', declarationFile: '@base-ui/react/internals/types.d.mts' },
+        { name: 'nativeButton', optional: true, typeText: 'boolean | undefined', declarationFile: '@base-ui/react/internals/types.d.mts', expressed: { schema: { type: 'boolean' }, complete: true } },
+        { name: 'render', optional: true, typeText: 'ReactElement', declarationFile: '@base-ui/react/internals/types.d.mts', expressed: undefined },
       ],
     );
     const { properties } = buildPropsAndRequired('button', extraction, elementSurface, ['render']);
@@ -637,7 +637,7 @@ describe('overlay and extraction safety', () => {
   it('rejects a withheld name the primitive underneath does not declare', () => {
     const stale: Overlay = { ...validOverlay, withheld: [{ prop: 'orientaton', reason: 'placeholder' }] };
     const extraction = syntheticExtraction([], [
-      { name: 'orientation', optional: true, typeText: 'string', declarationFile: '@base-ui/react/internals/types.d.mts' },
+      { name: 'orientation', optional: true, typeText: 'string', declarationFile: '@base-ui/react/internals/types.d.mts', expressed: { schema: { type: 'string' }, complete: true } },
     ]);
     expect(() => assertOverlayReferencesRealProps('button', stale, extraction)).toThrow(/withholds "orientaton"/);
   });
@@ -648,7 +648,7 @@ describe('overlay and extraction safety', () => {
     // advertise, never for what the component's own source states.
     const stale: Overlay = { ...validOverlay, withheld: [{ prop: 'loading', reason: 'placeholder' }] };
     const extraction = syntheticExtraction([
-      { name: 'loading', optional: true, typeText: 'boolean', declarationFile: 'button.tsx' },
+      { name: 'loading', optional: true, typeText: 'boolean', declarationFile: 'button.tsx', expressed: { schema: { type: 'boolean' }, complete: true } },
     ]);
     expect(() => assertOverlayReferencesRealProps('button', stale, extraction)).toThrow(/declares itself/);
   });

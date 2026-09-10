@@ -13,10 +13,12 @@
       "type": "string"
     },
     "columns": {
-      "description": "Slot: ColumnDef<{ rowSelectionFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowSortingFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowPaginationFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; sortedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; paginatedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; }, TData>[]. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
+      "type": "array",
+      "description": "Slot: ColumnDef<{ rowSelectionFeature: TableFeature; rowSortingFeature: TableFeature; rowPaginationFeature: TableFeature; sortedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; paginatedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; }, TData>[]. No JSON Schema type covers it beyond the kind above; shape checked by tsc, see x-uikit.slots."
     },
     "data": {
-      "description": "Slot: TData[]. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
+      "type": "array",
+      "description": "Slot: TData[]. No JSON Schema type covers it beyond the kind above; shape checked by tsc, see x-uikit.slots."
     },
     "emptyMessage": {
       "description": "Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
@@ -48,7 +50,7 @@
     "metamodel": "1.0.0",
     "slots": {
       "columns": {
-        "typeText": "ColumnDef<{ rowSelectionFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowSortingFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowPaginationFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; sortedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; paginatedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; }, TData>[]",
+        "typeText": "ColumnDef<{ rowSelectionFeature: TableFeature; rowSortingFeature: TableFeature; rowPaginationFeature: TableFeature; sortedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; paginatedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; }, TData>[]",
         "optional": false
       },
       "data": {
@@ -137,13 +139,13 @@
         "about": "prop",
         "prop": "columns",
         "claim": "columns is an array of @tanstack/react-table ColumnDef objects, generic over TData",
-        "reason": "ColumnDef carries function-valued fields (header/cell render functions among them) from a third-party package this contract does not own, and it is generic over the row type - a type parameter has no JSON Schema representation either. Declared as a slot rather than enumerated."
+        "reason": "The schema states that this is an array and stops there. ColumnDef carries function-valued fields (header/cell render functions among them) from a third-party package this contract does not own, and it is generic over the row type the caller picks - so what is IN the array is checked by tsc, and is why the prop is a slot rather than an enumerated shape."
       },
       {
         "about": "prop",
         "prop": "data",
         "claim": "data is an array of the caller's own row type",
-        "reason": "`TData[]` - a generic type parameter, so there is no shape to assert without a concrete consumer. It must be the same `TData` the `columns` were built for; that pairing is a call-site type error, not something this schema can check."
+        "reason": "`TData[]` - an array, which the schema does state, of a type parameter the caller picks, which it cannot. The rows must be the same `TData` the `columns` were built for; that pairing is a call-site type error, not something this schema can check."
       },
       {
         "about": "prop",

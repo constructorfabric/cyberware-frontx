@@ -71,7 +71,7 @@ import Ajv2020 from 'ajv/dist/2020';
 // the line that caused it.
 import { parse as parseYaml } from 'yaml';
 
-import { extractComponent, normalizeTypeText, parseStringLiteralUnion, type ComponentExtraction, type ExtractedProp } from './extract';
+import { extractComponent, type ComponentExtraction, type ExtractedProp } from './extract';
 import {
   bareGtsId,
   BASE_TYPE_ID,
@@ -355,13 +355,21 @@ export interface ContractInstance {
 }
 
 export interface ContractProperty {
-  // Absent for a slot: a ReactNode or render prop has no JSON Schema type.
-  // The property is still declared (with annotations only, no assertions) so
-  // that `unevaluatedProperties: false` counts it as evaluated and lets it
-  // through - a contract that rejected `icon` would be wrong, not strict.
-  // Its real type stays in x-uikit.slots, where the lint and tsc read it.
+  // Absent where the type states no JSON Schema type at all: a ReactNode or
+  // a render prop. The property is still declared (with annotations only, no
+  // assertions) so that `unevaluatedProperties: false` counts it as
+  // evaluated and lets it through - a contract that rejected `icon` would be
+  // wrong, not strict. Its real type stays in x-uikit.slots, where the lint
+  // and tsc read it. PRESENT, with a description beside it, where the type
+  // states a kind but not a shape: `columns` is an array of column defs, and
+  // "array" is the half of that Ajv can hold.
   type?: string;
   enum?: string[];
+  // The element schema of an array whose element type the checker states in
+  // full. Absent for `unknown[]` - an array of anything is entirely said by
+  // `type: "array"` - and for an element JSON Schema cannot state, where a
+  // partial `items` would constrain what the element does not.
+  items?: ContractProperty;
   // A string for a string axis, a boolean for a boolean one - the JSON
   // Schema default has to be a value of the property's own type, and a cva
   // boolean variant's default really is `false`, not the string "false" its
@@ -811,59 +819,48 @@ function elementSurfacePropertyTypes(elementSurface: Record<string, unknown>): M
 const MACHINE_OWNED = ['axes', 'props', 'defaults', 'variants', 'required', 'type'];
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-machine-owned
 
-// A prop's normalized TypeScript text, classified into the provider-safe
-// JSON Schema subset a validator can actually assert: boolean/string/number
-// exactly, or a string literal union as an enum. Everything else - a
-// function, ReactNode, an element, an object shape - has no JSON Schema
-// representation and is annotation-only (see buildPropsAndRequired's slot
-// branch and the API-prop branch beside it). One function, used by
-// both a component's own props and its generated element surface, so the
-// same TypeScript shape is always classified the same way regardless of
-// which side of the own/inherited split it happens to land on.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-describe
-function classifyProviderSafeType(typeText: string): ContractProperty | undefined {
-  const normalized = normalizeTypeText(typeText);
-  if (normalized === 'boolean' || normalized === 'string' || normalized === 'number') {
-    return { type: normalized };
-  }
-  const enumValues = parseStringLiteralUnion(normalized);
-  if (enumValues) return { type: 'string', enum: enumValues };
-  return undefined;
-  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-describe
-}
-
-// The JSON Schema keywords that make a property schema assert something
-// about a value. A schema carrying none of them - and no prose either - is
-// the bare `{}` this compiler used to emit for every inherited prop the
-// provider-safe subset could not express.
-// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-describe
-const ASSERTING_KEYWORDS = ['type', 'enum', 'const', '$ref', 'anyOf', 'oneOf'] as const;
-
-// A property schema this compiler may emit, plus the assertion keywords the
-// emptiness check below consults. `const`/`$ref`/`anyOf`/`oneOf` are not
-// emitted today; naming them here is what makes the check keep holding the
-// day a branch starts emitting one, instead of silently annotating a
-// property that already constrains something.
-type PropertySchema = ContractProperty & Partial<Record<(typeof ASSERTING_KEYWORDS)[number], unknown>>;
-
 // An empty property schema is not neutral to a reader: `{}` in a props
 // contract reads as "anything goes", and an agent that read the accordion
 // root's `value`/`defaultValue` that way concluded they were plain strings
-// when their real type is `AccordionValue<Value>`. A prop whose TypeScript
-// type has no JSON Schema representation - a generic type parameter, a
-// function, a union with non-literal members - therefore says so in prose:
-// the checker's own printed type text, and the reason nothing asserts it.
-// The type text is the extractor's, already normalized to node_modules- or
-// kit-relative import paths, so this stays machine-independent.
+// when their real type is `AccordionValue<Value>`.
 //
-// A schema that already asserts something, or that already carries its own
-// description (the own-prop slot branch writes a more specific one), is
-// returned untouched - one property, one description.
-export function describeUntypeableProperty(schema: PropertySchema, typeText: string): ContractProperty {
-  if (schema.description !== undefined) return schema;
-  if (ASSERTING_KEYWORDS.some((keyword) => schema[keyword] !== undefined)) return schema;
-  return { ...schema, description: `TS: ${typeText}. Not expressible in JSON Schema, checked by tsc.` };
+// The rule is UNWRAP FIRST, describe only what is left. The extractor
+// resolves the type through its aliases and its type parameters' defaults
+// and constraints and states as much of it as JSON Schema carries
+// (extract.ts's expressType); this adds the prose for the rest. A prop the
+// schema states in full gets no prose - there is nothing left to say - and a
+// prop it states nothing about gets prose alone. In between sits a prop
+// whose kind is checkable and whose shape is not (`ColumnDef<...>[]` is an
+// array of something Ajv cannot check), which gets both.
+//
+// The wording is about what is left, not about the prop: saying "not
+// expressible" of a type that IS partly expressible is the false claim this
+// rule came from.
+//
+// A property that already carries its own description (the own-prop slot
+// branch writes a more specific one) is returned untouched - one property,
+// one description.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-describe
+export function describeUnexpressedType(schema: ContractProperty, typeText: string, complete: boolean): ContractProperty {
+  if (complete || schema.description !== undefined) return schema;
+  return { ...schema, description: `TS: ${typeText}. ${unexpressedClause(schema)}` };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-describe
+}
+
+// How much of the type the schema beside this prose failed to state - the
+// one sentence that has to stay true of the schema it sits next to. A
+// property carrying `type: "array"` is not "not expressible"; that claim,
+// made of a type that partly is, is what this rule was written to stop.
+function unexpressedClause(schema: ContractProperty): string {
+  return schema.type === undefined
+    ? 'Not expressible in JSON Schema, checked by tsc.'
+    : 'Not fully expressible in JSON Schema; what the type states beyond the kind above is checked by tsc.';
+}
+
+// The property schema for one extracted prop, before any branch-specific
+// prose: whatever the checker could state, or nothing.
+function expressedSchemaOf(prop: ExtractedProp): ContractProperty {
+  return prop.expressed === undefined ? {} : { ...prop.expressed.schema };
 }
 
 // How a reference to another kit component is spelled, everywhere one
@@ -2022,26 +2019,23 @@ export function buildPropsAndRequired(
     assertAgreesWithElementSurface(component, prop, `${component}.tsx`, elementSurfaceTypes);
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
-    const normative = classifyProviderSafeType(prop.typeText);
-    if (normative) {
-      properties[prop.name] = normative;
+    if (prop.expressed?.complete === true) {
+      properties[prop.name] = { ...prop.expressed.schema };
     } else {
-      // Not expressible in the provider-safe subset - recorded as a slot with
-      // its source type, checked by the lint and by tsc, not by Ajv. It still
-      // gets an annotation-only property entry so a reader of `properties`
-      // sees every prop the component declares, not only the typeable ones.
+      // The schema does not state this prop's whole shape, so the shape is
+      // checked by the lint and by tsc, not by Ajv - which is what a slot
+      // record is. The property entry carries whatever the schema DID state
+      // (`columns` is checkably an array) alongside the source type, so a
+      // reader of `properties` gets both the part Ajv enforces and the part
+      // it does not.
       slots[prop.name] = { typeText: prop.typeText, optional: prop.optional };
       properties[prop.name] = {
-        description: `Slot: ${prop.typeText}. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots.`,
+        ...expressedSchemaOf(prop),
+        description: `Slot: ${prop.typeText}. ${
+          prop.expressed === undefined ? 'No JSON Schema type exists for it' : 'No JSON Schema type covers it beyond the kind above'
+        }; shape checked by tsc, see x-uikit.slots.`,
       };
     }
-    // The same "never emit a property that asserts nothing and says nothing"
-    // rule the API branch below applies, held here as a post-condition rather
-    // than duplicated per branch: the slot branch above already writes its
-    // own, more specific description and a typed property already asserts
-    // something, so this changes nothing today - it is what keeps the rule
-    // true for whatever branch is added next.
-    properties[prop.name] = describeUntypeableProperty(properties[prop.name], prop.typeText);
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
     if (!prop.optional) required.push(prop.name);
   }
@@ -2063,7 +2057,7 @@ export function buildPropsAndRequired(
     // forwarded API prop the schema cannot type is not one - its TypeScript
     // type goes in the description, and the `untyped` statement naming it is
     // what a reader gets instead of a second machine-readable copy.
-    properties[prop.name] = describeUntypeableProperty(classifyProviderSafeType(prop.typeText) ?? {}, prop.typeText);
+    properties[prop.name] = describeUnexpressedType(expressedSchemaOf(prop), prop.typeText, prop.expressed?.complete === true);
     if (!prop.optional) required.push(prop.name);
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-api
@@ -2089,11 +2083,15 @@ function assertAgreesWithElementSurface(
 ): void {
   const declared = elementSurfaceTypes.get(prop.name);
   if (declared === undefined) return;
-  const classified = classifyProviderSafeType(prop.typeText);
+  // Compared on what each side ASSERTS, not on whether the component's type
+  // is stated in full: a prop the surface declares `array` and the component
+  // types as an array of something Ajv cannot check agrees about the only
+  // thing either of them enforces.
+  const expressed = prop.expressed?.schema;
   const agrees =
-    classified !== undefined &&
-    classified.type === declared.type &&
-    JSON.stringify(classified.enum) === JSON.stringify(declared.enum);
+    expressed !== undefined &&
+    expressed.type === declared.type &&
+    JSON.stringify(expressed.enum) === JSON.stringify(declared.enum);
   if (agrees) return;
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict-refuse
   throw new Error(
@@ -2104,16 +2102,22 @@ function assertAgreesWithElementSurface(
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
 
-// Every property of a compiled contract that asserts nothing about its value
-// - a slot the kit declares, or an API prop of the primitive underneath whose
-// type JSON Schema cannot express. What they have in common is the only thing
-// that matters to a reader: Ajv will not catch a wrong value here, so the
-// prop's real type has to be stated in prose and its existence acknowledged.
+// Every property of a compiled contract whose value Ajv will not fully
+// check - a slot the kit declares, or an API prop of the primitive
+// underneath whose type JSON Schema states only in part or not at all. What
+// they have in common is the only thing that matters to a reader: passing
+// validation here is not the same as being right, so the prop's real type
+// has to be stated in prose and its existence acknowledged.
+//
+// Read off the prose rather than off the assertion keywords, because prose
+// is exactly the compiler's record of that gap: describeUnexpressedType and
+// the slot branch write a description when, and only when, JSON Schema did
+// not state the whole type. A prop typed in full carries none.
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-list
-export function unassertedPropertyNames(contract: CompiledContract): string[] {
+export function partlyCheckedPropertyNames(contract: CompiledContract): string[] {
   return Object.entries(contract.properties)
-    .filter(([, schema]) => !ASSERTING_KEYWORDS.some((keyword) => (schema as PropertySchema)[keyword] !== undefined))
+    .filter(([, schema]) => schema.description !== undefined)
     .map(([name]) => name)
     .sort();
 }
@@ -2123,10 +2127,13 @@ export function unassertedPropertyNames(contract: CompiledContract): string[] {
 // statements about a prop, both ways. A property nothing asserts and nothing
 // explains is the defect this pairing came from: an evaluation read three
 // such properties out of a generated file and decided they took plain
-// strings. A statement naming a property the schema DOES constrain is the
+// strings. A statement naming a property the schema states IN FULL is the
 // mirror error - a reader told that `multiple` cannot be typed while the
 // contract types it as a boolean has been told something false about the
-// contract in front of them.
+// contract in front of them. A property the schema states only in part
+// (`columns` is an array; what is in it, Ajv cannot say) belongs on the
+// acknowledged side: the part nothing checks is the part a statement is
+// owed for.
 //
 // Keyed on `about`, which is what makes this checkable at all: the statements
 // about a prop are the family this pairing is over, and the ones about a
@@ -2139,7 +2146,7 @@ export function unassertedPropertyNames(contract: CompiledContract): string[] {
 // in the run the author already executes.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-pair
 export function findUntypedPropMismatches(contract: CompiledContract): string[] {
-  const unasserted = new Set(unassertedPropertyNames(contract));
+  const partlyChecked = new Set(partlyCheckedPropertyNames(contract));
   const named = new Set(
     (contract['x-gts-traits'].untyped ?? [])
       .filter((statement) => statement.about === 'prop')
@@ -2147,14 +2154,14 @@ export function findUntypedPropMismatches(contract: CompiledContract): string[] 
       .filter((prop): prop is string => prop !== undefined),
   );
   const problems: string[] = [];
-  for (const name of [...unasserted].sort()) {
+  for (const name of [...partlyChecked].sort()) {
     if (!named.has(name)) {
-      problems.push(`"${name}" asserts nothing in properties but no untyped statement about a prop names it`);
+      problems.push(`"${name}" is not fully checked by its schema but no untyped statement about a prop names it`);
     }
   }
   for (const name of [...named].sort()) {
-    if (!unasserted.has(name)) {
-      problems.push(`an untyped statement names the prop "${name}", which the contract's properties do constrain`);
+    if (!partlyChecked.has(name)) {
+      problems.push(`an untyped statement names the prop "${name}", which the contract's properties state in full`);
     }
   }
   return problems;

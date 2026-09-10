@@ -306,6 +306,20 @@ export function assertContractFreshness(directory: string, exportStem: string = 
     });
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-refs
 
+    // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-no-specifier
+    it('names every type without the module it was resolved from', () => {
+      // A printed `import("<path>")` qualifier puts two things a consumer
+      // has no use for into a committed artifact: the machine's own
+      // filesystem layout, and a foreign package's internal file names
+      // (`@base-ui/react/accordion/index` is not how anything imports
+      // AccordionValue). Asserted over the whole compiled artifact rather
+      // than over the descriptions alone, because x-uikit.slots carries the
+      // same printed text one field away.
+      const leaking = JSON.stringify(compileContract(directory, exportStem)).includes('import(');
+      expect(leaking, `${exportStem}: a compiled type text still names the module it was resolved from`).toBe(false);
+    });
+    // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-no-specifier
+
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-untyped
     it('pairs every property that asserts nothing with an untyped statement about it, both ways', () => {
       // The gap this closes was measured, not imagined: an evaluation pointed

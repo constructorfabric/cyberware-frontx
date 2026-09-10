@@ -9,7 +9,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { classifyDeclarationSite, extractComponent, isBooleanAxis, normalizeTypeText, parseStringLiteralUnion } from './extract';
+import { classifyDeclarationSite, extractComponent, isBooleanAxis, stripModuleSpecifiers } from './extract';
 import { domElementToken, elementTypeId, elementTypeIdPattern } from './ids';
 import { applyContractTestTimeout } from './testing';
 
@@ -45,12 +45,12 @@ describe('extractComponent: type alias and intersection props (F15)', () => {
     expect(tone?.optional).toBe(false);
   });
 
-  it("own literal-union prop's normalized type text parses to an enum", () => {
-    // What compile.ts's classifyProviderSafeType does with this fact -
-    // exercised directly here so the extractor and the union-parsing logic
-    // are each tested at the layer that owns them.
+  it('states an own literal-union prop as a string enum', () => {
+    // The checker's answer, not a parse of the printed text: what the
+    // compiler puts in `properties` comes from here, so this is the layer
+    // that owns the fact.
     const tone = banner.ownProps.find((p) => p.name === 'tone');
-    expect(parseStringLiteralUnion(normalizeTypeText(tone!.typeText))).toEqual(['info', 'warning', 'critical']);
+    expect(tone?.expressed).toEqual({ schema: { type: 'string', enum: ['info', 'warning', 'critical'] }, complete: true });
   });
 
   it('classifies the ComponentProps<\'div\'> half as forwarded DOM surface, not own', () => {
@@ -208,29 +208,52 @@ describe('extractComponent: JSDoc @default, on a real component', () => {
   });
 });
 
-describe('normalizeTypeText', () => {
-  it('strips a trailing `| undefined` from an optional prop\'s widened type', () => {
-    expect(normalizeTypeText('string | undefined')).toBe('string');
+describe('what JSON Schema can state about a prop type', () => {
+  const [picker] = extractComponent(fixture('untypeable-props.fixture.tsx'));
+  const prop = (name: string) => picker.ownProps.find((p) => p.name === name);
+
+  it('unwraps an alias to the array behind it, with the element type as items', () => {
+    // The defect a reviewer found on the accordion contract, reproduced:
+    // `Chosen` is `Value[]` with `Value = string`, and a classifier reading
+    // the printed alias NAME declares it inexpressible. Nothing about the
+    // name is expressible; the type is an array of strings.
+    expect(prop('chosen')?.expressed).toEqual({ schema: { type: 'array', items: { type: 'string' } }, complete: true });
   });
 
-  it('treats React.ReactNode and the bare ReactNode as the same spelling', () => {
-    expect(normalizeTypeText('React.ReactNode')).toBe('ReactNode');
-    expect(normalizeTypeText('React.ReactNode | undefined')).toBe('ReactNode');
+  it('states the kind of an array whose element type it cannot state', () => {
+    // `Value[]` over the component's own unconstrained parameter: still an
+    // array, so `type` is not withheld, and `items` is - a partial `items`
+    // would constrain what the element does not.
+    expect(prop('selection')?.expressed).toEqual({ schema: { type: 'array' }, complete: false });
+  });
+
+  it('states nothing about a function prop', () => {
+    expect(prop('onSelectionChange')?.expressed).toBeUndefined();
+  });
+
+  it('states a plain string prop in full', () => {
+    expect(prop('label')?.expressed).toEqual({ schema: { type: 'string' }, complete: true });
+  });
+
+  it('names every prop type without a module specifier in it', () => {
+    // A printed `import("<path>")` puts the machine's own filesystem layout
+    // and a foreign package's internal file names into a committed
+    // artifact. React's `style` and `onClick` arrive through
+    // ComponentProps<'div'> and are exactly where the printer used to emit
+    // one.
+    const everyProp = [...picker.ownProps, ...picker.apiProps, ...picker.forwardedProps, ...picker.unclassifiedProps];
+    expect(everyProp.filter((p) => p.typeText.includes('import(')).map((p) => p.name)).toEqual([]);
+    expect(prop('onSelectionChange')?.typeText).toBe('(next: Value[]) => void');
   });
 });
 
-describe('parseStringLiteralUnion', () => {
-  it('parses a plain string literal union into its member values', () => {
-    expect(parseStringLiteralUnion('"a" | "b" | "c"')).toEqual(['a', 'b', 'c']);
+describe('stripModuleSpecifiers', () => {
+  it('keeps the type name and drops the module it was resolved from', () => {
+    expect(stripModuleSpecifiers('import("@types/react/index").CSSProperties | undefined')).toBe('CSSProperties | undefined');
   });
 
-  it('drops a `null` member but keeps the string values', () => {
-    expect(parseStringLiteralUnion('"a" | "b" | null')).toEqual(['a', 'b']);
-  });
-
-  it('returns undefined for a type that is not a string literal union', () => {
-    expect(parseStringLiteralUnion('string')).toBeUndefined();
-    expect(parseStringLiteralUnion('"a" | number')).toBeUndefined();
+  it('leaves text with no specifier in it alone', () => {
+    expect(stripModuleSpecifiers('(next: Value[]) => void')).toBe('(next: Value[]) => void');
   });
 });
 

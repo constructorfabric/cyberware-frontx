@@ -16,7 +16,7 @@
       "type": "string"
     },
     "column": {
-      "description": "Slot: Column<{ rowSelectionFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowSortingFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowPaginationFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; sortedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; paginatedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; }, TData, TValue>. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
+      "description": "Slot: Column<{ rowSelectionFeature: TableFeature; rowSortingFeature: TableFeature; rowPaginationFeature: TableFeature; sortedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; paginatedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; }, TData, TValue>. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
     }
   },
   "required": [
@@ -34,7 +34,7 @@
         "optional": false
       },
       "column": {
-        "typeText": "Column<{ rowSelectionFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowSortingFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; rowPaginationFeature: import(\"@tanstack/react-table/dist/index\").TableFeature; sortedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; paginatedRowModel: (table: import(\"@tanstack/react-table/dist/index\").Table<any, any>) => () => import(\"@tanstack/react-table/dist/index\").RowModel<any, any>; }, TData, TValue>",
+        "typeText": "Column<{ rowSelectionFeature: TableFeature; rowSortingFeature: TableFeature; rowPaginationFeature: TableFeature; sortedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; paginatedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; }, TData, TValue>",
         "optional": false
       }
     },
