@@ -309,7 +309,7 @@ Member-level use cases are owned by each member's own PRD §8, located through t
 
 ## 9. Acceptance Criteria
 
-- [ ] The three layers are each delivered by identified members whose own PRDs state their requirements: four published libraries, externally hosted templates under the CLI-owned contract, and two projects-orchestration units — verifiable via the member PRD links in §1.1 and §4.1.
+- [ ] The three layers are each delivered by identified members whose own PRDs state their requirements — published libraries, externally hosted templates under the CLI-owned contract, and projects-orchestration units — verifiable via the member PRD links located through the [DESIGN's member pointers](./DESIGN.md#member-pointers); membership is a property, not a list this criterion fixes a count against.
 - [ ] The layer-level requirements hold across every member: any UI framework, versioned evolution, no architectural ceiling — verifiable via `cpt-frontx-fr-ui-framework-agnostic`, `cpt-frontx-fr-versioned-platform-evolution`, and `cpt-frontx-fr-no-architectural-ceiling`.
 - [ ] A project can cross all three layers from scaffold to running application — verifiable via `cpt-frontx-usecase-cross-layer-project-delivery`.
 - [ ] The PRD is structurally valid and internally consistent: `cfs validate --artifact architecture/PRD.md --skip-code` returns PASS, and the standing content-quality checks — citation discipline, design-agnostic prose, controlled product vocabulary, and external-system-name scope — all clear.

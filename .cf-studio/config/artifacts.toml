@@ -120,6 +120,70 @@ required = true
 path = "packages/telemetry/src"
 extensions = [".ts"]
 
+# Routing owns the PRD, DESIGN and FEATURE that describe the navigation substrate, same
+# shape and rationale as telemetry above. No [[systems.children.codebase]] block yet: the
+# member currently owns only its artifacts, with no source under packages/routing/src. Add
+# the codebase block once the first source file lands, the same way every other child's
+# codebase block was added alongside its implementation.
+[[systems.children]]
+name = "Routing"
+slug = "routing"
+kit = "sdlc"
+artifacts_dir = "packages/routing/architecture"
+
+[[systems.children.autodetect]]
+kit = "sdlc"
+system_root = "{project_root}"
+artifacts_root = "packages/routing/architecture"
+
+[systems.children.autodetect.artifacts.PRD]
+pattern = "PRD.md"
+traceability = "FULL"
+required = true
+
+[systems.children.autodetect.artifacts.DESIGN]
+pattern = "DESIGN.md"
+traceability = "FULL"
+required = true
+
+[systems.children.autodetect.artifacts.FEATURE]
+pattern = "features/*/FEATURE.md"
+traceability = "FULL"
+required = true
+
+# Routing TanStack Provider owns the PRD, DESIGN and FEATURE that describe the default
+# engine-provider package split out of routing (cpt-frontx-adr-core-package-boundaries): it
+# implements the navigation substrate's engine-provider port over TanStack Router. No
+# [[systems.children.codebase]] block yet: the member currently owns only its artifacts,
+# with no source under packages/routing-tanstack/src. Add the codebase block once the first
+# source file lands, the same way every other child's codebase block was added alongside its
+# implementation.
+[[systems.children]]
+name = "Routing TanStack Provider"
+slug = "routing-tanstack"
+kit = "sdlc"
+artifacts_dir = "packages/routing-tanstack/architecture"
+
+[[systems.children.autodetect]]
+kit = "sdlc"
+system_root = "{project_root}"
+artifacts_root = "packages/routing-tanstack/architecture"
+
+[systems.children.autodetect.artifacts.PRD]
+pattern = "PRD.md"
+traceability = "FULL"
+required = true
+
+[systems.children.autodetect.artifacts.DESIGN]
+pattern = "DESIGN.md"
+traceability = "FULL"
+required = true
+
+[systems.children.autodetect.artifacts.FEATURE]
+pattern = "features/*/FEATURE.md"
+traceability = "FULL"
+required = true
+
 # GTS plugin owns the PRD, FEATURE and DESIGN that describe it, moved here from the root
 # tree as part of the federation refactoring. The PRD owns the package's requirements per
 # the 3-layer model: each member explains its own reqs; the root PRD describes the layers.
