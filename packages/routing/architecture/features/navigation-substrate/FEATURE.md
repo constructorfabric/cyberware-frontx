@@ -200,109 +200,109 @@ Internal system functions that do not interact with actors directly. All six are
 
 ### Grammar Parse
 
-- [ ] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-grammar-parse`
+- [x] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-grammar-parse`
 
 **Input**: A URL string, or the caller's already-split shell subroute, query string, and hash.
 
 **Output**: The shell subroute and the hash, each copied verbatim from the input; an ordered list of entries, each `{domainKey, extension, params}` with `params` itself an ordered list of `{name, value}` pairs; and an ordered list of warnings, each naming the raw entry text it concerns and which rule produced it. Parsing never throws — a malformed entry is dropped and reported, every other entry is kept (`cpt-frontx-routing-adr-domain-occupancy-addressing-granularity`).
 
 **Steps**:
-1. [ ] - `p1` - Split the input into the shell subroute (everything before the first `?`), the query string (between `?` and `#`, or the rest of the string if no `#` is present), and the hash (everything from `#` onward, or absent) - `inst-split-url`
-2. [ ] - `p1` - Copy the shell subroute and the hash into the output unchanged; this package never inspects either one further - `inst-copy-verbatim`
-3. [ ] - `p1` - **IF** the query string is empty — including a URL whose `?` is present with nothing after it (e.g. `/en?`), which is a present, empty query string, not the absence of one - `inst-if-empty-query`
-   1. [ ] - `p1` - **RETURN** an empty entry list, no warnings, and the copied shell subroute and hash - `inst-return-empty`
-4. [ ] - `p1` - Split the query string on `&` into raw entry strings, preserving their left-to-right order - `inst-split-entries`
-5. [ ] - `p1` - **FOR EACH** raw entry string, in order - `inst-foreach-raw-entry`
-   0. [ ] - `p1` - **IF** this raw entry string is empty — produced by two consecutive `&` characters (`a=b&&c=d`) or a trailing `&` at the end of the query string — silently skip it and continue to the next raw entry string: no warning is recorded for an empty raw entry, unlike every other malformed case this algorithm reports - `inst-skip-empty-raw-entry`
-   1. [ ] - `p1` - Split it on `;` into its head segment and zero or more param segments - `inst-split-on-semicolon`
-   2. [ ] - `p1` - **IF** the head segment carries no `=`, or the text before that `=` (the candidate domain key) does not conform to the `domain-key` production — an odd count of `.`-separated segments, each segment matching the `name` alphabet — or the text after it (the candidate extension) does not match the `name` alphabet - `inst-if-malformed-head`
-      1. [ ] - `p1` - Drop this entry, record a warning citing its raw text and "malformed entry", and continue to the next raw entry string - `inst-drop-malformed`
-   3. [ ] - `p1` - Set `domainKey` and `extension` from the head segment's own two sides of its first `=` - `inst-set-domain-key-extension`
-   4. [ ] - `p1` - **IF** `extension` already appears in an entry already kept for this same `domainKey` earlier in this same parse - `inst-if-duplicate-extension`
-      1. [ ] - `p1` - Drop this entry (the first occurrence already kept stands), record a warning citing its raw text and "duplicate extension", and continue to the next raw entry string - `inst-drop-duplicate-extension`
-   5. [ ] - `p1` - **FOR EACH** param segment, in order - `inst-foreach-param-segment`
-      1. [ ] - `p1` - **IF** the segment carries no `=`, set that param's `name` to the whole segment, percent-decoded, and its `value` to the empty string - `inst-bare-param`
-      2. [ ] - `p1` - **ELSE** set `name` and `value` from the segment's own two sides of its first `=`, each percent-decoded once - `inst-keyed-param`
-      3. [ ] - `p1` - Percent-decoding replaces each `%XX` escape with the byte it encodes and leaves every other character, including a raw `+`, exactly as read — this grammar performs no form-style `+`-to-space decoding; a run of one or more consecutive `%XX` escapes is assembled as a run of raw bytes and decoded together as UTF-8, so a multi-byte character split across consecutive escapes decodes to the one character it encodes, not to several - `inst-decode-once`
-      4. [ ] - `p1` - **IF** a `%` in this segment is not followed by two hexadecimal digits (a malformed escape, e.g. `%zz` or a trailing `%`), or the bytes a run of `%XX` escapes assembles are not valid UTF-8 - `inst-if-malformed-escape`
-         1. [ ] - `p1` - Drop the *whole entry* this segment belongs to — not only this one param — record a warning citing the entry's raw text and "malformed entry", and continue to the next raw entry string, abandoning whatever params of this entry were already collected - `inst-drop-entry-malformed-escape`
-      5. [ ] - `p1` - **IF** a param of this same `name` was already collected earlier in this same entry - `inst-if-duplicate-param`
-         1. [ ] - `p1` - Overwrite that earlier param's value with this one's, in its original position, and record a warning citing this entry's raw text and "duplicate parameter" - `inst-overwrite-duplicate-param`
-      6. [ ] - `p1` - **ELSE** append `{name, value}` to this entry's own ordered `params` list - `inst-append-param`
-   6. [ ] - `p1` - Append `{domainKey, extension, params}` to the output entry list, in this raw entry string's own position - `inst-append-entry`
-6. [ ] - `p1` - **RETURN** the entry list, the warnings collected, and the copied shell subroute and hash - `inst-return-parsed`
+1. [x] - `p1` - Split the input into the shell subroute (everything before the first `?`), the query string (between `?` and `#`, or the rest of the string if no `#` is present), and the hash (everything from `#` onward, or absent) - `inst-split-url`
+2. [x] - `p1` - Copy the shell subroute and the hash into the output unchanged; this package never inspects either one further - `inst-copy-verbatim`
+3. [x] - `p1` - **IF** the query string is empty — including a URL whose `?` is present with nothing after it (e.g. `/en?`), which is a present, empty query string, not the absence of one - `inst-if-empty-query`
+   1. [x] - `p1` - **RETURN** an empty entry list, no warnings, and the copied shell subroute and hash - `inst-return-empty`
+4. [x] - `p1` - Split the query string on `&` into raw entry strings, preserving their left-to-right order - `inst-split-entries`
+5. [x] - `p1` - **FOR EACH** raw entry string, in order - `inst-foreach-raw-entry`
+   0. [x] - `p1` - **IF** this raw entry string is empty — produced by two consecutive `&` characters (`a=b&&c=d`) or a trailing `&` at the end of the query string — silently skip it and continue to the next raw entry string: no warning is recorded for an empty raw entry, unlike every other malformed case this algorithm reports - `inst-skip-empty-raw-entry`
+   1. [x] - `p1` - Split it on `;` into its head segment and zero or more param segments - `inst-split-on-semicolon`
+   2. [x] - `p1` - **IF** the head segment carries no `=`, or the text before that `=` (the candidate domain key) does not conform to the `domain-key` production — an odd count of `.`-separated segments, each segment matching the `name` alphabet — or the text after it (the candidate extension) does not match the `name` alphabet - `inst-if-malformed-head`
+      1. [x] - `p1` - Drop this entry, record a warning citing its raw text and "malformed entry", and continue to the next raw entry string - `inst-drop-malformed`
+   3. [x] - `p1` - Set `domainKey` and `extension` from the head segment's own two sides of its first `=` - `inst-set-domain-key-extension`
+   4. [x] - `p1` - **IF** `extension` already appears in an entry already kept for this same `domainKey` earlier in this same parse - `inst-if-duplicate-extension`
+      1. [x] - `p1` - Drop this entry (the first occurrence already kept stands), record a warning citing its raw text and "duplicate extension", and continue to the next raw entry string - `inst-drop-duplicate-extension`
+   5. [x] - `p1` - **FOR EACH** param segment, in order - `inst-foreach-param-segment`
+      1. [x] - `p1` - **IF** the segment carries no `=`, set that param's `name` to the whole segment, percent-decoded, and its `value` to the empty string - `inst-bare-param`
+      2. [x] - `p1` - **ELSE** set `name` and `value` from the segment's own two sides of its first `=`, each percent-decoded once - `inst-keyed-param`
+      3. [x] - `p1` - Percent-decoding replaces each `%XX` escape with the byte it encodes and leaves every other character, including a raw `+`, exactly as read — this grammar performs no form-style `+`-to-space decoding; a run of one or more consecutive `%XX` escapes is assembled as a run of raw bytes and decoded together as UTF-8, so a multi-byte character split across consecutive escapes decodes to the one character it encodes, not to several - `inst-decode-once`
+      4. [x] - `p1` - **IF** a `%` in this segment is not followed by two hexadecimal digits (a malformed escape, e.g. `%zz` or a trailing `%`), or the bytes a run of `%XX` escapes assembles are not valid UTF-8 - `inst-if-malformed-escape`
+         1. [x] - `p1` - Drop the *whole entry* this segment belongs to — not only this one param — record a warning citing the entry's raw text and "malformed entry", and continue to the next raw entry string, abandoning whatever params of this entry were already collected - `inst-drop-entry-malformed-escape`
+      5. [x] - `p1` - **IF** a param of this same `name` was already collected earlier in this same entry - `inst-if-duplicate-param`
+         1. [x] - `p1` - Overwrite that earlier param's value with this one's, in its original position, and record a warning citing this entry's raw text and "duplicate parameter" - `inst-overwrite-duplicate-param`
+      6. [x] - `p1` - **ELSE** append `{name, value}` to this entry's own ordered `params` list - `inst-append-param`
+   6. [x] - `p1` - Append `{domainKey, extension, params}` to the output entry list, in this raw entry string's own position - `inst-append-entry`
+6. [x] - `p1` - **RETURN** the entry list, the warnings collected, and the copied shell subroute and hash - `inst-return-parsed`
 
 **Rationale**: Malformed-entry, duplicate-extension, and duplicate-parameter are three independent edge rules the grammar deliberately resolves differently — a malformed entry is discarded outright because there is no well-formed fact to keep; a duplicate extension under one domain key keeps the first occurrence because entries are an ordered list a domain reads meaning from; a duplicate parameter name keeps the last occurrence because parameters are a map, the same rule `URLSearchParams` itself would apply if this grammar's own delimiters let it be used at all. Every rule reports a warning rather than throwing, because a consumer resolving an existing, possibly bookmarked URL cannot recover from a thrown parse error the way it can from a dropped or overwritten entry.
 
 ### Grammar Serialize
 
-- [ ] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-grammar-serialize`
+- [x] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-grammar-serialize`
 
 **Input**: A shell subroute, an ordered entry list of `{domainKey, extension, params}` (`params` itself ordered), and a hash — the identical shape `cpt-frontx-algo-routing-navigation-substrate-grammar-parse` produces.
 
 **Output**: A URL string, or a thrown error naming the offending entry when the input violates a structural invariant this package itself enforces on write.
 
 **Steps**:
-1. [ ] - `p1` - **FOR EACH** entry in the input list - `inst-foreach-entry-validate`
-   1. [ ] - `p1` - **IF** `domainKey` does not conform to the `domain-key` production, or `extension` does not match the `name` alphabet - `inst-if-invalid-tokens`
-      1. [ ] - `p1` - **THROW** an error naming this entry - `inst-throw-invalid-tokens`
-   2. [ ] - `p1` - **IF** this entry's own `params` list carries two params of the identical `name` - `inst-if-duplicate-param-name`
-      1. [ ] - `p1` - **THROW** an error naming this entry - `inst-throw-duplicate-param`
-   3. [ ] - `p1` - **IF** an entry earlier in this same input list already carries the identical `domainKey` and `extension` - `inst-if-duplicate-extension-serialize`
-      1. [ ] - `p1` - **THROW** an error naming both entries — serializing a duplicate extension under one domain key is an error, never a silent first-wins, because a caller assembling a list to serialize controls the whole list and has no need of the parser's own tolerance for a stray URL it does not control - `inst-throw-duplicate-extension`
-2. [ ] - `p1` - **FOR EACH** entry, in the input list's own order - `inst-foreach-entry-build`
-   1. [ ] - `p1` - Start this entry's own text with `domainKey` + `"="` + `extension` - `inst-build-head`
-   2. [ ] - `p1` - **FOR EACH** param in this entry's own `params`, in order - `inst-foreach-param-build`
-      1. [ ] - `p1` - Append `";"` + the percent-encoded param name - `inst-append-param-name`
-      2. [ ] - `p1` - **IF** the param's value is non-empty - `inst-if-nonempty-value`
-         1. [ ] - `p1` - Append `"="` + the percent-encoded param value - `inst-append-param-value`
-      3. [ ] - `p1` - **ELSE** append nothing further for this param — a bare name with no `=` is a complete, empty-valued param - `inst-append-bare`
-   3. [ ] - `p1` - Percent-encode a param name or value by escaping `;`, `=`, `&` as `%3B`, `%3D`, `%26`; `#` as `%23`; `%` as `%25`; `+` and space as `%2B` and `%20`; and every non-ASCII character as its UTF-8 bytes, each percent-escaped; every other character — the `pchar-safe` set — is left raw - `inst-percent-encode`
-3. [ ] - `p1` - Join the built entry texts with `"&"` - `inst-join-entries`
-4. [ ] - `p1` - **IF** the input entry list is empty - `inst-if-zero-entries`
-   1. [ ] - `p1` - **RETURN** the shell subroute alone, followed by the hash if one is present, with no `"?"` at all - `inst-return-bare-subroute`
-5. [ ] - `p1` - **ELSE** - `inst-else-nonzero-entries`
-   1. [ ] - `p1` - **RETURN** the shell subroute, `"?"`, the joined entry texts, and the hash if one is present - `inst-return-full-url`
+1. [x] - `p1` - **FOR EACH** entry in the input list - `inst-foreach-entry-validate`
+   1. [x] - `p1` - **IF** `domainKey` does not conform to the `domain-key` production, or `extension` does not match the `name` alphabet - `inst-if-invalid-tokens`
+      1. [x] - `p1` - **THROW** an error naming this entry - `inst-throw-invalid-tokens`
+   2. [x] - `p1` - **IF** this entry's own `params` list carries two params of the identical `name` - `inst-if-duplicate-param-name`
+      1. [x] - `p1` - **THROW** an error naming this entry - `inst-throw-duplicate-param`
+   3. [x] - `p1` - **IF** an entry earlier in this same input list already carries the identical `domainKey` and `extension` - `inst-if-duplicate-extension-serialize`
+      1. [x] - `p1` - **THROW** an error naming both entries — serializing a duplicate extension under one domain key is an error, never a silent first-wins, because a caller assembling a list to serialize controls the whole list and has no need of the parser's own tolerance for a stray URL it does not control - `inst-throw-duplicate-extension`
+2. [x] - `p1` - **FOR EACH** entry, in the input list's own order - `inst-foreach-entry-build`
+   1. [x] - `p1` - Start this entry's own text with `domainKey` + `"="` + `extension` - `inst-build-head`
+   2. [x] - `p1` - **FOR EACH** param in this entry's own `params`, in order - `inst-foreach-param-build`
+      1. [x] - `p1` - Append `";"` + the percent-encoded param name - `inst-append-param-name`
+      2. [x] - `p1` - **IF** the param's value is non-empty - `inst-if-nonempty-value`
+         1. [x] - `p1` - Append `"="` + the percent-encoded param value - `inst-append-param-value`
+      3. [x] - `p1` - **ELSE** append nothing further for this param — a bare name with no `=` is a complete, empty-valued param - `inst-append-bare`
+   3. [x] - `p1` - Percent-encode a param name or value by escaping `;`, `=`, `&` as `%3B`, `%3D`, `%26`; `#` as `%23`; `%` as `%25`; `+` and space as `%2B` and `%20`; and every non-ASCII character as its UTF-8 bytes, each percent-escaped; every other character — the `pchar-safe` set — is left raw - `inst-percent-encode`
+3. [x] - `p1` - Join the built entry texts with `"&"` - `inst-join-entries`
+4. [x] - `p1` - **IF** the input entry list is empty - `inst-if-zero-entries`
+   1. [x] - `p1` - **RETURN** the shell subroute alone, followed by the hash if one is present, with no `"?"` at all - `inst-return-bare-subroute`
+5. [x] - `p1` - **ELSE** - `inst-else-nonzero-entries`
+   1. [x] - `p1` - **RETURN** the shell subroute, `"?"`, the joined entry texts, and the hash if one is present - `inst-return-full-url`
 
 **Rationale**: Serialize enforces at write time exactly the invariants parse tolerates at read time, and for the opposite reason: a caller building an entry list controls every entry in it, so a duplicate extension, a duplicate parameter name, or a malformed token is a programming error to surface immediately rather than a stray input to recover from. The zero-entries case emits no trailing `?` (grammar draft example 7.8) because a bare shell subroute is a valid, fully resolved state — every domain at zero occupants — not a partial or error state calling for a placeholder query string.
 
 ### Name Validity And Equality
 
-- [ ] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-name-validity`
+- [x] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-name-validity`
 
 **Input**: Either (a) a candidate string to validate as a `name`; (b) a raw `presentation.route` value to normalize into an extension token; or (c) two candidate `name`-alphabet values to compare for equality.
 
 **Output**: (a) a boolean, valid or not; (b) the normalized extension token, or "not routable" when the input carries no route at all or its normalized form is not a valid `name`; (c) a boolean, equal or not.
 
 **Steps**:
-1. [ ] - `p1` - **Validity (a)**: **RETURN** true only if the candidate is non-empty, its first character is a lowercase letter `a`–`z`, and every remaining character is a lowercase letter, a digit `0`–`9`, or `-`; **RETURN** false otherwise — this rejects `.`, `/`, `;`, `=`, `&`, `#`, any upper-case letter, and any percent-escape, none of which the `name` production admits - `inst-validate-name`
-2. [ ] - `p1` - **Extension-token derivation (b)**: **IF** the input carries no route at all - `inst-if-no-route`
-   1. [ ] - `p1` - **RETURN** "not routable" - `inst-return-not-routable-absent`
-3. [ ] - `p1` - **ELSE** strip exactly one leading `/` from the route value, if present, to produce a candidate - `inst-strip-leading-slash`
-   1. [ ] - `p1` - **IF** that candidate satisfies Validity (a) - `inst-if-candidate-valid`
-      1. [ ] - `p1` - **RETURN** the candidate as the extension token - `inst-return-token`
-   2. [ ] - `p1` - **ELSE** - `inst-else-candidate-invalid`
-      1. [ ] - `p1` - **RETURN** "not routable" - `inst-return-not-routable-invalid`
-4. [ ] - `p1` - **Equality (c)**: **RETURN** true only if the two candidates are identical character-by-character; **RETURN** false otherwise — no percent-decoding is applied, because a value satisfying Validity (a) already carries no percent-escape to decode - `inst-name-equality`
+1. [x] - `p1` - **Validity (a)**: **RETURN** true only if the candidate is non-empty, its first character is a lowercase letter `a`–`z`, and every remaining character is a lowercase letter, a digit `0`–`9`, or `-`; **RETURN** false otherwise — this rejects `.`, `/`, `;`, `=`, `&`, `#`, any upper-case letter, and any percent-escape, none of which the `name` production admits - `inst-validate-name`
+2. [x] - `p1` - **Extension-token derivation (b)**: **IF** the input carries no route at all - `inst-if-no-route`
+   1. [x] - `p1` - **RETURN** "not routable" - `inst-return-not-routable-absent`
+3. [x] - `p1` - **ELSE** strip exactly one leading `/` from the route value, if present, to produce a candidate - `inst-strip-leading-slash`
+   1. [x] - `p1` - **IF** that candidate satisfies Validity (a) - `inst-if-candidate-valid`
+      1. [x] - `p1` - **RETURN** the candidate as the extension token - `inst-return-token`
+   2. [x] - `p1` - **ELSE** - `inst-else-candidate-invalid`
+      1. [x] - `p1` - **RETURN** "not routable" - `inst-return-not-routable-invalid`
+4. [x] - `p1` - **Equality (c)**: **RETURN** true only if the two candidates are identical character-by-character; **RETURN** false otherwise — no percent-decoding is applied, because a value satisfying Validity (a) already carries no percent-escape to decode - `inst-name-equality`
 
 **Rationale**: All three operations share one alphabet rule, published together because every caller of one is a caller a domain-key or extension-token decision already reaches: observer creation and the URL back-projection helper validate a consumer-supplied token synchronously with (a); a domain's own consumer derives its own registered extensions from `presentation.route` with (b) before ever handing them to an observer; and a domain's own consumer checks two candidate extension tokens for a same-token conflict at registration time with (c), using the identical rule the parser applies when deciding whether a later entry's extension duplicates an earlier one (`cpt-frontx-routing-adr-occupant-reference-boundary`; PRD §11).
 
 ### Domain-Key Composition
 
-- [ ] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-domain-key-compose`
+- [x] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-domain-key-compose`
 
 **Input**: The enclosing entry's own `domainKey`; the enclosing entry's own `extension`; the nested domain's own locally-chosen `name`.
 
 **Output**: The composed domain key for the nested domain, or a thrown error naming which of the three inputs — the enclosing `domainKey`, the enclosing `extension`, or the nested domain's own `name` — failed validity.
 
 **Steps**:
-1. [ ] - `p1` - **IF** the given `domainKey` does not conform to the `domain-key` production — an odd count of `.`-separated segments, each segment satisfying the name-validity check (`cpt-frontx-algo-routing-navigation-substrate-name-validity`, Validity) - `inst-if-invalid-parent-key`
-   1. [ ] - `p1` - **THROW** an error naming `domainKey` as invalid - `inst-throw-invalid-parent-key`
-2. [ ] - `p1` - **IF** the given `extension` does not satisfy the name-validity check - `inst-if-invalid-parent-extension`
-   1. [ ] - `p1` - **THROW** an error naming `extension` as invalid - `inst-throw-invalid-parent-extension`
-3. [ ] - `p1` - **IF** `name` does not satisfy the name-validity check - `inst-if-invalid-name`
-   1. [ ] - `p1` - **THROW** an error naming `name` as invalid - `inst-throw-invalid-name`
-4. [ ] - `p1` - **RETURN** `domainKey` + `"."` + `extension` + `"."` + `name` - `inst-return-composed-key`
+1. [x] - `p1` - **IF** the given `domainKey` does not conform to the `domain-key` production — an odd count of `.`-separated segments, each segment satisfying the name-validity check (`cpt-frontx-algo-routing-navigation-substrate-name-validity`, Validity) - `inst-if-invalid-parent-key`
+   1. [x] - `p1` - **THROW** an error naming `domainKey` as invalid - `inst-throw-invalid-parent-key`
+2. [x] - `p1` - **IF** the given `extension` does not satisfy the name-validity check - `inst-if-invalid-parent-extension`
+   1. [x] - `p1` - **THROW** an error naming `extension` as invalid - `inst-throw-invalid-parent-extension`
+3. [x] - `p1` - **IF** `name` does not satisfy the name-validity check - `inst-if-invalid-name`
+   1. [x] - `p1` - **THROW** an error naming `name` as invalid - `inst-throw-invalid-name`
+4. [x] - `p1` - **RETURN** `domainKey` + `"."` + `extension` + `"."` + `name` - `inst-return-composed-key`
 
 **Invariant**: A root domain key has one segment; this function's own output always has the enclosing key's own segment count plus two, so a domain key's segment count is odd at every depth by induction — a root key is one segment, and every composition step adds exactly two. This is the invariant `cpt-frontx-algo-routing-navigation-substrate-grammar-parse` checks when it rejects a domain key with an even segment count as malformed (Grammar Parse, step 5.2): an even count can only arise from a hand-written or corrupted URL, never from this function's own output.
 
