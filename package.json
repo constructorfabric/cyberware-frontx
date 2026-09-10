@@ -35,6 +35,7 @@
     "policy:mfes-import-boundary": "node scripts/mfes-import-boundary-check.mjs",
     "policy:token-format": "node scripts/token-format-check.mjs",
     "policy:guideline-index": "node scripts/generate-guideline-index.mjs --check",
+    "policy:contracts": "node scripts/contracts-policy.mjs",
     "generate:guideline-index": "node scripts/generate-guideline-index.mjs",
     "validate:templates": "node scripts/validate-templates.mjs",
     "type-check": "npm run type-check:all",

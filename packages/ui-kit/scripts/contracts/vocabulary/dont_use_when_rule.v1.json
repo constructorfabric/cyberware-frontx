@@ -1,0 +1,22 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.dont_use_when_rule.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit dont-use-when rule",
+  "description": "One use this component is the wrong answer for, with the alternative that IS the answer. A \"don't\" without an alternative leaves the reader with no next move, so `instead` is required; it is one type rather than a union, because \"what to use\" and \"is there a kit component for it\" are two facts about one recommendation and not two kinds of recommendation.",
+  "type": "object",
+  "properties": {
+    "situation": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The situation this component is the wrong answer for, stated as the situation rather than as a rule about the component."
+    },
+    "instead": {
+      "$ref": "gts://gts.frontx.uikit.vocabulary.recommendation.v1~"
+    }
+  },
+  "required": [
+    "situation",
+    "instead"
+  ],
+  "additionalProperties": false
+}

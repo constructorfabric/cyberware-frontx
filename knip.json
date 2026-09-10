@@ -18,6 +18,7 @@
     },
     "packages/ui-kit": {
       "entry": [
+        "src/index.ts",
         "demo/main.tsx",
         "demo/examples/*.tsx",
         "demo/vite-env.d.ts"

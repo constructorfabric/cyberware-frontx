@@ -1,0 +1,25 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.slot.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit slot",
+  "description": "A prop through which the consumer supplies content, declared at the component level as extension surface - a growth point named once instead of enumerating every prop a plugin author might touch (DataTable's `columns` accepts arbitrary third-party ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed). Regardless of typeability: a slot is defined by what it IS (a prop the consumer supplies), not by whether the schema happens to be able to state its type.",
+  "type": "object",
+  "properties": {
+    "prop": {
+      "$ref": "gts://gts.frontx.uikit.vocabulary.prop_name.v1~"
+    },
+    "typed_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "prop",
+    "description"
+  ],
+  "additionalProperties": false
+}

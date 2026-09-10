@@ -1,0 +1,42 @@
+{
+  "$id": "gts://gts.frontx.uikit.element.dom_div.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit dom_div element",
+  "description": "What a kit component forwards to the <div> element it renders: React's own DOM attributes for that element, declared once here by hand rather than re-derived per component. Hand-written on purpose - React's div attributes are the same surface for every component that renders a div, and the roughly 275 individually-named attributes and event handlers React's own types declare for a div carry no kit-specific fact, so listing them per component produced a file no reader ever opened. A prop the primitive library declares for its own part is NOT here: that is the component's own API and lives in its contract's `properties` (see extract.ts's declaration-site classification). Completeness is deliberately unverified: nothing compares this file against what a component actually forwards, so an attribute it does not name is classified as unknown rather than rejected, and the enrollment report prints the ones no surface declares.",
+  "type": "object",
+  "properties": {
+    "children": {
+      "description": "TS: ReactNode. Not expressible in JSON Schema, checked by tsc."
+    },
+    "className": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string"
+    },
+    "style": {
+      "description": "TS: CSSProperties. Not expressible in JSON Schema, checked by tsc. A component wrapping a primitive part widens this to accept a function of the part's state, which is why nothing is asserted here."
+    },
+    "tabIndex": {
+      "type": "number"
+    },
+    "title": {
+      "type": "string"
+    }
+  },
+  "patternProperties": {
+    "^aria-": {
+      "description": "Any ARIA attribute passes. Enumerating the WAI-ARIA set here would go stale against the spec and buy nothing: a contract's job is to stop typos in KIT props, and the a11y rules that actually matter (icon-only needs aria-label) are invariants, not a property list."
+    },
+    "^data-": {
+      "description": "Any data attribute passes: they are open by construction, and consumers add their own (data-testid being the common one)."
+    },
+    "^on[A-Z]": {
+      "description": "Any React event handler passes. React declares roughly 150 of them by literal name per element; a contract that named each one would restate React's own type definitions and go stale against them, and no kit fact lives in any single entry."
+    }
+  },
+  "$comment": "Intentionally NOT closed (no unevaluatedProperties/additionalProperties): a component's contract does not derive from this type, it HOLDS its id (x-gts-traits.forwards_to), and whoever needs the surface applies it beside the contract - so this schema cannot know what else applies to the same props object. A component's own derived type is what classifies a prop nothing here or there evaluates."
+}

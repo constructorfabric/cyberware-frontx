@@ -1,0 +1,26 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.mount_point.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit mount point",
+  "description": "One place this component may be mounted, ONE shape whichever way it is known - resolvability is an attribute of the fact, not a boundary between two kinds of fact (the same move `recommendation` already made for \"what to use instead\"). `container` is required and is what a reader acts on either way: a kit component's own export name when `component` is filled, or a container outside the kit named as plainly as the reader will have to act on it when it is not. `component` is FILLED by the compiler from every other contract's accepted components, so the two directions of one nesting relationship cannot disagree - an overlay may not author it, and one that tries still fails the compile. `note` is authored for the outside-the-kit case: why no kit component fits, and what that container hands the component - a live instance, a render callback's arguments.",
+  "type": "object",
+  "properties": {
+    "container": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What a reader acts on: a kit component's own export name (filled by the compiler alongside `component`), or a container outside the kit, named as plainly as the reader will have to act on it."
+    },
+    "component": {
+      "$ref": "gts://gts.frontx.uikit.vocabulary.component_reference.v1~"
+    },
+    "note": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Why the mount point is outside the kit, and what that container hands the component - a live instance, a render callback's arguments. Absent on a filled mount point: the container IS the explanation."
+    }
+  },
+  "required": [
+    "container"
+  ],
+  "additionalProperties": false
+}

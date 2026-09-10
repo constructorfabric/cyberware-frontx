@@ -1,0 +1,50 @@
+{
+  "$id": "gts://gts.frontx.uikit.meta.component.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit component metamodel",
+  "description": "Shape of a component contract INSTANCE: a typed record naming the component's props schema and the surface of the host element it renders. Every <component>.contract.instance.json validates against this type, so the record's structure is enforced by the same validator that enforces component props instead of by prose. What the component MEANS is not here: it lives once, in the props schema's own x-gts-traits, and this document points at it rather than copying it. The props schema is a separate GTS type and is not described here either.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^gts\\.frontx\\.uikit\\.meta\\.component\\.v1~frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+$",
+      "description": "GTS instance id: this metamodel's type id, then the instance segment. The instance segment carries exactly 5 dot-tokens (frontx.uikit.component.<name>.v<n>)."
+    },
+    "gts_type": {
+      "type": "string",
+      "x-gts-ref": "/$id",
+      "description": "GTS type id of this metamodel - what makes the contract instance a typed value rather than a bare JSON document."
+    },
+    "metamodel": {
+      "const": "1.0.0",
+      "description": "Version of the overlay vocabulary the compiler emitted. Checked as a const, not a free string with minLength: a contract compiled against a different metamodel version must fail loudly, not pass silently with a stale value."
+    },
+    "component": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Kit directory name under src/components/, or - for one export of a compound component - that export's own kebab-case stem, which shares the directory's name as a prefix (accordion-item lives in src/components/accordion/)."
+    },
+    "props_schema": {
+      "type": "string",
+      "pattern": "^gts\\.frontx\\.uikit\\.base\\.component\\.v1~frontx\\.uikit\\.component\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
+      "x-gts-ref": "gts.frontx.uikit.base.component.v1~*",
+      "description": "GTS id of the props schema this instance is about: the compiled JSON Schema carrying axes, defaults, normative props and, in its x-gts-traits, everything the component means. A derived-type id - the abstract base component type, then the component's own segment - so the reference also asserts that the props schema really is a child of the base and not a lookalike.",
+      "$comment": "Two segments of 5 dot-tokens each after the fixed `gts.` scheme prefix - the shape gts-ts's Gts.parseSegment accepts (vendor.package.namespace.type.vMAJOR)."
+    },
+    "forwards_to": {
+      "type": "string",
+      "pattern": "^gts\\.frontx\\.uikit\\.element\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
+      "x-gts-ref": "gts.frontx.uikit.element.*",
+      "description": "GTS id of the hand-written surface for the host element this component forwards to. HELD as an id, not composed into the schema as a second parent: a contract derives from ONE type, the abstract component type, and a surface shared kit-wide by every component that forwards to the same element is not a second thing this component IS. Whoever needs the surface resolves it through this reference and applies it beside the contract; nothing in the props schema merges it in. `x-gts-ref` declares what the value must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating. Absent entirely for a component that forwards to no host element of its own - DataTable, which renders its Table internally and correctly declares none.",
+      "$comment": "The element token, not the tag: `dom_button` for a <button>, normalized by domElementToken - the same token the committed file under scripts/contracts/elements/ is named by, so the reference and the file name are one identity. Named `forwards_to` rather than `host_element`: the value is the element surface the component FORWARDS TO, and a field named for the element read as a bug on a component (DataTable) that has one and declares none."
+    }
+  },
+  "required": [
+    "id",
+    "gts_type",
+    "metamodel",
+    "component",
+    "props_schema"
+  ],
+  "additionalProperties": false
+}

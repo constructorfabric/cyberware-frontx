@@ -148,6 +148,27 @@ jobs:
       if: github.event_name == 'pull_request'
       run: npm run policy:version-bump-on-change
 
+    # Contract guard/compat CI wiring (branch review 5720fd49, finding B1):
+    # the ui-kit component-contract harness's own guard/compat pipeline was
+    # built but never invoked anywhere in CI, so nothing enforced it on a
+    # real PR. Unlike the version-bump check above, this step is not gated
+    # to `pull_request` - a merge to develop/main can itself land an
+    # uncovered breaking contract change, not only a PR - so it needs a base
+    # ref for both event shapes. CONTRACTS_POLICY_BASE_REF supplies one, the
+    # same way the step above reads GITHUB_BASE_REF for its own base: on
+    # `pull_request`, `origin/${{ github.base_ref }}` (the same value
+    # GITHUB_BASE_REF holds); on `push`, the commit this push moved FROM
+    # (`github.event.before`) - unless that is the all-zero SHA a branch's
+    # first push carries (nothing to diff against yet), in which case the
+    # env var is left empty and contracts-policy.mjs prints why it is
+    # skipping guard/compat (coverage still runs). Neither branch needs a
+    # secret: `github.base_ref` and `github.event.before` are both plain
+    # event-context values already available on this job's `github` object.
+    - name: Contract guard and compatibility
+      env:
+        CONTRACTS_POLICY_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || (github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || '' }}
+      run: npm run policy:contracts
+
     # #524: `npm install` reconciling an out-of-sync template lockfile drops
     # the template's `file:.` self-link entry, writing a lockfile its own
     # `npm ci` then rejects ("Missing: ... from lock file") — and reconciling
@@ -305,17 +326,82 @@ jobs:
     # pinned version - stayed green here while the composed a11y suite failed
     # outside the monorepo (PR #586 review). node_modules is left behind on
     # purpose: the copy installs from its own lockfile and nothing else.
+    # Same pin problem as the composition step below, and the same fix: a
+    # self-contained template pins @gears-frontx/* to exact registry versions
+    # too (template-shell/package.json), so a pull request that bumps one of
+    # this repo's packages/* leaves that pin naming a version only the
+    # post-merge publish run will ever publish, and this step's `npm ci`
+    # would fail with ETARGET before the isolated copy it validates exists.
+    # See scripts/pin-unpublished-ecosystem-to-local-pack.mjs for the
+    # substitution criterion and why it never fires outside a pull request.
     - name: Validate self-contained templates
+      env:
+        FRONTX_SUBSTITUTE_UNPUBLISHED_PINS: ${{ github.event_name == 'pull_request' && '1' || '' }}
       run: |
         set -euo pipefail
+        repo="$PWD"
         for template in $SELF_CONTAINED_TEMPLATES; do
           echo "==> Validating $template"
           isolated="$RUNNER_TEMP/standalone-$(basename "$template")"
           rm -rf "$isolated" && mkdir -p "$isolated"
           tar -C "$template" --exclude=node_modules -cf - . | tar -C "$isolated" -xf -
+
+          # Called with an absolute --tree before the `cd` below: the script
+          # resolves the tree from that argument and this repo's packages/*
+          # from its own location, neither from cwd, so it works the same
+          # here as it does in the composition step below.
+          if [ -n "${FRONTX_SUBSTITUTE_UNPUBLISHED_PINS:-}" ]; then
+            node scripts/pin-unpublished-ecosystem-to-local-pack.mjs --tree "$isolated"
+          fi
           (
             cd "$isolated"
-            npm ci
+            # Same trap as the composition step: makes the undo run even if
+            # `npm ci` fails, which would otherwise skip the explicit restore
+            # below and leave the tree rewritten for whatever reads it next.
+            # `--restore` is a no-op if nothing was rewritten.
+            if [ -n "${FRONTX_SUBSTITUTE_UNPUBLISHED_PINS:-}" ]; then
+              trap 'node "$repo/scripts/pin-unpublished-ecosystem-to-local-pack.mjs" --tree "$isolated" --restore || true' EXIT
+            fi
+            # `npm ci` refuses before touching the network the moment the
+            # substitution above has run: it requires the committed
+            # package-lock.json to already resolve the SAME spec the
+            # (rewritten) package.json now names, and the checked-in lock's
+            # root entry for the substituted package still names the old
+            # published version - pin substitution alone cannot satisfy that,
+            # no matter how the pin resolves. Same reasoning and same fix as
+            # the composition step below already documents for its own
+            # (different) cause: `npm install` re-derives a lockfile from
+            # what is actually on disk instead of insisting the committed one
+            # already matches. Only swapped in when substitution is active -
+            # a run with every pin published keeps the stricter `npm ci`, so
+            # ordinary lockfile drift still fails loudly here.
+            if [ -n "${FRONTX_SUBSTITUTE_UNPUBLISHED_PINS:-}" ]; then
+              npm install --no-audit --no-fund
+              # #524, reproduced here: an `npm install` that has to RECONCILE
+              # an out-of-sync manifest - exactly what the substitution above
+              # forces - drops template-shell's own `file:.` self-link entry
+              # (packages/framework depends on the shell by name; the root
+              # `overrides` resolves that name back to the shell itself, and
+              # the reconciling install writes a lockfile missing that entry
+              # entirely). See scripts/template-lockfile-selflink-check.mjs
+              # for the full mechanism and why that guard tells a developer
+              # never to "fix" a broken COMMITTED lockfile this way - it does
+              # not apply here, since nothing this block touches is ever
+              # written back to git: this is a second install in the same
+              # ephemeral copy, once package.json and package-lock.json are
+              # already mutually consistent from the first, and it only adds
+              # the one now-missing self-link package back (verified: "added
+              # 1 package"), it does not reconcile anything else.
+              npm install --no-audit --no-fund
+            else
+              npm ci
+            fi
+            # Must run before anything below reads these manifests as
+            # committed - see RESTORE_JOURNAL_NAME's docblock in the script
+            # for why.
+            if [ -n "${FRONTX_SUBSTITUTE_UNPUBLISHED_PINS:-}" ]; then
+              node "$repo/scripts/pin-unpublished-ecosystem-to-local-pack.mjs" --tree "$isolated" --restore
+            fi
             # Full `build`, not just build:package/build:packages — it also
             # chains build:mfes, generate:mfe-manifests and vite build, which
             # nothing else in CI runs. It comes first so the later checks see

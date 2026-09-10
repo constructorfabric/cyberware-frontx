@@ -1,0 +1,131 @@
+{
+  "$id": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit AccordionItem",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "gts://gts.frontx.uikit.base.component.v1~"
+    }
+  ],
+  "properties": {
+    "className": {
+      "type": "string"
+    },
+    "disabled": {
+      "type": "boolean"
+    },
+    "onOpenChange": {
+      "description": "TS: ((open: boolean, eventDetails: AccordionItemChangeEventDetails) => void) | undefined. Not expressible in JSON Schema, checked by tsc. onOpenChange is a callback, not a value `(open: boolean, eventDetails) => void` - a function of Base UI's own event-details object. No JSON Schema type covers a function."
+    },
+    "render": {
+      "description": "TS: ReactElement<unknown, string | JSXElementConstructor<any>> | ComponentRenderFn<HTMLProps, AccordionItemState> | undefined. Not expressible in JSON Schema, checked by tsc. render replaces the item element with one the caller supplies Base UI's render prop takes an element or a function of the item's state; neither is expressible in JSON Schema."
+    },
+    "style": {
+      "description": "TS: CSSProperties | ((state: AccordionItemState) => CSSProperties | undefined) | undefined. Not expressible in JSON Schema, checked by tsc. style accepts a function of the item's state as well as a plain style object Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
+    },
+    "value": {
+      "description": "TS: any. Not expressible in JSON Schema, checked by tsc. value is an opaque identifier, typed `any` by Base UI Base UI's Accordion.Item declares `value?: any` - it is compared by identity against the root's `value`/`defaultValue` array and never interpreted, so the primitive types it as anything. Strings are what accordion.md uses, and what a reader should reach for."
+    }
+  },
+  "required": [],
+  "unevaluatedProperties": {
+    "x-uikit-classification": "unchecked"
+  },
+  "x-uikit": {
+    "metamodel": "1.0.0",
+    "partially_typed_props": {},
+    "variant_sources": [],
+    "cannot_extract": [
+      "heritage: \"{\n    [P in keyof T]?: T[P];\n}\" is a MappedType, not a shape this walk can classify - cannot extract"
+    ]
+  },
+  "x-gts-traits": {
+    "intent": "One collapsible section of an Accordion, identified by a unique value.",
+    "typical_uses": [
+      "One entry in an Accordion's list of sections, wrapping a trigger and its panel"
+    ],
+    "dont_use_when": [
+      {
+        "situation": "A section that must always stay visible and never collapse",
+        "instead": {
+          "target": "Card",
+          "component": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~"
+        }
+      }
+    ],
+    "accepts": {
+      "content": "specified",
+      "components": [
+        "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_trigger.v1~",
+        "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_content.v1~"
+      ]
+    },
+    "mounted_in": [
+      {
+        "container": "Accordion",
+        "component": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "value-required-to-control-or-default-open",
+        "text": "`value` identifies this item within its root; it is what `Accordion`'s `value`/`defaultValue` name to control or default which item is open."
+      }
+    ],
+    "anti_patterns": [
+      {
+        "dont": "Reuse the same `value` for two items under one Accordion root",
+        "do_instead": "Give every item a unique `value` - see the root's item-values-unique-per-root invariant"
+      }
+    ],
+    "deprecations": {},
+    "attestations": {
+      "a11y": {
+        "outcome": "verified",
+        "by": "Base UI's Accordion.Item - the item's own disclosure state and its wiring to the root"
+      },
+      "rtl": {
+        "outcome": "unknown"
+      }
+    },
+    "props": {
+      "value": {
+        "states": "value is an opaque identifier, typed `any` by Base UI",
+        "because": "Base UI's Accordion.Item declares `value?: any` - it is compared by identity against the root's `value`/`defaultValue` array and never interpreted, so the primitive types it as anything. Strings are what accordion.md uses, and what a reader should reach for."
+      },
+      "onOpenChange": {
+        "states": "onOpenChange is a callback, not a value",
+        "because": "`(open: boolean, eventDetails) => void` - a function of Base UI's own event-details object. No JSON Schema type covers a function."
+      },
+      "render": {
+        "states": "render replaces the item element with one the caller supplies",
+        "because": "Base UI's render prop takes an element or a function of the item's state; neither is expressible in JSON Schema."
+      },
+      "style": {
+        "states": "style accepts a function of the item's state as well as a plain style object",
+        "because": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
+      }
+    },
+    "examples": {
+      "good": [
+        {
+          "title": "An item with its trigger and panel",
+          "code": "<AccordionItem value=\"item-1\">\n  <AccordionTrigger>Is it accessible?</AccordionTrigger>\n  <AccordionContent>Yes. It adheres to the WAI-ARIA design pattern.</AccordionContent>\n</AccordionItem>\n"
+        }
+      ],
+      "bad": [
+        {
+          "title": "An item outside any Accordion",
+          "code": "<AccordionItem value=\"item-1\">\n  <AccordionTrigger>Is it accessible?</AccordionTrigger>\n</AccordionItem>\n",
+          "why": "AccordionItem has no open/close state of its own - it reads and writes the nearest Accordion root's state, so mounting it outside one renders nothing usable."
+        }
+      ]
+    },
+    "family_membership": {
+      "name": "accordion",
+      "role": "part"
+    },
+    "forwards_to": "gts.frontx.uikit.element.dom_div.v1~"
+  }
+}

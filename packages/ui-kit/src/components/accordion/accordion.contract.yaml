@@ -1,0 +1,163 @@
+# Semantic overlay for Accordion (the root) - the hand-written half of one
+# of four contracts describing this compound component. See
+# accordion-item.contract.yaml, accordion-trigger.contract.yaml and
+# accordion-content.contract.yaml for the rest of the family, and
+# `family_membership` below for how a reader (or the conformance test) walks
+# between them.
+#
+# Machine-extractable facts (axis names, axis values, defaults, prop list)
+# do NOT belong here: the compiler takes those from accordion.tsx, and
+# rejects an overlay that tries to restate them - one fact, one owner.
+component: accordion
+
+intent: Show one or more sections at a time, collapsing the rest to their headers.
+
+typical_uses:
+  - A list of independent sections (FAQ, settings groups) too long to show
+    all at once, where the user opens what is relevant
+  - Progressive disclosure of grouped content under named headers
+
+dont_use_when:
+  - situation: A single show/hide toggle for one piece of content
+    instead:
+      target: Collapsible
+      component: gts.frontx.uikit.base.component.v1~frontx.uikit.component.collapsible.v1~
+  - situation: Primary navigation between sections that stays visible
+    instead:
+      target: Tabs
+      component: gts.frontx.uikit.base.component.v1~frontx.uikit.component.tabs.v1~
+
+# The ONE authored statement of a nesting relationship: the compiler fills
+# every other contract's `mounted_in` from lists like this one, so the two
+# directions cannot disagree.
+accepts:
+  content: specified
+  components:
+    - gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~ # AccordionItem
+
+invariants:
+  - id: multiple-false-at-most-one-open
+    text: >-
+      With `multiple` at its default of false, opening one item closes any
+      other open item - at most one item is open at a time.
+  - id: item-values-unique-per-root
+    text: >-
+      Every `AccordionItem`'s `value` must be unique within THIS root - not
+      across roots. Base UI's Accordion.Root keeps its own value state and
+      its own keyboard-navigation list, each scoped to that root's React
+      context; a nested `Accordion` inside another's panel resolves its
+      OWN root context, so its items may safely reuse a value already used
+      by an ancestor root without any collision.
+
+anti_patterns:
+  - dont: Put an always-visible required form control inside a collapsed panel
+    do_instead: >-
+      Keep required fields outside the accordion, or default that item's
+      panel open - a screen reader user tabbing through the page will not
+      discover a hidden required field until they expand that section
+  - dont: Reuse the same `value` for two items inside the SAME accordion root
+    do_instead: >-
+      Give every item a unique `value` within its own root - a nested
+      `Accordion` needs no coordination with its ancestor's values, only
+      with its own siblings
+
+# None yet.
+deprecations: {}
+
+# One outcome per claim. "failed" (looked at, does not hold) and "unknown"
+# (nobody looked) are different answers - say which.
+attestations:
+  a11y:
+    outcome: verified
+    by: Base UI's Accordion.Root - keyboard navigation between triggers, and the ARIA expanded/controls wiring
+  rtl:
+    outcome: unknown
+
+# What each property that reaches this contract asserting nothing (or only
+# part of its shape) actually states, and why - keyed on the property
+# itself. The compiler emits both halves into that property's own
+# description, beside the `TS:` text.
+props:
+  value:
+    states: value is an array of the root's own generic Value parameter
+    because: >-
+      `AccordionValue<Value>` is an ARRAY of the type parameter, not a
+      single value - which is exactly the misreading this entry exists to
+      prevent: an agent shown an unconstrained `value` concluded it took a
+      plain string. The schema states the array; what is IN it is the
+      caller's own `Value`, which no schema can state, because the caller
+      chooses it. accordion.md's example uses string item values
+      (`value="item-1"` on the item), so a root value is an array of those.
+  defaultValue:
+    states: defaultValue is an array of the root's own generic Value parameter
+    because: >-
+      Same type as `value` above, and unchecked in the same half - the
+      uncontrolled starting point is a LIST of open item values, not one of
+      them.
+  onValueChange:
+    states: onValueChange is a callback, not a value
+    because: >-
+      `(value: AccordionValue<Value>, eventDetails) => void` - a function
+      of the generic above plus Base UI's own event-details object. No
+      JSON Schema type covers a function.
+  render:
+    states: render replaces the root element with one the caller supplies
+    because: >-
+      Base UI's render prop takes an element or a function of the root's
+      state; neither is expressible in JSON Schema. Replacing the root
+      element means taking over the wrapper the kit's own layout styles
+      (`.root`) are attached to.
+  style:
+    states: style accepts a function of the root's state as well as a plain style object
+    because: >-
+      Base UI widens React's `CSSProperties` to
+      `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object`
+      would reject the function form.
+
+examples:
+  good:
+    - title: Two sections, single-expansion (the default)
+      code: |
+        <Accordion>
+          <AccordionItem value="item-1">
+            <AccordionTrigger>Is it accessible?</AccordionTrigger>
+            <AccordionContent>Yes. It adheres to the WAI-ARIA design pattern.</AccordionContent>
+          </AccordionItem>
+          <AccordionItem value="item-2">
+            <AccordionTrigger>Is it styled?</AccordionTrigger>
+            <AccordionContent>Yes, with the kit's own tokens.</AccordionContent>
+          </AccordionItem>
+        </Accordion>
+  bad:
+    - title: A single section used as a show/hide toggle
+      code: |
+        <Accordion>
+          <AccordionItem value="only">
+            <AccordionTrigger>Show details</AccordionTrigger>
+            <AccordionContent>Details go here.</AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      why: >-
+        One section is not what an accordion is for - it carries Base UI's
+        multi-item expansion machinery for nothing to coordinate. Reach for
+        `Collapsible` instead.
+
+# Family membership. Every member names the same family and states its own
+# role; `members` is filled by the compiler on the root from every contract
+# naming this family as a part, so nothing here points at a sibling.
+family_membership:
+  name: accordion
+  role: root
+
+# Base UI's Accordion.Root also accepts `orientation`, and this kit does not
+# offer it. The reason travels with the name: a bare list of withheld props
+# leaves every later reader to work out why each one is gone.
+withheld:
+  - prop: orientation
+    reason: >-
+      The root's own stylesheet fixes the layout to a single column
+      (accordion.module.css's `.root { flex-direction: column }`), so the
+      only value `orientation` could add - "horizontal" - would put Base UI's
+      horizontal keyboard axis on a vertical layout. Withheld rather than
+      listed: a contract listing it would be this kit's own statement that it
+      works.

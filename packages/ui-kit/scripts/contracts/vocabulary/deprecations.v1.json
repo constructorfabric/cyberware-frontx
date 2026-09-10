@@ -1,0 +1,16 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.deprecations.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit deprecations",
+  "description": "Everything about this component that is on its way out, keyed by the prop's own name.",
+  "type": "object",
+  "properties": {
+    "props": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "gts://gts.frontx.uikit.vocabulary.prop_deprecation.v1~"
+      }
+    }
+  },
+  "additionalProperties": false
+}

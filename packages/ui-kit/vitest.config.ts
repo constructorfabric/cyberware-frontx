@@ -21,6 +21,11 @@ export default defineConfig({
       '__tests__/**/*.spec.{ts,tsx}',
       'src/**/*.test.{ts,tsx}',
       'src/**/*.spec.{ts,tsx}',
+      // The contract tooling's own unit tests (extract.ts's checker-based
+      // resolution) live next to the tool, not under src/ - vite-plugin-dts
+      // reads tsconfig.src.json to decide what ships, so tests never belong
+      // there, but that leaves nothing else picking scripts/**/*.test.ts up.
+      'scripts/**/*.test.{ts,tsx}',
     ],
     exclude: ['**/__test-utils__/**', '**/node_modules/**', '**/dist/**'],
     passWithNoTests: false,

@@ -1,0 +1,26 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.prop_deprecation.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit prop deprecation",
+  "description": "One deprecated prop: when it was deprecated, the prop that replaces it, and what a caller has to do differently. All three are required - a deprecation without a replacement leaves the caller with no next move, which is the same failure a \"don't\" without an alternative has.",
+  "type": "object",
+  "properties": {
+    "since": {
+      "type": "string",
+      "minLength": 1
+    },
+    "replacement": {
+      "$ref": "gts://gts.frontx.uikit.vocabulary.prop_name.v1~"
+    },
+    "hint": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "since",
+    "replacement",
+    "hint"
+  ],
+  "additionalProperties": false
+}

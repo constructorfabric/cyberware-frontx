@@ -1,0 +1,81 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.accepted_content.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit accepted content",
+  "description": "What may appear inside this component. `content` answers it outright for two of its three values: \"unconstrained\" for a layout component that accepts whatever a consumer puts in it - which it cannot state by enumerating a kit it does not know or by claiming a content kind it does not require - and \"nothing\" for a component that renders its own body internally (DataTable renders its Table from columns/data, so \"text\" would claim a slot that does not exist). \"specified\" is the case with detail, and then at least one of `components`/`text` carries it. Neither may appear with any other `content`, so a contract cannot say both that nothing may appear inside and that something may.",
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "string",
+      "enum": [
+        "unconstrained",
+        "nothing",
+        "specified"
+      ]
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "$ref": "gts://gts.frontx.uikit.vocabulary.component_reference.v1~"
+      },
+      "minItems": 1,
+      "description": "Kit components that may appear inside, by reference - typed so a reader can resolve one and the conformance suite can check it exists. This is also the ONE authored statement of a nesting relationship: every other contract's `mounted_in` is filled from these lists."
+    },
+    "text": {
+      "type": "boolean",
+      "description": "A non-component React node may appear inside: a string, a number, a fragment, or a formatted inline element (<strong>, <code>) - never a kit component, which would be a reference in `components` instead."
+    },
+    "icons_via": {
+      "$ref": "gts://gts.frontx.uikit.vocabulary.prop_name.v1~"
+    }
+  },
+  "required": [
+    "content"
+  ],
+  "additionalProperties": false,
+  "if": {
+    "properties": {
+      "content": {
+        "const": "specified"
+      }
+    },
+    "required": [
+      "content"
+    ]
+  },
+  "then": {
+    "anyOf": [
+      {
+        "required": [
+          "components"
+        ]
+      },
+      {
+        "required": [
+          "text"
+        ]
+      }
+    ]
+  },
+  "else": {
+    "not": {
+      "anyOf": [
+        {
+          "required": [
+            "components"
+          ]
+        },
+        {
+          "required": [
+            "text"
+          ]
+        },
+        {
+          "required": [
+            "icons_via"
+          ]
+        }
+      ]
+    }
+  }
+}

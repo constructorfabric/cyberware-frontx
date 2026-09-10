@@ -1,0 +1,7 @@
+{
+  "id": "gts.frontx.uikit.meta.component.v1~frontx.uikit.component.data_table.v1",
+  "gts_type": "gts.frontx.uikit.meta.component.v1~",
+  "metamodel": "1.0.0",
+  "component": "data-table",
+  "props_schema": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.data_table.v1~"
+}

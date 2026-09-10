@@ -1,0 +1,119 @@
+{
+  "$id": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_content.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit AccordionContent",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "gts://gts.frontx.uikit.base.component.v1~"
+    }
+  ],
+  "properties": {
+    "className": {
+      "type": "string"
+    },
+    "hiddenUntilFound": {
+      "type": "boolean"
+    },
+    "keepMounted": {
+      "type": "boolean"
+    },
+    "render": {
+      "description": "TS: ReactElement<unknown, string | JSXElementConstructor<any>> | ComponentRenderFn<HTMLProps, AccordionPanelState> | undefined. Not expressible in JSON Schema, checked by tsc. render replaces the panel element with one the caller supplies Base UI's render prop takes an element or a function of the panel's state; neither is expressible in JSON Schema. The panel is the element Base UI writes `--accordion-panel-height` on, so a replaced element still has to be the one the height animation measures."
+    },
+    "style": {
+      "description": "TS: CSSProperties | ((state: AccordionPanelState) => CSSProperties | undefined) | undefined. Not expressible in JSON Schema, checked by tsc. style accepts a function of the panel's state as well as a plain style object Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
+    }
+  },
+  "required": [],
+  "unevaluatedProperties": {
+    "x-uikit-classification": "unchecked"
+  },
+  "x-uikit": {
+    "metamodel": "1.0.0",
+    "partially_typed_props": {},
+    "variant_sources": [],
+    "cannot_extract": []
+  },
+  "x-gts-traits": {
+    "intent": "The height-animated panel revealed when its AccordionItem is open.",
+    "typical_uses": [
+      "The single body/detail child of an AccordionItem, shown when it is open"
+    ],
+    "dont_use_when": [
+      {
+        "situation": "Content that must stay visible regardless of any item's open state",
+        "instead": {
+          "target": "Card",
+          "component": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~"
+        }
+      }
+    ],
+    "accepts": {
+      "content": "specified",
+      "text": true
+    },
+    "mounted_in": [
+      {
+        "container": "AccordionItem",
+        "component": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
+      }
+    ],
+    "invariants": [
+      {
+        "id": "height-animates-via-base-ui-runtime-var",
+        "text": "Open/close height-animates against Base UI's own `--accordion-panel-height` custom property, a live ResizeObserver measurement written on the panel element - not a themeable token."
+      },
+      {
+        "id": "keep-mounted-usually-set-on-root",
+        "text": "keepMounted and hiddenUntilFound are usually set on the Accordion root, not per panel. Base UI accepts both on the panel as well, and this contract declares them because the panel really does take them; accordion.md documents them on the root, which is where one setting covers every panel of one accordion. Setting them here overrides that root setting for this panel alone."
+      }
+    ],
+    "anti_patterns": [
+      {
+        "dont": "Rely on the panel's content being mounted while its item is closed",
+        "do_instead": "Set `keepMounted` on the Accordion root if closed-panel content must stay in the DOM (e.g. for in-page search); otherwise assume it unmounts"
+      }
+    ],
+    "deprecations": {},
+    "attestations": {
+      "a11y": {
+        "outcome": "verified",
+        "by": "Base UI's Accordion.Panel - panel visibility and the hiddenUntilFound wiring"
+      },
+      "rtl": {
+        "outcome": "unknown"
+      }
+    },
+    "props": {
+      "render": {
+        "states": "render replaces the panel element with one the caller supplies",
+        "because": "Base UI's render prop takes an element or a function of the panel's state; neither is expressible in JSON Schema. The panel is the element Base UI writes `--accordion-panel-height` on, so a replaced element still has to be the one the height animation measures."
+      },
+      "style": {
+        "states": "style accepts a function of the panel's state as well as a plain style object",
+        "because": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
+      }
+    },
+    "examples": {
+      "good": [
+        {
+          "title": "A panel as an AccordionItem's body",
+          "code": "<AccordionItem value=\"item-1\">\n  <AccordionTrigger>Is it accessible?</AccordionTrigger>\n  <AccordionContent>Yes. It adheres to the WAI-ARIA design pattern.</AccordionContent>\n</AccordionItem>\n"
+        }
+      ],
+      "bad": [
+        {
+          "title": "A panel with no AccordionItem around it",
+          "code": "<AccordionContent>Yes. It adheres to the WAI-ARIA design pattern.</AccordionContent>",
+          "why": "AccordionContent reads the nearest AccordionItem's open state through Base UI context to decide whether to render; outside one, it has nothing to read."
+        }
+      ]
+    },
+    "family_membership": {
+      "name": "accordion",
+      "role": "part"
+    },
+    "forwards_to": "gts.frontx.uikit.element.dom_div.v1~"
+  }
+}

@@ -1,0 +1,87 @@
+# Semantic overlay for AccordionTrigger - a part of the Accordion family, see
+# accordion.contract.yaml's `family_membership` for how the four contracts
+# relate.
+component: accordion-trigger
+
+intent: The clickable header that expands or collapses its AccordionItem.
+
+typical_uses:
+  - The single header/summary child of an AccordionItem
+
+dont_use_when:
+  - situation: A standalone button with no AccordionItem to expand or collapse
+    instead:
+      target: Button
+      component: gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~
+
+# `mounted_in` is filled from AccordionItem's own accepted components, not
+# authored here.
+accepts:
+  content: specified
+  text: true
+
+invariants:
+  - id: always-renders-a-chevron
+    text: >-
+      AccordionTrigger always renders a trailing chevron that rotates on
+      open/close - there is no prop to hide it, matching upstream Base UI.
+
+anti_patterns:
+  - dont: Pass an icon element through children expecting it before the chevron
+    do_instead: Children are the trigger's text label only; the chevron is fixed and always trailing
+
+deprecations: {}
+
+attestations:
+  a11y:
+    outcome: verified
+    by: Base UI's Accordion.Header and Accordion.Trigger - focus handling and the aria-expanded/aria-controls wiring
+  rtl:
+    outcome: unknown
+
+# Internal structure this component composes that the kit does not expose
+# as a component of its own.
+unexposed_parts:
+  - part: Base UI's Accordion.Header and Accordion.Trigger
+    reason: >-
+      The kit's AccordionTrigger composes Base UI's Accordion.Header
+      (a plain wrapper, not separately exposed by the kit) around
+      Accordion.Trigger into one exported component; this contract
+      describes the exported surface, not the two-part internal
+      composition, so Header's own props are not part of it.
+
+# What each property that reaches this contract asserting nothing (or only
+# part of its shape) actually states, and why - keyed on the property
+# itself. The compiler emits both halves into that property's own
+# description, beside the `TS:` text.
+props:
+  render:
+    states: render replaces the trigger element with one the caller supplies
+    because: >-
+      Base UI's render prop takes an element or a function of the trigger's
+      state; neither is expressible in JSON Schema. The trailing chevron is
+      rendered as a child, so it survives a replaced element.
+  style:
+    states: style accepts a function of the trigger's state as well as a plain style object
+    because: >-
+      Base UI widens React's `CSSProperties` to
+      `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object`
+      would reject the function form.
+
+examples:
+  good:
+    - title: A trigger as an AccordionItem's header
+      code: |
+        <AccordionItem value="item-1">
+          <AccordionTrigger>Is it accessible?</AccordionTrigger>
+        </AccordionItem>
+  bad:
+    - title: A trigger with no AccordionItem around it
+      code: <AccordionTrigger>Is it accessible?</AccordionTrigger>
+      why: >-
+        AccordionTrigger reads and writes the nearest AccordionItem's open
+        state through Base UI context; outside one, clicking it does nothing.
+
+family_membership:
+  name: accordion
+  role: part

@@ -1,0 +1,8 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.prop_name.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit prop name",
+  "description": "Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the compiler (assertOverlayReferencesRealProps).",
+  "type": "string",
+  "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+}

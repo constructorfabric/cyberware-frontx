@@ -1,0 +1,121 @@
+{
+  "$id": "gts://gts.frontx.uikit.base.component.v1~frontx.uikit.component.data_table_sort_button.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit DataTableSortButton",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "gts://gts.frontx.uikit.base.component.v1~"
+    }
+  ],
+  "properties": {
+    "children": {
+      "description": "Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.partially_typed_props. children is a React node - the column's label `ReactNode`, so an element is as valid as a string. Required, because a sort button with no label is a button whose only content is a direction arrow."
+    },
+    "className": {
+      "type": "string"
+    },
+    "column": {
+      "description": "Slot: Column<{ rowSelectionFeature: TableFeature; rowSortingFeature: TableFeature; rowPaginationFeature: TableFeature; sortedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; paginatedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; }, TData, TValue>. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.partially_typed_props. column is a live @tanstack/react-table Column instance, generic over TData and TValue `Column<DataTableFeatures, TData, TValue>` carries methods (`toggleSorting`, `getIsSorted`) and internal state, not a serializable shape, and two of its three type arguments are the caller's own type parameters - neither a live object nor a generic has a JSON Schema representation. It is handed in by TanStack Table's own render call; a consumer never constructs one."
+    }
+  },
+  "required": [
+    "children",
+    "column"
+  ],
+  "unevaluatedProperties": {
+    "x-uikit-classification": "unchecked"
+  },
+  "x-uikit": {
+    "metamodel": "1.0.0",
+    "partially_typed_props": {
+      "children": {
+        "typeText": "ReactNode",
+        "optional": false
+      },
+      "column": {
+        "typeText": "Column<{ rowSelectionFeature: TableFeature; rowSortingFeature: TableFeature; rowPaginationFeature: TableFeature; sortedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; paginatedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; }, TData, TValue>",
+        "optional": false
+      }
+    },
+    "variant_sources": [],
+    "cannot_extract": []
+  },
+  "x-gts-traits": {
+    "intent": "A sortable column's header button, toggling that column's sort state and showing its current direction.",
+    "typical_uses": [
+      "The header render function of a sortable column in a DataTable"
+    ],
+    "dont_use_when": [
+      {
+        "situation": "A standalone action button with no column to sort",
+        "instead": {
+          "target": "Button",
+          "component": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.button.v1~"
+        }
+      }
+    ],
+    "accepts": {
+      "content": "specified",
+      "text": true
+    },
+    "mounted_in": [
+      {
+        "container": "a column's `header` render function - `header: ({ column }) => <DataTableSortButton column={column} />`",
+        "note": "TanStack Table's `header` is a plain function prop on `ColumnDef`, not a kit component, so there is no component this could reference. It is also where the live `column` instance comes from: outside that call there is nothing to pass."
+      }
+    ],
+    "invariants": [
+      {
+        "id": "requires-a-real-column-instance",
+        "text": "`column` must be the live `Column` instance a `ColumnDef`'s own `header` render function receives - toggling sort calls `column.toggleSorting()` directly, so this only makes sense mounted inside that render function, not constructed by hand elsewhere."
+      }
+    ],
+    "anti_patterns": [
+      {
+        "dont": "Use DataTableSortButton outside a column's header render function",
+        "do_instead": "For a plain action button with no column to sort, use Button directly"
+      }
+    ],
+    "deprecations": {},
+    "attestations": {
+      "a11y": {
+        "outcome": "unknown"
+      },
+      "rtl": {
+        "outcome": "unknown"
+      }
+    },
+    "props": {
+      "column": {
+        "states": "column is a live @tanstack/react-table Column instance, generic over TData and TValue",
+        "because": "`Column<DataTableFeatures, TData, TValue>` carries methods (`toggleSorting`, `getIsSorted`) and internal state, not a serializable shape, and two of its three type arguments are the caller's own type parameters - neither a live object nor a generic has a JSON Schema representation. It is handed in by TanStack Table's own render call; a consumer never constructs one."
+      },
+      "children": {
+        "states": "children is a React node - the column's label",
+        "because": "`ReactNode`, so an element is as valid as a string. Required, because a sort button with no label is a button whose only content is a direction arrow."
+      }
+    },
+    "unexposed_parts": [
+      {
+        "part": "the kit's own Button",
+        "reason": "It renders a `<Button variant=\"ghost\" size=\"sm\">` around its own label and a trailing sort-arrow icon - this is internal composition (JSX in DataTableSortButton's own render body), not a props-type heritage relationship, so none of Button's own props reach this contract: DataTableSortButtonProps declares `column`/`children`/`className` itself and extends nothing."
+      }
+    ],
+    "examples": {
+      "good": [
+        {
+          "title": "A sortable column's header",
+          "code": "columnHelper.accessor('email', {\n  header: ({ column }) => <DataTableSortButton column={column}>Email</DataTableSortButton>,\n})\n"
+        }
+      ],
+      "bad": [
+        {
+          "title": "Constructed outside any column header",
+          "code": "<DataTableSortButton column={someColumn}>Email</DataTableSortButton>",
+          "why": "Outside a column's own `header` render function there is no live `Column` instance to pass - `column` is not something a consumer constructs by hand, it is handed in by TanStack Table's own render call."
+        }
+      ]
+    }
+  }
+}

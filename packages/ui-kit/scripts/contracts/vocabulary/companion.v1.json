@@ -1,0 +1,28 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.companion.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit companion",
+  "description": "An export beside the component that a consumer builds this component's input with - a column helper, a ready-made column, the feature set the component registers. Keyed by the export rather than by a prop, because that is what a consumer imports; the extractor generates no contract for it, since it is not a React component.",
+  "type": "object",
+  "properties": {
+    "export": {
+      "type": "string",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+      "description": "The exported name, as a consumer imports it - a JS identifier, not a prop."
+    },
+    "typed_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "export",
+    "typed_by",
+    "description"
+  ],
+  "additionalProperties": false
+}

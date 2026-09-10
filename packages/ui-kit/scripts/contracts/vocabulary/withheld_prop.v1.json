@@ -1,0 +1,22 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.withheld_prop.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit withheld prop",
+  "description": "One prop of the primitive underneath that the kit does not advertise, and why it is not. Both halves are required: the name is what the compiler checks against the extraction, and the reason is what tells a reader a deliberate omission from a forgotten one.",
+  "type": "object",
+  "properties": {
+    "prop": {
+      "$ref": "gts://gts.frontx.uikit.vocabulary.prop_name.v1~"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Why the kit does not advertise this prop: the component fact that makes offering it wrong, not a restatement of the name."
+    }
+  },
+  "required": [
+    "prop",
+    "reason"
+  ],
+  "additionalProperties": false
+}
