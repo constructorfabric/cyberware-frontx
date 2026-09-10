@@ -2,13 +2,13 @@
   "$id": "gts://gts.frontx.uikit.base.component.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UiKit component",
-  "description": "The ONE type every kit component's props schema derives from, and the only one: a contract has a single parent, which is what its chained $id says, and the surface of the host element it renders is a reference it holds rather than a second parent. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which the hand-written surface for each host element declares, because a type shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. `x-gts-abstract` says outright that it is never instantiated: no props object is ever validated against this type, only against a component's own derived one. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, everything asserted about a component, which GTS.validateEntity checks the component's own x-gts-traits against. A field whose shape another type owns is a reference to that type (gts.frontx.uikit.vocabulary.*) rather than an inline definition; the rest - intent, typical_uses, invariants, anti_patterns, examples, withheld and host_element - the validator reads but nothing else references, so they stay inline. See the domain model in the package DESIGN for how they relate.",
+  "description": "The ONE type every kit component's props schema derives from, and the only one: a contract has a single parent, which is what its chained $id says, and the surface of the host element it forwards to is a reference it holds rather than a second parent. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which the hand-written surface for each host element declares, because a type shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. `x-gts-abstract` says outright that it is never instantiated: no props object is ever validated against this type, only against a component's own derived one. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, everything asserted about a component, which GTS.validateEntity checks the component's own x-gts-traits against. A field whose shape another type owns is a reference to that type (gts.frontx.uikit.vocabulary.*) rather than an inline definition; only intent, typical_uses and forwards_to stay inline - a sentence, a capped list of strings, and the one reference gts-ts's own walk must find directly on an instance property rather than behind a `$ref`. See the domain model in the package DESIGN for how they relate.",
   "type": "object",
   "x-gts-abstract": true,
   "$comment": "No additionalProperties/unevaluatedProperties here on purpose. gts-ts's validateSchemaAgainstParent rejects a derived schema that adds properties when the parent sets additionalProperties: false, and closing this type would mean every component had to restate it. A derived component type does not close itself either: its unevaluatedProperties carries an annotated open schema ({ \"x-uikit-classification\": \"unchecked\" }), so a prop nothing evaluates is admitted and classified as unchecked by whoever reads the props rather than rejected by Ajv, which cannot tell a typo'd kit prop from an attribute this harness has not classified yet.",
   "x-gts-traits-schema": {
     "type": "object",
-    "description": "Everything asserted about a component: what GTS.validateEntity checks a contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from the abstract component type down to the component's own contract). Every field here is a claim somebody made - the overlay author for all but three, the compiler for the component references in `mounted_in`, a family root's `members` and `host_element`, each of which it fills from another author's assertion or from the source itself. What the SOURCE says lives in x-uikit instead, which no validator reads. A field whose shape another type owns is a REFERENCE to that vocabulary type (gts.frontx.uikit.vocabulary.*), so the concept is defined once, in one place, for both this schema and the metamodel; the rest stay inline, because nothing else references them. `host_element` is the one field an overlay may not write: which element a component renders is a fact of its source. additionalProperties: false so an unknown key fails GTS.validateEntity by name instead of vanishing silently.",
+    "description": "Everything asserted about a component: what GTS.validateEntity checks a contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from the abstract component type down to the component's own contract). Every field here is a claim somebody made - the overlay author for all but three, the compiler for the component references in `mounted_in`, a family root's `members` and `forwards_to`, each of which it fills from another author's assertion or from the source itself. What the SOURCE says lives in x-uikit instead, which no validator reads. A field whose shape another type owns is a REFERENCE to that vocabulary type (gts.frontx.uikit.vocabulary.*), so the concept is defined once, in one place, for both this schema and the metamodel; only a scalar, an array of strings, or a reference's own id/pattern stays inline (intent, typical_uses, and forwards_to itself - see componentRefSchema's comment for why that one keeps the reference triple rather than pointing at a vocabulary type). `forwards_to` is the one field an overlay may not write: which element a component forwards to is a fact of its source. additionalProperties: false so an unknown key fails GTS.validateEntity by name instead of vanishing silently.",
     "properties": {
       "intent": {
         "type": "string",
@@ -50,46 +50,15 @@
       "invariants": {
         "type": "array",
         "items": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string",
-              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
-              "description": "Stable kebab-case handle. Lint findings and evals cite it; never reused after removal."
-            },
-            "text": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "id",
-            "text"
-          ],
-          "additionalProperties": false
+          "$ref": "gts://gts.frontx.uikit.vocabulary.invariant.v1~"
         }
       },
       "anti_patterns": {
         "type": "array",
         "items": {
-          "type": "object",
-          "properties": {
-            "dont": {
-              "type": "string",
-              "minLength": 1
-            },
-            "instead": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "dont",
-            "instead"
-          ],
-          "additionalProperties": false
+          "$ref": "gts://gts.frontx.uikit.vocabulary.anti_pattern.v1~"
         },
-        "$comment": "`instead` here is prose about this component's own API, not a component type ref - the fix stays inside the component."
+        "$comment": "`do_instead` here is prose about this component's own API, not a component type ref - the fix stays inside the component. `instead` stays the word for a DIFFERENT component (dont_use_when's recommendation)."
       },
       "deprecations": {
         "$ref": "gts://gts.frontx.uikit.vocabulary.deprecations.v1~"
@@ -108,16 +77,30 @@
         ],
         "description": "What this contract claims about itself, one entry per claim. `a11y` and `rtl` are the kit's own core claims and every component states both; a claim beyond those is present only when the component actually makes it - its absence means \"not claimed\", which is a different fact from an attestation whose outcome is `unknown` (\"considered, not established\"). Open beyond the two required keys by construction - the claim names are the kit's own and grow with it - which is why the attestation type is referenced from additionalProperties rather than from a fixed property list, and why no key inside it is reserved for anything else."
       },
-      "untyped": {
+      "props": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "additionalProperties": {
+          "$ref": "gts://gts.frontx.uikit.vocabulary.prop_statement.v1~"
+        },
+        "propertyNames": {
+          "$ref": "gts://gts.frontx.uikit.vocabulary.prop_name.v1~"
+        },
+        "description": "What each property that reaches this contract asserting nothing (or only part of its shape) actually states, and why nothing checks it further - a generic, a function, a live object, a React node. Absent for a component whose whole surface the provider-safe subset can express, which no described component is today.",
+        "default": null
+      },
+      "unexposed_parts": {
         "type": [
           "array",
           "null"
         ],
         "items": {
-          "$ref": "gts://gts.frontx.uikit.vocabulary.untyped_statement.v1~"
+          "$ref": "gts://gts.frontx.uikit.vocabulary.unexposed_part.v1~"
         },
         "minItems": 1,
-        "description": "Everything this schema cannot assert, each entry saying what it is about and why nothing asserts it. Absent for a component whose whole surface the provider-safe subset can express, which no described component is today.",
+        "description": "Internal structure of the primitive underneath that this kit does not expose as a component of its own, each with why. Absent for a component that composes nothing hidden, which is most of the kit.",
         "default": null
       },
       "examples": {
@@ -126,50 +109,24 @@
           "good": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "title": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "code": {
-                  "type": "string",
-                  "minLength": 1
-                }
-              },
-              "required": [
-                "title",
-                "code"
-              ],
-              "additionalProperties": false
+              "$ref": "gts://gts.frontx.uikit.vocabulary.example_pair.v1~"
             },
             "minItems": 1
           },
           "bad": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "title": {
-                  "type": "string",
-                  "minLength": 1
+              "allOf": [
+                {
+                  "$ref": "gts://gts.frontx.uikit.vocabulary.example_pair.v1~"
                 },
-                "code": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "why": {
-                  "type": "string",
-                  "minLength": 1
+                {
+                  "type": "object",
+                  "required": [
+                    "why"
+                  ]
                 }
-              },
-              "required": [
-                "title",
-                "code",
-                "why"
-              ],
-              "additionalProperties": false,
-              "$comment": "`why` is required: a counter-example without its reason teaches pattern-matching, not the rule."
+              ]
             },
             "minItems": 1
           }
@@ -201,7 +158,7 @@
           "$ref": "gts://gts.frontx.uikit.vocabulary.slot.v1~"
         },
         "minItems": 1,
-        "description": "Props the consumer fills whose type this schema cannot assert, declared at the component level with the type that governs them. Absent for a component with no such surface - Button, Accordion, most of the kit. The complement in x-uikit.slots is the machine's own list of every property that asserts nothing, with the checker's printed type; this is the subset the kit declares as extension surface, with the type a consumer has to satisfy.",
+        "description": "Props through which the consumer supplies content, declared at the component level as the kit's own authored extension surface - regardless of whether the schema happens to be able to type them. Absent for a component with no such surface - Button, Accordion, most of the kit. The complement in x-uikit.partially_typed_props is the machine's own list of every property that asserts nothing (or only part of its shape), with the checker's printed type; this is the subset the kit deliberately declares as extension surface, which a consumer acts on.",
         "default": null
       },
       "capabilities": {
@@ -235,35 +192,20 @@
         ],
         "description": "Props of the primitive underneath that this kit does not advertise, so they are left out of the contract's own properties - each with the reason it is not advertised, because a bare name leaves every later reader to rediscover why the prop is gone. Every `prop` is checked against the extracted prop list - a name the primitive no longer declares fails the compile rather than withholding nothing - and may not name a prop the component declares itself, which would be the overlay asking the compiler to drop what the source states. Absent for a component that advertises everything it forwards, which is most of them.",
         "items": {
-          "type": "object",
-          "properties": {
-            "prop": {
-              "$ref": "gts://gts.frontx.uikit.vocabulary.prop_name.v1~"
-            },
-            "reason": {
-              "type": "string",
-              "minLength": 1,
-              "description": "Why the kit does not advertise this prop: the component fact that makes offering it wrong, not a restatement of the name."
-            }
-          },
-          "required": [
-            "prop",
-            "reason"
-          ],
-          "additionalProperties": false
+          "$ref": "gts://gts.frontx.uikit.vocabulary.withheld_prop.v1~"
         },
         "minItems": 1,
         "default": null
       },
-      "host_element": {
+      "forwards_to": {
         "type": [
           "string",
           "null"
         ],
         "pattern": "^gts\\.frontx\\.uikit\\.element\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
         "x-gts-ref": "gts.frontx.uikit.element.*",
-        "description": "GTS id of the hand-written surface for the host element this component renders - what it forwards to that element. HELD as an id, not composed into the schema as a second parent: a contract derives from ONE type, the abstract component type, and a surface shared kit-wide by every component that renders the same element is not a second thing this component IS. Whoever needs the surface resolves it through this reference and applies it beside the contract; nothing in the props schema merges it in. `x-gts-ref` declares what the value must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating. Absent entirely for a component that renders no host element of its own - DataTable, which renders its Table internally.",
-        "$comment": "The element token, not the tag: `dom_button` for a <button>, normalized by domElementToken - the same token the committed file under scripts/contracts/elements/ is named by, so the reference and the file name are one identity.",
+        "description": "GTS id of the hand-written surface for the host element this component forwards to. HELD as an id, not composed into the schema as a second parent: a contract derives from ONE type, the abstract component type, and a surface shared kit-wide by every component that forwards to the same element is not a second thing this component IS. Whoever needs the surface resolves it through this reference and applies it beside the contract; nothing in the props schema merges it in. `x-gts-ref` declares what the value must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating. Absent entirely for a component that forwards to no host element of its own - DataTable, which renders its Table internally and correctly declares none.",
+        "$comment": "The element token, not the tag: `dom_button` for a <button>, normalized by domElementToken - the same token the committed file under scripts/contracts/elements/ is named by, so the reference and the file name are one identity. Named `forwards_to` rather than `host_element`: the value is the element surface the component FORWARDS TO, and a field named for the element read as a bug on a component (DataTable) that has one and declares none.",
         "default": null
       }
     },

@@ -22,8 +22,7 @@ import {
   compileInstance,
   familyRoster,
   findUntypedPropMismatches,
-  hostElementRef,
-  isOutsideMount,
+  forwardsToRef,
   loadBaseSchema,
   loadElementSurfaces,
   registerContractTypes,
@@ -150,11 +149,11 @@ export function componentRefsIn(contract: CompiledContract): { field: string; re
   for (const accepted of meaning.accepts.components ?? []) {
     refs.push({ field: 'accepts.components', ref: accepted });
   }
-  // A filled mount point is a kit reference; a container outside the kit is
-  // the authored object form - skipped here the same way a recommendation
-  // with no component is.
+  // A filled mount point carries a component reference; a container outside
+  // the kit does not - skipped here the same way a recommendation with no
+  // component is.
   for (const entry of meaning.mounted_in ?? []) {
-    if (!isOutsideMount(entry)) refs.push({ field: 'mounted_in', ref: entry });
+    if (entry.component !== undefined) refs.push({ field: 'mounted_in', ref: entry.component });
   }
   for (const member of meaning.family_membership?.members ?? []) {
     refs.push({ field: 'family_membership.members', ref: member });
@@ -182,13 +181,13 @@ function loadCommittedContracts(): Record<string, unknown>[] {
 }
 
 // The surfaces the kit's committed contracts name, bare: one entry per
-// contract that holds a host-element reference, read through the same reader
-// every other surface-aware check uses (compile.ts's hostElementRef) rather
+// contract that holds a forwards-to reference, read through the same reader
+// every other surface-aware check uses (compile.ts's forwardsToRef) rather
 // than through a second walk over the schema body.
 function composedSurfaceRefs(): Set<string> {
   const refs = new Set<string>();
   for (const contract of loadCommittedContracts()) {
-    const ref = hostElementRef(contract);
+    const ref = forwardsToRef(contract);
     if (ref !== undefined) refs.add(ref);
   }
   return refs;
@@ -198,7 +197,7 @@ function composedSurfaceRefs(): Set<string> {
 // vocabulary its x-gts-traits-schema references, every host element surface
 // a contract may name, the metamodel the instance is typed by, and every
 // contract the kit ships - which is what the instance's own props_schema and
-// host_element references have to resolve against.
+// forwards_to references have to resolve against.
 export function registeredKitStore(): GTS {
   const gts = new GTS();
   gts.register(JSON.parse(JSON.stringify(loadBaseSchema())) as Record<string, unknown>);
@@ -236,7 +235,7 @@ export function assertContractFreshness(directory: string, exportStem: string = 
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-freshness
 
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-slots
-    it('every annotation-only slot property has a matching x-uikit.slots entry', () => {
+    it('every annotation-only slot property has a matching x-uikit.partially_typed_props entry', () => {
       const report = memoizedFreshnessReport(directory, exportStem);
       expect(report.slotSchemaMismatches).toEqual([]);
     });
@@ -278,7 +277,7 @@ export function assertContractFreshness(directory: string, exportStem: string = 
         contract.$id,
         instance.id,
         instance.props_schema,
-        ...(instance.host_element === undefined ? [] : [instance.host_element]),
+        ...(instance.forwards_to === undefined ? [] : [instance.forwards_to]),
         ...buildVocabularyTypes().map((type) => String(type.$id)),
         ...loadElementSurfaces().map((surface) => String(surface.$id)),
       ];
@@ -313,7 +312,7 @@ export function assertContractFreshness(directory: string, exportStem: string = 
       // filesystem layout, and a foreign package's internal file names
       // (`@base-ui/react/accordion/index` is not how anything imports
       // AccordionValue). Asserted over the whole compiled artifact rather
-      // than over the descriptions alone, because x-uikit.slots carries the
+      // than over the descriptions alone, because x-uikit.partially_typed_props carries the
       // same printed text one field away.
       const leaking = JSON.stringify(compileContract(directory, exportStem)).includes('import(');
       expect(leaking, `${exportStem}: a compiled type text still names the module it was resolved from`).toBe(false);
@@ -321,7 +320,7 @@ export function assertContractFreshness(directory: string, exportStem: string = 
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-no-specifier
 
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-untyped
-    it('pairs every property that asserts nothing with an untyped statement about it, both ways', () => {
+    it('pairs every property that asserts nothing with a props statement about it, both ways', () => {
       // The gap this closes was measured, not imagined: an evaluation pointed
       // an agent at three properties that asserted nothing and it reported
       // they took plain strings. A property Ajv will not check has to say
@@ -329,7 +328,7 @@ export function assertContractFreshness(directory: string, exportStem: string = 
       // a statement naming a property the contract does constrain tells a
       // reader something false about the contract in front of them.
       const problems = findUntypedPropMismatches(compileContract(directory, exportStem));
-      expect(problems, `${exportStem}: untyped statements and unasserted properties disagree:\n${problems.join('\n')}`).toEqual(
+      expect(problems, `${exportStem}: props statements and unasserted properties disagree:\n${problems.join('\n')}`).toEqual(
         [],
       );
     });
@@ -357,15 +356,15 @@ export function assertContractFreshness(directory: string, exportStem: string = 
         familyMembers = new Set([...(roster.root === undefined ? [] : [roster.root]), ...roster.parts]);
       }
       for (const entry of meaning.mounted_in ?? []) {
-        if (isOutsideMount(entry)) continue;
-        const container = resolveComponentRef(entry);
+        if (entry.component === undefined) continue;
+        const container = resolveComponentRef(entry.component);
         const containerMeaning = compileContract(container.directory, container.stem)['x-gts-traits'];
         expect(
           containerMeaning.accepts.components ?? [],
-          `${exportStem}: filled mount point "${entry}" does not accept it inside`,
+          `${exportStem}: filled mount point "${entry.component}" does not accept it inside`,
         ).toContain(self);
         if (familyMembers !== undefined) {
-          expect(familyMembers.has(entry), `${exportStem}: filled mount point "${entry}" is not a member of its family`).toBe(true);
+          expect(familyMembers.has(entry.component), `${exportStem}: filled mount point "${entry.component}" is not a member of its family`).toBe(true);
         }
       }
     });
@@ -434,9 +433,9 @@ export function assertContractFreshness(directory: string, exportStem: string = 
         expect(id, `${id} is not a grammatical element surface id`).toMatch(idPattern);
         committed.add(bareGtsId(id));
       }
-      const ref = hostElementRef(compileContract(directory, exportStem));
+      const ref = forwardsToRef(compileContract(directory, exportStem));
       if (ref === undefined) return;
-      expect(ref, `${exportStem}: host_element "${ref}" is not a grammatical element-surface reference`).toMatch(refPattern);
+      expect(ref, `${exportStem}: forwards_to "${ref}" is not a grammatical element-surface reference`).toMatch(refPattern);
       expect(committed.has(ref), `${exportStem}: names "${ref}", which no committed file declares`).toBe(true);
     });
 
@@ -505,7 +504,7 @@ export function assertContractFreshness(directory: string, exportStem: string = 
 // a schema's x-gts-traits chain from the GTS ID's OWN dot-token segments
 // (GtsStore.buildSchemaChain), not by dereferencing any $ref, so neither the
 // host element's surface nor any other component's contract is ever consulted
-// for x-gts-traits validation - and host_element is a plain string value in the block
+// for x-gts-traits validation - and forwards_to is a plain string value in the block
 // being checked, not a type this store has to resolve.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-conformance:p1:inst-cf-traits
 export function validateContractTraits(contract: CompiledContract): ValidationResult & { entity_type: string } {

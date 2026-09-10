@@ -16,10 +16,10 @@
       "type": "boolean"
     },
     "render": {
-      "description": "TS: ReactElement<unknown, string | JSXElementConstructor<any>> | ComponentRenderFn<HTMLProps, AccordionTriggerState> | undefined. Not expressible in JSON Schema, checked by tsc."
+      "description": "TS: ReactElement<unknown, string | JSXElementConstructor<any>> | ComponentRenderFn<HTMLProps, AccordionTriggerState> | undefined. Not expressible in JSON Schema, checked by tsc. render replaces the trigger element with one the caller supplies Base UI's render prop takes an element or a function of the trigger's state; neither is expressible in JSON Schema. The trailing chevron is rendered as a child, so it survives a replaced element."
     },
     "style": {
-      "description": "TS: CSSProperties | ((state: AccordionTriggerState) => CSSProperties | undefined) | undefined. Not expressible in JSON Schema, checked by tsc."
+      "description": "TS: CSSProperties | ((state: AccordionTriggerState) => CSSProperties | undefined) | undefined. Not expressible in JSON Schema, checked by tsc. style accepts a function of the trigger's state as well as a plain style object Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
     }
   },
   "required": [],
@@ -28,7 +28,7 @@
   },
   "x-uikit": {
     "metamodel": "1.0.0",
-    "slots": {},
+    "partially_typed_props": {},
     "variant_sources": [],
     "cannot_extract": []
   },
@@ -51,7 +51,10 @@
       "text": true
     },
     "mounted_in": [
-      "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
+      {
+        "container": "AccordionItem",
+        "component": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion_item.v1~"
+      }
     ],
     "invariants": [
       {
@@ -62,7 +65,7 @@
     "anti_patterns": [
       {
         "dont": "Pass an icon element through children expecting it before the chevron",
-        "instead": "Children are the trigger's text label only; the chevron is fixed and always trailing"
+        "do_instead": "Children are the trigger's text label only; the chevron is fixed and always trailing"
       }
     ],
     "deprecations": {},
@@ -75,23 +78,20 @@
         "outcome": "unknown"
       }
     },
-    "untyped": [
+    "props": {
+      "render": {
+        "states": "render replaces the trigger element with one the caller supplies",
+        "because": "Base UI's render prop takes an element or a function of the trigger's state; neither is expressible in JSON Schema. The trailing chevron is rendered as a child, so it survives a replaced element."
+      },
+      "style": {
+        "states": "style accepts a function of the trigger's state as well as a plain style object",
+        "because": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
+      }
+    },
+    "unexposed_parts": [
       {
-        "about": "unexposed_part",
-        "claim": "AccordionTrigger wraps two Base UI parts, Header and Trigger",
+        "part": "Base UI's Accordion.Header and Accordion.Trigger",
         "reason": "The kit's AccordionTrigger composes Base UI's Accordion.Header (a plain wrapper, not separately exposed by the kit) around Accordion.Trigger into one exported component; this contract describes the exported surface, not the two-part internal composition, so Header's own props are not part of it."
-      },
-      {
-        "about": "prop",
-        "prop": "render",
-        "claim": "render replaces the trigger element with one the caller supplies",
-        "reason": "Base UI's render prop takes an element or a function of the trigger's state; neither is expressible in JSON Schema. The trailing chevron is rendered as a child, so it survives a replaced element."
-      },
-      {
-        "about": "prop",
-        "prop": "style",
-        "claim": "style accepts a function of the trigger's state as well as a plain style object",
-        "reason": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
       }
     ],
     "examples": {
@@ -113,6 +113,6 @@
       "name": "accordion",
       "role": "part"
     },
-    "host_element": "gts.frontx.uikit.element.dom_button.v1~"
+    "forwards_to": "gts.frontx.uikit.element.dom_button.v1~"
   }
 }

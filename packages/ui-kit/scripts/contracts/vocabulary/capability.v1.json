@@ -2,7 +2,7 @@
   "$id": "gts://gts.frontx.uikit.vocabulary.capability.v1~",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UiKit capability",
-  "description": "Something this component can do that a consumer turns on, with the prop that turns it on. Not a slot: the consumer supplies no value here, it flips a switch and the component does the rest - which is why the interesting fact is the enabling prop rather than a type.",
+  "description": "Something this component can do that a consumer turns on, with the prop that turns it on. Not a slot: the consumer supplies no value here, it flips a switch and the component does the rest - which is why the interesting fact is the enabling prop and `typed_by` has no place here at all, not even an optional one.",
   "type": "object",
   "properties": {
     "name": {
@@ -13,10 +13,6 @@
     "enabled_by": {
       "$ref": "gts://gts.frontx.uikit.vocabulary.prop_name.v1~"
     },
-    "typed_by": {
-      "type": "string",
-      "minLength": 1
-    },
     "description": {
       "type": "string",
       "minLength": 1
@@ -25,7 +21,6 @@
   "required": [
     "name",
     "enabled_by",
-    "typed_by",
     "description"
   ],
   "additionalProperties": false

@@ -50,12 +50,21 @@ invariants:
       or negative values make the page-index rescale on prop change
       (`current.pageIndex * current.pageSize / pageSize`) divide by zero or
       go negative, so it must stay a positive integer.
+  - id: sorting-selection-pagination-state-is-internal-not-props
+    text: >-
+      Sorting, row-selection and pagination state are internal, not props:
+      `sorting`/`rowSelection`/`pagination` are component-owned useState,
+      never lifted to DataTableProps, so there is no way to preset or
+      control them - "DataTable is sortable/selectable/paginated" is
+      discoverable only from `columns`' own fields and `enableRowSelection`.
+      A consumer needing controlled state builds against `useTable` directly
+      (see the dataTableFeatures companion).
 
 anti_patterns:
   - dont: Mix column defs built against different TFeatures objects in one `columns` array
-    instead: Build every column with `dataTableColumnHelper()` (or a hand-rolled helper bound to the same `dataTableFeatures`), never a mix
+    do_instead: Build every column with `dataTableColumnHelper()` (or a hand-rolled helper bound to the same `dataTableFeatures`), never a mix
   - dont: Set `enableRowSelection` and expect a checkbox column to appear on its own
-    instead: Include `dataTableSelectionColumn()` in `columns` explicitly - the flag and the column are independent opt-ins
+    do_instead: Include `dataTableSelectionColumn()` in `columns` explicitly - the flag and the column are independent opt-ins
 
 deprecations: {}
 
@@ -65,59 +74,48 @@ attestations:
   rtl:
     outcome: unknown
 
-untyped:
-  - about: behaviour
-    claim: sorting, row-selection and pagination state are internal, not props
-    reason: >-
-      `sorting`/`rowSelection`/`pagination` are component-owned useState,
-      never lifted to DataTableProps, so there is no way to preset or
-      control them - "DataTable is sortable/selectable/paginated" is
-      discoverable only from `columns`' own fields and
-      `enableRowSelection`. A consumer needing controlled state builds
-      against `useTable` directly (see the dataTableFeatures companion).
-  - about: prop
-    prop: columns
-    claim: columns is an array of @tanstack/react-table ColumnDef objects, generic over TData
-    reason: >-
+# What each property that reaches this contract asserting nothing (or only
+# part of its shape) actually states, and why - keyed on the property
+# itself. The compiler emits both halves into that property's own
+# description, beside the `TS:` text.
+props:
+  columns:
+    states: columns is an array of @tanstack/react-table ColumnDef objects, generic over TData
+    because: >-
       The schema states that this is an array and stops there. ColumnDef
       carries function-valued fields (header/cell render functions among
       them) from a third-party package this contract does not own, and it
       is generic over the row type the caller picks - so what is IN the
       array is checked by tsc, and is why the prop is a slot rather than
       an enumerated shape.
-  - about: prop
-    prop: data
-    claim: data is an array of the caller's own row type
-    reason: >-
+  data:
+    states: data is an array of the caller's own row type
+    because: >-
       `TData[]` - an array, which the schema does state, of a type
       parameter the caller picks, which it cannot. The rows must be the
       same `TData` the `columns` were built for; that pairing is a
       call-site type error, not something this schema can check.
-  - about: prop
-    prop: selectionSummary
-    claim: selectionSummary is a function prop, not data
-    reason: >-
+  selectionSummary:
+    states: selectionSummary is a function prop, not data
+    because: >-
       `(selected, total) => ReactNode` has no JSON Schema representation;
       it is a function returning a plurals-aware sentence, not a value
       this schema can assert shape against.
-  - about: prop
-    prop: emptyMessage
-    claim: emptyMessage is a React node, not a string
-    reason: >-
+  emptyMessage:
+    states: emptyMessage is a React node, not a string
+    because: >-
       `ReactNode` - an element, a string or a fragment, all valid and
       indistinguishable to JSON Schema. It replaces the whole
       "no results" row body, so an element is the usual case.
-  - about: prop
-    prop: previousLabel
-    claim: previousLabel is a React node, not a string
-    reason: >-
+  previousLabel:
+    states: previousLabel is a React node, not a string
+    because: >-
       `ReactNode`, so an icon or an element is as valid as a string. It is
       the pagination button's own label, which is why it is a node rather
       than a translated string this component would have to own.
-  - about: prop
-    prop: nextLabel
-    claim: nextLabel is a React node, not a string
-    reason: >-
+  nextLabel:
+    states: nextLabel is a React node, not a string
+    because: >-
       `ReactNode`, same as previousLabel above and for the same reason.
 
 examples:
@@ -156,11 +154,12 @@ slots:
 capabilities:
   - name: row_selection
     enabled_by: enableRowSelection
-    typed_by: '@tanstack/react-table rowSelectionFeature, one of the three features dataTableFeatures registers'
     description: >-
-      Rows become selectable and the footer reports "N of M row(s) selected".
-      The checkbox column is a separate opt-in: it appears only when `columns`
-      also includes one built with `dataTableSelectionColumn()`.
+      Rows become selectable and the footer reports "N of M row(s) selected",
+      enabled by @tanstack/react-table's rowSelectionFeature - one of the
+      three features dataTableFeatures registers. The checkbox column is a
+      separate opt-in: it appears only when `columns` also includes one
+      built with `dataTableSelectionColumn()`.
 
 # The exports beside the component that a consumer builds its input with.
 companions:

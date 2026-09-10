@@ -37,7 +37,7 @@
       "type": "boolean"
     },
     "icon": {
-      "description": "Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
+      "description": "Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.partially_typed_props. icon is a React node, not a value `ReactNode` has no JSON Schema representation - an element, a string, a fragment and `false` are all valid and only tsc can tell them from a mistake. The slot exists so the icon gets sized, spaced, hidden while `loading` and marked decorative; what may go in it is \"anything React renders\", which is the whole assertion."
     },
     "loading": {
       "type": "boolean"
@@ -46,10 +46,10 @@
       "type": "boolean"
     },
     "render": {
-      "description": "TS: ReactElement<unknown, string | JSXElementConstructor<any>> | ComponentRenderFn<HTMLProps, ButtonState> | undefined. Not expressible in JSON Schema, checked by tsc."
+      "description": "TS: ReactElement<unknown, string | JSXElementConstructor<any>> | ComponentRenderFn<HTMLProps, ButtonState> | undefined. Not expressible in JSON Schema, checked by tsc. render replaces the rendered element with one the caller supplies Base UI's render prop takes an element or a function of the button's own state, so its type is a union of a React element and a callback - neither expressible in JSON Schema. It is what makes `render={<a href=\"...\" />}` with `nativeButton={false}` the way to keep an action reading as a button while it navigates."
     },
     "style": {
-      "description": "TS: CSSProperties | ((state: ButtonState) => CSSProperties | undefined) | undefined. Not expressible in JSON Schema, checked by tsc."
+      "description": "TS: CSSProperties | ((state: ButtonState) => CSSProperties | undefined) | undefined. Not expressible in JSON Schema, checked by tsc. style accepts a function of the button's state as well as a plain style object Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)` so a caller can style off the primitive's own state. A JSON Schema `object` would reject the function form, so nothing is asserted; the kit's own styling goes through `variant`/`size` and CSS Modules, not through this."
     }
   },
   "required": [],
@@ -58,7 +58,7 @@
   },
   "x-uikit": {
     "metamodel": "1.0.0",
-    "slots": {
+    "partially_typed_props": {
       "icon": {
         "typeText": "ReactNode",
         "optional": true
@@ -109,11 +109,11 @@
     "anti_patterns": [
       {
         "dont": "Render a spinner next to the label by hand",
-        "instead": "Use `loading` - it preserves the button's width and accessible name"
+        "do_instead": "Use `loading` - it preserves the button's width and accessible name"
       },
       {
         "dont": "Pass an icon element through children",
-        "instead": "Use the `icon` prop"
+        "do_instead": "Use the `icon` prop"
       }
     ],
     "deprecations": {},
@@ -126,26 +126,20 @@
         "outcome": "unknown"
       }
     },
-    "untyped": [
-      {
-        "about": "prop",
-        "prop": "icon",
-        "claim": "icon is a React node, not a value",
-        "reason": "`ReactNode` has no JSON Schema representation - an element, a string, a fragment and `false` are all valid and only tsc can tell them from a mistake. The slot exists so the icon gets sized, spaced, hidden while `loading` and marked decorative; what may go in it is \"anything React renders\", which is the whole assertion."
+    "props": {
+      "icon": {
+        "states": "icon is a React node, not a value",
+        "because": "`ReactNode` has no JSON Schema representation - an element, a string, a fragment and `false` are all valid and only tsc can tell them from a mistake. The slot exists so the icon gets sized, spaced, hidden while `loading` and marked decorative; what may go in it is \"anything React renders\", which is the whole assertion."
       },
-      {
-        "about": "prop",
-        "prop": "render",
-        "claim": "render replaces the rendered element with one the caller supplies",
-        "reason": "Base UI's render prop takes an element or a function of the button's own state, so its type is a union of a React element and a callback - neither expressible in JSON Schema. It is what makes `render={<a href=\"...\" />}` with `nativeButton={false}` the way to keep an action reading as a button while it navigates."
+      "render": {
+        "states": "render replaces the rendered element with one the caller supplies",
+        "because": "Base UI's render prop takes an element or a function of the button's own state, so its type is a union of a React element and a callback - neither expressible in JSON Schema. It is what makes `render={<a href=\"...\" />}` with `nativeButton={false}` the way to keep an action reading as a button while it navigates."
       },
-      {
-        "about": "prop",
-        "prop": "style",
-        "claim": "style accepts a function of the button's state as well as a plain style object",
-        "reason": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)` so a caller can style off the primitive's own state. A JSON Schema `object` would reject the function form, so nothing is asserted; the kit's own styling goes through `variant`/`size` and CSS Modules, not through this."
+      "style": {
+        "states": "style accepts a function of the button's state as well as a plain style object",
+        "because": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)` so a caller can style off the primitive's own state. A JSON Schema `object` would reject the function form, so nothing is asserted; the kit's own styling goes through `variant`/`size` and CSS Modules, not through this."
       }
-    ],
+    },
     "examples": {
       "good": [
         {
@@ -170,6 +164,6 @@
         }
       ]
     },
-    "host_element": "gts.frontx.uikit.element.dom_button.v1~"
+    "forwards_to": "gts.frontx.uikit.element.dom_button.v1~"
   }
 }

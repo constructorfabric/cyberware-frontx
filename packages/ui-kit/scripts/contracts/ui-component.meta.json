@@ -31,12 +31,12 @@
       "description": "GTS id of the props schema this instance is about: the compiled JSON Schema carrying axes, defaults, normative props and, in its x-gts-traits, everything the component means. A derived-type id - the abstract base component type, then the component's own segment - so the reference also asserts that the props schema really is a child of the base and not a lookalike.",
       "$comment": "Two segments of 5 dot-tokens each after the fixed `gts.` scheme prefix - the shape gts-ts's Gts.parseSegment accepts (vendor.package.namespace.type.vMAJOR)."
     },
-    "host_element": {
+    "forwards_to": {
       "type": "string",
       "pattern": "^gts\\.frontx\\.uikit\\.element\\.[a-z_][a-z0-9_]*\\.v\\d+~$",
       "x-gts-ref": "gts.frontx.uikit.element.*",
-      "description": "GTS id of the hand-written surface for the host element this component renders - what it forwards to that element. HELD as an id, not composed into the schema as a second parent: a contract derives from ONE type, the abstract component type, and a surface shared kit-wide by every component that renders the same element is not a second thing this component IS. Whoever needs the surface resolves it through this reference and applies it beside the contract; nothing in the props schema merges it in. `x-gts-ref` declares what the value must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating. Absent entirely for a component that renders no host element of its own - DataTable, which renders its Table internally.",
-      "$comment": "The element token, not the tag: `dom_button` for a <button>, normalized by domElementToken - the same token the committed file under scripts/contracts/elements/ is named by, so the reference and the file name are one identity."
+      "description": "GTS id of the hand-written surface for the host element this component forwards to. HELD as an id, not composed into the schema as a second parent: a contract derives from ONE type, the abstract component type, and a surface shared kit-wide by every component that forwards to the same element is not a second thing this component IS. Whoever needs the surface resolves it through this reference and applies it beside the contract; nothing in the props schema merges it in. `x-gts-ref` declares what the value must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating. Absent entirely for a component that forwards to no host element of its own - DataTable, which renders its Table internally and correctly declares none.",
+      "$comment": "The element token, not the tag: `dom_button` for a <button>, normalized by domElementToken - the same token the committed file under scripts/contracts/elements/ is named by, so the reference and the file name are one identity. Named `forwards_to` rather than `host_element`: the value is the element surface the component FORWARDS TO, and a field named for the element read as a bug on a component (DataTable) that has one and declares none."
     }
   },
   "required": [

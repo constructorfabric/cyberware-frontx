@@ -1456,3 +1456,117 @@ Four properties across the enrolled set gained a type: the accordion root's
 rather than writing the walk. Two facts the harness already had - the resolved
 type and its printed name - had been collapsed into one, and separating them
 is what the fix mostly is.
+
+## A symmetry closed on one side, and a shape versus a name
+
+**Observed.** Two reviews landed on the same round: the harness reviewer's
+second pass found seven places where a rule was closed on one half of a
+symmetry and open on the other, and the type-system maintainer's review found
+eight mechanical gaps between what a vocabulary type or the compiler claimed
+and what it enforced, plus six places where a rename had fixed the word and
+left the shape behind.
+
+**Harness mechanics.** Compatibility read a removed property but not a
+removed pattern family - `diffElementSurface` compared `properties` on both
+sides and never `patternProperties`, so deleting `^on[A-Z]` from a `<button>`'s
+surface dropped roughly 150 event handlers with the diff reporting nothing.
+A cva axis reached `properties` without passing the same "one prop, one
+shape" check a declared or forwarded prop already went through, so an axis
+named `type` on a component rendering a `<button>` compiled cleanly beside the
+surface's own three-value enum. The open schema's near-miss classification
+had no caller deriving a failure from it - `variannt="ghost"` was rejected by
+nothing in the repository except one assertion inside Button's own suite.
+`eachOverlay`'s kit-wide walk threw on the first overlay that failed to parse,
+so one half-written file for an unenrolled component failed every other
+component's compile, and it re-walked the whole directory on every call
+despite every other builder here being memoized. `isBooleanAxis` counted the
+`true`-only shape of a cva boolean variant and not the `false`-only mirror,
+which cva resolves to `boolean` exactly the same way. Two comments named a
+function that had been renamed out from under them.
+
+**Mechanical gaps.** `family_membership`'s nullable widening depended on
+`$ref` staying ahead of a `type` written beside it - gts-ts merges a resolved
+reference in at the reference's own position, key order load-bearing for a
+value the spec treats as unordered - so every field of that shape now widens
+with `anyOf: [{ $ref }, { type: "null" }]` instead. `gts-ts` moved from a
+caret range to an exact pin, with the two undocumented behaviours the model
+leans on named beside it. `assertOverlayReferencesRealProps` checked six of a
+deprecation's seven prop-name-bearing fields and missed `replacement`, which
+is exactly the field whose whole job is "point at a prop that still exists".
+`attestations` gained a claim registry and a compile-time check, so a typo of
+`a11y` fails by name instead of compiling as a well-formed unknown key; `a11y`
+and `rtl` became the kit's two required claims. `icons_via` moved inside
+`accepted_content`'s own `specified`-only branch. Two grammars used seven
+times between them - a component reference, a prop name - became vocabulary
+types of their own (`component_reference`, `prop_name`), referenced instead
+of repeated; the two places the type system's own reference walk must reach
+directly on an instance property (a metamodel instance's `props_schema`, and
+`forwards_to` beside it) keep the literal triple, with the reason stated at
+the definition rather than left for a reader to reconstruct. `companion.export`
+stopped sharing a function with a prop name it was never one. Compat learned
+to diff `invariants[].id`: an id present at the base ref and gone now fails
+the same way a removed prop does, because an id is a stable handle a lint
+finding or an eval can already cite by name.
+
+**Shape versus name.** Six places carried the old shape under a new word, and
+each is now the same shape as the sibling that had already been fixed:
+
+- `mount_point` was a `oneOf` split by resolvability (a component-id string,
+  or an `outside_mount` object) when `recommendation` next door had already
+  made resolvability an optional field instead. It is one shape now -
+  `container` required, `component` filled by the compiler, `note` authored
+  only where `component` is not - and `outside_mount` is gone. The two facts
+  the round left to state ourselves: a filled `container` is the target's own
+  export name, and an authored entry carrying `component` still fails the
+  compile, refused before the generic "unknown key" a bare schema narrowing
+  would have given instead.
+- `untyped` was a flat list partitioned by an `about` discriminant, four ways
+  the medium fell short rather than four kinds of fact, and two of its
+  categories restated a fact a different field already carried. It is
+  dissolved: `about: prop` is now `props`, an overlay map keyed on the
+  property itself and emitted by the compiler into that property's own
+  description beside the `TS:` text; `about: unexposed_part` is
+  `unexposed_parts`, beside `withheld`; `about: behaviour` is an ordinary
+  `invariants` entry, because a fact about the component is what an invariant
+  is for; `about: outside_mount` is gone outright, because `mounted_in`
+  already carries the fact it restated.
+- The inline-versus-referenced boundary was "does a validator read it", which
+  is a property of the current artifact graph and moves whenever the graph
+  does. It is now "is it a scalar, an array of strings, or the one reference
+  the type system's own walk must find directly on an instance property" -
+  `intent`, `typical_uses` and `forwards_to` stay inline; `invariants`,
+  `anti_patterns`, `examples` and `withheld` are now lists of a named
+  vocabulary type (`invariant`, `anti_pattern`, `example_pair`,
+  `withheld_prop`) instead of anonymous objects a validator merely read the
+  shape of.
+- `slot` required `typed_by`, the field the whole rework was meant to retire -
+  "here is prose naming a type, because the schema could not" - so a slot the
+  schema states in full still needed one. `typed_by` is optional now: a slot
+  is a prop through which the consumer supplies content, regardless of
+  whether that content happens to be typeable. `capability` never had a type
+  to name in the first place, by its own description, so it lost `typed_by`
+  entirely rather than keeping it optional.
+- `anti_pattern.instead` and `dont_use_when_rule.instead` were one word for
+  two concepts - fix inside this component, versus use a different one -
+  distinguished only by a `$comment` in the source, invisible in a compiled
+  contract. The prose one is `do_instead` now; `instead` stays the word for
+  the other.
+- `host_element` named the element while meaning the surface the component
+  forwards to, which is why DataTable correctly declaring none used to read
+  as a bug. It is `forwards_to` everywhere the name appeared: the trait
+  field, the instance field, the metamodel, `hostElementFor`/`hostElementRef`/
+  `hostElementToken` (now `forwardsTo`/`forwardsToRef`/`forwardsToToken`), and
+  every description that named it.
+
+**What the stress test withdrew.** Nothing in this round was declined outright.
+Two places the shape was left for this pass to decide and are recorded as
+decisions rather than findings: a filled `mount_point.container` is the
+target's own export name, chosen because that is the string a reader would
+already act on; and `attestations`' `unknown` versus an absent key is resolved
+by making the kit's two core claims required and defining absence for every
+other claim as "not claimed" rather than "considered, not established".
+
+**Effort.** Three commits, same order as the round before: the harness checks,
+the mechanical gaps, the shapes. The three real components recompiled through
+the harness with no hand-edited JSON; the guarantees the harness gives are the
+same guarantees, checked more completely.

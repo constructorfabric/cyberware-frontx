@@ -56,7 +56,7 @@ import {
 } from './check-lib';
 import {
   compileContract,
-  hostElementToken,
+  forwardsToToken,
   loadBaseSchema,
   loadElementSurface,
   loadHostSurface,
@@ -531,8 +531,8 @@ function checkCompatForUnit(
   // resolves to. Read for BOTH revisions: see compareElementSurfaces in
   // check-lib.ts for what each combination of the two answers means.
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-element-surface
-  const newElement = hostElementToken(newContract);
-  const oldElement = hostElementToken(oldContract);
+  const newElement = forwardsToToken(newContract);
+  const oldElement = forwardsToToken(oldContract);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-element-surface
   let newElementSurface: Record<string, unknown> | undefined;
   if (newElement !== undefined) {

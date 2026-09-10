@@ -51,12 +51,12 @@ invariants:
 
 anti_patterns:
   - dont: Put an always-visible required form control inside a collapsed panel
-    instead: >-
+    do_instead: >-
       Keep required fields outside the accordion, or default that item's
       panel open - a screen reader user tabbing through the page will not
       discover a hidden required field until they expand that section
   - dont: Reuse the same `value` for two items inside the SAME accordion root
-    instead: >-
+    do_instead: >-
       Give every item a unique `value` within its own root - a nested
       `Accordion` needs no coordination with its ancestor's values, only
       with its own siblings
@@ -73,13 +73,14 @@ attestations:
   rtl:
     outcome: unknown
 
-# Everything this contract's schema cannot assert: what each claim is about
-# and why nothing asserts it.
-untyped:
-  - about: prop
-    prop: value
-    claim: value is an array of the root's own generic Value parameter
-    reason: >-
+# What each property that reaches this contract asserting nothing (or only
+# part of its shape) actually states, and why - keyed on the property
+# itself. The compiler emits both halves into that property's own
+# description, beside the `TS:` text.
+props:
+  value:
+    states: value is an array of the root's own generic Value parameter
+    because: >-
       `AccordionValue<Value>` is an ARRAY of the type parameter, not a
       single value - which is exactly the misreading this entry exists to
       prevent: an agent shown an unconstrained `value` concluded it took a
@@ -87,32 +88,28 @@ untyped:
       caller's own `Value`, which no schema can state, because the caller
       chooses it. accordion.md's example uses string item values
       (`value="item-1"` on the item), so a root value is an array of those.
-  - about: prop
-    prop: defaultValue
-    claim: defaultValue is an array of the root's own generic Value parameter
-    reason: >-
+  defaultValue:
+    states: defaultValue is an array of the root's own generic Value parameter
+    because: >-
       Same type as `value` above, and unchecked in the same half - the
       uncontrolled starting point is a LIST of open item values, not one of
       them.
-  - about: prop
-    prop: onValueChange
-    claim: onValueChange is a callback, not a value
-    reason: >-
+  onValueChange:
+    states: onValueChange is a callback, not a value
+    because: >-
       `(value: AccordionValue<Value>, eventDetails) => void` - a function
       of the generic above plus Base UI's own event-details object. No
       JSON Schema type covers a function.
-  - about: prop
-    prop: render
-    claim: render replaces the root element with one the caller supplies
-    reason: >-
+  render:
+    states: render replaces the root element with one the caller supplies
+    because: >-
       Base UI's render prop takes an element or a function of the root's
       state; neither is expressible in JSON Schema. Replacing the root
       element means taking over the wrapper the kit's own layout styles
       (`.root`) are attached to.
-  - about: prop
-    prop: style
-    claim: style accepts a function of the root's state as well as a plain style object
-    reason: >-
+  style:
+    states: style accepts a function of the root's state as well as a plain style object
+    because: >-
       Base UI widens React's `CSSProperties` to
       `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object`
       would reject the function form.

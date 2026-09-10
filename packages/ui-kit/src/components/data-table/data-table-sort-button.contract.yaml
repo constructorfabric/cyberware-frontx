@@ -48,7 +48,7 @@ invariants:
 
 anti_patterns:
   - dont: Use DataTableSortButton outside a column's header render function
-    instead: For a plain action button with no column to sort, use Button directly
+    do_instead: For a plain action button with no column to sort, use Button directly
 
 deprecations: {}
 
@@ -58,26 +58,12 @@ attestations:
   rtl:
     outcome: unknown
 
-untyped:
-  - about: prop
-    prop: column
-    claim: column is a live @tanstack/react-table Column instance, generic over TData and TValue
-    reason: >-
-      `Column<DataTableFeatures, TData, TValue>` carries methods
-      (`toggleSorting`, `getIsSorted`) and internal state, not a
-      serializable shape, and two of its three type arguments are the
-      caller's own type parameters - neither a live object nor a generic
-      has a JSON Schema representation. It is handed in by TanStack
-      Table's own render call; a consumer never constructs one.
-  - about: prop
-    prop: children
-    claim: children is a React node - the column's label
-    reason: >-
-      `ReactNode`, so an element is as valid as a string. Required, because
-      a sort button with no label is a button whose only content is a
-      direction arrow.
-  - about: unexposed_part
-    claim: DataTableSortButton composes the kit's own Button internally
+# Internal structure this component composes that the kit does not expose
+# as a component of its own. Its only real mount point - a column's header
+# render function, which has no contract of its own - is already stated in
+# `mounted_in` above; there is no second, separate statement of that fact.
+unexposed_parts:
+  - part: the kit's own Button
     reason: >-
       It renders a `<Button variant="ghost" size="sm">` around its own
       label and a trailing sort-arrow icon - this is internal composition
@@ -85,13 +71,27 @@ untyped:
       heritage relationship, so none of Button's own props reach this
       contract: DataTableSortButtonProps declares
       `column`/`children`/`className` itself and extends nothing.
-  - about: outside_mount
-    claim: its only real mount point is a column's header render function, which has no contract of its own
-    reason: >-
-      TanStack Table's `header: ({ column }) => ...` is a plain function
-      prop on `ColumnDef`, not a kit component, so `mounted_in` above
-      states it as a container outside the kit rather than referencing a
-      component that does not exist.
+
+# What each property that reaches this contract asserting nothing (or only
+# part of its shape) actually states, and why - keyed on the property
+# itself. The compiler emits both halves into that property's own
+# description, beside the `TS:` text.
+props:
+  column:
+    states: column is a live @tanstack/react-table Column instance, generic over TData and TValue
+    because: >-
+      `Column<DataTableFeatures, TData, TValue>` carries methods
+      (`toggleSorting`, `getIsSorted`) and internal state, not a
+      serializable shape, and two of its three type arguments are the
+      caller's own type parameters - neither a live object nor a generic
+      has a JSON Schema representation. It is handed in by TanStack
+      Table's own render call; a consumer never constructs one.
+  children:
+    states: children is a React node - the column's label
+    because: >-
+      `ReactNode`, so an element is as valid as a string. Required, because
+      a sort button with no label is a button whose only content is a
+      direction arrow.
 
 examples:
   good:

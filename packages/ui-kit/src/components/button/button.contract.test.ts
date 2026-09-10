@@ -192,8 +192,8 @@ describe('button contract conformance', () => {
     // the file itself declares.
     expect(contract.allOf).toEqual([{ $ref: BASE_TYPE_ID }]);
     expect(contract.$id.startsWith(BASE_TYPE_ID)).toBe(true);
-    expect(contract['x-gts-traits'].host_element).toBe(bareGtsId(ELEMENT_TYPE_ID));
-    expect(instance.host_element).toBe(bareGtsId(ELEMENT_TYPE_ID));
+    expect(contract['x-gts-traits'].forwards_to).toBe(bareGtsId(ELEMENT_TYPE_ID));
+    expect(instance.forwards_to).toBe(bareGtsId(ELEMENT_TYPE_ID));
     expect(elementSurface.$id).toBe(ELEMENT_TYPE_ID);
   });
 
@@ -236,21 +236,24 @@ describe('button contract conformance', () => {
     // The measured defect: an agent shown three unconstrained properties
     // concluded they took plain strings. `render` is a union of a React
     // element and a callback, so nothing can be asserted about it - what a
-    // reader gets instead is the checker's own printed type.
+    // reader gets instead is the checker's own printed type, followed by the
+    // overlay's own `props.render` statement (states/because), which the
+    // compiler emits into the same description beside the `TS:` text.
     expect(contract.properties.render.type).toBeUndefined();
-    expect(contract.properties.render.description).toMatch(/^TS: .*Not expressible in JSON Schema, checked by tsc\.$/s);
+    expect(contract.properties.render.description).toMatch(/^TS: .*Not expressible in JSON Schema, checked by tsc\./s);
     expect(contract.properties.render.description).toContain('ComponentRenderFn');
+    expect(contract.properties.render.description).toContain('render replaces the rendered element with one the caller supplies');
   });
 
-  it('records only the kit\'s own slotted props in x-uikit.slots, not every partly checked property', () => {
+  it("records only the kit's own slotted props in x-uikit.partially_typed_props, not every partly checked property", () => {
     // Two kinds of property go unchecked by the schema, and they are
     // documented in different places: `icon` is the kit's own slot and its
-    // type lives in x-uikit.slots, while `render`/`style` are the
-    // primitive's API and their types live in their own descriptions plus an
-    // untyped_prop assumption. Both are named by the assumption pairing (see
+    // type lives in x-uikit.partially_typed_props, while `render`/`style` are
+    // the primitive's API and their types live in their own descriptions plus
+    // a `props` statement. Both are named by the props pairing (see
     // testing.ts); only the first is a slot.
     expect(partlyCheckedPropertyNames(contract)).toEqual(['icon', 'render', 'style']);
-    expect(Object.keys(contract['x-uikit'].slots)).toEqual(['icon']);
+    expect(Object.keys(contract['x-uikit'].partially_typed_props)).toEqual(['icon']);
   });
 
   it('classifies className as a declared prop, and keeps the narrower declaration', () => {
@@ -673,15 +676,18 @@ describe('overlay and extraction safety', () => {
     expect(buildMetamodel().properties).not.toHaveProperty('major');
   });
 
-  it('rejects an overlay that writes a component reference in mounted_in, pointing at what fills it', () => {
+  it('rejects an overlay that writes a component reference in mounted_in.component, pointing at what fills it', () => {
     // Filled from every other contract's accepted components, so an authored
     // copy is a second writable statement of one fact - the shape that let a
     // part name a parent whose own accepted list did not name it back.
+    // `mount_point` is one shape now (no more bare-string form): the
+    // authored half writes `container` (+ `note`) and must not write
+    // `component` at all.
     const authoredMount = {
       ...validOverlay,
-      mounted_in: ['gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~'],
+      mounted_in: [{ container: 'Card', component: 'gts.frontx.uikit.base.component.v1~frontx.uikit.component.card.v1~' }],
     };
-    expect(() => parseOverlay('button', authoredMount)).toThrow(/mounted_in.*FILLS.*accepts\.components/s);
+    expect(() => parseOverlay('button', authoredMount)).toThrow(/mounted_in\.component.*FILLS.*accepts\.components/s);
   });
 
   it('rejects an overlay that writes a container outside the kit with no reason', () => {
@@ -741,37 +747,22 @@ describe('overlay and extraction safety', () => {
     expect(() => assertOverlayReferencesRealProps('button', stale, extraction)).toThrow(/declares itself/);
   });
 
-  it('rejects an untyped statement naming a prop that does not exist', () => {
+  it('rejects a props statement naming a prop that does not exist', () => {
+    // `props` is keyed on the property itself now (the dissolved `untyped`
+    // catch-all's `about: prop` category moved one level closer to what it
+    // is about), which structurally rules out the two failure modes the old
+    // flat list needed separate refusals for: a statement naming no prop
+    // (there is no key-less entry to write), and a statement about something
+    // other than a prop (there is no `about` to mis-set). A bogus KEY is the
+    // one thing left to check.
     const stale: Overlay = {
       ...validOverlay,
-      untyped: [{ about: 'prop', prop: 'ghostIcon', claim: 'placeholder', reason: 'placeholder' }],
+      props: { ghostIcon: { states: 'placeholder', because: 'placeholder' } },
     };
     const extraction = syntheticExtraction([]);
     expect(() => assertOverlayReferencesRealProps('button', stale, extraction)).toThrow(
-      /untyped statement references the prop "ghostIcon"/,
+      /overlay props references "ghostIcon"/,
     );
-  });
-
-  it('rejects an untyped statement about a prop that names no prop at all', () => {
-    // The vocabulary's own if/then makes `prop` required for this subject, so
-    // this is the belt to that braces: an overlay bypassing the schema (a
-    // test fixture, a future caller building an Overlay by hand) still fails
-    // rather than producing a statement nothing can be paired with.
-    const stale: Overlay = {
-      ...validOverlay,
-      untyped: [{ about: 'prop', claim: 'placeholder', reason: 'placeholder' }],
-    };
-    const extraction = syntheticExtraction([]);
-    expect(() => assertOverlayReferencesRealProps('button', stale, extraction)).toThrow(/names no prop/);
-  });
-
-  it('rejects an untyped statement about anything else that names a prop', () => {
-    // The mirror of the rule above, enforced by the vocabulary: a claim about
-    // internal state or an unexposed part is not about a property, so naming
-    // one would make it pair-checkable against a property that has nothing to
-    // do with it.
-    const stale = { ...validOverlay, untyped: [{ about: 'behaviour', prop: 'icon', claim: 'placeholder', reason: 'placeholder' }] };
-    expect(() => parseOverlay('button', stale)).toThrow(/untyped/);
   });
 });
 
@@ -996,7 +987,7 @@ describe('button contract in a GTS store', () => {
     expect(result.error).toContain('not found in registry');
   });
 
-  it("fails when the surface the instance's host_element names is absent from the registry", () => {
+  it("fails when the surface the instance's forwards_to names is absent from the registry", () => {
     // Negative control for the OTHER reference gts-ts resolves itself. It sits
     // directly on an instance property, which is as deep as
     // XGtsRefValidator's walk goes, so the surface a contract names is
@@ -1005,7 +996,7 @@ describe('button contract in a GTS store', () => {
     // stripped before any validator sees it.
     const gts = registeredKitStore();
     const orphaned = { ...(JSON.parse(JSON.stringify(instance)) as Record<string, unknown>) };
-    orphaned.host_element = elementTypeRef('dom_nope');
+    orphaned.forwards_to = elementTypeRef('dom_nope');
     gts.register(orphaned);
     const result = gts.validateInstance(instance.id);
     expect(result.ok).toBe(false);

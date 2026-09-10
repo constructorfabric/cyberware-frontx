@@ -1,0 +1,26 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.example_pair.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit example pair",
+  "description": "One canonical snippet: a title and the code. `why` is present on a counter-example (an `examples.bad` entry) and absent on one to copy (`examples.good`) - a counter-example without its reason teaches the shape, not the rule, so the container enforces `why` on the bad half on top of what this type states.",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "why": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "title",
+    "code"
+  ],
+  "additionalProperties": false
+}

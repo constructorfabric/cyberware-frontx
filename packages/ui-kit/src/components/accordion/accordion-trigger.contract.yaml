@@ -28,7 +28,7 @@ invariants:
 
 anti_patterns:
   - dont: Pass an icon element through children expecting it before the chevron
-    instead: Children are the trigger's text label only; the chevron is fixed and always trailing
+    do_instead: Children are the trigger's text label only; the chevron is fixed and always trailing
 
 deprecations: {}
 
@@ -39,26 +39,31 @@ attestations:
   rtl:
     outcome: unknown
 
-untyped:
-  - about: unexposed_part
-    claim: AccordionTrigger wraps two Base UI parts, Header and Trigger
+# Internal structure this component composes that the kit does not expose
+# as a component of its own.
+unexposed_parts:
+  - part: Base UI's Accordion.Header and Accordion.Trigger
     reason: >-
       The kit's AccordionTrigger composes Base UI's Accordion.Header
       (a plain wrapper, not separately exposed by the kit) around
       Accordion.Trigger into one exported component; this contract
       describes the exported surface, not the two-part internal
       composition, so Header's own props are not part of it.
-  - about: prop
-    prop: render
-    claim: render replaces the trigger element with one the caller supplies
-    reason: >-
+
+# What each property that reaches this contract asserting nothing (or only
+# part of its shape) actually states, and why - keyed on the property
+# itself. The compiler emits both halves into that property's own
+# description, beside the `TS:` text.
+props:
+  render:
+    states: render replaces the trigger element with one the caller supplies
+    because: >-
       Base UI's render prop takes an element or a function of the trigger's
       state; neither is expressible in JSON Schema. The trailing chevron is
       rendered as a child, so it survives a replaced element.
-  - about: prop
-    prop: style
-    claim: style accepts a function of the trigger's state as well as a plain style object
-    reason: >-
+  style:
+    states: style accepts a function of the trigger's state as well as a plain style object
+    because: >-
       Base UI widens React's `CSSProperties` to
       `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object`
       would reject the function form.

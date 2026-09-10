@@ -4,5 +4,5 @@
   "metamodel": "1.0.0",
   "component": "accordion",
   "props_schema": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~",
-  "host_element": "gts.frontx.uikit.element.dom_div.v1~"
+  "forwards_to": "gts.frontx.uikit.element.dom_div.v1~"
 }

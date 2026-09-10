@@ -93,7 +93,7 @@ function contractJson(
     required,
     unevaluatedProperties: OPEN_UNEVALUATED,
     'x-gts-traits': {
-      ...(element === undefined ? {} : { host_element: elementTypeRef(element) }),
+      ...(element === undefined ? {} : { forwards_to: elementTypeRef(element) }),
       ...(examples === undefined ? {} : { examples }),
     },
   };

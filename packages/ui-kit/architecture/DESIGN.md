@@ -172,7 +172,7 @@ Contracts, metamodel instances, overlays and the harness that produces them stay
 | Abstract component type | The one type every component contract derives from, and the only one: it declares no props, states which concepts a contract's meaning block carries, and says outright that nothing is ever validated against it. | A JSON Schema 2020-12 document under the harness, with its own type identifier |
 | Metamodel type | The type every metamodel instance is an instance of: the shape of that thin record. | A JSON Schema 2020-12 document under the harness, with its own type identifier |
 | Element type | The attributes React declares for one host element, forwarded by every component that renders it. Hand-written per element kind, not derived: the attributes of a `<button>` are the same for whoever renders one, so a per-component derivation produced near-copies of one fact. Referenced, never inherited: a set shared kit-wide by every component that renders the same element is something a component uses, so a contract holds its identifier and whoever wants its assertions applies it beside the contract. What more than one kind declares, each file declares identically, checked on the compile path; whether a file is complete is deliberately unverified. A prop the primitive library declares for its own part is NOT here - that is the component's API and lives in its contract's properties. | A hand-written JSON Schema 2020-12 document under the harness, one per element kind, with its own type identifier |
-| Vocabulary type | One concept the overlay states, defined once and referenced by everything that carries it - currently thirteen. | A JSON Schema 2020-12 document under the harness, one per concept, each with its own type identifier |
+| Vocabulary type | One concept the overlay states, defined once and referenced by everything that carries it - a structured trait field's own shape, or a name/reference grammar several fields repeat. | A JSON Schema 2020-12 document under the harness, one per concept, each with its own type identifier |
 | Enrolled set | The set of components opted into contract enforcement. | A committed list of component directory names |
 
 #### One meaning document
@@ -235,17 +235,27 @@ the type system's own reference validator does not follow a reference into
 another type, and most referenced components ship no contract yet, so the
 directory is what says the kit ships that component at all.
 
-A meaning field whose shape another type owns references that type; the rest
-stay inline, because nothing else references them and a type of their own
-would buy nothing. Inline are `intent` and `typical_uses`, the two fields a
-selection card is read from; `invariants`, `anti_patterns` and `examples`,
-prose a validator reads only for shape; `withheld`, a list of prop-and-reason
-entries naming the prop the kit does not advertise and why it does not; and
-`host_element`, a single identifier-valued field read by four checks.
-`host_element` is also the one field of the block an overlay may not write -
-which element a component renders is a fact of its source - so the compiler
-supplies it, and it is absent for a component that renders no host element of
-its own.
+A meaning field whose shape another type owns references that type; only
+`intent`, `typical_uses` and `forwards_to` stay inline. `intent` and
+`typical_uses` are the two fields a selection card is read from - a sentence
+and a capped list of strings, with no shape of their own worth a type.
+`forwards_to` is the one meaning-block identifier the type system's own
+reference walk must find directly on an instance property rather than behind
+another reference, and also the one field of the block an overlay may not
+write - which element a component forwards to is a fact of its source - so
+the compiler supplies it, and it is absent for a component that forwards to
+no host element of its own.
+
+Every other structured field is a vocabulary type of its own, including the
+ones that read as prose: `invariants` and `anti_patterns` are lists of a
+named type (`invariant`, `anti_pattern`), `examples` embeds `example_pair`,
+and `withheld` embeds `withheld_prop`. What the schema cannot assert about a
+component's own properties is authored in `props`, keyed on the property
+itself (`prop_statement`, the compiler emits it into that property's
+description); what the kit composes internally but does not expose as a
+component of its own is `unexposed_parts` (`unexposed_part`) - the other half
+of "what the kit deliberately does not offer" beside `withheld`, which names
+a prop rather than a part.
 
 A component's derived type is left open rather than closed: its
 `unevaluatedProperties` carries the annotation `x-uikit-classification:
@@ -287,11 +297,15 @@ classDiagram
     class Recommendation["recommendation"]
     class Accepted["accepted_content"]
     class MountPoint["mount_point"]
-    class OutsideMount["outside_mount"]
+    class Invariant["invariant"]
+    class AntiPattern["anti_pattern"]
     class Deprecations["deprecations"]
     class PropDeprecation["prop_deprecation"]
     class Attestation["attestation"]
-    class Untyped["untyped_statement"]
+    class PropStatement["prop_statement"]
+    class UnexposedPart["unexposed_part"]
+    class ExamplePair["example_pair"]
+    class WithheldProp["withheld_prop"]
     class Family["family_membership"]
     class Slot["slot"]
     class Capability["capability"]
@@ -305,9 +319,14 @@ classDiagram
     AbstractType --> Rule : dont_use_when
     AbstractType --> Accepted : accepts
     AbstractType --> MountPoint : mounted_in (filled)
+    AbstractType --> Invariant : invariants
+    AbstractType --> AntiPattern : anti_patterns
     AbstractType --> Deprecations : deprecations
     AbstractType --> Attestation : attestations
-    AbstractType --> Untyped : untyped
+    AbstractType --> PropStatement : props
+    AbstractType --> UnexposedPart : unexposed_parts
+    AbstractType --> ExamplePair : examples
+    AbstractType --> WithheldProp : withheld
     AbstractType --> Family : family_membership
     AbstractType --> Slot : slots
     AbstractType --> Capability : capabilities
@@ -316,7 +335,6 @@ classDiagram
     Recommendation ..> Contract : the kit component to use
     Accepted ..> Contract : accepted component
     MountPoint ..> Contract : filled from another contract's accepts
-    MountPoint --> OutsideMount : container outside the kit
     Deprecations --> PropDeprecation : per prop
     Family ..> Contract : members, filled on the root
 ```
@@ -330,15 +348,19 @@ classDiagram
 | Element type | nothing; component contracts and their instances hold its identifier | one type per element kind, referenced by one or more contracts - a committed file no contract names fails a described component's conformance suite | hand-written; whoever adds an element kind decides what that element accepts |
 | dont_use_when_rule | a recommendation | exactly one per rule; at least one rule per contract | the overlay author |
 | recommendation | a component contract, optionally | zero or one component per recommendation; `target` always | the overlay author, the reference resolved by the conformance suite |
-| accepted_content | component contracts | required, exactly one per contract; `components`/`text` only where `content` is `specified`; `icons_via` names one of the component's own props | the overlay author, prop name and references checked against the extraction and the kit |
-| mount_point | a component contract, or a container outside the kit | zero or more; absent when there is neither | the compiler for a component reference, from every other contract's accepted components; the overlay author for a container outside the kit |
-| outside_mount | nothing | zero or more per contract | the overlay author |
+| accepted_content | component contracts | required, exactly one per contract; `components`/`text` only where `content` is `specified`; `icons_via` names one of the component's own props, and only where `content` is `specified` | the overlay author, prop name and references checked against the extraction and the kit |
+| mount_point | a component contract, optionally | zero or more; absent when there is none; `container` always, `component` filled by the compiler from every other contract's accepted components, `note` authored on the half `component` leaves unfilled | the compiler fills `container`+`component` for a kit component; the overlay author writes `container`+`note` for a container outside the kit |
+| invariant | nothing | zero or more per contract | the overlay author |
+| anti_pattern | nothing | zero or more per contract | the overlay author |
 | deprecations | prop deprecations | zero or more, keyed by prop name | the overlay author |
-| prop_deprecation | nothing; `replacement` names one of the component's own props | exactly one per deprecated prop | the overlay author, prop name checked against the extraction |
-| attestation | nothing | one per claim; the map is open, so a claim name the kit adds validates without a schema change | the overlay author |
-| untyped_statement | nothing | zero or more per contract; `about` is drawn from a closed list, and the one about a property names it, checked against the extraction and paired both ways against the properties the schema cannot type | the overlay author |
+| prop_deprecation | nothing; `replacement` names one of the component's own props | exactly one per deprecated prop | the overlay author, prop name and replacement checked against the extraction |
+| attestation | nothing | one per claim; the map is open beyond the kit's two required claims, so a claim name the kit adds validates without a schema change | the overlay author |
+| prop_statement | nothing; keyed by one of the component's own properties | zero or more per contract, keyed on the property; required for every property the schema does not state in full and forbidden for one it states completely, paired both ways against the compiled properties | the overlay author, key checked against the extraction; the compiler emits it into that property's own description |
+| unexposed_part | nothing | zero or more per contract | the overlay author |
+| example_pair | nothing | one or more per `good`/`bad` list; a `bad` entry additionally requires `why` | the overlay author |
+| withheld_prop | nothing; `prop` names one of the primitive's own props | zero or more per contract | the overlay author, prop name checked against the extraction |
 | family_membership | component contracts | one membership per member; a root carries the filled member list, a part carries none; exactly one root per family name | the overlay author for the family token and the role, the compiler for the members |
-| slot | nothing; `prop` names one of the component's own props | zero or more per contract | the overlay author, prop name checked against the extraction |
+| slot | nothing; `prop` names one of the component's own props | zero or more per contract; `typed_by` present only where the schema cannot state the type | the overlay author, prop name checked against the extraction |
 | capability | nothing; `enabled_by` names one of the component's own props | zero or more per contract | the overlay author, prop name checked against the extraction |
 | companion | nothing; `export` names another export of the component's own module | zero or more per contract | the overlay author |
 

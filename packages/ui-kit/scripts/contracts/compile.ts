@@ -116,44 +116,29 @@ export interface Attestation {
   by?: string;
 }
 
-// What an `untyped` statement is about. A closed list, because a statement
-// with no subject is a paragraph: four entries said "JSON Schema has no
-// notion of a generic type parameter" in four different sentences across
-// three overlays, and nothing could tell that family of claim apart from
-// "this part is composed of two primitives" or "its mount point is outside
-// the kit". With a subject, a reader (and the conformance suite) can ask
-// whether every prop the schema cannot type has an entry, which is exactly
-// the question the four repeated sentences were answering by accident.
-export type UntypedAbout =
-  // A prop that reaches `properties` asserting nothing - a generic, a
-  // function, a live object, a ReactNode. `prop` names it, and the pairing is
-  // checked both ways by the conformance suite.
-  | 'prop'
-  // Internal structure of the primitive underneath that the kit does not
-  // expose as a component of its own - a Header glued onto a Trigger inside
-  // one exported component. A prop the kit does not advertise is not this:
-  // `withheld` names that prop and carries its own reason.
-  | 'unexposed_part'
-  // A mount point outside the kit, where `mounted_in` holds an outside_mount
-  // rather than a component reference.
-  | 'outside_mount'
-  // Anything the props type never carries: internal state, a runtime
-  // relationship, a fact about the component rather than about its schema.
-  | 'behaviour';
+// One prop's statement: what it states and why nothing checks it, the two
+// halves the retired `untyped` catch-all's `about: prop` category carried as
+// `claim`/`reason`. Keyed on the prop itself now (the overlay's `props` map)
+// rather than living in a flat list that named the prop as one more field -
+// the same fact, one level closer to the property it is about. The compiler
+// emits it into that property's own `description`, beside the `TS:` text.
+export interface PropStatement {
+  states: string;
+  because: string;
+}
 
-// A claim the schema cannot make, recorded next to why. Modeled as its own
-// top-level list rather than as another attestation: an attestation is one
-// word, this needs a reason a reader can check, and a subject so a family of
-// statements can be checked against the contract it is about instead of read
-// one at a time.
-export interface UntypedStatement {
-  about: UntypedAbout;
-  claim: string;
+// Internal structure of the primitive underneath that the kit does not
+// expose as a component of its own - a Header glued onto a Trigger inside
+// one exported component. A prop the kit does not advertise is not this:
+// `withheld` names that prop and carries its own reason; this is the other
+// half of "what the kit deliberately does not offer" - not a prop, a PART.
+export interface UnexposedPart {
+  // Free text: the extractor has no part list to check this against for a
+  // composition this shallow (JSX in the component's own render body, not a
+  // props-type heritage relationship). Checked against the primitive's own
+  // part list wherever a future extractor knows one.
+  part: string;
   reason: string;
-  // Required for, and only legal on, `about: prop`: the prop the claim is
-  // about, checked against the extracted prop list the way
-  // `deprecations.props` keys are.
-  prop?: string;
 }
 
 // Where a "don't" sends the reader instead. `target` is what a human acts on
@@ -192,27 +177,22 @@ export interface AcceptedContent {
   icons_via?: string;
 }
 
-// A mount point outside the kit: authored, because there is no contract to
-// derive it from. Both halves are required - the container is what a reader
-// acts on, and the note is why no kit component fits, which is the whole
-// reason this shape exists rather than the nearest component standing in for
-// one.
-export interface OutsideMount {
+// One place a component may be mounted, ONE shape whichever way it is known -
+// the same move `recommendation` already made for "what to use instead":
+// resolvability is an attribute of the fact, not a boundary between two
+// kinds of fact. `container` is what a reader acts on either way - a kit
+// component's own export name, or a container outside the kit named as
+// plainly as the reader will have to act on it. `component` is FILLED by the
+// compiler from every other contract's `accepts.components`, so the two
+// directions of one nesting relationship cannot disagree; its absence is the
+// honest statement that this mount point is not a kit component. `note` is
+// authored on the outside-the-kit half, for why no kit component fits and
+// what that container hands the component - a live instance, a render
+// callback's arguments.
+export interface MountPoint {
   container: string;
-  note: string;
-}
-
-// One place a component may be mounted: a kit component by reference (FILLED
-// by the compiler from every other contract's accepted components) or a
-// container outside the kit (authored).
-export type MountPoint = string | OutsideMount;
-
-// Narrows a mount point to the authored form. A reader that resolves
-// references (the per-component conformance suites, a future registry check)
-// uses this to skip what was never a reference, instead of failing a grammar
-// check on it.
-export function isOutsideMount(entry: MountPoint): entry is OutsideMount {
-  return typeof entry === 'object';
+  component?: string;
+  note?: string;
 }
 
 // Membership in a compound component's family (Accordion, its Item, Trigger
@@ -244,17 +224,23 @@ export interface FamilyMembership {
 // than a broken reference.
 export interface Slot {
   prop: string;
-  typed_by: string;
+  // Optional: a slot is a prop through which the consumer supplies content,
+  // regardless of whether that content happens to be typeable - `typed_by`
+  // is present only when the schema cannot state the type, the case
+  // `describeUnexpressedType` writes prose for. A slot the schema DOES
+  // state in full is still a slot; it just needs no prose pointer.
+  typed_by?: string;
   description: string;
 }
 
 // Something the component can do that a consumer turns on, with the prop that
 // turns it on. Separate from a slot because the consumer supplies no value
-// here - it flips a switch and the component does the rest.
+// here - it flips a switch and the component does the rest, which is why
+// `typed_by` has no place here at all: the interesting fact is the enabling
+// prop, never a type to name.
 export interface Capability {
   name: string;
   enabled_by: string;
-  typed_by: string;
   description: string;
 }
 
@@ -299,11 +285,18 @@ export interface Overlay {
   // second writable statement of one fact.
   mounted_in?: MountPoint[];
   invariants: { id: string; text: string }[];
-  anti_patterns: { dont: string; instead: string }[];
+  // `do_instead` (never `instead` - that word stays the recommendation of a
+  // DIFFERENT component, in `dont_use_when`): the fix for an anti-pattern
+  // stays inside this component's own API.
+  anti_patterns: { dont: string; do_instead: string }[];
   deprecations: { props?: Record<string, { since: string; replacement: string; hint: string }> };
   // Open by construction: the claim names are the kit's own and grow with it.
   attestations: Record<string, Attestation>;
-  untyped?: UntypedStatement[];
+  // A statement about one of THIS component's own props: what it states and
+  // why nothing checks it. Required for every prop the schema does not state
+  // in full and forbidden for one it does - the compiler emits it into that
+  // property's own description, checked both ways by the conformance suite.
+  props?: Record<string, PropStatement>;
   examples: Examples;
   // Absent for every component that is not part of a compound one (Button,
   // ...): a family only exists where a directory's public surface is more
@@ -324,6 +317,10 @@ export interface Overlay {
   // that it is. The reason travels with the name because the name alone
   // leaves every later reader to rediscover why the prop is gone.
   withheld?: WithheldProp[];
+  // Internal structure of the primitive underneath that the kit does not
+  // expose as a component of its own - the other half of "what the kit
+  // deliberately does not offer" beside `withheld`.
+  unexposed_parts?: UnexposedPart[];
 }
 
 // The contract instance: a thin typed record that NAMES the contract rather
@@ -347,11 +344,12 @@ export interface ContractInstance {
   metamodel: string;
   component: string;
   props_schema: string;
-  // The surface of the host element this component renders, held as an id
-  // exactly as the contract holds it - the same reference, so the two halves
-  // of one artifact name one surface. Absent for a component that renders no
-  // host element of its own.
-  host_element?: string;
+  // The surface of the host element this component forwards to, held as an
+  // id exactly as the contract holds it - the same reference, so the two
+  // halves of one artifact name one surface. Absent for a component that
+  // forwards to no host element of its own (DataTable, which renders its
+  // Table internally).
+  forwards_to?: string;
 }
 
 export interface ContractProperty {
@@ -359,8 +357,8 @@ export interface ContractProperty {
   // a render prop. The property is still declared (with annotations only, no
   // assertions) so that `unevaluatedProperties: false` counts it as
   // evaluated and lets it through - a contract that rejected `icon` would be
-  // wrong, not strict. Its real type stays in x-uikit.slots, where the lint
-  // and tsc read it. PRESENT, with a description beside it, where the type
+  // wrong, not strict. Its real type stays in x-uikit.partially_typed_props,
+  // where the lint and tsc read it. PRESENT, with a description beside it, where the type
   // states a kind but not a shape: `columns` is an array of column defs, and
   // "array" is the half of that Ajv can hold.
   type?: string;
@@ -408,7 +406,8 @@ const SEMANTIC_FIELDS = [
   'anti_patterns',
   'deprecations',
   'attestations',
-  'untyped',
+  'props',
+  'unexposed_parts',
   'examples',
   'family_membership',
   'slots',
@@ -432,7 +431,8 @@ const SEMANTIC_FIELD_TARGETS = {
   anti_patterns: 'x-gts-traits',
   deprecations: 'x-gts-traits',
   attestations: 'x-gts-traits',
-  untyped: 'x-gts-traits',
+  props: 'x-gts-traits',
+  unexposed_parts: 'x-gts-traits',
   examples: 'x-gts-traits',
   family_membership: 'x-gts-traits',
   slots: 'x-gts-traits',
@@ -457,14 +457,14 @@ type GtsTraitsFields = FieldsFor<'x-gts-traits'>;
 
 // Validator-read fields the COMPILER writes rather than the overlay: read off
 // the extraction, so an overlay may not author them (buildOverlaySchema
-// removes them for exactly that reason). `host_element` is the only one -
+// removes them for exactly that reason). `forwards_to` is the only one -
 // which element a component renders is a fact of its source, not a claim an
 // author gets to make - and it is listed here rather than in SEMANTIC_FIELDS
 // because that list is what an overlay may say. Its definition still lives in
 // the metamodel like every other x-gts-traits field, so the
 // x-gts-traits-schema and the metamodel reach one shape through one place.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema:p2:inst-ts-host
-const COMPILER_WRITTEN_TRAITS = ['host_element'] as const;
+const COMPILER_WRITTEN_TRAITS = ['forwards_to'] as const;
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema:p2:inst-ts-host
 
 export interface CompiledContract {
@@ -478,8 +478,8 @@ export interface CompiledContract {
   // (store.findParentRef), so a single entry is also the only shape in which
   // the id and the schema body cannot disagree about who the parent is. The
   // host element's surface used to sit here as a second parent; it is now a
-  // reference the contract HOLDS (x-gts-traits.host_element) - see
-  // hostElementRef below.
+  // reference the contract HOLDS (x-gts-traits.forwards_to) - see
+  // forwardsToRef below.
   allOf: [SchemaRef];
   properties: Record<string, ContractProperty>;
   // Own props whose extraction reported `optional: false`. A prop the host
@@ -497,14 +497,14 @@ export interface CompiledContract {
   // come from, and every fact the extraction could not read.
   'x-uikit': {
     metamodel: string;
-    slots: Record<string, { typeText: string; optional: boolean }>;
+    partially_typed_props: Record<string, { typeText: string; optional: boolean }>;
     variant_sources: string[];
     cannot_extract: string[];
   } & Pick<Overlay, UikitFields>;
   // Everything asserted about the component: what its author wrote, plus the
   // two fields the compiler fills from other authors' assertions
   // (`mounted_in`'s component references, a family root's `members`) and the
-  // one it reads off the source (`host_element`). Checked by gts-ts against
+  // one it reads off the source (`forwards_to`). Checked by gts-ts against
   // base.component.json's x-gts-traits-schema (GTS.validateEntity ->
   // GtsStore.validateSchemaTraits) - see buildGtsTraitsSchema. An optional
   // field an overlay omits is genuinely absent here, not merely `undefined`:
@@ -513,7 +513,7 @@ export interface CompiledContract {
   'x-gts-traits': Omit<Pick<Overlay, GtsTraitsFields>, 'mounted_in' | 'family_membership'> & {
     mounted_in?: MountPoint[];
     family_membership?: FamilyMembership;
-    host_element?: string;
+    forwards_to?: string;
   };
 }
 
@@ -680,7 +680,7 @@ export function registerContractTypes(register: (entity: Record<string, unknown>
 // contract and the instance decide it here, once, rather than each applying
 // its own version of the rule and disagreeing the day one of them changes.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
-export function hostElementFor(extraction: ComponentExtraction): string | undefined {
+export function forwardsTo(extraction: ComponentExtraction): string | undefined {
   if (extraction.forwardedProps.length === 0 || extraction.elementKind === undefined) return undefined;
   return elementTypeRef(domElementToken(extraction.elementKind));
 }
@@ -747,19 +747,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-export function hostElementRef(contract: unknown): string | undefined {
+export function forwardsToRef(contract: unknown): string | undefined {
   if (!isRecord(contract)) return undefined;
   const traits = contract['x-gts-traits'];
   if (!isRecord(traits)) return undefined;
-  const ref = traits.host_element;
+  const ref = traits.forwards_to;
   return typeof ref === 'string' ? ref : undefined;
 }
 
 // The element token that reference carries - `dom_button`, which is also the
 // name of the committed file under scripts/contracts/elements/, so the
 // reference and the file are one identity.
-export function hostElementToken(contract: unknown): string | undefined {
-  const ref = hostElementRef(contract);
+export function forwardsToToken(contract: unknown): string | undefined {
+  const ref = forwardsToRef(contract);
   return ref === undefined ? undefined : elementRefToken(ref);
 }
 
@@ -768,7 +768,7 @@ export function hostElementToken(contract: unknown): string | undefined {
 // swallowed here - loadElementSurface refuses by name, which is the same
 // refusal a compile gets.
 export function loadHostSurface(contract: unknown): Record<string, unknown> | undefined {
-  const token = hostElementToken(contract);
+  const token = forwardsToToken(contract);
   return token === undefined ? undefined : loadElementSurfaceByToken(token);
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-element-surface:p1:inst-es-compose
@@ -843,16 +843,23 @@ function elementSurfacePropertyTypes(elementSurface: Record<string, unknown>): M
 // `required` and `type` are reserved for the same reason: they are either
 // compiler output or a JSON-Schema keyword an author might type by habit, and
 // either way the overlay writing one is a mistake worth naming specifically
-// rather than folding into "unknown key".
+// rather than folding into "unknown key". `axes`, `defaults` and `variants`
+// guard the same mistake in the other direction - the raw extraction shape an
+// author might paste in by habit while debugging, rather than the vocabulary
+// this file actually defines.
 //
-// `slots` is NOT reserved, and the two lists that share the word are one
-// concept seen from both sides: x-uikit.slots is every prop whose type no
-// JSON Schema shape can express, extracted with the checker's own printed
-// type, while the authored `slots` are the ones the kit declares as extension
-// surface, with the type a consumer has to satisfy. The second is a subset of
-// the first, in the block that carries authored facts.
+// `props` is deliberately NOT here, and `slots` never needed to be: the
+// machine's own per-property record used to share the word `slots` with the
+// authored extension-surface field of the same name, which is why the two
+// were told apart by which BLOCK they live in rather than by name; renaming
+// the machine's record to `x-uikit.partially_typed_props` retired that
+// collision outright (see fieldsTargeting's own comment). `props` is the
+// SAME kind of field: an author writes `props: { <name>: {...} }` to state
+// what one of the component's own properties means, and nothing machine-
+// owned answers to that name any more either. A pasted debug dump under
+// either key now fails the shape check below instead of a blanket ban.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-machine-owned
-const MACHINE_OWNED = ['axes', 'props', 'defaults', 'variants', 'required', 'type'];
+const MACHINE_OWNED = ['axes', 'defaults', 'variants', 'required', 'type'];
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-machine-owned
 
 // An empty property schema is not neutral to a reader: `{}` in a props
@@ -1109,32 +1116,27 @@ export const buildVocabularyTypes = memoizeSchema((): Record<string, unknown>[] 
       },
     ),
     vocabularyType(
-      'outside_mount',
-      'UiKit outside mount',
-      'A mount point outside the kit: the one entry in `mounted_in` an overlay writes, because there is no contract to derive it from. Both halves are required - the container is what a reader acts on, and the note is why no kit component fits, which is the whole reason this shape exists rather than the nearest component standing in for one.',
+      'mount_point',
+      'UiKit mount point',
+      'One place this component may be mounted, ONE shape whichever way it is known - resolvability is an attribute of the fact, not a boundary between two kinds of fact (the same move `recommendation` already made for "what to use instead"). `container` is required and is what a reader acts on either way: a kit component\'s own export name when `component` is filled, or a container outside the kit named as plainly as the reader will have to act on it when it is not. `component` is FILLED by the compiler from every other contract\'s accepted components, so the two directions of one nesting relationship cannot disagree - an overlay may not author it, and one that tries still fails the compile. `note` is authored for the outside-the-kit case: why no kit component fits, and what that container hands the component - a live instance, a render callback\'s arguments.',
       {
         type: 'object',
         properties: {
           container: {
             type: 'string',
             minLength: 1,
-            description: 'Where the component is mounted, named as plainly as the reader will have to act on it - the kit ships no component for it, so there is no id to resolve.',
+            description: 'What a reader acts on: a kit component\'s own export name (filled by the compiler alongside `component`), or a container outside the kit, named as plainly as the reader will have to act on it.',
           },
+          component: componentReferenceRef(),
           note: {
             type: 'string',
             minLength: 1,
-            description: 'Why the mount point is outside the kit, and what that container hands the component - a live instance, a render callback\'s arguments.',
+            description: 'Why the mount point is outside the kit, and what that container hands the component - a live instance, a render callback\'s arguments. Absent on a filled mount point: the container IS the explanation.',
           },
         },
-        required: ['container', 'note'],
+        required: ['container'],
         additionalProperties: false,
       },
-    ),
-    vocabularyType(
-      'mount_point',
-      'UiKit mount point',
-      'One place this component may be mounted: a kit component by reference, or a container outside the kit. The first is FILLED by the compiler from every other contract\'s accepted components, so the two directions of one nesting relationship cannot disagree; the second is authored, because nothing in the kit knows about it. One field answers "where may this be mounted" whichever the answer is.',
-      { oneOf: [componentRefSchema(), { $ref: vocabularyTypeId('outside_mount') }] },
     ),
     vocabularyType(
       'prop_deprecation',
@@ -1177,30 +1179,104 @@ export const buildVocabularyTypes = memoizeSchema((): Record<string, unknown>[] 
       },
     ),
     vocabularyType(
-      'untyped_statement',
-      'UiKit untyped statement',
-      'One claim this schema cannot make, with the reason nothing asserts it. `about` is required and drawn from a closed list, so a family of statements can be checked against the contract it is about rather than read one at a time: the conformance suite asks whether every prop the schema cannot type has an entry. `about: prop` additionally names the prop, checked against the extracted prop list the way a deprecation\'s key is.',
+      'prop_statement',
+      'UiKit prop statement',
+      'What one of this component\'s own properties states and why nothing checks it further - the retired `untyped` catch-all\'s `about: prop` category, keyed on the property itself instead of naming it inside a flat list. Required for every prop the schema does not state in full (partly typed, or description-only) and forbidden for one it states completely: a claim about a fully typed prop would be a claim about a different contract, the same pairing the old list was checked against, now over the overlay\'s `props` map and the property it is a key of.',
       {
         type: 'object',
         properties: {
-          about: {
+          states: {
             type: 'string',
-            enum: ['prop', 'unexposed_part', 'outside_mount', 'behaviour'],
-            description:
-              'prop: a property that reaches the contract asserting nothing - a generic, a function, a live object, a React node. unexposed_part: internal structure of the primitive underneath that the kit does not expose as a component of its own; a prop the kit does not advertise is named in `withheld`, with its own reason, instead. outside_mount: a mount point outside the kit, which `mounted_in` carries as an outside_mount rather than as a component reference. behaviour: anything the props type never carries - internal state, a runtime relationship, a fact about the component rather than about its schema.',
+            minLength: 1,
+            description: 'What the property actually holds, in the words a reader needs before the schema\'s own partial shape misleads them - an array of the caller\'s own generic parameter, a live object, a function.',
           },
-          claim: { type: 'string', minLength: 1 },
-          reason: { type: 'string', minLength: 1 },
-          prop: propNameRef(),
+          because: {
+            type: 'string',
+            minLength: 1,
+            description: 'Why nothing checks it further: no JSON Schema shape for a generic, a live object, a function, or a type this contract has no business re-typing.',
+          },
         },
-        required: ['about', 'claim', 'reason'],
+        required: ['states', 'because'],
         additionalProperties: false,
-        // Instance-type-scoped keywords throughout, so this applies to a real
-        // statement object and is vacuously true of anything else - the same
-        // property nullableGtsTraitsProperty relies on for an absent field.
-        if: { properties: { about: { const: 'prop' } }, required: ['about'] },
-        then: { required: ['about', 'claim', 'reason', 'prop'] },
-        else: { not: { required: ['prop'] } },
+      },
+    ),
+    vocabularyType(
+      'unexposed_part',
+      'UiKit unexposed part',
+      'Internal structure of the primitive underneath that the kit does not expose as a component of its own - a Header glued onto a Trigger inside one exported component. The other half of "what the kit deliberately does not offer" beside `withheld`: that field names a PROP the kit does not advertise, this names a PART.',
+      {
+        type: 'object',
+        properties: {
+          part: {
+            type: 'string',
+            minLength: 1,
+            description: 'The internal part, named as plainly as the primitive underneath names it. Free text: checked against the primitive\'s own part list wherever a future extractor knows one, and nothing here yet does.',
+          },
+          reason: { type: 'string', minLength: 1 },
+        },
+        required: ['part', 'reason'],
+        additionalProperties: false,
+      },
+    ),
+    vocabularyType(
+      'invariant',
+      'UiKit invariant',
+      'One fact about the component that its props type never carries - internal state, a runtime relationship - stated with a stable id a lint finding or an eval can cite.',
+      {
+        type: 'object',
+        properties: {
+          id: invariantIdSchema(),
+          text: { type: 'string', minLength: 1 },
+        },
+        required: ['id', 'text'],
+        additionalProperties: false,
+      },
+    ),
+    vocabularyType(
+      'anti_pattern',
+      'UiKit anti-pattern',
+      'One way this component gets misused, with the fix. `do_instead` (never `instead` - that word stays the recommendation of a DIFFERENT component in `dont_use_when`): the fix here stays inside this component\'s own API, which is the one-word-one-concept distinction the two fields draw.',
+      {
+        type: 'object',
+        properties: {
+          dont: { type: 'string', minLength: 1 },
+          do_instead: { type: 'string', minLength: 1 },
+        },
+        required: ['dont', 'do_instead'],
+        additionalProperties: false,
+      },
+    ),
+    vocabularyType(
+      'example_pair',
+      'UiKit example pair',
+      'One canonical snippet: a title and the code. `why` is present on a counter-example (an `examples.bad` entry) and absent on one to copy (`examples.good`) - a counter-example without its reason teaches the shape, not the rule, so the container enforces `why` on the bad half on top of what this type states.',
+      {
+        type: 'object',
+        properties: {
+          title: { type: 'string', minLength: 1 },
+          code: { type: 'string', minLength: 1 },
+          why: { type: 'string', minLength: 1 },
+        },
+        required: ['title', 'code'],
+        additionalProperties: false,
+      },
+    ),
+    vocabularyType(
+      'withheld_prop',
+      'UiKit withheld prop',
+      'One prop of the primitive underneath that the kit does not advertise, and why it is not. Both halves are required: the name is what the compiler checks against the extraction, and the reason is what tells a reader a deliberate omission from a forgotten one.',
+      {
+        type: 'object',
+        properties: {
+          prop: propNameRef(),
+          reason: {
+            type: 'string',
+            minLength: 1,
+            description: 'Why the kit does not advertise this prop: the component fact that makes offering it wrong, not a restatement of the name.',
+          },
+        },
+        required: ['prop', 'reason'],
+        additionalProperties: false,
       },
     ),
     vocabularyType(
@@ -1233,24 +1309,27 @@ export const buildVocabularyTypes = memoizeSchema((): Record<string, unknown>[] 
     vocabularyType(
       'slot',
       'UiKit slot',
-      "A prop the consumer supplies whose type this schema cannot assert - a growth point declared at the component level instead of enumerating every prop a plugin author might touch (DataTable's `columns` accepts arbitrary third-party ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed).",
+      "A prop through which the consumer supplies content, declared at the component level as extension surface - a growth point named once instead of enumerating every prop a plugin author might touch (DataTable's `columns` accepts arbitrary third-party ColumnDefs, whose own render functions are opaque to a JSON Schema extractor regardless of how many are listed). Regardless of typeability: a slot is defined by what it IS (a prop the consumer supplies), not by whether the schema happens to be able to state its type.",
       {
         type: 'object',
         properties: {
           prop: propNameRef(),
           // Free text, not a reference: the governing type usually lives in
           // a third-party package this contract has no business re-typing.
+          // Optional: present only when the schema cannot state the type in
+          // full - a slot the schema DOES state completely still IS one, it
+          // simply needs no prose pointer beside it.
           typed_by: { type: 'string', minLength: 1 },
           description: { type: 'string', minLength: 1 },
         },
-        required: ['prop', 'typed_by', 'description'],
+        required: ['prop', 'description'],
         additionalProperties: false,
       },
     ),
     vocabularyType(
       'capability',
       'UiKit capability',
-      'Something this component can do that a consumer turns on, with the prop that turns it on. Not a slot: the consumer supplies no value here, it flips a switch and the component does the rest - which is why the interesting fact is the enabling prop rather than a type.',
+      'Something this component can do that a consumer turns on, with the prop that turns it on. Not a slot: the consumer supplies no value here, it flips a switch and the component does the rest - which is why the interesting fact is the enabling prop and `typed_by` has no place here at all, not even an optional one.',
       {
         type: 'object',
         properties: {
@@ -1260,10 +1339,9 @@ export const buildVocabularyTypes = memoizeSchema((): Record<string, unknown>[] 
             description: 'The capability\'s own token - `row_selection`, not a sentence.',
           },
           enabled_by: propNameRef(),
-          typed_by: { type: 'string', minLength: 1 },
           description: { type: 'string', minLength: 1 },
         },
-        required: ['name', 'enabled_by', 'typed_by', 'description'],
+        required: ['name', 'enabled_by', 'description'],
         additionalProperties: false,
       },
     ),
@@ -1314,9 +1392,9 @@ export function vocabularyTypeFileName(type: Record<string, unknown>): string {
 // owns the concept (buildVocabularyTypes above), so taking one is a copy of
 // the reference rather than of the shape.
 //
-// `host_element` is here too, and is the one field an overlay may not write:
-// which element a component renders is a fact of its source. It is listed
-// outside `required` because a component that renders none has nothing to say.
+// `forwards_to` is here too, and is the one field an overlay may not write:
+// which element a component forwards to is a fact of its source. It is listed
+// outside `required` because a component that forwards to none has nothing to say.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema:p2:inst-ts-fields
 export const buildTraitFields = memoizeSchema((): { properties: Record<string, Record<string, unknown>>; required: string[] } => ({
   properties: {
@@ -1349,28 +1427,12 @@ export const buildTraitFields = memoizeSchema((): { properties: Record<string, R
       },
       invariants: {
         type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            id: invariantIdSchema(),
-            text: { type: 'string', minLength: 1 },
-          },
-          required: ['id', 'text'],
-          additionalProperties: false,
-        },
+        items: { $ref: vocabularyTypeId('invariant') },
       },
       anti_patterns: {
         type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            dont: { type: 'string', minLength: 1 },
-            instead: { type: 'string', minLength: 1 },
-          },
-          required: ['dont', 'instead'],
-          additionalProperties: false,
-        },
-        $comment: "`instead` here is prose about this component's own API, not a component type ref - the fix stays inside the component.",
+        items: { $ref: vocabularyTypeId('anti_pattern') },
+        $comment: "`do_instead` here is prose about this component's own API, not a component type ref - the fix stays inside the component. `instead` stays the word for a DIFFERENT component (dont_use_when's recommendation).",
       },
       deprecations: { $ref: vocabularyTypeId('deprecations') },
       attestations: {
@@ -1388,41 +1450,48 @@ export const buildTraitFields = memoizeSchema((): { properties: Record<string, R
         description:
           "What this contract claims about itself, one entry per claim. `a11y` and `rtl` are the kit's own core claims and every component states both; a claim beyond those is present only when the component actually makes it - its absence means \"not claimed\", which is a different fact from an attestation whose outcome is `unknown` (\"considered, not established\"). Open beyond the two required keys by construction - the claim names are the kit's own and grow with it - which is why the attestation type is referenced from additionalProperties rather than from a fixed property list, and why no key inside it is reserved for anything else.",
       },
-      untyped: {
+      // What each of THIS component's own properties states and why nothing
+      // checks it further, keyed by the property itself - the dissolved
+      // `untyped` catch-all's `about: prop` category, one level closer to
+      // what it is about. A statement is required for every property the
+      // schema does not state in full (partly typed or description-only) and
+      // forbidden for one it states completely - checked by the conformance
+      // suite (findUntypedPropMismatches), the same pairing the old list was
+      // held to. `propertyNames` reuses the prop-name grammar because a key
+      // here IS a prop name.
+      props: {
+        type: 'object',
+        additionalProperties: { $ref: vocabularyTypeId('prop_statement') },
+        propertyNames: { $ref: vocabularyTypeId('prop_name') },
+        description:
+          "What each property that reaches this contract asserting nothing (or only part of its shape) actually states, and why nothing checks it further - a generic, a function, a live object, a React node. Absent for a component whose whole surface the provider-safe subset can express, which no described component is today.",
+      },
+      // Internal structure of the primitive underneath that the kit does not
+      // expose as a component of its own - the dissolved `untyped`
+      // catch-all's `about: unexposed_part` category. The other half of
+      // "what the kit deliberately does not offer" beside `withheld`: that
+      // field names a PROP the kit does not advertise, this names a PART.
+      unexposed_parts: {
         type: 'array',
-        items: { $ref: vocabularyTypeId('untyped_statement') },
+        items: { $ref: vocabularyTypeId('unexposed_part') },
         minItems: 1,
         description:
-          'Everything this schema cannot assert, each entry saying what it is about and why nothing asserts it. Absent for a component whose whole surface the provider-safe subset can express, which no described component is today.',
+          'Internal structure of the primitive underneath that this kit does not expose as a component of its own, each with why. Absent for a component that composes nothing hidden, which is most of the kit.',
       },
       examples: {
         type: 'object',
         properties: {
           good: {
             type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                title: { type: 'string', minLength: 1 },
-                code: { type: 'string', minLength: 1 },
-              },
-              required: ['title', 'code'],
-              additionalProperties: false,
-            },
+            items: { $ref: vocabularyTypeId('example_pair') },
             minItems: 1,
           },
           bad: {
             type: 'array',
             items: {
-              type: 'object',
-              properties: {
-                title: { type: 'string', minLength: 1 },
-                code: { type: 'string', minLength: 1 },
-                why: { type: 'string', minLength: 1 },
-              },
-              required: ['title', 'code', 'why'],
-              additionalProperties: false,
-              $comment: '`why` is required: a counter-example without its reason teaches pattern-matching, not the rule.',
+              // `why` on top of what example_pair states: a counter-example
+              // without its reason teaches pattern-matching, not the rule.
+              allOf: [{ $ref: vocabularyTypeId('example_pair') }, { type: 'object', required: ['why'] }],
             },
             minItems: 1,
           },
@@ -1439,7 +1508,7 @@ export const buildTraitFields = memoizeSchema((): { properties: Record<string, R
         items: { $ref: vocabularyTypeId('slot') },
         minItems: 1,
         description:
-          "Props the consumer fills whose type this schema cannot assert, declared at the component level with the type that governs them. Absent for a component with no such surface - Button, Accordion, most of the kit. The complement in x-uikit.slots is the machine's own list of every property that asserts nothing, with the checker's printed type; this is the subset the kit declares as extension surface, with the type a consumer has to satisfy.",
+          "Props through which the consumer supplies content, declared at the component level as the kit's own authored extension surface - regardless of whether the schema happens to be able to type them. Absent for a component with no such surface - Button, Accordion, most of the kit. The complement in x-uikit.partially_typed_props is the machine's own list of every property that asserts nothing (or only part of its shape), with the checker's printed type; this is the subset the kit deliberately declares as extension surface, which a consumer acts on.",
       },
       capabilities: {
         type: 'array',
@@ -1459,30 +1528,18 @@ export const buildTraitFields = memoizeSchema((): { properties: Record<string, R
         type: 'array',
         description:
           "Props of the primitive underneath that this kit does not advertise, so they are left out of the contract's own properties - each with the reason it is not advertised, because a bare name leaves every later reader to rediscover why the prop is gone. Every `prop` is checked against the extracted prop list - a name the primitive no longer declares fails the compile rather than withholding nothing - and may not name a prop the component declares itself, which would be the overlay asking the compiler to drop what the source states. Absent for a component that advertises everything it forwards, which is most of them.",
-        items: {
-          type: 'object',
-          properties: {
-            prop: propNameRef(),
-            reason: {
-              type: 'string',
-              minLength: 1,
-              description: 'Why the kit does not advertise this prop: the component fact that makes offering it wrong, not a restatement of the name.',
-            },
-          },
-          required: ['prop', 'reason'],
-          additionalProperties: false,
-        },
+        items: { $ref: vocabularyTypeId('withheld_prop') },
         minItems: 1,
       },
       // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema:p2:inst-ts-withheld
       // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema:p2:inst-ts-host
-      host_element: {
+      forwards_to: {
         type: 'string',
         pattern: elementTypeRefPattern(),
         'x-gts-ref': ELEMENT_REF_TARGET,
         description:
-          "GTS id of the hand-written surface for the host element this component renders - what it forwards to that element. HELD as an id, not composed into the schema as a second parent: a contract derives from ONE type, the abstract component type, and a surface shared kit-wide by every component that renders the same element is not a second thing this component IS. Whoever needs the surface resolves it through this reference and applies it beside the contract; nothing in the props schema merges it in. `x-gts-ref` declares what the value must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating. Absent entirely for a component that renders no host element of its own - DataTable, which renders its Table internally.",
-        $comment: "The element token, not the tag: `dom_button` for a <button>, normalized by domElementToken - the same token the committed file under scripts/contracts/elements/ is named by, so the reference and the file name are one identity.",
+          "GTS id of the hand-written surface for the host element this component forwards to. HELD as an id, not composed into the schema as a second parent: a contract derives from ONE type, the abstract component type, and a surface shared kit-wide by every component that forwards to the same element is not a second thing this component IS. Whoever needs the surface resolves it through this reference and applies it beside the contract; nothing in the props schema merges it in. `x-gts-ref` declares what the value must resolve to; `type` and `pattern` are what enforce it, because gts-ts strips x-gts-ref before validating. Absent entirely for a component that forwards to no host element of its own - DataTable, which renders its Table internally and correctly declares none.",
+        $comment: "The element token, not the tag: `dom_button` for a <button>, normalized by domElementToken - the same token the committed file under scripts/contracts/elements/ is named by, so the reference and the file name are one identity. Named `forwards_to` rather than `host_element`: the value is the element surface the component FORWARDS TO, and a field named for the element read as a bug on a component (DataTable) that has one and declares none.",
       },
       // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema:p2:inst-ts-host
   },
@@ -1574,7 +1631,7 @@ export const buildMetamodel = memoizeSchema((): Record<string, unknown> => ({
           "GTS id of the props schema this instance is about: the compiled JSON Schema carrying axes, defaults, normative props and, in its x-gts-traits, everything the component means. A derived-type id - the abstract base component type, then the component's own segment - so the reference also asserts that the props schema really is a child of the base and not a lookalike.",
         $comment: "Two segments of 5 dot-tokens each after the fixed `gts.` scheme prefix - the shape gts-ts's Gts.parseSegment accepts (vendor.package.namespace.type.vMAJOR).",
       },
-      host_element: buildTraitFields().properties.host_element,
+      forwards_to: buildTraitFields().properties.forwards_to,
     },
     required: ['id', 'gts_type', 'metamodel', 'component', 'props_schema'],
     additionalProperties: false,
@@ -1619,10 +1676,13 @@ function nullableGtsTraitsProperty(schema: Record<string, unknown>): Record<stri
 
 // The fields routed at one block, at runtime - the twin of FieldsFor above,
 // and typed through it: the predicate is what lets a caller spread the result
-// into that block's own object type, so a field moved to a block that already
-// declares a key of the same name (x-uikit writes its own `slots`, extracted
-// rather than authored) is a type error at the reversal point rather than one
-// value silently winning over the other.
+// into that block's own object type, so a field moved to the WRONG block is a
+// type error at the reversal point rather than one value silently winning
+// over another. `x-uikit`'s own compiler-written keys (`partially_typed_props`,
+// `variant_sources`, `cannot_extract`) used to collide by name with an
+// authored SEMANTIC_FIELD (`slots` named both the machine's per-property
+// record and the kit's own extension surface); the rename retired that
+// specific collision, and this guard is what would catch the next one.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
 function fieldsTargeting<Target extends SemanticTarget>(target: Target): FieldsFor<Target>[] {
   return SEMANTIC_FIELDS.filter((field): field is FieldsFor<Target> => SEMANTIC_FIELD_TARGETS[field] === target);
@@ -1686,7 +1746,7 @@ export const buildGtsTraitsSchema = memoizeSchema((): Record<string, unknown> =>
   return {
     type: 'object',
     description:
-      "Everything asserted about a component: what GTS.validateEntity checks a contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from the abstract component type down to the component's own contract). Every field here is a claim somebody made - the overlay author for all but three, the compiler for the component references in `mounted_in`, a family root's `members` and `host_element`, each of which it fills from another author's assertion or from the source itself. What the SOURCE says lives in x-uikit instead, which no validator reads. A field whose shape another type owns is a REFERENCE to that vocabulary type (gts.frontx.uikit.vocabulary.*), so the concept is defined once, in one place, for both this schema and the metamodel; the rest stay inline, because nothing else references them. `host_element` is the one field an overlay may not write: which element a component renders is a fact of its source. additionalProperties: false so an unknown key fails GTS.validateEntity by name instead of vanishing silently.",
+      "Everything asserted about a component: what GTS.validateEntity checks a contract's x-gts-traits against (GtsStore.validateSchemaTraits, resolving this schema across the derivation chain from the abstract component type down to the component's own contract). Every field here is a claim somebody made - the overlay author for all but three, the compiler for the component references in `mounted_in`, a family root's `members` and `forwards_to`, each of which it fills from another author's assertion or from the source itself. What the SOURCE says lives in x-uikit instead, which no validator reads. A field whose shape another type owns is a REFERENCE to that vocabulary type (gts.frontx.uikit.vocabulary.*), so the concept is defined once, in one place, for both this schema and the metamodel; only a scalar, an array of strings, or a reference's own id/pattern stays inline (intent, typical_uses, and forwards_to itself - see componentRefSchema's comment for why that one keeps the reference triple rather than pointing at a vocabulary type). `forwards_to` is the one field an overlay may not write: which element a component forwards to is a fact of its source. additionalProperties: false so an unknown key fails GTS.validateEntity by name instead of vanishing silently.",
     properties,
     // Only the fields the overlay itself always requires (buildMetamodel's
     // own `required` list) are required here too - everything else is
@@ -1710,7 +1770,7 @@ export const buildBaseSchema = memoizeSchema((): Record<string, unknown> => ({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: 'UiKit component',
     description:
-      "The ONE type every kit component's props schema derives from, and the only one: a contract has a single parent, which is what its chained $id says, and the surface of the host element it renders is a reference it holds rather than a second parent. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which the hand-written surface for each host element declares, because a type shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. `x-gts-abstract` says outright that it is never instantiated: no props object is ever validated against this type, only against a component's own derived one. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, everything asserted about a component, which GTS.validateEntity checks the component's own x-gts-traits against. A field whose shape another type owns is a reference to that type (gts.frontx.uikit.vocabulary.*) rather than an inline definition; the rest - intent, typical_uses, invariants, anti_patterns, examples, withheld and host_element - the validator reads but nothing else references, so they stay inline. See the domain model in the package DESIGN for how they relate.",
+      "The ONE type every kit component's props schema derives from, and the only one: a contract has a single parent, which is what its chained $id says, and the surface of the host element it forwards to is a reference it holds rather than a second parent. Deliberately a near-empty structural anchor: it fixes the entity kind (an object of props) and gives the derivation chain a root, and it declares NO properties - not even className, which the hand-written surface for each host element declares, because a type shared by Button and, say, a headless provider cannot assume a DOM element underneath. Its job is to be the thing a derived id chains from, so a component schema is a GTS derived type rather than a standalone schema that happens to look similar. `x-gts-abstract` says outright that it is never instantiated: no props object is ever validated against this type, only against a component's own derived one. It also carries the ONE thing every derived component contract must supply to be a complete GTS entity: x-gts-traits-schema, everything asserted about a component, which GTS.validateEntity checks the component's own x-gts-traits against. A field whose shape another type owns is a reference to that type (gts.frontx.uikit.vocabulary.*) rather than an inline definition; only intent, typical_uses and forwards_to stay inline - a sentence, a capped list of strings, and the one reference gts-ts's own walk must find directly on an instance property rather than behind a `$ref`. See the domain model in the package DESIGN for how they relate.",
     type: 'object',
     // Never instantiated: a props object is validated against a COMPONENT's
     // derived type, never against this one, which declares no properties at
@@ -1742,9 +1802,20 @@ export function buildOverlaySchema(): Record<string, unknown> {
   // admitting the filled shape and leaving parseOverlay's refusal as the only
   // rule. Both halves are taken from the vocabulary types themselves, so a
   // container outside the kit and a family's name and role stay defined once.
+  // `mount_point` now has one shape rather than two, so the authored half is
+  // that same shape with `component` structurally excluded (additionalProperties
+  // stays false, and `component` is simply not in `properties`) rather than a
+  // separate type - parseOverlay's own early refusal still gives a friendlier
+  // message than the resulting "unknown overlay key" would.
+  const mountPointProperties = (builtVocabularyType('mount_point').properties ?? {}) as Record<string, unknown>;
   properties.mounted_in = {
     type: 'array',
-    items: { $ref: vocabularyTypeId('outside_mount') },
+    items: {
+      type: 'object',
+      properties: { container: mountPointProperties.container, note: mountPointProperties.note },
+      required: ['container', 'note'],
+      additionalProperties: false,
+    },
     minItems: 1,
     description:
       "Containers outside the kit this component is mounted in. The component references in the compiled `mounted_in` are FILLED from every other contract's `accepts.components` and may not be authored - state the nesting in the container's own `accepts.components` instead.",
@@ -1774,7 +1845,7 @@ export function buildOverlaySchema(): Record<string, unknown> {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: 'UiKit component overlay',
     description:
-      "Shape of the hand-written overlay a contract compiles from: every field an author may state about a component, plus the contract major its identifiers carry. `host_element` is not among them, because which element a component renders is a fact of its source rather than a claim an author gets to make - and neither are the compiler-filled entries inside `mounted_in` and `family_membership`, which the field admits for the compiled artifact's sake and parseOverlay refuses on the authoring side.",
+      "Shape of the hand-written overlay a contract compiles from: every field an author may state about a component, plus the contract major its identifiers carry. `forwards_to` is not among them, because which element a component forwards to is a fact of its source rather than a claim an author gets to make - and neither are the compiler-filled entries inside `mounted_in` and `family_membership`, which the field admits for the compiled artifact's sake and parseOverlay refuses on the authoring side.",
     type: 'object',
     properties: {
       component: {
@@ -1941,12 +2012,13 @@ export function parseOverlay(component: string, raw: unknown): Overlay {
   // accepted components did not name it back.
   const authoredMounts = isRecord(raw) && Array.isArray(raw.mounted_in) ? raw.mounted_in : [];
   for (const entry of authoredMounts) {
-    if (typeof entry !== 'string') continue;
+    if (!isRecord(entry) || !('component' in entry)) continue;
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-derived-field-refuse
     throw new Error(
-      `${component}: overlay writes the component reference "${entry}" in mounted_in, which the compiler FILLS from ` +
-        `every other contract's accepts.components - state the nesting in the parent's accepts.components instead, ` +
-        `and keep mounted_in for a container outside the kit`,
+      `${component}: overlay writes a component reference in mounted_in.component ("${String(entry.component)}"), which the ` +
+        `compiler FILLS from every other contract's accepts.components - state the nesting in the parent's ` +
+        `accepts.components instead, and keep an authored mounted_in entry to container + note, for a container ` +
+        `outside the kit`,
     );
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-derived-field-refuse
   }
@@ -2061,7 +2133,7 @@ export function compileInstance(directory: string, exportStem: string = director
     // The surface of the host element, held as an id exactly as the contract
     // holds it - the same reference, so the two halves of one artifact name
     // one surface. Undefined for a component that renders none.
-    host_element: hostElementFor(extraction),
+    forwards_to: forwardsTo(extraction),
   };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-instance:p2:inst-mi-assemble
   // M3: validated against the metamodel here, not only inside whichever
@@ -2077,7 +2149,7 @@ export function compileInstance(directory: string, exportStem: string = director
 export interface PropsAndRequired {
   properties: Record<string, ContractProperty>;
   required: string[];
-  slots: CompiledContract['x-uikit']['slots'];
+  partiallyTypedProps: CompiledContract['x-uikit']['partially_typed_props'];
 }
 
 // The machine-owned half of a component's props schema: cva axes, the props
@@ -2107,7 +2179,7 @@ export function buildPropsAndRequired(
   withheld: readonly string[] = [],
 ): PropsAndRequired {
   const properties: Record<string, ContractProperty> = {};
-  const slots: PropsAndRequired['slots'] = {};
+  const partiallyTypedProps: PropsAndRequired['partiallyTypedProps'] = {};
   const required: string[] = [];
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
   const elementSurfaceTypes = elementSurfacePropertyTypes(elementSurface);
@@ -2177,12 +2249,12 @@ export function buildPropsAndRequired(
       // (`columns` is checkably an array) alongside the source type, so a
       // reader of `properties` gets both the part Ajv enforces and the part
       // it does not.
-      slots[prop.name] = { typeText: prop.typeText, optional: prop.optional };
+      partiallyTypedProps[prop.name] = { typeText: prop.typeText, optional: prop.optional };
       properties[prop.name] = {
         ...expressedSchemaOf(prop),
         description: `Slot: ${prop.typeText}. ${
           prop.expressed === undefined ? 'No JSON Schema type exists for it' : 'No JSON Schema type covers it beyond the kind above'
-        }; shape checked by tsc, see x-uikit.slots.`,
+        }; shape checked by tsc, see x-uikit.partially_typed_props.`,
       };
     }
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
@@ -2208,17 +2280,19 @@ export function buildPropsAndRequired(
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
     assertAgreesWithElementSurface(component, underCheck(prop), prop.declarationFile, elementSurfaceTypes);
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
-    // No slot record: `x-uikit.slots` is the kit's own slotted props, and a
-    // forwarded API prop the schema cannot type is not one - its TypeScript
-    // type goes in the description, and the `untyped` statement naming it is
-    // what a reader gets instead of a second machine-readable copy.
+    // No partially_typed_props record: that map is scoped to props the
+    // component DECLARES itself (freshness.ts's slotSchemaMismatches checks
+    // exactly that scope), and a forwarded API prop the schema cannot type is
+    // not one of those - its TypeScript type goes in the description, and
+    // the overlay's `props` statement naming it is what a reader gets
+    // instead of a second machine-readable copy.
     properties[prop.name] = describeUnexpressedType(expressedSchemaOf(prop), prop.typeText, prop.expressed?.complete === true);
     if (!prop.optional) required.push(prop.name);
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-api
 
   required.sort();
-  return { properties, required, slots };
+  return { properties, required, partiallyTypedProps };
 }
 
 // How a cva axis reads when the conflict message has to name it: the shape
@@ -2308,22 +2382,22 @@ export function partlyCheckedPropertyNames(contract: CompiledContract): string[]
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-list
 
-// The pairing between those properties and the contract's own `untyped`
-// statements about a prop, both ways. A property nothing asserts and nothing
-// explains is the defect this pairing came from: an evaluation read three
-// such properties out of a generated file and decided they took plain
-// strings. A statement naming a property the schema states IN FULL is the
-// mirror error - a reader told that `multiple` cannot be typed while the
-// contract types it as a boolean has been told something false about the
-// contract in front of them. A property the schema states only in part
-// (`columns` is an array; what is in it, Ajv cannot say) belongs on the
-// acknowledged side: the part nothing checks is the part a statement is
-// owed for.
+// The pairing between those properties and the contract's own `props`
+// statements, both ways. A property nothing asserts and nothing explains is
+// the defect this pairing came from: an evaluation read three such
+// properties out of a generated file and decided they took plain strings. A
+// statement naming a property the schema states IN FULL is the mirror error
+// - a reader told that `multiple` cannot be typed while the contract types
+// it as a boolean has been told something false about the contract in front
+// of them. A property the schema states only in part (`columns` is an
+// array; what is in it, Ajv cannot say) belongs on the acknowledged side:
+// the part nothing checks is the part a statement is owed for.
 //
-// Keyed on `about`, which is what makes this checkable at all: the statements
-// about a prop are the family this pairing is over, and the ones about a
-// behaviour, an unexposed part or an outside mount are about things no
-// property could carry.
+// Keyed on the property itself now (the dissolved `untyped` catch-all's
+// `about: prop` category moved into the overlay's `props` map), which is
+// what makes this checkable without reading a `about` discriminant first: a
+// statement in `props` is BY CONSTRUCTION about a prop, since that is the
+// only thing the map can be keyed on.
 //
 // Reported rather than thrown: this is a documentation gap, and a compile
 // that refuses it would make a component uncompilable until its prose caught
@@ -2332,21 +2406,16 @@ export function partlyCheckedPropertyNames(contract: CompiledContract): string[]
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-pair
 export function findUntypedPropMismatches(contract: CompiledContract): string[] {
   const partlyChecked = new Set(partlyCheckedPropertyNames(contract));
-  const named = new Set(
-    (contract['x-gts-traits'].untyped ?? [])
-      .filter((statement) => statement.about === 'prop')
-      .map((statement) => statement.prop)
-      .filter((prop): prop is string => prop !== undefined),
-  );
+  const named = new Set(Object.keys(contract['x-gts-traits'].props ?? {}));
   const problems: string[] = [];
   for (const name of [...partlyChecked].sort()) {
     if (!named.has(name)) {
-      problems.push(`"${name}" is not fully checked by its schema but no untyped statement about a prop names it`);
+      problems.push(`"${name}" is not fully checked by its schema but no props statement about it exists`);
     }
   }
   for (const name of [...named].sort()) {
     if (!partlyChecked.has(name)) {
-      problems.push(`an untyped statement names the prop "${name}", which the contract's properties state in full`);
+      problems.push(`a props statement names "${name}", which the contract's properties state in full`);
     }
   }
   return problems;
@@ -2408,24 +2477,23 @@ export function resolveTargetExtraction(directory: string, exportStem: string = 
 }
 
 // The overlay must only ever point at a prop the extractor actually found.
-// Seven prop-name-bearing fields today - `deprecations.props` keys,
-// EVERY deprecation's own `replacement`, `accepts.icons_via`, every
-// `withheld` entry, an `untyped` statement about a prop, every `slots` entry
-// and every `capabilities` entry's `enabled_by` - checked here so every
-// component gets the cross-check unconditionally rather than only the one
-// whose test author remembered to write it. `replacement` was the metamodel's
-// seventh and arrived unchecked; every prop-name field's own description
-// says the check happens here, in the compiler, not in a conformance test
-// somewhere downstream - extend both this list and that description if the
-// metamodel ever adds an eighth.
+// Every prop-name-bearing field an overlay may write - `deprecations.props`
+// keys, EVERY deprecation's own `replacement`, `accepts.icons_via`, every
+// `withheld` entry, every key of `props`, every `slots` entry and every
+// `capabilities` entry's `enabled_by` - checked here so every component gets
+// the cross-check unconditionally rather than only the one whose test author
+// remembered to write it. Every prop-name field's own description says the
+// check happens here, in the compiler, not in a conformance test somewhere
+// downstream - extend both this list and that description the next time the
+// metamodel adds one.
 //
 // Which props count as real differs by field, and deliberately: the kit's own
 // declared props and its variant axes are what a deprecation, an icon slot, a
-// declared slot or a capability's switch can name, while `withheld` and an
-// `untyped` statement are about the primitive's API too, so they may name an
-// API prop as well. A `withheld` entry naming a prop the kit itself declares
-// would be the overlay asking the compiler to drop a prop the component's own
-// source states, which is a different mistake and gets its own refusal.
+// declared slot or a capability's switch can name, while `withheld` and a
+// `props` key are about the primitive's API too, so they may name an API prop
+// as well. A `withheld` entry naming a prop the kit itself declares would be
+// the overlay asking the compiler to drop a prop the component's own source
+// states, which is a different mistake and gets its own refusal.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop
 export function assertOverlayReferencesRealProps(component: string, overlay: Overlay, extraction: ComponentExtraction): void {
   const declared = new Set([...Object.keys(extraction.axes), ...extraction.ownProps.map((prop) => prop.name)]);
@@ -2472,12 +2540,9 @@ export function assertOverlayReferencesRealProps(component: string, overlay: Ove
       );
     }
   }
-  for (const statement of overlay.untyped ?? []) {
-    if (statement.about !== 'prop') continue;
-    const prop = statement.prop;
-    if (prop === undefined) refuse(`an untyped statement about a prop ("${statement.claim}") names no prop`);
-    else if (!declared.has(prop) && !api.has(prop)) {
-      refuse(`untyped statement references the prop "${prop}", which is not a real prop`);
+  for (const prop of Object.keys(overlay.props ?? {})) {
+    if (!declared.has(prop) && !api.has(prop)) {
+      refuse(`overlay props references "${prop}", which is not a real prop`);
     }
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop
@@ -2502,11 +2567,11 @@ export function assertOverlayReferencesRealProps(component: string, overlay: Ove
 // component.
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-structure-derivation:p1
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-structure-derivation:p1:inst-co-derive
-export function deriveMountPoints(directory: string, exportStem: string): string[] {
+export function deriveMountPoints(directory: string, exportStem: string): MountPoint[] {
   const self = componentTypeRef(exportStem, contractMajor(directory, exportStem));
   const selfToken = gtsToken(exportStem);
   const refPattern = new RegExp(componentTypeRefPattern(true));
-  const mountPoints: string[] = [];
+  const mountPoints: MountPoint[] = [];
   // What an unreadable overlay would have to say to be one of this
   // component's containers: the reference segment every `accepts.components`
   // entry naming it carries, at any major - the stale-major refusal below
@@ -2516,11 +2581,13 @@ export function deriveMountPoints(directory: string, exportStem: string): string
     if (stem === exportStem) continue;
     for (const accepted of overlay.accepts.components ?? []) {
       if (accepted === self) {
-        // The CONTAINER's own major, from the container's own overlay: a
-        // reference names the major the target ships, so a component that
-        // moves its major moves every reference to it - including the filled
-        // ones.
-        mountPoints.push(componentTypeRef(stem, overlay.major ?? DEFAULT_CONTRACT_MAJOR));
+        // The CONTAINER's own export name and its own major, from the
+        // container's own overlay: `container` is filled with the same text
+        // a reader would already act on (the PascalCase export a reference
+        // resolves to), and the reference carries the major the target
+        // ships, so a component that moves its major moves every reference
+        // to it - including the filled ones.
+        mountPoints.push({ container: pascalCase(stem), component: componentTypeRef(stem, overlay.major ?? DEFAULT_CONTRACT_MAJOR) });
         continue;
       }
       // An accepted-components list naming this component at a major it no
@@ -2540,16 +2607,18 @@ export function deriveMountPoints(directory: string, exportStem: string): string
       // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-structure-derivation:p1:inst-co-stale-major
     }
   }
-  return mountPoints.sort();
+  return mountPoints.sort((a, b) => (a.component ?? '').localeCompare(b.component ?? ''));
 }
 
 // The mount points an artifact carries: the filled component references plus
 // whatever containers outside the kit the overlay stated. Absent entirely when
 // there is neither - most of the kit is mounted anywhere, and an empty list
-// would read as a constraint rather than as its absence.
+// would read as a constraint rather than as its absence. No filter needed on
+// the authored half: parseOverlay already refuses an authored entry that
+// carries `component`, so every entry `overlay.mounted_in` holds by the time
+// this runs IS the outside-the-kit half.
 export function compileMountedIn(directory: string, exportStem: string, overlay: Overlay): MountPoint[] | undefined {
-  const authored = (overlay.mounted_in ?? []).filter(isOutsideMount);
-  const points: MountPoint[] = [...deriveMountPoints(directory, exportStem), ...authored];
+  const points: MountPoint[] = [...deriveMountPoints(directory, exportStem), ...(overlay.mounted_in ?? [])];
   return points.length > 0 ? points : undefined;
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-structure-derivation:p1:inst-co-derive
@@ -2818,11 +2887,11 @@ export function compileContract(directory: string, exportStem: string = director
     elementSurface = loadElementSurface(extraction.elementKind);
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-owner-conflict
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
-    hostElement = hostElementFor(extraction);
+    hostElement = forwardsTo(extraction);
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
   }
 
-  const { properties, required, slots } = buildPropsAndRequired(
+  const { properties, required, partiallyTypedProps } = buildPropsAndRequired(
     exportStem,
     extraction,
     elementSurface ?? { properties: {} },
@@ -2830,6 +2899,26 @@ export function compileContract(directory: string, exportStem: string = director
     // each entry's reason travels to the reader in the validator-read block.
     (overlay.withheld ?? []).map((entry) => entry.prop),
   );
+
+  // The overlay's own per-prop statements, emitted into that property's
+  // description beside the TS:/Slot: text buildPropsAndRequired already
+  // wrote - the dissolved `untyped` catch-all's `about: prop` category no
+  // longer lives in a flat list read separately from the property it is
+  // about; it is now IN the property's own description, where a reader of
+  // `properties` finds it without a second lookup.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-emit
+  for (const [name, statement] of Object.entries(overlay.props ?? {})) {
+    const existing = properties[name];
+    // No description to append to means one of two things: the name is not
+    // a real prop (assertOverlayReferencesRealProps already refused that),
+    // or it names a prop the schema states IN FULL - a statement about a
+    // fully typed prop is forbidden, and findUntypedPropMismatches is what
+    // reports that pairing failure. Either way, injecting prose here would
+    // hide the mistake instead of surfacing it.
+    if (existing?.description === undefined) continue;
+    properties[name] = { ...existing, description: `${existing.description} ${statement.states} ${statement.because}` };
+  }
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-untyped-props:p1:inst-up-emit
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route
   const uikitFields = fieldsTargeting('x-uikit');
@@ -2849,7 +2938,7 @@ export function compileContract(directory: string, exportStem: string = director
     type: 'object',
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
     // One parent, always the base type. The host element's surface is named
-    // as a value below (x-gts-traits.host_element), not composed in here.
+    // as a value below (x-gts-traits.forwards_to), not composed in here.
     allOf: [{ $ref: BASE_TYPE_ID }],
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
     properties,
@@ -2863,7 +2952,7 @@ export function compileContract(directory: string, exportStem: string = director
     'x-uikit': {
       metamodel: METAMODEL_VERSION,
       // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
-      slots,
+      partially_typed_props: partiallyTypedProps,
       // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-slots
       variant_sources: extraction.variantSourceLabels,
       cannot_extract: extraction.cannotExtract,
@@ -2877,7 +2966,7 @@ export function compileContract(directory: string, exportStem: string = director
       mounted_in: compileMountedIn(directory, exportStem, overlay),
       family_membership: compileFamilyMembership(exportStem, overlay),
       // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
-      host_element: hostElement,
+      forwards_to: hostElement,
       // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-close
     },
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-route

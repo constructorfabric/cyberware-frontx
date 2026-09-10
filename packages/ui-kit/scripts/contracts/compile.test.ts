@@ -115,7 +115,7 @@ describe('what two element kinds both declare', () => {
 });
 
 describe('a declared prop the schema cannot state in full', () => {
-  const { properties, slots } = buildPropsAndRequired("picker", picker, elementSurface);
+  const { properties, partiallyTypedProps } = buildPropsAndRequired("picker", picker, elementSurface);
 
   it('states the kind it can, and the rest next to the slot record that holds it', () => {
     // `selection: Value[]` depends on the component's own type parameter -
@@ -126,7 +126,7 @@ describe('a declared prop the schema cannot state in full', () => {
     expect(properties.selection.type).toBe('array');
     expect(properties.selection.items).toBeUndefined();
     expect(properties.selection.description).toContain('Value[]');
-    expect(slots.selection.typeText).toBe('Value[]');
+    expect(partiallyTypedProps.selection.typeText).toBe('Value[]');
   });
 
   it('types an alias that unwraps to an array of a stated element type, and leaves it undescribed', () => {
@@ -134,7 +134,7 @@ describe('a declared prop the schema cannot state in full', () => {
     // the printed alias name matched nothing, so a fully expressible type
     // was declared inexpressible and slotted.
     expect(properties.chosen).toEqual({ type: 'array', items: { type: 'string' } });
-    expect(slots.chosen).toBeUndefined();
+    expect(partiallyTypedProps.chosen).toBeUndefined();
   });
 
   it('describes a function prop, which is a type it can state nothing about', () => {
@@ -178,7 +178,7 @@ describe('describeUnexpressedType', () => {
   });
 
   it('leaves an existing description alone', () => {
-    const slot = { description: 'Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots.' };
+    const slot = { description: 'Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.partially_typed_props.' };
     expect(describeUnexpressedType(slot, 'ReactNode', false)).toEqual(slot);
   });
 });

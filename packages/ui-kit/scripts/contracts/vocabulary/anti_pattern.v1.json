@@ -1,0 +1,22 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.anti_pattern.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit anti-pattern",
+  "description": "One way this component gets misused, with the fix. `do_instead` (never `instead` - that word stays the recommendation of a DIFFERENT component in `dont_use_when`): the fix here stays inside this component's own API, which is the one-word-one-concept distinction the two fields draw.",
+  "type": "object",
+  "properties": {
+    "dont": {
+      "type": "string",
+      "minLength": 1
+    },
+    "do_instead": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "dont",
+    "do_instead"
+  ],
+  "additionalProperties": false
+}

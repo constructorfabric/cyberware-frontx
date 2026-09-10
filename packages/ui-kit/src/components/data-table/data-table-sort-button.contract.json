@@ -10,13 +10,13 @@
   ],
   "properties": {
     "children": {
-      "description": "Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
+      "description": "Slot: ReactNode. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.partially_typed_props. children is a React node - the column's label `ReactNode`, so an element is as valid as a string. Required, because a sort button with no label is a button whose only content is a direction arrow."
     },
     "className": {
       "type": "string"
     },
     "column": {
-      "description": "Slot: Column<{ rowSelectionFeature: TableFeature; rowSortingFeature: TableFeature; rowPaginationFeature: TableFeature; sortedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; paginatedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; }, TData, TValue>. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.slots."
+      "description": "Slot: Column<{ rowSelectionFeature: TableFeature; rowSortingFeature: TableFeature; rowPaginationFeature: TableFeature; sortedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; paginatedRowModel: (table: Table<any, any>) => () => RowModel<any, any>; }, TData, TValue>. No JSON Schema type exists for it; shape checked by tsc, see x-uikit.partially_typed_props. column is a live @tanstack/react-table Column instance, generic over TData and TValue `Column<DataTableFeatures, TData, TValue>` carries methods (`toggleSorting`, `getIsSorted`) and internal state, not a serializable shape, and two of its three type arguments are the caller's own type parameters - neither a live object nor a generic has a JSON Schema representation. It is handed in by TanStack Table's own render call; a consumer never constructs one."
     }
   },
   "required": [
@@ -28,7 +28,7 @@
   },
   "x-uikit": {
     "metamodel": "1.0.0",
-    "slots": {
+    "partially_typed_props": {
       "children": {
         "typeText": "ReactNode",
         "optional": false
@@ -74,7 +74,7 @@
     "anti_patterns": [
       {
         "dont": "Use DataTableSortButton outside a column's header render function",
-        "instead": "For a plain action button with no column to sort, use Button directly"
+        "do_instead": "For a plain action button with no column to sort, use Button directly"
       }
     ],
     "deprecations": {},
@@ -86,28 +86,20 @@
         "outcome": "unknown"
       }
     },
-    "untyped": [
-      {
-        "about": "prop",
-        "prop": "column",
-        "claim": "column is a live @tanstack/react-table Column instance, generic over TData and TValue",
-        "reason": "`Column<DataTableFeatures, TData, TValue>` carries methods (`toggleSorting`, `getIsSorted`) and internal state, not a serializable shape, and two of its three type arguments are the caller's own type parameters - neither a live object nor a generic has a JSON Schema representation. It is handed in by TanStack Table's own render call; a consumer never constructs one."
+    "props": {
+      "column": {
+        "states": "column is a live @tanstack/react-table Column instance, generic over TData and TValue",
+        "because": "`Column<DataTableFeatures, TData, TValue>` carries methods (`toggleSorting`, `getIsSorted`) and internal state, not a serializable shape, and two of its three type arguments are the caller's own type parameters - neither a live object nor a generic has a JSON Schema representation. It is handed in by TanStack Table's own render call; a consumer never constructs one."
       },
+      "children": {
+        "states": "children is a React node - the column's label",
+        "because": "`ReactNode`, so an element is as valid as a string. Required, because a sort button with no label is a button whose only content is a direction arrow."
+      }
+    },
+    "unexposed_parts": [
       {
-        "about": "prop",
-        "prop": "children",
-        "claim": "children is a React node - the column's label",
-        "reason": "`ReactNode`, so an element is as valid as a string. Required, because a sort button with no label is a button whose only content is a direction arrow."
-      },
-      {
-        "about": "unexposed_part",
-        "claim": "DataTableSortButton composes the kit's own Button internally",
+        "part": "the kit's own Button",
         "reason": "It renders a `<Button variant=\"ghost\" size=\"sm\">` around its own label and a trailing sort-arrow icon - this is internal composition (JSX in DataTableSortButton's own render body), not a props-type heritage relationship, so none of Button's own props reach this contract: DataTableSortButtonProps declares `column`/`children`/`className` itself and extends nothing."
-      },
-      {
-        "about": "outside_mount",
-        "claim": "its only real mount point is a column's header render function, which has no contract of its own",
-        "reason": "TanStack Table's `header: ({ column }) => ...` is a plain function prop on `ColumnDef`, not a kit component, so `mounted_in` above states it as a container outside the kit rather than referencing a component that does not exist."
       }
     ],
     "examples": {

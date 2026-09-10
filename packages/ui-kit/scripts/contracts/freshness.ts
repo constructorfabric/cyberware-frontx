@@ -34,14 +34,15 @@ export interface FreshnessReport {
   contractDiff: string[];
   instanceDiff: string[];
   // Every property of a prop the component DECLARES that asserts nothing (no
-  // `type`, no `enum` - Ajv asserts nothing about it) is a slot, and
-  // x-uikit.slots is where its real TS shape is recorded. The two are written
-  // by the same loop in buildPropsAndRequired, so they cannot drift on their
-  // own - this catches the day something edits one without the other. Scoped
-  // to declared props on purpose: an API prop of the primitive underneath can
-  // also assert nothing, and its type lives in its own description plus an
-  // untyped statement about that prop rather than in x-uikit.slots, which is
-  // the kit's own slotted props and nothing else.
+  // `type`, no `enum` - Ajv asserts nothing about it) is partly typed, and
+  // x-uikit.partially_typed_props is where its real TS shape is recorded. The
+  // two are written by the same loop in buildPropsAndRequired, so they cannot
+  // drift on their own - this catches the day something edits one without the
+  // other. Scoped to declared props on purpose: an API prop of the primitive
+  // underneath can also assert nothing, and its type lives in its own
+  // description plus a `props` statement about that property rather than in
+  // x-uikit.partially_typed_props, which is the kit's own declared props and
+  // nothing else.
   slotSchemaMismatches: string[];
   // The schemas that belong to no single component - the abstract component type,
   // the metamodel, and each vocabulary type the two of them reference -
@@ -111,13 +112,13 @@ export function checkComponentFreshness(directory: string, exportStem: string = 
     // array is checked by tsc alone. The compiler writes prose exactly for
     // that remainder, so the prose is what the two sides are matched on.
     const isSlotShaped = prop.description !== undefined;
-    const hasSlotEntry = name in freshContract['x-uikit'].slots;
+    const hasSlotEntry = name in freshContract['x-uikit'].partially_typed_props;
     if (isSlotShaped && declaredProps.has(name) && !hasSlotEntry) {
-      slotSchemaMismatches.push(`"${name}" is a declared prop the schema does not state in full but has no x-uikit.slots entry`);
+      slotSchemaMismatches.push(`"${name}" is a declared prop the schema does not state in full but has no x-uikit.partially_typed_props entry`);
     } else if (hasSlotEntry && !isSlotShaped) {
-      slotSchemaMismatches.push(`"${name}" has an x-uikit.slots entry but is stated in full by properties`);
+      slotSchemaMismatches.push(`"${name}" has an x-uikit.partially_typed_props entry but is stated in full by properties`);
     } else if (hasSlotEntry && !declaredProps.has(name)) {
-      slotSchemaMismatches.push(`"${name}" has an x-uikit.slots entry but is not a prop ${exportStem} declares itself`);
+      slotSchemaMismatches.push(`"${name}" has an x-uikit.partially_typed_props entry but is not a prop ${exportStem} declares itself`);
     }
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-freshness:p1:inst-fr-slots

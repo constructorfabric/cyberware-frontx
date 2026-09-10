@@ -17,6 +17,7 @@ import {
   familyRoster,
   loadBaseSchema,
   loadElementSurface,
+  pascalCase,
   registerContractTypes,
   resolveTargetExtraction,
   type CompiledContract,
@@ -138,11 +139,13 @@ describe('accordion family: membership resolves', () => {
 
 describe('accordion family: what nests where', () => {
   // Every accepted component and every filled mount point across the family
-  // that is a component reference (not a container outside the kit, which is
-  // an object) - gathered once so the resolution check does not repeat itself
-  // per unit.
+  // that carries a component reference (not a container outside the kit,
+  // which does not) - gathered once so the resolution check does not repeat
+  // itself per unit.
   function nestingRefs(meaning: CompiledContract['x-gts-traits']): string[] {
-    const mounts = (meaning.mounted_in ?? []).filter((entry): entry is string => typeof entry === 'string');
+    const mounts = (meaning.mounted_in ?? [])
+      .map((entry) => entry.component)
+      .filter((ref): ref is string => ref !== undefined);
     return [...(meaning.accepts.components ?? []), ...mounts];
   }
 
@@ -161,11 +164,11 @@ describe('accordion family: what nests where', () => {
     // two directions cannot disagree - what is asserted here is that the
     // derivation produces the family the overlays describe.
     expect(units['accordion-item'].meaning.mounted_in).toEqual([
-      componentTypeRef(DIRECTORY, contractMajor(DIRECTORY, DIRECTORY)),
+      { container: pascalCase(DIRECTORY), component: componentTypeRef(DIRECTORY, contractMajor(DIRECTORY, DIRECTORY)) },
     ]);
     for (const stem of ['accordion-trigger', 'accordion-content'] as const) {
       expect(units[stem].meaning.mounted_in, stem).toEqual([
-        componentTypeRef('accordion-item', contractMajor(DIRECTORY, 'accordion-item')),
+        { container: pascalCase('accordion-item'), component: componentTypeRef('accordion-item', contractMajor(DIRECTORY, 'accordion-item')) },
       ]);
     }
   });
@@ -192,23 +195,26 @@ describe('accordion family: what nests where', () => {
 });
 
 describe('accordion family: what the schema cannot assert', () => {
-  it("the root's untyped statements name the three generic-typed props", () => {
+  it("the root's props statements name the three generic-typed props, and the compiler emits them into the property description", () => {
     // The measured defect this closes: an agent shown the root's `value` and
     // `defaultValue` as unconstrained properties concluded they took plain
     // strings. `AccordionValue<Value>` is `Value[]`, so the schema states
     // the array - the one fact that rules a plain string out - and the type
-    // text plus a statement of its own carry the half no schema can state,
-    // which is what the elements are.
-    const untyped = units[DIRECTORY].meaning.untyped ?? [];
-    const props = untyped.filter((entry) => entry.about === 'prop').map((entry) => entry.prop);
+    // text plus the overlay's own statement carry the half no schema can
+    // state, which is what the elements are. The statement is keyed on the
+    // property itself now (the dissolved `untyped` catch-all's `about: prop`
+    // category), and emitted into that property's own description beside
+    // the `TS:` text.
+    const statements = units[DIRECTORY].meaning.props ?? {};
     for (const prop of ['value', 'defaultValue', 'onValueChange']) {
-      expect(props, prop).toContain(prop);
+      expect(Object.keys(statements), prop).toContain(prop);
     }
     const properties = units[DIRECTORY].contract.properties;
     for (const prop of ['value', 'defaultValue']) {
       expect(properties[prop].type, prop).toBe('array');
       expect(properties[prop].items, prop).toBeUndefined();
       expect(properties[prop].description, prop).toContain('AccordionValue<Value>');
+      expect(properties[prop].description, prop).toContain(statements[prop].states);
     }
   });
 
@@ -221,13 +227,12 @@ describe('accordion family: what the schema cannot assert', () => {
     expect(withheld.map((entry) => entry.prop)).toEqual(['orientation']);
     expect(withheld[0].reason).toContain('flex-direction: column');
     expect(units[DIRECTORY].contract.properties).not.toHaveProperty('orientation');
-    const untyped = units[DIRECTORY].meaning.untyped ?? [];
-    expect(untyped.filter((entry) => entry.about === 'unexposed_part')).toEqual([]);
+    expect(units[DIRECTORY].meaning.unexposed_parts ?? []).toEqual([]);
   });
 
-  it("the trigger's unexposed_part statement documents the Header+Trigger composition", () => {
-    const untyped = units['accordion-trigger'].meaning.untyped ?? [];
-    expect(untyped.some((entry) => entry.about === 'unexposed_part' && (/Header/.test(entry.claim) || /Header/.test(entry.reason)))).toBe(true);
+  it("the trigger's unexposed_parts entry documents the Header+Trigger composition", () => {
+    const unexposedParts = units['accordion-trigger'].meaning.unexposed_parts ?? [];
+    expect(unexposedParts.some((entry) => /Header/.test(entry.part) || /Header/.test(entry.reason))).toBe(true);
   });
 
   it('files a Base UI part prop as API and a React attribute as forwarded surface', () => {
@@ -276,11 +281,11 @@ describe('accordion family in a GTS store', () => {
     // shares a root and not a surface.
     for (const { stem, contract, instance, elementSurface } of Object.values(units)) {
       const ref = bareGtsId(String(elementSurface.$id));
-      expect(contract['x-gts-traits'].host_element, stem).toBe(ref);
-      expect(instance.host_element, stem).toBe(ref);
+      expect(contract['x-gts-traits'].forwards_to, stem).toBe(ref);
+      expect(instance.forwards_to, stem).toBe(ref);
     }
-    expect(units['accordion-trigger'].contract['x-gts-traits'].host_element).toBe(elementTypeRef('dom_button'));
-    expect(units[DIRECTORY].contract['x-gts-traits'].host_element).toBe(elementTypeRef('dom_div'));
+    expect(units['accordion-trigger'].contract['x-gts-traits'].forwards_to).toBe(elementTypeRef('dom_button'));
+    expect(units[DIRECTORY].contract['x-gts-traits'].forwards_to).toBe(elementTypeRef('dom_div'));
   });
 
   it('fails when the parent type is not registered - negative control', () => {

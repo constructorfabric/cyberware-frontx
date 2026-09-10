@@ -16,16 +16,16 @@
       "type": "boolean"
     },
     "onOpenChange": {
-      "description": "TS: ((open: boolean, eventDetails: AccordionItemChangeEventDetails) => void) | undefined. Not expressible in JSON Schema, checked by tsc."
+      "description": "TS: ((open: boolean, eventDetails: AccordionItemChangeEventDetails) => void) | undefined. Not expressible in JSON Schema, checked by tsc. onOpenChange is a callback, not a value `(open: boolean, eventDetails) => void` - a function of Base UI's own event-details object. No JSON Schema type covers a function."
     },
     "render": {
-      "description": "TS: ReactElement<unknown, string | JSXElementConstructor<any>> | ComponentRenderFn<HTMLProps, AccordionItemState> | undefined. Not expressible in JSON Schema, checked by tsc."
+      "description": "TS: ReactElement<unknown, string | JSXElementConstructor<any>> | ComponentRenderFn<HTMLProps, AccordionItemState> | undefined. Not expressible in JSON Schema, checked by tsc. render replaces the item element with one the caller supplies Base UI's render prop takes an element or a function of the item's state; neither is expressible in JSON Schema."
     },
     "style": {
-      "description": "TS: CSSProperties | ((state: AccordionItemState) => CSSProperties | undefined) | undefined. Not expressible in JSON Schema, checked by tsc."
+      "description": "TS: CSSProperties | ((state: AccordionItemState) => CSSProperties | undefined) | undefined. Not expressible in JSON Schema, checked by tsc. style accepts a function of the item's state as well as a plain style object Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
     },
     "value": {
-      "description": "TS: any. Not expressible in JSON Schema, checked by tsc."
+      "description": "TS: any. Not expressible in JSON Schema, checked by tsc. value is an opaque identifier, typed `any` by Base UI Base UI's Accordion.Item declares `value?: any` - it is compared by identity against the root's `value`/`defaultValue` array and never interpreted, so the primitive types it as anything. Strings are what accordion.md uses, and what a reader should reach for."
     }
   },
   "required": [],
@@ -34,7 +34,7 @@
   },
   "x-uikit": {
     "metamodel": "1.0.0",
-    "slots": {},
+    "partially_typed_props": {},
     "variant_sources": [],
     "cannot_extract": [
       "heritage: \"{\n    [P in keyof T]?: T[P];\n}\" is a MappedType, not a shape this walk can classify - cannot extract"
@@ -62,7 +62,10 @@
       ]
     },
     "mounted_in": [
-      "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~"
+      {
+        "container": "Accordion",
+        "component": "gts.frontx.uikit.base.component.v1~frontx.uikit.component.accordion.v1~"
+      }
     ],
     "invariants": [
       {
@@ -73,7 +76,7 @@
     "anti_patterns": [
       {
         "dont": "Reuse the same `value` for two items under one Accordion root",
-        "instead": "Give every item a unique `value` - see the root's item-values-unique-per-root invariant"
+        "do_instead": "Give every item a unique `value` - see the root's item-values-unique-per-root invariant"
       }
     ],
     "deprecations": {},
@@ -86,32 +89,24 @@
         "outcome": "unknown"
       }
     },
-    "untyped": [
-      {
-        "about": "prop",
-        "prop": "value",
-        "claim": "value is an opaque identifier, typed `any` by Base UI",
-        "reason": "Base UI's Accordion.Item declares `value?: any` - it is compared by identity against the root's `value`/`defaultValue` array and never interpreted, so the primitive types it as anything. Strings are what accordion.md uses, and what a reader should reach for."
+    "props": {
+      "value": {
+        "states": "value is an opaque identifier, typed `any` by Base UI",
+        "because": "Base UI's Accordion.Item declares `value?: any` - it is compared by identity against the root's `value`/`defaultValue` array and never interpreted, so the primitive types it as anything. Strings are what accordion.md uses, and what a reader should reach for."
       },
-      {
-        "about": "prop",
-        "prop": "onOpenChange",
-        "claim": "onOpenChange is a callback, not a value",
-        "reason": "`(open: boolean, eventDetails) => void` - a function of Base UI's own event-details object. No JSON Schema type covers a function."
+      "onOpenChange": {
+        "states": "onOpenChange is a callback, not a value",
+        "because": "`(open: boolean, eventDetails) => void` - a function of Base UI's own event-details object. No JSON Schema type covers a function."
       },
-      {
-        "about": "prop",
-        "prop": "render",
-        "claim": "render replaces the item element with one the caller supplies",
-        "reason": "Base UI's render prop takes an element or a function of the item's state; neither is expressible in JSON Schema."
+      "render": {
+        "states": "render replaces the item element with one the caller supplies",
+        "because": "Base UI's render prop takes an element or a function of the item's state; neither is expressible in JSON Schema."
       },
-      {
-        "about": "prop",
-        "prop": "style",
-        "claim": "style accepts a function of the item's state as well as a plain style object",
-        "reason": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
+      "style": {
+        "states": "style accepts a function of the item's state as well as a plain style object",
+        "because": "Base UI widens React's `CSSProperties` to `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object` would reject the function form."
       }
-    ],
+    },
     "examples": {
       "good": [
         {
@@ -131,6 +126,6 @@
       "name": "accordion",
       "role": "part"
     },
-    "host_element": "gts.frontx.uikit.element.dom_div.v1~"
+    "forwards_to": "gts.frontx.uikit.element.dom_div.v1~"
   }
 }

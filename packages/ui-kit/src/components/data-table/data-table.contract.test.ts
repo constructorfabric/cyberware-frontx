@@ -148,12 +148,12 @@ describe('data-table: no forwarded surface for either contract', () => {
     // The absence is stated in the reference, not in the allOf: every
     // contract's allOf is the base type alone (the shared conformance suite
     // asserts that for all of them), so "no forwarded surface" is now
-    // `host_element` being absent from both halves of the artifact.
+    // `forwards_to` being absent from both halves of the artifact.
     const extraction = resolveTargetExtraction(DIRECTORY, DIRECTORY);
     expect(extraction.forwardedProps).toEqual([]);
     expect(extraction.elementKind).toBeUndefined();
-    expect(units[DIRECTORY].contract['x-gts-traits'].host_element).toBeUndefined();
-    expect(units[DIRECTORY].instance.host_element).toBeUndefined();
+    expect(units[DIRECTORY].contract['x-gts-traits'].forwards_to).toBeUndefined();
+    expect(units[DIRECTORY].instance.forwards_to).toBeUndefined();
   });
 
   it('DataTableSortButton composes Button by rendering it, not by extending its props type - also no forwarded surface', () => {
@@ -167,8 +167,8 @@ describe('data-table: no forwarded surface for either contract', () => {
     expect(extraction.forwardedProps).toEqual([]);
     expect(extraction.apiProps).toEqual([]);
     expect(extraction.elementKind).toBeUndefined();
-    expect(units['data-table-sort-button'].contract['x-gts-traits'].host_element).toBeUndefined();
-    expect(units['data-table-sort-button'].instance.host_element).toBeUndefined();
+    expect(units['data-table-sort-button'].contract['x-gts-traits'].forwards_to).toBeUndefined();
+    expect(units['data-table-sort-button'].instance.forwards_to).toBeUndefined();
   });
 });
 
@@ -209,30 +209,29 @@ describe('data-table: growth surfaces', () => {
 });
 
 describe('data-table: what the schema cannot assert', () => {
-  it("DataTable names every prop the schema cannot type, and its internal state as behaviour", () => {
-    const untyped = units[DIRECTORY].meaning.untyped ?? [];
-    const props = untyped.filter((entry) => entry.about === 'prop').map((entry) => entry.prop);
+  it("DataTable names every prop the schema cannot type, and its internal state as an invariant", () => {
+    const statements = units[DIRECTORY].meaning.props ?? {};
     for (const prop of ['columns', 'data', 'emptyMessage', 'nextLabel', 'previousLabel', 'selectionSummary']) {
-      expect(props, prop).toContain(prop);
+      expect(Object.keys(statements), prop).toContain(prop);
     }
     // The one claim that is NOT about a prop: sorting, selection and
     // pagination state never reach DataTableProps at all, so there is no
-    // property for a statement about a prop to name - which is exactly what
-    // the subject distinction buys.
-    expect(untyped.some((entry) => entry.about === 'behaviour' && /internal, not props/.test(entry.claim))).toBe(true);
+    // property for a `props` statement to key on - it is a fact about the
+    // component, which is exactly what an invariant is for (the dissolved
+    // `untyped` catch-all's `about: behaviour` category).
+    const invariants = units[DIRECTORY].meaning.invariants;
+    expect(invariants.some((entry) => /internal, not props/.test(entry.text))).toBe(true);
   });
 
-  it("DataTableSortButton states its mount point outside the kit, in mounted_in and as an untyped statement", () => {
+  it('DataTableSortButton states its mount point outside the kit, in mounted_in, and its Button composition as an unexposed part', () => {
     const { meaning } = units['data-table-sort-button'];
-    const untyped = meaning.untyped ?? [];
-    expect(untyped.some((entry) => entry.about === 'outside_mount')).toBe(true);
-    expect(untyped.some((entry) => entry.about === 'unexposed_part' && /composes the kit's own Button/.test(entry.claim))).toBe(true);
-    expect(
-      untyped
-        .filter((entry) => entry.about === 'prop')
-        .map((entry) => entry.prop)
-        .sort(),
-    ).toEqual(['children', 'column']);
+    // `mounted_in` already states the mount point outside the kit; there is
+    // no second, separate statement of the same fact any more (the dissolved
+    // `untyped` catch-all's `about: outside_mount` category).
+    const unexposedParts = meaning.unexposed_parts ?? [];
+    expect(unexposedParts.some((entry) => /Button/.test(entry.part) && /internal composition/.test(entry.reason))).toBe(true);
+    const statements = meaning.props ?? {};
+    expect(Object.keys(statements).sort()).toEqual(['children', 'column']);
     // A component reference covers kit-to-kit nesting only, and it is FILLED
     // rather than authored: a column's `header` render function is a TanStack
     // Table prop, not a kit component, so the mount point is stated as a
@@ -241,7 +240,7 @@ describe('data-table: what the schema cannot assert', () => {
     const mounts = meaning.mounted_in ?? [];
     expect(mounts.length).toBe(1);
     const [mount] = mounts;
-    if (typeof mount === 'string') throw new Error('expected a container outside the kit, got a component reference');
+    expect(mount.component).toBeUndefined();
     expect(mount.container).toContain('header');
     expect(mount.note).toContain('ColumnDef');
   });

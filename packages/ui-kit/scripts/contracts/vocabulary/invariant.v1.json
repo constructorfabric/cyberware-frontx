@@ -1,0 +1,23 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.invariant.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit invariant",
+  "description": "One fact about the component that its props type never carries - internal state, a runtime relationship - stated with a stable id a lint finding or an eval can cite.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Stable kebab-case handle. Lint findings and evals cite it; never reused after removal."
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "id",
+    "text"
+  ],
+  "additionalProperties": false
+}

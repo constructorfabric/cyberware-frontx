@@ -56,9 +56,9 @@ invariants:
 
 anti_patterns:
   - dont: Render a spinner next to the label by hand
-    instead: Use `loading` - it preserves the button's width and accessible name
+    do_instead: Use `loading` - it preserves the button's width and accessible name
   - dont: Pass an icon element through children
-    instead: Use the `icon` prop
+    do_instead: Use the `icon` prop
 
 # None yet. Shape when one appears:
 #   props:
@@ -75,32 +75,31 @@ attestations:
   rtl:
     outcome: unknown
 
-# Everything this contract's schema cannot assert: what each claim is about
-# and why nothing asserts it. The conformance suite pairs every `about: prop`
-# entry against the properties the schema leaves unasserted, both ways.
-untyped:
-  - about: prop
-    prop: icon
-    claim: icon is a React node, not a value
-    reason: >-
+# What each property that reaches this contract asserting nothing (or only
+# part of its shape) actually states, and why - keyed on the property
+# itself. The compiler emits both halves into that property's own
+# description, beside the `TS:` text; the conformance suite pairs every key
+# here against the properties the schema leaves unasserted, both ways.
+props:
+  icon:
+    states: icon is a React node, not a value
+    because: >-
       `ReactNode` has no JSON Schema representation - an element, a string,
       a fragment and `false` are all valid and only tsc can tell them from
       a mistake. The slot exists so the icon gets sized, spaced, hidden
       while `loading` and marked decorative; what may go in it is
       "anything React renders", which is the whole assertion.
-  - about: prop
-    prop: render
-    claim: render replaces the rendered element with one the caller supplies
-    reason: >-
+  render:
+    states: render replaces the rendered element with one the caller supplies
+    because: >-
       Base UI's render prop takes an element or a function of the button's
       own state, so its type is a union of a React element and a callback -
       neither expressible in JSON Schema. It is what makes
       `render={<a href="..." />}` with `nativeButton={false}` the way to
       keep an action reading as a button while it navigates.
-  - about: prop
-    prop: style
-    claim: style accepts a function of the button's state as well as a plain style object
-    reason: >-
+  style:
+    states: style accepts a function of the button's state as well as a plain style object
+    because: >-
       Base UI widens React's `CSSProperties` to
       `CSSProperties | ((state) => CSSProperties)` so a caller can style off
       the primitive's own state. A JSON Schema `object` would reject the

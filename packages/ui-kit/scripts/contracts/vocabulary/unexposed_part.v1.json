@@ -1,0 +1,23 @@
+{
+  "$id": "gts://gts.frontx.uikit.vocabulary.unexposed_part.v1~",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UiKit unexposed part",
+  "description": "Internal structure of the primitive underneath that the kit does not expose as a component of its own - a Header glued onto a Trigger inside one exported component. The other half of \"what the kit deliberately does not offer\" beside `withheld`: that field names a PROP the kit does not advertise, this names a PART.",
+  "type": "object",
+  "properties": {
+    "part": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The internal part, named as plainly as the primitive underneath names it. Free text: checked against the primitive's own part list wherever a future extractor knows one, and nothing here yet does."
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "part",
+    "reason"
+  ],
+  "additionalProperties": false
+}

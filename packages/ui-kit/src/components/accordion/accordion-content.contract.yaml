@@ -26,10 +26,18 @@ invariants:
       Open/close height-animates against Base UI's own
       `--accordion-panel-height` custom property, a live ResizeObserver
       measurement written on the panel element - not a themeable token.
+  - id: keep-mounted-usually-set-on-root
+    text: >-
+      keepMounted and hiddenUntilFound are usually set on the Accordion
+      root, not per panel. Base UI accepts both on the panel as well, and
+      this contract declares them because the panel really does take them;
+      accordion.md documents them on the root, which is where one setting
+      covers every panel of one accordion. Setting them here overrides that
+      root setting for this panel alone.
 
 anti_patterns:
   - dont: Rely on the panel's content being mounted while its item is closed
-    instead: >-
+    do_instead: >-
       Set `keepMounted` on the Accordion root if closed-panel content must
       stay in the DOM (e.g. for in-page search); otherwise assume it unmounts
 
@@ -42,27 +50,21 @@ attestations:
   rtl:
     outcome: unknown
 
-untyped:
-  - about: behaviour
-    claim: keepMounted and hiddenUntilFound are usually set on the Accordion root, not per panel
-    reason: >-
-      Base UI accepts both on the panel as well, and this contract lists
-      them because the panel really does take them; accordion.md documents
-      them on the root, which is where one setting covers every panel of
-      one accordion. Setting them here overrides that root setting for this
-      panel alone.
-  - about: prop
-    prop: render
-    claim: render replaces the panel element with one the caller supplies
-    reason: >-
+# What each property that reaches this contract asserting nothing (or only
+# part of its shape) actually states, and why - keyed on the property
+# itself. The compiler emits both halves into that property's own
+# description, beside the `TS:` text.
+props:
+  render:
+    states: render replaces the panel element with one the caller supplies
+    because: >-
       Base UI's render prop takes an element or a function of the panel's
       state; neither is expressible in JSON Schema. The panel is the
       element Base UI writes `--accordion-panel-height` on, so a replaced
       element still has to be the one the height animation measures.
-  - about: prop
-    prop: style
-    claim: style accepts a function of the panel's state as well as a plain style object
-    reason: >-
+  style:
+    states: style accepts a function of the panel's state as well as a plain style object
+    because: >-
       Base UI widens React's `CSSProperties` to
       `CSSProperties | ((state) => CSSProperties)`; a JSON Schema `object`
       would reject the function form.
