@@ -338,9 +338,9 @@ export default [
                 'SDK VIOLATION: @gears-frontx/routing holds no intra-ecosystem package dependency.',
             },
             {
-              group: ['@tanstack/*', '!@tanstack/react-table'],
+              group: ['@tanstack/*'],
               message:
-                'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine.',
+                'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine — the engine-free core allows no @tanstack/* import at all.',
             },
             {
               group: ['react', 'react-dom', 'react-dom/*', 'react/*'],
