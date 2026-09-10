@@ -319,6 +319,8 @@ This is what replaced closing the schema. A closed schema answered "invalid" to 
    2. [x] - `p1` - Measure the distance as a bounded edit distance, since the only question asked of it is whether two names are exactly one edit apart - `inst-pc-distance`
 3. [x] - `p1` - Count a prop as known when it matches one of the surface's patterns and no prop the contract declares is one edit from it - `inst-pc-classify`
 4. [x] - `p1` - Report every other name as unchecked, which is a report and not a refusal - `inst-pc-classify`
+5. [x] - `p1` - Read the props one JSX usage passes to one component by walking the opening tag rather than matching a pattern over the raw text, so a value that itself contains `<`/`>`/quotes (an icon element, a callback, a string) never reads as a second attribute - `inst-pc-usage`
+6. [x] - `p1` - Derive a failure from a near miss found in a contract's own examples, in both the enrollment report and the guard - the annotated open schema is only as safe as something deriving an exit code from the classification it carries, and the guard is what continuous integration runs - `inst-pc-enforce`
 
 ### Contract Identifier Construction
 
@@ -391,6 +393,7 @@ The surface a component forwards to its host element is not compared here: it is
    1. [x] - `p1` - Apply the same shape rule to a declared prop that the forwarded surface already gets - a changed type, a type appearing where none existed, a dropped enum value, an enum appearing where the prop accepted any value of its type. One rule, one function, because a narrowing does not mean something different depending on which half of a contract the property lives in; and the type system's own comparison does not report an enum appearing over an existing type, which is the shape this compiler emits the day a plain string prop becomes a literal union - `inst-cd-shape`
    2. [x] - `p1` - Reconcile a declared prop that left the properties against the forwarded surface: a name that surface still accepts, by declaration or by pattern, is not gone - a component dropping its own narrower declaration of a forwarded attribute changes nothing a consumer passes. Report the move either way, because the component's own declaration really did disappear, and compare the shapes where the surface declares one - accepted is not the same as accepted unchanged - `inst-cd-own-forwarded`
 3. [x] - `p1` - Combine those two with the type system's own backward comparison, which sees neither of them - `inst-cd-combine`
+   1. [x] - `p1` - Diff invariant ids the same way: one present at the base revision and gone now is incompatible, since it is a stable handle a lint finding or an eval can already cite by name - a promise the id's own description states in prose and nothing before this checked. A same-id text edit is not a break and is reported informationally either way - `inst-cd-invariants`
 4. [x] - `p1` - **IF** nothing is incompatible - `inst-cd-pass`
    1. [x] - `p1` - **RETURN** a pass - `inst-cd-pass-return`
 5. [x] - `p1` - **IF** the contract major moved - `inst-cd-major`
