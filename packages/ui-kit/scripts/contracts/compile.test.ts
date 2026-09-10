@@ -215,15 +215,17 @@ describe('the vocabulary the base type references', () => {
     expect([...referenced].filter((ref) => !builtIds.has(ref))).toEqual([]);
   });
 
-  it('keeps the reference ahead of the null alternative on an optional x-gts-traits field', () => {
-    // Key ORDER is load-bearing here, which is why it is asserted:
-    // GtsStore.resolveTraitSchemaRefs merges a resolved reference in at the
-    // position of the `$ref` key, so a `type` written before it is
-    // overwritten by the referenced type's own `object` and `family: null`
-    // silently stops validating for every component that omits the field.
+  it('widens a bare-$ref optional x-gts-traits field with anyOf, not a positional type/default', () => {
+    // No key order to get right: `anyOf: [{ $ref }, { type: "null" }]` says
+    // the value is either what the reference asserts or null regardless of
+    // where in the object it is written, unlike a `type` widened beside
+    // `$ref` (gts-ts merges a resolved reference in at the position of the
+    // `$ref` key, so a `type` written first used to be overwritten by the
+    // referenced type's own `object` and `family: null` silently stopped
+    // validating for every component that omits the field).
     const family = (buildGtsTraitsSchema().properties as Record<string, Record<string, unknown>>).family_membership;
-    expect(Object.keys(family)[0]).toBe('$ref');
-    expect(family.type).toEqual(['object', 'null']);
+    expect(family.anyOf).toEqual([{ $ref: expect.stringContaining('family_membership') }, { type: 'null' }]);
+    expect(family.type).toBeUndefined();
     expect(family.default).toBeNull();
   });
 });

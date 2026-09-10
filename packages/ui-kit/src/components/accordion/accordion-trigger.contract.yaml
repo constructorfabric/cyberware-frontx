@@ -36,6 +36,8 @@ attestations:
   a11y:
     outcome: verified
     by: Base UI's Accordion.Header and Accordion.Trigger - focus handling and the aria-expanded/aria-controls wiring
+  rtl:
+    outcome: unknown
 
 untyped:
   - about: unexposed_part

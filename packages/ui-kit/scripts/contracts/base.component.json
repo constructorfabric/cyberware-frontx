@@ -99,7 +99,14 @@
         "additionalProperties": {
           "$ref": "gts://gts.frontx.uikit.vocabulary.attestation.v1~"
         },
-        "description": "What this contract claims about itself, one entry per claim. Open by construction - the claim names are the kit's own and grow with it - which is why the attestation type is referenced from additionalProperties rather than from a fixed property list, and why no key inside it is reserved for anything else."
+        "propertyNames": {
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "required": [
+          "a11y",
+          "rtl"
+        ],
+        "description": "What this contract claims about itself, one entry per claim. `a11y` and `rtl` are the kit's own core claims and every component states both; a claim beyond those is present only when the component actually makes it - its absence means \"not claimed\", which is a different fact from an attestation whose outcome is `unknown` (\"considered, not established\"). Open beyond the two required keys by construction - the claim names are the kit's own and grow with it - which is why the attestation type is referenced from additionalProperties rather than from a fixed property list, and why no key inside it is reserved for anything else."
       },
       "untyped": {
         "type": [
@@ -174,11 +181,14 @@
         "additionalProperties": false
       },
       "family_membership": {
-        "$ref": "gts://gts.frontx.uikit.vocabulary.family_membership.v1~",
         "description": "Absent entirely for a component that is part of no family - Button, most of the kit.",
-        "type": [
-          "object",
-          "null"
+        "anyOf": [
+          {
+            "$ref": "gts://gts.frontx.uikit.vocabulary.family_membership.v1~"
+          },
+          {
+            "type": "null"
+          }
         ],
         "default": null
       },
@@ -228,9 +238,7 @@
           "type": "object",
           "properties": {
             "prop": {
-              "type": "string",
-              "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-              "description": "Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test."
+              "$ref": "gts://gts.frontx.uikit.vocabulary.prop_name.v1~"
             },
             "reason": {
               "type": "string",

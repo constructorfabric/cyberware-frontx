@@ -10,9 +10,7 @@
       "minLength": 1
     },
     "replacement": {
-      "type": "string",
-      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-      "description": "Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test."
+      "$ref": "gts://gts.frontx.uikit.vocabulary.prop_name.v1~"
     },
     "hint": {
       "type": "string",

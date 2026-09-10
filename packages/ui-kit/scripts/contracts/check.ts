@@ -32,6 +32,7 @@ import {
   compareElementSurfaces,
   decideCompat,
   decideRemoval,
+  diffInvariants,
   diffOwnPropsSchema,
   evaluateGuard,
   extractContractMajor,
@@ -592,6 +593,15 @@ function checkCompatForUnit(
   const ownPropsDiff = diffOwnPropsSchema(oldContract, newContract, newElementSurface);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own
 
+  // An invariant id is a stable handle a lint finding or an eval can cite by
+  // name (base.component.json's own description makes the promise); an id
+  // present at the base ref and gone now breaks that promise the same way a
+  // removed prop breaks a call site, so it is compared here alongside every
+  // other compatibility signal rather than left to prose.
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-invariants
+  const invariantsDiff = diffInvariants(oldContract['x-gts-traits'].invariants, newContract['x-gts-traits'].invariants);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-invariants
+
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-unit:p1:inst-cu-decide
   const decision = decideCompat({
     component,
@@ -601,6 +611,7 @@ function checkCompatForUnit(
     gtsBackwardErrors: result.backward_errors,
     elementSurfaceDiff,
     ownPropsDiff,
+    invariantsDiff,
   });
   const notes = decision.notes.map((note) => `${note}${renamedFromNote}`);
   if (comparison.note !== undefined) notes.push(comparison.note);

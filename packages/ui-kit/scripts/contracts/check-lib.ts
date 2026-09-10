@@ -238,6 +238,37 @@ export interface OwnPropsDiff {
   compatible: boolean;
 }
 
+export interface InvariantLike {
+  id: string;
+  text: string;
+}
+
+export interface InvariantsDiff {
+  // An id present at the base ref and gone now: base.component.json's own
+  // description states the promise directly ("never reused after removal"),
+  // which was prose with nothing checking it. Treated as a compatibility
+  // break for the same reason a removed prop is - a lint finding or an eval
+  // that cites the id by name now resolves to nothing.
+  removedIds: string[];
+  // An id present at both revisions whose text changed: not a removal, so
+  // not a break, but worth a reviewer's eye - reported informationally in
+  // both the pass and the fail case.
+  changedTextIds: string[];
+  compatible: boolean;
+}
+
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-invariants
+export function diffInvariants(oldInvariants: readonly InvariantLike[] = [], newInvariants: readonly InvariantLike[] = []): InvariantsDiff {
+  const oldById = new Map(oldInvariants.map((invariant) => [invariant.id, invariant.text]));
+  const newById = new Map(newInvariants.map((invariant) => [invariant.id, invariant.text]));
+  const removedIds = [...oldById.keys()].filter((id) => !newById.has(id)).sort();
+  const changedTextIds = [...oldById.keys()]
+    .filter((id) => newById.has(id) && newById.get(id) !== oldById.get(id))
+    .sort();
+  return { removedIds, changedTextIds, compatible: removedIds.length === 0 };
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-invariants
+
 // Whether the forwarded surface accounts for a name at all: declared
 // outright, or matched by one of its pattern families (`aria-*`, `data-*`,
 // `on*`).
@@ -378,6 +409,7 @@ export interface CompatDecisionInput {
   gtsBackwardErrors: string[];
   elementSurfaceDiff?: ElementSurfaceDiff;
   ownPropsDiff?: OwnPropsDiff;
+  invariantsDiff?: InvariantsDiff;
 }
 
 export interface CompatDecision {
@@ -396,26 +428,33 @@ export interface CompatDecision {
 // @cpt-algo:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1
 export function decideCompat(input: CompatDecisionInput): CompatDecision {
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-combine
-  const { component, oldMajor, newMajor, gtsBackwardCompatible, gtsBackwardErrors, elementSurfaceDiff, ownPropsDiff } = input;
+  const { component, oldMajor, newMajor, gtsBackwardCompatible, gtsBackwardErrors, elementSurfaceDiff, ownPropsDiff, invariantsDiff } = input;
   const elementSurfaceIncompatible = elementSurfaceDiff !== undefined && !elementSurfaceDiff.compatible;
   const ownPropsIncompatible = ownPropsDiff !== undefined && !ownPropsDiff.compatible;
-  const incompatible = !gtsBackwardCompatible || elementSurfaceIncompatible || ownPropsIncompatible;
+  const invariantsIncompatible = invariantsDiff !== undefined && !invariantsDiff.compatible;
+  const incompatible = !gtsBackwardCompatible || elementSurfaceIncompatible || ownPropsIncompatible || invariantsIncompatible;
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-combine
 
   // A prop that moved from the contract's own properties to the surface it
   // forwards is reported whichever way the decision goes: nothing a consumer
   // passes stops validating, so it is not a reason to fail, but it IS the
   // component's own declaration disappearing and a reviewer should see it.
+  // An invariant whose TEXT changed (not its id) is the same kind of note -
+  // no consumer's code is affected, but a reviewer should see the wording
+  // moved.
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own-forwarded
   const moved = (ownPropsDiff?.movedToForwardedSurface ?? []).map(
     (prop) => `${component}: own prop "${prop}" is no longer declared here but is still accepted by the forwarded surface`,
+  );
+  const invariantTextChanged = (invariantsDiff?.changedTextIds ?? []).map(
+    (id) => `${component}: invariant "${id}" text changed (informational; the id is unchanged so nothing that cites it breaks)`,
   );
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-own-forwarded
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass
   if (!incompatible) {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass-return
-    return { decision: 'pass', notes: [`${component}: backward compatible`, ...moved] };
+    return { decision: 'pass', notes: [`${component}: backward compatible`, ...moved, ...invariantTextChanged] };
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass-return
   }
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-pass
@@ -431,6 +470,7 @@ export function decideCompat(input: CompatDecisionInput): CompatDecision {
       (source) => `element surface: pattern family "${source}" removed - every name it matched is no longer accepted`,
     ) ?? []),
     ...(elementSurfaceDiff?.narrowed.map((entry) => `element surface: prop "${entry.prop}" ${entry.reason}`) ?? []),
+    ...(invariantsDiff?.removedIds.map((id) => `invariant "${id}" removed - ids are never reused after removal`) ?? []),
   ];
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-combine
 
@@ -439,7 +479,7 @@ export function decideCompat(input: CompatDecisionInput): CompatDecision {
     // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-major-return
     return {
       decision: 'pass',
-      notes: [`${component}: backward-incompatible, but the contract major moved v${oldMajor} -> v${newMajor}: ${reasons.join('; ')}`, ...moved],
+      notes: [`${component}: backward-incompatible, but the contract major moved v${oldMajor} -> v${newMajor}: ${reasons.join('; ')}`, ...moved, ...invariantTextChanged],
     };
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-major-return
   }
@@ -448,7 +488,7 @@ export function decideCompat(input: CompatDecisionInput): CompatDecision {
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-fail
   return {
     decision: 'fail',
-    notes: [`${component}: backward-incompatible at contract major v${oldMajor} (unchanged) - ${reasons.join('; ')}`, ...moved],
+    notes: [`${component}: backward-incompatible at contract major v${oldMajor} (unchanged) - ${reasons.join('; ')}`, ...moved, ...invariantTextChanged],
   };
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-compat-decision:p1:inst-cd-fail
 }

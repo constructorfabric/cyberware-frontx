@@ -8,7 +8,7 @@
     "export": {
       "type": "string",
       "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-      "description": "The exported name, as a consumer imports it."
+      "description": "The exported name, as a consumer imports it - a JS identifier, not a prop."
     },
     "typed_by": {
       "type": "string",

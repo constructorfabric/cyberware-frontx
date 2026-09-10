@@ -10,6 +10,7 @@ import {
   classifyProps,
   compareElementSurfaces,
   decideCompat,
+  diffInvariants,
   diffOwnPropsSchema,
   diffElementSurface,
   evaluateGuard,
@@ -265,6 +266,43 @@ describe('decideCompat', () => {
     });
     expect(decision.decision).toBe('fail');
     expect(decision.notes[0]).toContain('element surface: pattern family "^on[A-Z]" removed');
+  });
+
+  it('fails on a removed invariant id, and reports a changed-text id informationally either way', () => {
+    // A removed id breaks the promise base.component.json's own description
+    // states ("never reused after removal") - a lint finding or an eval
+    // citing it now resolves to nothing, the same failure mode a removed
+    // prop has for a caller.
+    const removed = decideCompat({
+      ...base,
+      invariantsDiff: { removedIds: ['icon-only-needs-label'], changedTextIds: [], compatible: false },
+    });
+    expect(removed.decision).toBe('fail');
+    expect(removed.notes[0]).toContain('invariant "icon-only-needs-label" removed');
+
+    // Text changing under the SAME id is not a break: nothing that cites the
+    // id stops resolving, so it is a note, not a reason to fail, and it
+    // shows up whichever way the decision goes.
+    const passingWithNote = decideCompat({
+      ...base,
+      invariantsDiff: { removedIds: [], changedTextIds: ['icon-only-needs-label'], compatible: true },
+    });
+    expect(passingWithNote.decision).toBe('pass');
+    expect(passingWithNote.notes.some((note) => note.includes('invariant "icon-only-needs-label" text changed'))).toBe(true);
+  });
+
+  it('diffInvariants: an id gone at the new revision is removed, and a same-id text edit is a change, not a removal', () => {
+    const oldInvariants = [
+      { id: 'icon-only-needs-label', text: 'Icon-only buttons need an aria-label.' },
+      { id: 'loading-disables-interaction', text: 'A loading button ignores clicks.' },
+    ];
+    const newInvariants = [
+      { id: 'icon-only-needs-label', text: 'Icon-only buttons require an accessible label via aria-label.' },
+    ];
+    const diff = diffInvariants(oldInvariants, newInvariants);
+    expect(diff.removedIds).toEqual(['loading-disables-interaction']);
+    expect(diff.changedTextIds).toEqual(['icon-only-needs-label']);
+    expect(diff.compatible).toBe(false);
   });
 
   it('fails on an incompatible own-props diff alone, even when gts-ts reports backward compatible', () => {

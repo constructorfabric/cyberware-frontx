@@ -39,6 +39,8 @@ attestations:
   a11y:
     outcome: verified
     by: Base UI's Accordion.Item - the item's own disclosure state and its wiring to the root
+  rtl:
+    outcome: unknown
 
 untyped:
   - about: prop

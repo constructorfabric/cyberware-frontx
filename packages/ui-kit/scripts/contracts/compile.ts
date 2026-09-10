@@ -606,6 +606,42 @@ export const loadVocabularyTypes = memoizeSchema((): Record<string, unknown>[] =
     .map((name) => JSON.parse(readFileSync(join(VOCABULARY_DIR, name), 'utf8')) as Record<string, unknown>),
 );
 
+// The kit's own attestation claim names - a data file rather than a
+// hardcoded list so adding a claim (the kit's third, whenever it ships one)
+// is a one-line edit here, not a compile.ts change. `required` are the
+// claims every enrolled component states, whether the outcome is verified,
+// failed or still unknown; `optional` names a claim a component may make
+// without every OTHER component having to. Read once per process, the same
+// as the schemas above.
+export interface AttestationClaimRegistry {
+  required: string[];
+  optional: string[];
+}
+const ATTESTATION_CLAIMS_PATH = join(SCHEMA_DIR, 'attestation-claims.json');
+export const loadAttestationClaims = memoizeSchema(
+  (): AttestationClaimRegistry => JSON.parse(readFileSync(ATTESTATION_CLAIMS_PATH, 'utf8')) as AttestationClaimRegistry,
+);
+
+// Every attestation key an overlay writes has to be one the kit actually
+// recognizes - `propertyNames`'s pattern in the trait schema only checks the
+// SHAPE of a key (lowercase, snake_case), which admits a typo of a real
+// claim (`ally` beside `a11y`) exactly as readily as the real thing. This is
+// the other half: a claim not in the registry fails the compile by name,
+// with the fix stated in the message, instead of compiling clean as an
+// unrecognized-but-well-formed key.
+// @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-attestation-claims
+export function assertKnownAttestationClaims(component: string, overlay: Overlay): void {
+  const known = new Set([...loadAttestationClaims().required, ...loadAttestationClaims().optional]);
+  for (const claim of Object.keys(overlay.attestations)) {
+    if (!known.has(claim)) {
+      throw new Error(
+        `${component}: attestation claim "${claim}" is not in the claim list - add it to scripts/contracts/attestation-claims.json`,
+      );
+    }
+  }
+}
+// @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-attestation-claims
+
 // A vocabulary type resolves through TWO resolvers with different rules, so
 // both have to be given the types explicitly:
 //   - a GTS store resolves `$ref` by looking the id up among registered
@@ -883,6 +919,16 @@ function expressedSchemaOf(prop: ExtractedProp): ContractProperty {
 // property carrying x-gts-ref directly - see the instance's props_schema
 // below. A reference nested inside a referenced vocabulary type is not
 // reached by that walker, so those stay resolved by the conformance suite.
+//
+// This is also the shape vocabulary/component_reference.v1.json carries -
+// every OTHER place a component reference appears (a recommendation's
+// component, an accepted component, a family member) is inside x-gts-traits,
+// not on an instance property directly, so it is free to `$ref` that type
+// instead of repeating the triple. Only the instance's own props_schema
+// keeps this exact literal (see buildMetamodel below and the comment there):
+// x-gts-ref has to sit directly on the instance property for gts-ts's walker
+// to resolve it, and a `$ref` in between would hide it the same way an
+// x-gts-ref-only oneOf branch does once gts-ts strips the keyword.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema:p2:inst-ts-id-value
 function componentRefSchema(): Record<string, unknown> {
   return {
@@ -896,11 +942,47 @@ function componentRefSchema(): Record<string, unknown> {
 }
 // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema:p2:inst-ts-id-value
 
+// A reference to another kit component, as it appears NESTED inside
+// x-gts-traits data (a recommendation's `component`, an accepted component,
+// a family member) rather than directly on an instance property. `$ref`
+// rather than componentRefSchema()'s literal: gts-ts's own ref-resolving
+// walk never reaches this deep (see the comment above), so nothing is lost
+// by defining the grammar once, in vocabulary/component_reference.v1.json,
+// and pointing at it - which is also what turns five near-identical JSON
+// blocks on disk into one type and four references.
+function componentReferenceRef(): Record<string, unknown> {
+  return { $ref: vocabularyTypeId('component_reference') };
+}
+
 function propNameSchema(): Record<string, unknown> {
   return {
     type: 'string',
     pattern: '^[a-zA-Z_][a-zA-Z0-9_]*$',
-    description: 'Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test.',
+    description: 'Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the compiler (assertOverlayReferencesRealProps).',
+  };
+}
+
+// A prop-name reference nested inside x-gts-traits data, the same relation
+// componentReferenceRef has to componentRefSchema: propNameSchema's shape is
+// what vocabulary/prop_name.v1.json carries, and every field that names a
+// prop (an icon slot, a deprecation's replacement, a withheld prop, an
+// untyped statement, a declared slot, a capability's switch) points at it
+// instead of repeating the pattern.
+function propNameRef(): Record<string, unknown> {
+  return { $ref: vocabularyTypeId('prop_name') };
+}
+
+// A JS export name, as `companion.export` carries it. Syntactically the same
+// grammar as a prop name - both are plain JS identifiers - but a different
+// CONCEPT (an export is not a prop of the component), so it is its own
+// function rather than a second caller of propNameSchema/propNameRef: the
+// two grammars happening to coincide today is not a reason to let a future
+// change to one silently narrow the other.
+function exportNameSchema(): Record<string, unknown> {
+  return {
+    type: 'string',
+    pattern: '^[a-zA-Z_][a-zA-Z0-9_]*$',
+    description: 'The exported name, as a consumer imports it - a JS identifier, not a prop.',
   };
 }
 
@@ -917,10 +999,13 @@ function vocabularyType(token: string, title: string, description: string, body:
 // The overlay vocabulary as GTS types, one concept per type, referenced by
 // both the metamodel (what an instance must look like) and the abstract
 // type's x-gts-traits-schema (what a validator checks x-gts-traits against)
-// instead of being written out twice or copied through an inliner. Thirteen
-// of them: eight are a field of the x-gts-traits block, five are the value
-// objects those eight embed - a recommendation is a fact with its own shape,
-// not an anonymous object inside a bigger schema.
+// instead of being written out twice or copied through an inliner. Most are
+// a field of the x-gts-traits block or a value object one of those fields
+// embeds - a recommendation is a fact with its own shape, not an anonymous
+// object inside a bigger schema. Two, `component_reference` and `prop_name`,
+// are pure grammar rather than a domain concept: the reference triple and
+// the name pattern that several of the others repeat, factored out so the
+// grammar is defined once and every repetition is a `$ref` to it.
 //
 // Referenced, not inlined: gts-ts resolves a `$ref` in an x-gts-traits-schema
 // by looking the id up among registered entities, so a type that is not
@@ -928,6 +1013,18 @@ function vocabularyType(token: string, title: string, description: string, body:
 // of a component's `accepts` quietly validating against nothing.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema:p2:inst-ts-vocabulary
 export const buildVocabularyTypes = memoizeSchema((): Record<string, unknown>[] => [
+    vocabularyType(
+      'component_reference',
+      'UiKit component reference',
+      componentRefSchema().description as string,
+      componentRefSchema(),
+    ),
+    vocabularyType(
+      'prop_name',
+      'UiKit prop name',
+      propNameSchema().description as string,
+      propNameSchema(),
+    ),
     vocabularyType(
       'recommendation',
       'UiKit recommendation',
@@ -941,7 +1038,7 @@ export const buildVocabularyTypes = memoizeSchema((): Record<string, unknown>[] 
             description: 'What to use instead, in the words a reader will act on - a component name, a primitive, the consuming application\'s own thing.',
           },
           // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-alternative
-          component: componentRefSchema(),
+          component: componentReferenceRef(),
           // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-alternative
           note: {
             type: 'string',
@@ -984,7 +1081,7 @@ export const buildVocabularyTypes = memoizeSchema((): Record<string, unknown>[] 
           },
           components: {
             type: 'array',
-            items: componentRefSchema(),
+            items: componentReferenceRef(),
             minItems: 1,
             description: 'Kit components that may appear inside, by reference - typed so a reader can resolve one and the conformance suite can check it exists. This is also the ONE authored statement of a nesting relationship: every other contract\'s `mounted_in` is filled from these lists.',
           },
@@ -992,16 +1089,22 @@ export const buildVocabularyTypes = memoizeSchema((): Record<string, unknown>[] 
             type: 'boolean',
             description: 'A non-component React node may appear inside: a string, a number, a fragment, or a formatted inline element (<strong>, <code>) - never a kit component, which would be a reference in `components` instead.',
           },
-          icons_via: propNameSchema(),
+          icons_via: propNameRef(),
         },
         required: ['content'],
         additionalProperties: false,
         // Instance-type-scoped keywords, so this applies to a real accepts
-        // object and is vacuously true of anything else.
+        // object and is vacuously true of anything else. `icons_via` is
+        // governed by the same if/then/else as `components`/`text`: a prop
+        // that supplies icons is a fact about WHAT is specified to appear
+        // inside, so it makes no sense beside "nothing may appear inside"
+        // or "whatever the consumer puts in it, unexamined" - carrying it
+        // there would be a claim about content this type has already said
+        // it is not making.
         // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema:p2:inst-ts-content-exclusive
         if: { properties: { content: { const: 'specified' } }, required: ['content'] },
         then: { anyOf: [{ required: ['components'] }, { required: ['text'] }] },
-        else: { not: { anyOf: [{ required: ['components'] }, { required: ['text'] }] } },
+        else: { not: { anyOf: [{ required: ['components'] }, { required: ['text'] }, { required: ['icons_via'] }] } },
         // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema:p2:inst-ts-content-exclusive
       },
     ),
@@ -1041,7 +1144,7 @@ export const buildVocabularyTypes = memoizeSchema((): Record<string, unknown>[] 
         type: 'object',
         properties: {
           since: { type: 'string', minLength: 1 },
-          replacement: propNameSchema(),
+          replacement: propNameRef(),
           hint: { type: 'string', minLength: 1 },
         },
         required: ['since', 'replacement', 'hint'],
@@ -1088,7 +1191,7 @@ export const buildVocabularyTypes = memoizeSchema((): Record<string, unknown>[] 
           },
           claim: { type: 'string', minLength: 1 },
           reason: { type: 'string', minLength: 1 },
-          prop: propNameSchema(),
+          prop: propNameRef(),
         },
         required: ['about', 'claim', 'reason'],
         additionalProperties: false,
@@ -1115,7 +1218,7 @@ export const buildVocabularyTypes = memoizeSchema((): Record<string, unknown>[] 
           role: { type: 'string', enum: ['root', 'part'] },
           members: {
             type: 'array',
-            items: componentRefSchema(),
+            items: componentReferenceRef(),
             minItems: 1,
             description: 'Every part of this family, by reference. FILLED by the compiler on the root from every contract naming the same family as a part; an authored one is refused, and a part carries none.',
           },
@@ -1134,7 +1237,7 @@ export const buildVocabularyTypes = memoizeSchema((): Record<string, unknown>[] 
       {
         type: 'object',
         properties: {
-          prop: propNameSchema(),
+          prop: propNameRef(),
           // Free text, not a reference: the governing type usually lives in
           // a third-party package this contract has no business re-typing.
           typed_by: { type: 'string', minLength: 1 },
@@ -1156,7 +1259,7 @@ export const buildVocabularyTypes = memoizeSchema((): Record<string, unknown>[] 
             pattern: '^[a-z][a-z0-9_]*$',
             description: 'The capability\'s own token - `row_selection`, not a sentence.',
           },
-          enabled_by: propNameSchema(),
+          enabled_by: propNameRef(),
           typed_by: { type: 'string', minLength: 1 },
           description: { type: 'string', minLength: 1 },
         },
@@ -1171,11 +1274,7 @@ export const buildVocabularyTypes = memoizeSchema((): Record<string, unknown>[] 
       {
         type: 'object',
         properties: {
-          export: {
-            type: 'string',
-            pattern: '^[a-zA-Z_][a-zA-Z0-9_]*$',
-            description: 'The exported name, as a consumer imports it.',
-          },
+          export: exportNameSchema(),
           typed_by: { type: 'string', minLength: 1 },
           description: { type: 'string', minLength: 1 },
         },
@@ -1277,8 +1376,17 @@ export const buildTraitFields = memoizeSchema((): { properties: Record<string, R
       attestations: {
         type: 'object',
         additionalProperties: { $ref: vocabularyTypeId('attestation') },
+        // Any key SHAPE passes here - a claim name is `^[a-z][a-z0-9_]*$`
+        // like every other kit token - but whether the key is one of the
+        // kit's OWN claim names is not something JSON Schema can check
+        // against a registry, so that half of the rule is
+        // assertKnownAttestationClaims below, at compile time: an unknown
+        // claim fails the compile by name instead of compiling clean beside
+        // a typo of a real one (`ally` next to `a11y`).
+        propertyNames: { pattern: '^[a-z][a-z0-9_]*$' },
+        required: [...loadAttestationClaims().required],
         description:
-          "What this contract claims about itself, one entry per claim. Open by construction - the claim names are the kit's own and grow with it - which is why the attestation type is referenced from additionalProperties rather than from a fixed property list, and why no key inside it is reserved for anything else.",
+          "What this contract claims about itself, one entry per claim. `a11y` and `rtl` are the kit's own core claims and every component states both; a claim beyond those is present only when the component actually makes it - its absence means \"not claimed\", which is a different fact from an attestation whose outcome is `unknown` (\"considered, not established\"). Open beyond the two required keys by construction - the claim names are the kit's own and grow with it - which is why the attestation type is referenced from additionalProperties rather than from a fixed property list, and why no key inside it is reserved for anything else.",
       },
       untyped: {
         type: 'array',
@@ -1322,11 +1430,6 @@ export const buildTraitFields = memoizeSchema((): { properties: Record<string, R
         required: ['good', 'bad'],
         additionalProperties: false,
       },
-      // `$ref` first, siblings after: the x-gts-traits-schema copy of this
-      // property wraps it nullable (nullableGtsTraitsProperty below), and
-      // gts-ts merges a resolved reference in at the position of the `$ref`
-      // key - a `type` written before it would be overwritten by the
-      // referenced type's own.
       family_membership: {
         $ref: vocabularyTypeId('family_membership'),
         description: 'Absent entirely for a component that is part of no family - Button, most of the kit.',
@@ -1359,7 +1462,7 @@ export const buildTraitFields = memoizeSchema((): { properties: Record<string, R
         items: {
           type: 'object',
           properties: {
-            prop: propNameSchema(),
+            prop: propNameRef(),
             reason: {
               type: 'string',
               minLength: 1,
@@ -1456,7 +1559,13 @@ export const buildMetamodel = memoizeSchema((): Record<string, unknown> => ({
       // instance whose props schema - or whose host-element surface - is not a
       // registered type (see the component contract suites). A reference held
       // inside the contract's own x-gts-traits is not reached by that walk and
-      // is resolved by the conformance suite instead.
+      // is resolved by the conformance suite instead - which is why these two
+      // are the only places in the whole schema set that keep the reference
+      // triple inline rather than pointing at vocabulary/component_reference.v1.json
+      // or vocabulary/prop_name.v1.json the way every nested one does: a `$ref`
+      // here would hide `x-gts-ref` from the walk exactly as an x-gts-ref-only
+      // oneOf branch does once gts-ts strips the keyword (componentRefSchema's
+      // own comment above).
       props_schema: {
         type: 'string',
         pattern: componentTypeRefPattern(),
@@ -1489,13 +1598,19 @@ export const buildMetamodel = memoizeSchema((): Record<string, unknown> => ({
 // object/array data.
 //
 // A property that is nothing but a reference (`family_membership`) has no
-// `type` of its own to widen, and it must not gain one BEFORE the reference:
-// gts-ts merges a resolved reference in at the position of the `$ref` key, so
-// a `type` written first is overwritten by the referenced type's own `object`
-// and the null alternative silently disappears. Spreading the source first
-// and assigning `type`/`default` after is what keeps `$ref` in front of them.
+// `type` of its own to widen: gts-ts merges a resolved reference in at the
+// position of the `$ref` key, so a `type` added beside it depends on where in
+// the object that assignment lands relative to `$ref` - key order load-bearing
+// for a value gts-ts treats as unordered JSON. `anyOf: [{ $ref }, { type:
+// "null" }]` says the same thing without relying on it: the value is either
+// what the reference asserts or null, and which branch matched is not a
+// question of what got written to the object first.
 // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-gts-traits-schema:p2:inst-ts-nullable
 function nullableGtsTraitsProperty(schema: Record<string, unknown>): Record<string, unknown> {
+  const { $ref, ...siblings } = schema as { $ref?: string; [key: string]: unknown };
+  if ($ref !== undefined) {
+    return { ...siblings, anyOf: [{ $ref }, { type: 'null' }], default: null };
+  }
   const type = schema.type;
   const widened = Array.isArray(type) ? [...type, 'null'] : type === undefined ? ['object', 'null'] : [type, 'null'];
   return { ...schema, type: widened, default: null };
@@ -2293,12 +2408,16 @@ export function resolveTargetExtraction(directory: string, exportStem: string = 
 }
 
 // The overlay must only ever point at a prop the extractor actually found.
-// Six prop-name-bearing fields today - `deprecations.props` keys,
-// `accepts.icons_via`, every `withheld` entry, an `untyped` statement about a
-// prop, every `slots` entry and every `capabilities` entry's `enabled_by` -
-// checked here so every component gets the cross-check unconditionally rather
-// than only the one whose test author remembered to write it. Extend the list
-// if the metamodel ever adds a seventh.
+// Seven prop-name-bearing fields today - `deprecations.props` keys,
+// EVERY deprecation's own `replacement`, `accepts.icons_via`, every
+// `withheld` entry, an `untyped` statement about a prop, every `slots` entry
+// and every `capabilities` entry's `enabled_by` - checked here so every
+// component gets the cross-check unconditionally rather than only the one
+// whose test author remembered to write it. `replacement` was the metamodel's
+// seventh and arrived unchecked; every prop-name field's own description
+// says the check happens here, in the compiler, not in a conformance test
+// somewhere downstream - extend both this list and that description if the
+// metamodel ever adds an eighth.
 //
 // Which props count as real differs by field, and deliberately: the kit's own
 // declared props and its variant axes are what a deprecation, an icon slot, a
@@ -2317,8 +2436,14 @@ export function assertOverlayReferencesRealProps(component: string, overlay: Ove
     // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop-refuse
   };
 
-  for (const prop of Object.keys(overlay.deprecations.props ?? {})) {
+  for (const [prop, deprecation] of Object.entries(overlay.deprecations.props ?? {})) {
     if (!declared.has(prop)) refuse(`overlay deprecations.props references "${prop}", which is not a real prop`);
+    if (!declared.has(deprecation.replacement)) {
+      refuse(
+        `overlay deprecations.props."${prop}".replacement references "${deprecation.replacement}", which is not a real prop - ` +
+          `a deprecation whose replacement does not exist leaves the caller with no next move, which is the failure this field exists to prevent`,
+      );
+    }
   }
   const iconsVia = overlay.accepts.icons_via;
   if (iconsVia !== undefined && !declared.has(iconsVia)) {
@@ -2650,6 +2775,9 @@ export function compileContract(directory: string, exportStem: string = director
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop
   assertOverlayReferencesRealProps(exportStem, overlay, extraction);
   // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-absent-prop
+  // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-attestation-claims
+  assertKnownAttestationClaims(exportStem, overlay);
+  // @cpt-end:cpt-frontx-ui-kit-algo-component-contracts-overlay-admission:p1:inst-oa-attestation-claims
 
   // @cpt-begin:cpt-frontx-ui-kit-algo-component-contracts-compilation:p1:inst-cc-orphan-inherited
   if (extraction.unclassifiedProps.length > 0) {

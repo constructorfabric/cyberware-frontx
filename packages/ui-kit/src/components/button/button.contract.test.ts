@@ -22,6 +22,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addContractTypes,
   ANNOTATION_KEYWORDS,
+  assertKnownAttestationClaims,
   assertOverlayReferencesRealProps,
   assertValidatesAgainst,
   BASE_TYPE_ID,
@@ -415,7 +416,7 @@ const validOverlay: Overlay = {
   invariants: [],
   anti_patterns: [],
   deprecations: {},
-  attestations: {},
+  attestations: { a11y: { outcome: 'unknown' }, rtl: { outcome: 'unknown' } },
   examples: {
     good: [{ title: 'Minimal use', code: '<Button />' }],
     bad: [{ title: 'Minimal misuse', code: '<Button />', why: 'placeholder reason' }],
@@ -603,6 +604,52 @@ describe('overlay and extraction safety', () => {
     expect(() => assertOverlayReferencesRealProps('button', staleOverlay, extraction)).toThrow(
       /accepts\.icons_via references "ghostIcon"/,
     );
+  });
+
+  it('rejects a deprecation whose own replacement references a prop that does not exist', () => {
+    // The seventh prop-name-bearing field, and the one the type-system
+    // review found unchecked: a deprecation whose `replacement` does not
+    // exist leaves the caller with no next move, the same failure the
+    // vocabulary description already argues `replacement` exists to
+    // prevent - the key itself ("oldProp") is real here, so this proves the
+    // SECOND half of the entry is checked too, not merely the first.
+    const extraction = syntheticExtraction([
+      { name: 'oldProp', optional: true, typeText: 'string', declarationFile: 'button.tsx', expressed: { schema: { type: 'string' }, complete: true } },
+    ]);
+    const staleOverlay: Overlay = {
+      ...validOverlay,
+      deprecations: { props: { oldProp: { since: '1.0.0', replacement: 'ghostReplacement', hint: 'use ghostReplacement instead' } } },
+    };
+    expect(() => assertOverlayReferencesRealProps('button', staleOverlay, extraction)).toThrow(
+      /deprecations\.props\."oldProp"\.replacement references "ghostReplacement"/,
+    );
+  });
+
+  it("accepts the kit's own attestation claims and rejects one not in the registry", () => {
+    // propertyNames' pattern in the trait schema only checks a claim key's
+    // SHAPE (lowercase, snake_case) - a typo of a real claim (`ally` beside
+    // `a11y`) is well-formed by that rule and would compile clean without
+    // this check.
+    expect(() => assertKnownAttestationClaims('button', { ...validOverlay, attestations: { a11y: { outcome: 'unknown' }, rtl: { outcome: 'unknown' } } })).not.toThrow();
+    expect(() => assertKnownAttestationClaims('button', { ...validOverlay, attestations: { ally: { outcome: 'unknown' } } })).toThrow(
+      /attestation claim "ally" is not in the claim list/,
+    );
+  });
+
+  it('rejects accepts.icons_via when content is not "specified"', () => {
+    // icons_via is a fact about WHAT is specified to appear inside, so it
+    // makes no sense beside "nothing may appear inside" (content: nothing)
+    // or "whatever the consumer puts in it, unexamined" (content:
+    // unconstrained) - both used to compile clean carrying it.
+    expect(() => parseOverlay('button', { ...validOverlay, accepts: { content: 'nothing', icons_via: 'icon' } })).toThrow(
+      /accepts/,
+    );
+    expect(() => parseOverlay('button', { ...validOverlay, accepts: { content: 'unconstrained', icons_via: 'icon' } })).toThrow(
+      /accepts/,
+    );
+    // The positive control: `content: specified` alongside `icons_via` is
+    // exactly what button.contract.yaml itself authors, and stays legal.
+    expect(() => parseOverlay('button', { ...validOverlay, accepts: { content: 'specified', text: true, icons_via: 'icon' } })).not.toThrow();
   });
 
   it('accepts an authored contract major, and rejects one that is not a version', () => {

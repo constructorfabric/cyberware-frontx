@@ -55,6 +55,8 @@ deprecations: {}
 attestations:
   a11y:
     outcome: unknown
+  rtl:
+    outcome: unknown
 
 untyped:
   - about: prop

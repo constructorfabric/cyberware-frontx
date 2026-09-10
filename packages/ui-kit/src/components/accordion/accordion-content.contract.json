@@ -73,6 +73,9 @@
       "a11y": {
         "outcome": "verified",
         "by": "Base UI's Accordion.Panel - panel visibility and the hiddenUntilFound wiring"
+      },
+      "rtl": {
+        "outcome": "unknown"
       }
     },
     "untyped": [

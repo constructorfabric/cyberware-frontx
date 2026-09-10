@@ -11,9 +11,7 @@
       "description": "The capability's own token - `row_selection`, not a sentence."
     },
     "enabled_by": {
-      "type": "string",
-      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-      "description": "Name of a prop declared by the component, not a type id. Checked against the extracted prop list by the conformance test."
+      "$ref": "gts://gts.frontx.uikit.vocabulary.prop_name.v1~"
     },
     "typed_by": {
       "type": "string",
