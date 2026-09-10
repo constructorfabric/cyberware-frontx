@@ -147,6 +147,11 @@ pattern = "features/*/FEATURE.md"
 traceability = "FULL"
 required = true
 
+[systems.children.autodetect.artifacts.ADR]
+pattern = "ADR/**/*.md"
+traceability = "FULL"
+required = false
+
 # Routing TanStack Provider owns the PRD, DESIGN and FEATURE that describe the default
 # engine-provider package split out of routing (cpt-frontx-adr-core-package-boundaries): it
 # implements the navigation substrate's engine-provider port over TanStack Router. No
@@ -179,6 +184,11 @@ required = true
 pattern = "features/*/FEATURE.md"
 traceability = "FULL"
 required = true
+
+[systems.children.autodetect.artifacts.ADR]
+pattern = "ADR/**/*.md"
+traceability = "FULL"
+required = false
 
 # GTS plugin owns the PRD, FEATURE and DESIGN that describe it, moved here from the root
 # tree as part of the federation refactoring. The PRD owns the package's requirements per
