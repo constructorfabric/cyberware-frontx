@@ -117,10 +117,7 @@ path = "packages/telemetry/src"
 extensions = [".ts"]
 
 # Routing owns the PRD, DESIGN and FEATURE that describe the navigation substrate, same
-# shape and rationale as telemetry above. No [[systems.children.codebase]] block yet: the
-# member currently owns only its artifacts, with no source under packages/routing/src. Add
-# the codebase block once the first source file lands, the same way every other child's
-# codebase block was added alongside its implementation.
+# shape and rationale as telemetry above.
 [[systems.children]]
 name = "Routing"
 slug = "routing"
@@ -151,6 +148,10 @@ required = true
 pattern = "ADR/**/*.md"
 traceability = "FULL"
 required = false
+
+[[systems.children.codebase]]
+path = "packages/routing/src"
+extensions = [".ts"]
 
 # Routing TanStack Provider owns the PRD, DESIGN and FEATURE that describe the default
 # engine-provider package split out of routing (cpt-frontx-adr-core-package-boundaries): it

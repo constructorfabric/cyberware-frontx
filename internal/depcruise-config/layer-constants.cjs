@@ -46,6 +46,14 @@ const PUBLISHED_LIBRARY_PROPERTIES = Object.freeze({
   api: Object.freeze({ core: true, standalone: true }),
   'gts-plugin': Object.freeze({ core: true, standalone: true }),
   mfes: Object.freeze({ core: true, standalone: true }),
+  routing: Object.freeze({ core: true, standalone: true }),
+  // The engine-provider package (routing DESIGN §3.2 split,
+  // `cpt-frontx-adr-core-package-boundaries`): a React component library
+  // bound to a concrete router engine, so not `core`; and it declares one
+  // deliberate runtime edge to the navigation substrate
+  // (`cpt-frontx-routing-tanstack-nfr-single-ecosystem-edge`), so not
+  // `standalone` either.
+  'routing-tanstack': Object.freeze({ core: false, standalone: false }),
   telemetry: Object.freeze({ core: true, standalone: true }),
   'ui-kit': Object.freeze({ core: false, standalone: true }),
 });
@@ -143,6 +151,19 @@ const ALLOWED_ECOSYSTEM_EDGES = Object.freeze({
   // Standalone browser SDK: no `@gears-frontx` edge in either group. Asserted
   // rather than assumed — an empty entry here is what makes adding one fail.
   telemetry: Object.freeze({ runtime: Object.freeze([]), dev: Object.freeze([]) }),
+  // Standalone navigation library: no `@gears-frontx` edge in either group
+  // (`cpt-frontx-constraint-routing-no-intra-ecosystem-dependency`) — an empty
+  // entry here is what makes adding one fail.
+  routing: Object.freeze({ runtime: Object.freeze([]), dev: Object.freeze([]) }),
+  // The engine-provider package's one deliberate intra-ecosystem edge: the
+  // navigation substrate whose `NavigationHistory` contract it adapts and
+  // whose engine-provider port it implements
+  // (`cpt-frontx-routing-tanstack-nfr-single-ecosystem-edge`). No other
+  // `@gears-frontx` edge is permitted, in either group.
+  'routing-tanstack': Object.freeze({
+    runtime: Object.freeze(['@gears-frontx/routing']),
+    dev: Object.freeze([]),
+  }),
   'gts-plugin': Object.freeze({
     runtime: Object.freeze([
       // The type-substrate port: the provider implements the runtime's opaque
