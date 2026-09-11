@@ -212,9 +212,9 @@ None owned here. The package is distributed under the root PRD's package-registr
 - [ ] A redirect or an imperative navigation built with this package's location-preserving helper carries the current virtual location's search, and the page's own hash, onto the target path, within the occupant's own entry — verifiable via `cpt-frontx-routing-tanstack-fr-location-preserving-helpers`.
 - [ ] The package imports exactly one ecosystem package — the navigation substrate — and no other — verifiable via the boundary guards.
 - [ ] Replacing this package with a different engine-provider port implementation changes no file outside that one microfrontend's own code — its route tree, its search-parameter handling, and every one of its own imports of this package — and changes no file belonging to the navigation substrate, the host, or a sibling microfrontend — verifiable via `cpt-frontx-routing-tanstack-usecase-swap-router-engine`.
-- [ ] An implementation **MUST** reproduce the navigation substrate's own examples 7.3 and 7.4 as its own acceptance scenarios (routing PRD/DESIGN, URL Grammar):
+- [ ] An implementation **MUST** reproduce this provider's own worked examples 1 and 2 below as its own acceptance scenarios — the reserved `route` parameter is this provider's own convention, not a rule the navigation substrate imposes (`packages/routing/architecture/DESIGN.md`, "Navigation Substrate"):
 
-  **7.3 A microfrontend's own router.** Under this default engine provider, an occupant's internal route is the reserved parameter `route`; its remaining parameters are its router's search.
+  **Example 1 — A microfrontend's own router.** Under this default engine provider, an occupant's internal route is the reserved parameter `route`; its remaining parameters are its router's search.
 
   ```
   /en?screen=dashboard;route=settings/general;orientation=left
@@ -223,7 +223,7 @@ None owned here. The package is distributed under the root PRD's package-registr
 
   The dashboard's router sees pathname `/settings/general` and search `orientation=left`.
 
-  **7.4 The same microfrontend served standalone.** Virtual location projected onto the page's own address; same code, different adapter mode.
+  **Example 2 — The same microfrontend served standalone.** Virtual location projected onto the page's own address; same code, different adapter mode.
 
   ```
   /settings/general?orientation=left
