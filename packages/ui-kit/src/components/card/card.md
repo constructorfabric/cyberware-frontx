@@ -1,11 +1,13 @@
 # Card
 
-A container for grouping related content and actions — a bounded surface
-with its own background and shadow. The boundary is a 1px ring drawn via
-`box-shadow`, not a CSS `border` — adding your own `border` draws a
-second ring rather than replacing the existing one. Card has no Base UI
-primitive: every part is a plain styled `div` (no portal, no open state,
-no keyboard behavior to inherit).
+A container for grouping related content and actions — a flat bounded
+surface: background, a 1px `--border` stroke, no drop shadow. The
+boundary is a real CSS `border`, so your own `border` on the root
+replaces it rather than adding a second edge beside it. Card is not a
+floating popup and deliberately does not share Dialog's/DropdownMenu's
+`--popover-*` chrome. Card has no Base UI primitive: every part is a
+plain styled `div` (no portal, no open state, no keyboard behavior to
+inherit).
 
 Composition: `Card` (root) → `CardHeader` (→ `CardTitle`, optional
 `CardDescription`, optional `CardAction`) → `CardContent` → `CardFooter`.
@@ -53,6 +55,12 @@ than a decorative grouping, supply your own heading (e.g. wrap the text
 in an `h2`/`h3`) so the page keeps a document outline; `CardTitle` alone
 contributes nothing to it.
 
+`CardFooter` is a plain flex row and contributes **no gap of its own** —
+two buttons dropped straight into it render flush against each other.
+Space them on the footer, the way the upstream card demos do
+(`justify-end gap-2` there): `style={{ gap: 'var(--space-2)' }}` or your
+own class.
+
 `CardHeader` and `CardFooter` sit flush against `CardContent`, with no
 divider by default. To add one, put a border on the part via `className`
 (e.g. `border-top: 1px solid var(--border)` on `CardFooter`) and pair it
@@ -91,7 +99,7 @@ import {
   <CardContent>
     <p>Next invoice on the 1st.</p>
   </CardContent>
-  <CardFooter>
+  <CardFooter style={{ gap: 'var(--space-2)' }}>
     <Button variant="outline">Cancel</Button>
     <Button>Upgrade</Button>
   </CardFooter>

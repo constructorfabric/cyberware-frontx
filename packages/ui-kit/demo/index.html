@@ -3,7 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ui-kit demo</title>
+    <title>FrontX UiKit</title>
+    <!-- Applies a stored light/dark choice to <html data-theme> before
+         anything paints — main.tsx's React state read (readStoredTheme,
+         same 'ui-kit-demo-theme' key) can't run this early since it only
+         starts once the module script below has loaded. Without this,
+         a stored non-'auto' choice would flash the system-preference
+         theme for one frame on every reload. Blocking + inline (not a
+         module, not deferred) is deliberate: it must finish before first
+         paint, and localStorage is synchronous anyway. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('ui-kit-demo-theme');
+          if (stored === 'light' || stored === 'dark') {
+            document.documentElement.dataset.theme = stored;
+          }
+        } catch (e) {
+          // Storage unavailable (private browsing, disabled) — falls
+          // through to the system-preference default, same as main.tsx.
+        }
+      })();
+    </script>
     <!-- The kit sets font-family itself (--font-sans/--font-mono in
          theme.css) but ships no font files; the demo loads the real
          families the way any consumer app would, so the mockup metrics

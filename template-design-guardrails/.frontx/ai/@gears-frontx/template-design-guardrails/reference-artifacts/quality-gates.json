@@ -1,0 +1,41 @@
+{
+  "version": "0.1.0-alpha.1",
+  "mode": "advisory",
+  "severity": {
+    "blocker": "Primary task, safety, permissions, content access or material accessibility is broken.",
+    "major": "System, responsive, state or hierarchy violation materially reduces usability or consistency.",
+    "minor": "Localized polish, content or optical issue with a clear correction."
+  },
+  "gates": [
+    {"id": "SYS-001", "level": "major", "rule": "Use installed UI-kit components when an equivalent exists.", "evidence": "component import and rendered control", "fix": "replace imitation with installed primitive"},
+    {"id": "SYS-002", "level": "major", "rule": "Use installed semantic tokens or values derived from them.", "evidence": "style declaration and token source", "fix": "map literals and arbitrary values to semantic roles"},
+    {"id": "SYS-003", "level": "major", "rule": "Use the installed icon, type, radius and shadow systems consistently.", "evidence": "screen comparison and component source", "fix": "remove parallel visual language"},
+    {"id": "LAY-001", "level": "major", "rule": "Declare wide, medium and narrow transformations.", "evidence": "rendered states or explicit implementation", "fix": "define content-driven transformations"},
+    {"id": "LAY-002", "level": "blocker", "rule": "Preserve required content and action without ordinary page overflow at 320 CSS px.", "evidence": "320 CSS px or equivalent zoom capture", "fix": "reflow, collapse auxiliary regions, or isolate justified two-dimensional scroll"},
+    {"id": "LAY-003", "level": "major", "rule": "Share title, toolbar, content and footer alignment lines.", "evidence": "measured insets", "fix": "use one page inset and grid owner"},
+    {"id": "LAY-004", "level": "minor", "rule": "Use the installed 4 px spacing scale and the 8 px primary rhythm.", "evidence": "measured gaps and token references", "fix": "replace one-off gaps with scale values"},
+    {"id": "LAY-005", "level": "major", "rule": "Repeated components share anatomy, baselines and density.", "evidence": "same-family comparison", "fix": "use shared component composition and variants"},
+    {"id": "COL-001", "level": "blocker", "rule": "Meet WCAG 2.2 AA text and non-text contrast for required UI.", "evidence": "contrast measurement", "fix": "change semantic foreground, background or boundary tokens"},
+    {"id": "COL-002", "level": "major", "rule": "Do not use color as the only state or data cue.", "evidence": "state and chart inspection", "fix": "add text, shape, icon, label or pattern"},
+    {"id": "COL-003", "level": "major", "rule": "Keep selection, status, severity and type visually distinct.", "evidence": "combined-state inspection", "fix": "reduce competing fills and assign semantic roles"},
+    {"id": "COL-004", "level": "minor", "rule": "Use one product link/action token and one chart palette per metric family.", "evidence": "cross-screen comparison", "fix": "replace local colors with shared semantic tokens"},
+    {"id": "TYP-001", "level": "major", "rule": "Essential content and actions use readable installed typography roles.", "evidence": "computed styles and zoom inspection", "fix": "restore type role and allow wrapping"},
+    {"id": "TYP-002", "level": "minor", "rule": "Remove subtitles and helper copy that repeat visible structure.", "evidence": "content comparison", "fix": "retain only consequence, provenance or recovery copy"},
+    {"id": "TYP-003", "level": "major", "rule": "Actions have specific outcome-oriented labels.", "evidence": "accessible name and visible label", "fix": "replace ambiguous labels"},
+    {"id": "INT-001", "level": "blocker", "rule": "All required actions are keyboard operable with visible focus.", "evidence": "keyboard trace", "fix": "use semantic or UI-kit control and APG behavior"},
+    {"id": "INT-002", "level": "major", "rule": "Composite components follow installed or APG keyboard and focus conventions.", "evidence": "keyboard trace and semantics", "fix": "implement the matching component pattern"},
+    {"id": "INT-003", "level": "major", "rule": "Selection, focus, hover and semantic status remain distinguishable in combination.", "evidence": "combined-state capture", "fix": "separate surface, outline and status cues"},
+    {"id": "STA-001", "level": "blocker", "rule": "Errors have scope, consequence and a valid recovery path.", "evidence": "error state", "fix": "preserve trustworthy context and add safe recovery"},
+    {"id": "STA-002", "level": "major", "rule": "Implement applicable loading, empty, partial, stale, restricted, pending and success states.", "evidence": "state inventory", "fix": "implement missing applicable states"},
+    {"id": "STA-003", "level": "major", "rule": "Consequential actions show pending, success and failure feedback without duplicate execution.", "evidence": "interaction trace", "fix": "add observable operation state and recovery"},
+    {"id": "A11Y-001", "level": "blocker", "rule": "Controls have correct semantics, accessible names and associated field errors.", "evidence": "accessibility tree and DOM", "fix": "use native/UI-kit semantics and associations"},
+    {"id": "A11Y-002", "level": "major", "rule": "Targets meet 24 by 24 CSS px minimum or spacing exception; primary touch controls use product touch size.", "evidence": "target measurement", "fix": "enlarge visual or hit target and preserve spacing"},
+    {"id": "A11Y-003", "level": "blocker", "rule": "Focused content is not obscured by sticky, floating or overlay UI.", "evidence": "keyboard plus zoom capture", "fix": "reposition, dismiss or convert fixed content"},
+    {"id": "MOT-001", "level": "major", "rule": "Motion has a functional purpose and reduced-motion behavior.", "evidence": "motion code and reduced-motion capture", "fix": "use motion tokens and immediate/opacity substitute"},
+    {"id": "MOT-002", "level": "minor", "rule": "Routine transitions use consistent duration, easing and compositor-friendly properties.", "evidence": "animation declarations", "fix": "map to motion tokens and opacity/transform"},
+    {"id": "DAT-001", "level": "major", "rule": "Metrics and trends expose unit, timeframe, basis and evidence or drill-down.", "evidence": "widget inspection", "fix": "add the missing basis or remove the metric"},
+    {"id": "DAT-002", "level": "major", "rule": "Tables keep sorting in headers and pagination in footers when results are partial.", "evidence": "table inspection", "fix": "move controls to standard table regions"},
+    {"id": "DAT-003", "level": "major", "rule": "Charts have accessible labels or alternatives and do not rely on color alone.", "evidence": "chart and keyboard inspection", "fix": "add annotations, legend semantics and a textual/table alternative"}
+  ],
+  "findingShape": ["ruleId", "severity", "location", "evidence", "impact", "correction", "verification"]
+}

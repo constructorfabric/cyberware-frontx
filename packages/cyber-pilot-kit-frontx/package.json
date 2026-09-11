@@ -1,6 +1,6 @@
 {
   "name": "@gears-frontx/cyber-pilot-kit-frontx",
-  "version": "0.3.0-alpha.1",
+  "version": "0.3.0-alpha.4",
   "description": "FrontX AI Tooling Kit — ecosystem-level AI capabilities for AI agents working in FrontX projects",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -30,6 +30,7 @@
     "test:unit": "vitest --run --passWithNoTests=false"
   },
   "devDependencies": {
+    "@gears-frontx/test-support": "0.1.0-alpha.0",
     "@vitest/coverage-v8": "4.1.4",
     "tsup": "^8.0.0",
     "typescript": "^5.4.2",
@@ -46,6 +47,6 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "smol-toml": "^1.6.1"
+    "smol-toml": "1.7.2"
   }
 }

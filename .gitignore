@@ -19,6 +19,11 @@ public/shared
 .__mf__temp
 .mf
 
+# Tarballs `npm pack`ed for a template whose pin names a version this branch
+# bumped but has not published, plus the journal that undoes the substitution
+# (scripts/pin-unpublished-ecosystem-to-local-pack.mjs). Install-time only.
+.frontx-local-packs
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

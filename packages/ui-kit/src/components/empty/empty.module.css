@@ -1,0 +1,121 @@
+/*
+ * Empty styles, translated from shadcn/ui base (registry/bases/base/ui/
+ * empty.tsx, style-vega.css's .cn-empty rules) to CSS Modules. Consumes
+ * only theme.css variables — no raw colors.
+ */
+
+.empty {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 0%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6); /* upstream gap-6 (24px) - exact scale step, unlike padding below */
+  border-radius: var(--radius-lg);
+  border: var(--border-width) dashed var(--border);
+  /* Upstream p-12 (48px) has no single scale step; expressed as a sum so
+     the metric guard's var-only arithmetic still holds (see
+     tokens.test.ts) instead of a literal. */
+  padding: calc(var(--space-8) + var(--space-4));
+  text-align: center;
+  text-wrap: balance;
+}
+
+.emptyHeader {
+  display: flex;
+  max-width: 24rem; /* upstream max-w-sm; a dimension, not guarded */
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.emptyMedia {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--space-2);
+}
+
+.emptyMedia svg {
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.variantDefault {
+  background-color: transparent;
+}
+
+.variantIcon {
+  width: 2.5rem; /* upstream size-10; no scale step this specific, kept as
+    a literal (dimensions aren't guarded — see tokens.test.ts) */
+  height: 2.5rem;
+  border-radius: var(--radius-lg);
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+.variantIcon svg {
+  /* upstream size-6 (24px) inside the size-10 box; same size-10/size-6 pairing
+     item.module.css's leading icon already uses - icon-size-md (20px) was
+     the wrong role here. */
+  width: var(--icon-size-lg);
+  height: var(--icon-size-lg);
+}
+
+.emptyTitle {
+  /*
+   * Upstream's text-lg/font-medium/tracking-tight (18/28, weight 500) has
+   * no exact ramp role: Heading 1 (20/28) matches the line-height exactly
+   * and is the closest size, so this takes that role wholesale and only
+   * overrides the weight down to Label's 500 for the "medium" emphasis —
+   * the same "closest role, override just the mismatched metric" idiom
+   * table.module.css's header text already established.
+   */
+  font-size: var(--text-heading-1-size);
+  line-height: var(--text-heading-1-line-height);
+  font-weight: var(--text-label-weight);
+  letter-spacing: var(--text-heading-1-tracking);
+}
+
+.emptyDescription {
+  /* Upstream's text-sm/leading-relaxed has no ramp role at that line-height
+     ratio (line-height must be a token, not a literal ratio — see
+     tokens.test.ts); Studio/Body is the closest available role, same
+     mapping Alert/Card use for their own body copy. */
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-body-tracking);
+  color: var(--muted-foreground);
+}
+
+.emptyDescription a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.emptyDescription a:hover {
+  color: var(--primary);
+}
+
+.emptyContent {
+  display: flex;
+  width: 100%;
+  max-width: 24rem; /* matches .emptyHeader's max-w-sm */
+  min-width: 0;
+  flex-direction: column;
+  /* Upstream items-center; without it a flex column's default cross-axis
+     stretch pulls a lone button to the full 24rem width and left-anchors a
+     narrower InputGroup instead of centering it under the title. */
+  align-items: center;
+  gap: var(--space-4);
+  text-wrap: balance;
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-body-tracking);
+}

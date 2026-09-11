@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
+import { joinWithinRoot } from '@gears-frontx/test-support/path-guard';
 import { FsInventoryIndex } from '../fs-inventory-index';
 import { InventoryState } from '../../inventory/types';
 
@@ -33,7 +34,7 @@ describe('FsInventoryIndex', () => {
       content: '{"name":"my-template"}',
     });
 
-    expect(fs.existsSync(path.join(root, 'index.json'))).toBe(true);
+    expect(fs.existsSync(joinWithinRoot(root, 'index.json'))).toBe(true);
 
     const reopened = new FsInventoryIndex(root);
     const entry = reopened.lookup('my-template');

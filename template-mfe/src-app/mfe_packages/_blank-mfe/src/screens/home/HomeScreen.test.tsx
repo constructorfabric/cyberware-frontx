@@ -1,4 +1,3 @@
-// @cpt-dod:cpt-frontx-dod-unit-test-generation-and-agent-verification-blank-mfe-tests:p1
 import { act, render, screen, within } from '@testing-library/react';
 import {
   FRONTX_SHARED_PROPERTY_LANGUAGE,
@@ -67,8 +66,8 @@ describe('HomeScreen', () => {
 
   it('renders bridge-provided values and API status data', async () => {
     const { bridge } = createMfeBridgeFixture({
-      domainId: TEST_DOMAIN_ID,
-      instanceId: TEST_INSTANCE_ID,
+      extDomainId: TEST_DOMAIN_ID,
+      extensionId: TEST_INSTANCE_ID,
       initialProperties: {
         [FRONTX_SHARED_PROPERTY_THEME]: TEST_THEME,
         [FRONTX_SHARED_PROPERTY_LANGUAGE]: TEST_LANGUAGE,
@@ -77,14 +76,27 @@ describe('HomeScreen', () => {
 
     render(<HomeScreen bridge={bridge} />);
 
-    // Bridge domainId, instanceId, theme, and language all flow through to the DOM.
-    expect(await screen.findByText(TEST_DOMAIN_ID)).toBeTruthy();
-    expect(screen.getByText(TEST_INSTANCE_ID)).toBeTruthy();
-    expect(screen.getByText(TEST_THEME)).toBeTruthy();
-    expect(screen.getByText(TEST_LANGUAGE)).toBeTruthy();
+    // Addressed through the testids the scaffold publishes as its verification
+    // API rather than by text, which also pins which value reaches which slot:
+    // a plain text query cannot tell the theme cell from the language one, and
+    // both carry values a browser run reads back after switching them.
+    expect((await screen.findByTestId('screen-domain-id')).textContent).toBe(TEST_DOMAIN_ID);
+    expect(screen.getByTestId('screen-instance-id').textContent).toBe(TEST_INSTANCE_ID);
+    expect(screen.getByTestId('screen-theme').textContent).toBe(TEST_THEME);
+    expect(screen.getByTestId('screen-language').textContent).toBe(TEST_LANGUAGE);
+
+    expect(screen.getByTestId('screen-root')).toBeTruthy();
+    expect(screen.getByTestId('screen-title')).toBeTruthy();
 
     // API response content is rendered (JSON-serialized blob contains the message field).
-    expect(screen.getByText((content) => content.includes(testStatusData.message))).toBeTruthy();
+    expect(screen.getByTestId('screen-status-payload').textContent).toContain(
+      testStatusData.message
+    );
+    // The card around it is published too, and it is what a browser run waits on
+    // to know the status section arrived at all: it is the one testid present on
+    // every branch of that section, whether the payload, the error or the
+    // skeleton is inside.
+    expect(screen.getByTestId('screen-status')).toBeTruthy();
   });
 
   it('renders the API error message when the status call fails', async () => {
@@ -96,8 +108,8 @@ describe('HomeScreen', () => {
     });
 
     const { bridge } = createMfeBridgeFixture({
-      domainId: TEST_DOMAIN_ID,
-      instanceId: TEST_INSTANCE_ID,
+      extDomainId: TEST_DOMAIN_ID,
+      extensionId: TEST_INSTANCE_ID,
       initialProperties: {
         [FRONTX_SHARED_PROPERTY_THEME]: TEST_THEME,
         [FRONTX_SHARED_PROPERTY_LANGUAGE]: TEST_LANGUAGE,
@@ -106,28 +118,35 @@ describe('HomeScreen', () => {
 
     render(<HomeScreen bridge={bridge} />);
 
-    expect(await screen.findByText('status fetch failed')).toBeTruthy();
+    expect((await screen.findByTestId('screen-status-error')).textContent).toBe(
+      'status fetch failed'
+    );
   });
 
-  it('renders the translation-loading skeleton before localized content is ready', () => {
+  it('announces a busy region instead of bridge values before translations are ready', () => {
     useScreenTranslationsMock.mockReturnValue({ t: (key: string) => key, loading: true });
 
     const { bridge } = createMfeBridgeFixture({
-      domainId: TEST_DOMAIN_ID,
-      instanceId: TEST_INSTANCE_ID,
+      extDomainId: TEST_DOMAIN_ID,
+      extensionId: TEST_INSTANCE_ID,
       initialProperties: {
         [FRONTX_SHARED_PROPERTY_THEME]: TEST_THEME,
         [FRONTX_SHARED_PROPERTY_LANGUAGE]: TEST_LANGUAGE,
       },
     });
 
-    const { container } = render(<HomeScreen bridge={bridge} />);
+    render(<HomeScreen bridge={bridge} />);
 
-    expect(container.querySelectorAll('.animate-pulse')).toHaveLength(5);
+    expect(screen.getByRole('status').getAttribute('aria-busy')).toBe('true');
     expect(screen.queryByText(TEST_DOMAIN_ID)).toBeNull();
+
+    // `screen-root` is on both branches on purpose, so a run has one node to
+    // wait for; `screen-loading` beside it is what says which branch rendered.
+    expect(screen.getByTestId('screen-root')).toBeTruthy();
+    expect(screen.getByTestId('screen-loading')).toBeTruthy();
   });
 
-  it('renders the status-loading skeleton while the API request is pending', async () => {
+  it('announces a busy region beside the bridge values while the API request is pending', async () => {
     useApiQueryMock.mockReturnValue({
       data: null,
       isLoading: true,
@@ -136,32 +155,71 @@ describe('HomeScreen', () => {
     });
 
     const { bridge } = createMfeBridgeFixture({
-      domainId: TEST_DOMAIN_ID,
-      instanceId: TEST_INSTANCE_ID,
+      extDomainId: TEST_DOMAIN_ID,
+      extensionId: TEST_INSTANCE_ID,
       initialProperties: {
         [FRONTX_SHARED_PROPERTY_THEME]: TEST_THEME,
         [FRONTX_SHARED_PROPERTY_LANGUAGE]: TEST_LANGUAGE,
       },
     });
 
-    const { container } = render(<HomeScreen bridge={bridge} />);
+    render(<HomeScreen bridge={bridge} />);
 
     expect(await screen.findByText(TEST_DOMAIN_ID)).toBeTruthy();
-    expect(container.querySelectorAll('.animate-pulse')).toHaveLength(3);
+    expect(screen.getByRole('status').getAttribute('aria-busy')).toBe('true');
+    expect(screen.getByTestId('screen-status-loading')).toBeTruthy();
+  });
+
+  // Every dark palette the host registers has to reach the kit's dark scope:
+  // the screen paints its own surface from those tokens, so a miss puts a light
+  // card on dark host chrome. An unrecognised identifier falls back to the light
+  // scope rather than to no scope, which would inherit whatever
+  // prefers-color-scheme resolved on the shadow host.
+  it('scopes the screen to the kit dark tokens for every dark host theme and to light otherwise', async () => {
+    const bridgeFixture = createMfeBridgeFixture({
+      extDomainId: TEST_DOMAIN_ID,
+      extensionId: TEST_INSTANCE_ID,
+      initialProperties: {
+        [FRONTX_SHARED_PROPERTY_THEME]: TEST_THEME,
+        [FRONTX_SHARED_PROPERTY_LANGUAGE]: TEST_LANGUAGE,
+      },
+    });
+
+    const { container } = render(<HomeScreen bridge={bridgeFixture.bridge} />);
+
+    // TEST_THEME is an identifier the host never registers.
+    expect(await screen.findByText(TEST_DOMAIN_ID)).toBeTruthy();
+    expect(container.firstElementChild?.getAttribute('data-theme')).toBe('light');
+
+    for (const darkTheme of ['dark', 'dracula', 'dracula-large']) {
+      act(() => {
+        bridgeFixture.setProperty(FRONTX_SHARED_PROPERTY_THEME, darkTheme);
+      });
+
+      expect(container.firstElementChild?.getAttribute('data-theme')).toBe('dark');
+    }
+
+    for (const lightTheme of ['default', 'light']) {
+      act(() => {
+        bridgeFixture.setProperty(FRONTX_SHARED_PROPERTY_THEME, lightTheme);
+      });
+
+      expect(container.firstElementChild?.getAttribute('data-theme')).toBe('light');
+    }
   });
 
   it('re-reads current properties when the host swaps the bridge instance', async () => {
     const first = createMfeBridgeFixture({
-      domainId: TEST_DOMAIN_ID,
-      instanceId: TEST_INSTANCE_ID,
+      extDomainId: TEST_DOMAIN_ID,
+      extensionId: TEST_INSTANCE_ID,
       initialProperties: {
         [FRONTX_SHARED_PROPERTY_THEME]: TEST_THEME,
         [FRONTX_SHARED_PROPERTY_LANGUAGE]: 'en',
       },
     });
     const second = createMfeBridgeFixture({
-      domainId: TEST_DOMAIN_ID,
-      instanceId: TEST_INSTANCE_ID,
+      extDomainId: TEST_DOMAIN_ID,
+      extensionId: TEST_INSTANCE_ID,
       initialProperties: {
         [FRONTX_SHARED_PROPERTY_THEME]: 'swapped-theme',
         [FRONTX_SHARED_PROPERTY_LANGUAGE]: 'ar',
@@ -178,15 +236,15 @@ describe('HomeScreen', () => {
       container: mountNode,
     });
 
-    expect(await shadowQueries.findByText(TEST_THEME)).toBeTruthy();
+    expect((await shadowQueries.findByTestId('screen-theme')).textContent).toBe(TEST_THEME);
     expect(host.dir).toBe('ltr');
 
     rerender(<HomeScreen bridge={second.bridge} />);
 
     // The new bridge's current values are re-read during render — its
     // subscriptions only deliver future changes and never fire here.
-    expect(shadowQueries.getByText('swapped-theme')).toBeTruthy();
-    expect(shadowQueries.getByText('ar')).toBeTruthy();
+    expect(shadowQueries.getByTestId('screen-theme').textContent).toBe('swapped-theme');
+    expect(shadowQueries.getByTestId('screen-language').textContent).toBe('ar');
     expect(host.dir).toBe('rtl');
 
     // The old bridge's subscriptions were torn down and re-registered on the
@@ -202,8 +260,8 @@ describe('HomeScreen', () => {
 
   it('reacts to bridge property updates and unsubscribes on unmount', async () => {
     const bridgeFixture = createMfeBridgeFixture({
-      domainId: TEST_DOMAIN_ID,
-      instanceId: TEST_INSTANCE_ID,
+      extDomainId: TEST_DOMAIN_ID,
+      extensionId: TEST_INSTANCE_ID,
       initialProperties: {
         [FRONTX_SHARED_PROPERTY_THEME]: TEST_THEME,
         [FRONTX_SHARED_PROPERTY_LANGUAGE]: TEST_LANGUAGE,

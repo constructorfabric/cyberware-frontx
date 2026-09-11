@@ -1,0 +1,279 @@
+/*
+ * Attachment styles, translated from shadcn/ui (MIT) to CSS Modules. The
+ * base registry (registry/bases/base/ui/attachment.tsx) ships no
+ * color/spacing classes of its own — only structural Tailwind and the
+ * `data-state`/`data-size`/`data-orientation`/`data-variant` state hooks;
+ * the actual geometry and colors translated below come from the
+ * new-york-v4 style pack's version of the same file, the same source
+ * badge.module.css's own header note points to. Consumes only theme.css
+ * variables — no raw colors.
+ *
+ * Simplification vs. upstream: the root's own padding is unconditional per
+ * size below, rather than upstream's `has-data-[slot=…]` split (asymmetric
+ * padding only when a content child exists, uniform padding only when a
+ * media child exists with no content). Every documented usage renders
+ * media and content together, so the common case is unaffected; a
+ * media-only, content-less attachment gets the same padding as the usual
+ * case instead of a distinct uniform value.
+ */
+
+.attachment {
+  position: relative;
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  background-color: var(--card);
+  color: var(--card-foreground);
+  /* Colour crossfades only, no transform/geometry — not motion under WCAG
+     2.3.3, so deliberately left unguarded under prefers-reduced-motion. */
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.attachment:focus-within {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--ring) 50%, transparent);
+}
+
+/* Whole-card hover tint — only for a card whose ENTIRE surface is
+ * clickable (a direct-child link or `AttachmentTrigger` button), never for
+ * one whose only interactive part is a nested `AttachmentAction` deep
+ * inside `AttachmentActions`. */
+.attachment:has(> a):hover,
+.attachment:has(> button):hover {
+  background-color: color-mix(in oklab, var(--muted) 50%, transparent);
+}
+
+.attachment[data-state='idle'] {
+  border-style: dashed;
+}
+
+.attachment[data-state='error'] {
+  border-color: color-mix(in oklab, var(--destructive) 30%, transparent);
+}
+
+.sizeDefault {
+  gap: var(--space-2);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+}
+
+.attachment.sizeDefault:has(> .attachmentContent) {
+  /* Upstream's 0.625rem (px-2.5) sits exactly between --space-2 and
+   * --space-3 — rounded UP, the same tie-break message.module.css's own
+   * content gap uses. */
+  padding-inline: var(--space-3);
+  padding-block: var(--space-2);
+}
+
+.sizeSm {
+  /* Same 0.625rem tie as above, same round-up. */
+  gap: var(--space-3);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+}
+
+.attachment.sizeSm:has(> .attachmentContent) {
+  padding-inline: var(--space-2);
+  /* Upstream's 0.375rem (py-1.5) sits exactly between --space-1 and
+   * --space-2 — rounded up. */
+  padding-block: var(--space-2);
+}
+
+.sizeXs {
+  border-radius: var(--radius-md);
+  /* Same 0.375rem tie as sizeSm's padding-block, same round-up — this is
+   * the one snap in this file that does NOT preserve strict xs < sizeSm <
+   * default ordering (xs's gap ties with sizeDefault's own --space-2
+   * after rounding): the token scale has no step between --space-1 and
+   * --space-2 to keep all three distinct, and relative order (xs <= sizeSm
+   * is what survives, per theme.css's own "snap to nearest role" ruling. */
+  gap: var(--space-2);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+}
+
+.attachment.sizeXs:has(> .attachmentContent) {
+  padding-inline: var(--space-2);
+  padding-block: var(--space-1);
+}
+
+.orientationHorizontal {
+  /* Intrinsic minimum, not a themed metric — unguarded like a dialog's or
+   * switch's own hand-set dimensions. */
+  min-width: 10rem;
+  align-items: center;
+}
+
+.orientationVertical {
+  width: 6rem;
+  flex-direction: column;
+}
+
+.attachment.orientationVertical > .attachmentContent {
+  width: 7.5rem;
+  padding-inline: var(--space-1);
+}
+
+.attachmentMedia {
+  position: relative;
+  display: flex;
+  /* Intrinsic default icon-slot size, literal like the orientation
+   * dimensions above. */
+  width: 2.5rem;
+  aspect-ratio: 1;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+.attachmentMedia svg {
+  pointer-events: none;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.attachment.orientationVertical .attachmentMedia {
+  width: 100%;
+}
+
+.attachment.orientationVertical .attachmentMedia svg {
+  width: var(--icon-size-lg);
+  height: var(--icon-size-lg);
+}
+
+.attachment.sizeSm .attachmentMedia {
+  width: 2rem;
+}
+
+.attachment.sizeXs .attachmentMedia {
+  width: 1.75rem;
+  border-radius: var(--radius-sm);
+}
+
+/*
+ * Upstream's 3.5 (14px) sits exactly between --icon-size-xs (12px) and
+ * --icon-size-sm (16px) — rounded DOWN here, unlike the spacing ties above:
+ * this is the smallest attachment size, so keeping the icon at the smaller
+ * neighbor preserves the intended shrink relative to the default/sm sizes
+ * instead of converging on the same icon size as the default.
+ */
+.attachment.sizeXs .attachmentMedia svg {
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
+}
+
+.attachment[data-state='error'] .attachmentMedia {
+  background-color: color-mix(in oklab, var(--destructive) 10%, transparent);
+  color: var(--destructive);
+}
+
+/* Deliberately empty — do not delete as dead CSS. Kept so `variant="icon"`
+   is a real DOM-visible class (like Marker's `variantDefault`, see
+   marker.module.css) and cva has a defaultVariants target; `.attachmentMedia`
+   above already carries every rule the icon variant needs. */
+.variantIcon {
+}
+
+.variantImage {
+  opacity: 0.6;
+}
+
+.attachment[data-state='done'] .variantImage,
+.attachment[data-state='idle'] .variantImage {
+  opacity: 1;
+}
+
+.variantImage img {
+  aspect-ratio: 1;
+  width: 100%;
+  object-fit: cover;
+}
+
+.attachmentContent {
+  max-width: 100%;
+  min-width: 0;
+  flex: 1 1 0%;
+}
+
+.attachmentTitle {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  /* font-medium, the same idiom as badge.module.css's label text. */
+  font-weight: var(--text-label-weight);
+}
+
+.attachmentDescription {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  color: var(--muted-foreground);
+}
+
+.attachment[data-state='error'] .attachmentDescription {
+  color: color-mix(in oklab, var(--destructive) 80%, transparent);
+}
+
+.attachmentActions {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.attachment.orientationVertical .attachmentActions {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  gap: var(--space-1);
+}
+
+/* Deliberately empty — do not delete as dead CSS. A hook class, matching
+   upstream's own `cn-attachment-action` marker: styling comes entirely
+   from the composed kit `Button` (see attachment.tsx), this class exists
+   only so a consumer has a stable selector to target. */
+.attachmentAction {
+}
+
+.attachmentTrigger {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  outline: none;
+}
+
+.attachmentGroup {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: var(--space-1);
+  gap: var(--space-3);
+  padding-block: var(--space-1);
+}
+
+.attachmentGroup > .attachment {
+  flex: none;
+  scroll-snap-align: start;
+}

@@ -1,0 +1,130 @@
+/*
+ * Input OTP styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ *
+ * Deviation from upstream (see input-otp.md): each slot below is a REAL
+ * `<input>` (Base UI's OTPField.Input), not a decorative div reading a
+ * shared hidden input's state via context — so the caret-blink effect is
+ * plain CSS on the input itself (`:focus:not([data-filled])::after`),
+ * with no JS-computed "is this the active empty slot" state to thread
+ * through, unlike upstream's `hasFakeCaret`/`isActive` context read.
+ */
+
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.root:has(.slot:disabled) {
+  opacity: 0.42;
+}
+
+.group {
+  display: inline-flex;
+  align-items: center;
+}
+
+.slot {
+  box-sizing: border-box;
+  position: relative;
+  width: var(--control-height-md);
+  height: var(--control-height-md);
+  border: var(--border-width) solid var(--input);
+  background-color: var(--surface-elevated);
+  color: var(--foreground);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  /* Hides the native text caret — the blinking bar below (shown only on
+   * an empty, focused slot) replaces it with a idiom that matches
+   * upstream's fake-caret look instead of the browser's own thin cursor. */
+  caret-color: transparent;
+  outline: none;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+/* Collapses the shared border between adjacent slots in the same group
+ * (each slot's own left border would otherwise double up with its
+ * neighbor's right border) and rounds only the group's two outer
+ * corners — the segmented-control idiom also used by
+ * toggle-group.module.css's item spacing, applied here to borders
+ * instead of gaps. */
+.slot + .slot {
+  border-inline-start: 0;
+}
+
+.group .slot:first-child {
+  border-start-start-radius: var(--radius-md);
+  border-end-start-radius: var(--radius-md);
+}
+
+.group .slot:last-child {
+  border-start-end-radius: var(--radius-md);
+  border-end-end-radius: var(--radius-md);
+}
+
+.slot:focus-visible {
+  z-index: 1;
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 var(--ring-inset) var(--ring);
+}
+
+@media (forced-colors: active) {
+  .slot:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+.slot:disabled {
+  cursor: not-allowed;
+}
+
+/* Declared after :focus-visible so the invalid border wins while focused. */
+.slot[aria-invalid='true'] {
+  border-color: var(--destructive);
+  box-shadow: inset 0 0 0 var(--ring-inset) var(--destructive);
+}
+
+/* The fake caret: a blinking vertical bar, centered in the slot, shown
+ * only while the slot is both focused and still empty (Base UI's
+ * `data-filled` covers "has a character" — a filled slot shows its digit
+ * instead, same as upstream never rendering `hasFakeCaret` there). */
+.slot:focus:not([data-filled])::after {
+  content: '';
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 50%;
+  width: var(--border-width-focus);
+  transform: translateX(-50%);
+  background-color: var(--foreground);
+  animation: input-otp-caret-blink 1.2s step-end infinite;
+}
+
+@keyframes input-otp-caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slot:focus:not([data-filled])::after {
+    animation: none;
+  }
+}
+
+.separator {
+  display: flex;
+  align-items: center;
+  color: var(--muted-foreground);
+}

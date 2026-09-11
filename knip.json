@@ -12,6 +12,22 @@
     },
     "packages/cli": {
       "ignore": ["templates/**", "template-sources/**"]
+    },
+    "packages/cyber-pilot-kit-frontx": {
+      "entry": ["skills/**/scripts/*.mjs"]
+    },
+    "packages/ui-kit": {
+      "entry": [
+        "demo/main.tsx",
+        "demo/examples/*.tsx",
+        "demo/vite-env.d.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}",
+        "demo/**/*.{ts,tsx}",
+        "scripts/**/*.ts"
+      ],
+      "ignoreDependencies": ["esbuild"]
     }
   },
   "ignore": [

@@ -6,8 +6,20 @@
 .card {
   display: flex;
   flex-direction: column;
+  /*
+   * The mockup draws the card's edge as a real 1px stroke, not the ring
+   * every popup shares — so the border is a real `border` here, and this
+   * card pays for it with a local box-sizing (the kit's per-component
+   * convention; see tabs/drawer/tooltip for the same line). Border-box also
+   * makes a consumer's `maxWidth` mean the same thing before and after the
+   * stroke, and lets a consumer's own `border` REPLACE this one rather than
+   * draw a second ring beside it, which the previous box-shadow ring could
+   * not.
+   */
+  box-sizing: border-box;
   overflow: hidden;
-  border-radius: var(--radius-xl);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
   background-color: var(--card);
   color: var(--card-foreground);
   /* Studio/Body — was the shadcn translation's 14px, migrated to the ramp. */
@@ -31,7 +43,7 @@
    * so a size="default" Card nested inside a size="sm" one asserts its own
    * defaults instead of inheriting the outer card's.
    */
-  --card-spacing: var(--space-6);
+  --card-spacing: var(--space-4);
   /* The default title is Studio/Heading 2; the sm variant below steps it
    * down to Studio/Body, one role down the ramp (see .card.sizeSm). */
   --card-title-font-size: var(--text-heading-2-size);
@@ -39,17 +51,12 @@
   gap: var(--card-spacing);
   padding: var(--card-spacing) 0;
   /*
-   * Source combines a shadow-xs drop shadow with a 1px ring the same
-   * strength as the other popups' --popover-border (see theme.css) into
-   * one box-shadow layer list — a real `border` would add to the box model
-   * on top of the kit's known missing box-sizing (tracked separately, not
-   * fixed here); box-shadow keeps Card's layout unaffected either way. The
-   * drop-shadow layer is Card's own (no other part shares this fainter
-   * 5% mix), so only the ring layer draws from the shared token.
+   * No box-shadow: the mockup's card is a flat surface — stroke and fill
+   * only, no drop shadow drawn. Card is deliberately NOT part of the
+   * --popover-shadow/--popover-border family: those name the chrome of a
+   * floating popup (Dialog/
+   * DropdownMenu/Select/Toast), and a card floats over nothing.
    */
-  box-shadow:
-    0 1px 2px 0 color-mix(in oklab, var(--foreground) 5%, transparent),
-    0 0 0 1px var(--popover-border);
 }
 
 /* Highest-specificity rule in the file on purpose: must win over `.card`'s
@@ -59,13 +66,13 @@
 }
 
 .card > img:first-child {
-  border-top-left-radius: var(--radius-xl);
-  border-top-right-radius: var(--radius-xl);
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
 }
 
 .card > img:last-child {
-  border-bottom-left-radius: var(--radius-xl);
-  border-bottom-right-radius: var(--radius-xl);
+  border-bottom-left-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-lg);
 }
 
 /* Deliberately empty — do not delete as dead CSS. Kept so `size="default"`
@@ -76,7 +83,9 @@
 }
 
 .card.sizeSm {
-  --card-spacing: var(--space-4);
+  /* One --space-* step below the default, which the mockup pins at 16px:
+     sm has to keep stepping down or the variant stops being a variant. */
+  --card-spacing: var(--space-3);
   /* One step down the ramp: the sm title reads at Body size. */
   --card-title-font-size: var(--text-body-size);
   --card-title-line-height: var(--text-body-line-height);
@@ -87,8 +96,8 @@
   grid-auto-rows: min-content;
   align-items: start;
   gap: var(--space-1);
-  border-top-left-radius: var(--radius-xl);
-  border-top-right-radius: var(--radius-xl);
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
 }
 
 .card .cardHeader {
@@ -138,8 +147,8 @@
 .cardFooter {
   display: flex;
   align-items: center;
-  border-bottom-left-radius: var(--radius-xl);
-  border-bottom-right-radius: var(--radius-xl);
+  border-bottom-left-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-lg);
 }
 
 .card .cardFooter {

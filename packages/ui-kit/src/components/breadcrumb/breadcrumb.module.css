@@ -1,0 +1,105 @@
+/*
+ * Breadcrumb styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ *
+ * Upstream's base-vega registry item (registry/bases/base/ui/breadcrumb.tsx)
+ * carries almost no Tailwind utilities of its own — its `cn-breadcrumb-*`
+ * classes are defined in a separate base-vega stylesheet this port has no
+ * access to, so gap/type/color below follow the kit's own established
+ * secondary-text idiom (Table's caption, Card's description) rather than a
+ * value copied from a source file this repo doesn't have.
+ */
+
+.breadcrumb {
+  color: var(--muted-foreground);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-body-tracking);
+}
+
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: break-word;
+}
+
+.item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.link {
+  color: inherit;
+  text-decoration-line: none;
+  transition: color 150ms ease;
+}
+
+.link:hover {
+  color: var(--foreground);
+  text-decoration-line: underline;
+}
+
+.link:focus-visible {
+  outline: var(--border-width-focus) solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* The current crumb reads as the destination, not a place to click again —
+ * full --foreground plus the same weight bump Table's footer uses for
+ * emphasis over the surrounding secondary text. */
+.page {
+  color: var(--foreground);
+  font-weight: var(--text-label-weight);
+}
+
+.separator {
+  display: flex;
+  align-items: center;
+}
+
+.separator svg {
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
+}
+
+.ellipsis {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+}
+
+.ellipsis svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+/*
+ * Visually hidden but still announced — clip-path, not the older
+ * clip:rect()+negative-margin recipe: `position: absolute` already removes
+ * this from normal flow, so the 1x1px box needs no compensating negative
+ * margin to avoid nudging surrounding text (and a literal negative margin
+ * would trip this kit's own metric-token guard, tokens.test.ts, which
+ * requires every margin/padding value to be a scale token). `inset(50%)`
+ * clips the entire 1x1px box from every side, same visual result as
+ * `clip: rect(0,0,0,0)` with no non-token value needed.
+ */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

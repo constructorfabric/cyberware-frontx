@@ -1,0 +1,20 @@
+/*
+ * AspectRatio styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables (none needed here) plus its own
+ * per-instance --ratio custom property — no raw colors, no metrics to
+ * guard (aspect-ratio isn't a spacing/typography property).
+ */
+
+.aspectRatio {
+  position: relative;
+  /*
+   * Declared here (not just consumed) so tokens.test.ts's same-part local
+   * variable exemption applies: aspect-ratio.tsx always sets `--ratio` via
+   * inline style (it is a required prop), but this default keeps the class
+   * self-contained — a 1:1 box, not a collapsed one — if it's ever read
+   * without that inline style attached (e.g. inspecting the class alone in
+   * devtools).
+   */
+  --ratio: 1;
+  aspect-ratio: var(--ratio);
+}

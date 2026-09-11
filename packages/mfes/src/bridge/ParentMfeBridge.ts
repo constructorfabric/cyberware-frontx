@@ -11,7 +11,7 @@
 import { ParentMfeBridge } from '../handler/types';
 import type { ActionsChain, SharedProperty } from '../types';
 import type { ChildMfeBridgeImpl } from './ChildMfeBridge';
-import { BridgeDisposedError } from './errors';
+import { BridgeDisposedError, BridgeInactiveError } from './errors';
 
 type PropertySubscriber = (propertyTypeId: string, value: unknown) => void;
 
@@ -33,9 +33,19 @@ export class ParentMfeBridgeImpl extends ParentMfeBridge {
   private childActionHandler: ((chain: ActionsChain) => Promise<void>) | null = null;
 
   /**
-   * Disposal state.
+   * Permanent-disposal state, delegated to the child bridge — the single
+   * source of truth for both active/inactive and destroyed state
+   * (`inst-bridge-lifetime`).
    */
-  private disposed = false;
+  // @cpt-begin:cpt-frontx-algo-mfe-host-communication-bridge-delegation:p1:inst-bridge-lifetime
+  private get destroyed(): boolean {
+    return this.childBridge.isDestroyed();
+  }
+
+  private get active(): boolean {
+    return this.childBridge.isActive();
+  }
+  // @cpt-end:cpt-frontx-algo-mfe-host-communication-bridge-delegation:p1:inst-bridge-lifetime
 
   /**
    * Property update subscribers - tracks callbacks registered in domain.propertySubscribers.
@@ -45,14 +55,22 @@ export class ParentMfeBridgeImpl extends ParentMfeBridge {
   private readonly propertySubscribers = new Map<string, PropertySubscriber>();
 
   /**
-   * Unique instance ID for the child MFE.
+   * The GTS id of the extension this bridge belongs to; stable across every
+   * mount of that extension.
    */
   readonly instanceId: string;
 
   constructor(childBridge: ChildMfeBridgeImpl) {
     super();
     this.childBridge = childBridge;
-    this.instanceId = childBridge.instanceId;
+    this.instanceId = childBridge.extensionId;
+  }
+
+  /**
+   * INTERNAL: Access the child bridge this parent bridge wraps.
+   */
+  getChildBridge(): ChildMfeBridgeImpl {
+    return this.childBridge;
   }
 
   /**
@@ -61,13 +79,17 @@ export class ParentMfeBridgeImpl extends ParentMfeBridge {
    *
    * @param chain - Actions chain to send
    * @returns Promise resolving when execution is complete
-   * @throws {BridgeDisposedError} If bridge has been disposed
+   * @throws {BridgeDisposedError} If bridge has been permanently disposed
+   * @throws {BridgeInactiveError} If the extension is registered but not currently mounted
    */
   // @cpt-begin:cpt-frontx-algo-mfe-host-communication-bridge-delegation:p1:inst-parent-send-chain
   // @cpt-begin:cpt-frontx-algo-mfe-host-communication-bridge-delegation:p1:inst-deliver-to-child
   async sendActionsChain(chain: ActionsChain): Promise<void> {
-    if (this.disposed) {
+    if (this.destroyed) {
       throw new BridgeDisposedError(this.instanceId);
+    }
+    if (!this.active) {
+      throw new BridgeInactiveError(this.instanceId);
     }
     return this.childBridge.handleParentActionsChain(chain);
   }
@@ -79,24 +101,27 @@ export class ParentMfeBridgeImpl extends ParentMfeBridge {
    * This is called by MfeRegistry to connect the bridge to the mediator.
    *
    * @param callback - Handler for child actions
+   * @throws {BridgeDisposedError} If bridge has been permanently disposed
    */
   onChildAction(callback: (chain: ActionsChain) => Promise<void>): void {
-    if (this.disposed) {
-      throw new Error('Bridge has been disposed');
+    if (this.destroyed) {
+      throw new BridgeDisposedError(this.instanceId);
     }
     this.childActionHandler = callback;
   }
 
   /**
    * Called by MfeRegistry when a domain property is updated.
-   * Forwards the update to the child bridge.
+   * Forwards the update to the child bridge. Recorded on the child bridge
+   * even while inactive, but its subscribers are only notified while active
+   * (`ChildMfeBridgeImpl.receivePropertyUpdate`).
    *
    * @param propertyTypeId - Type ID of the property
    * @param value - New property value
    */
   receivePropertyUpdate(propertyTypeId: string, value: unknown): void {
-    if (this.disposed) {
-      return; // Silently ignore updates after disposal
+    if (this.destroyed) {
+      return; // Silently ignore updates after permanent disposal.
     }
     const sharedProperty: SharedProperty = { id: propertyTypeId, value };
     this.childBridge.receivePropertyUpdate(propertyTypeId, sharedProperty);
@@ -128,19 +153,21 @@ export class ParentMfeBridgeImpl extends ParentMfeBridge {
   }
 
   /**
-   * Dispose the bridge and clean up resources.
+   * Permanent teardown, performed only when the extension this bridge
+   * belongs to is unregistered — never on an ordinary unmount, which instead
+   * goes through the runtime bridge factory's `deactivateBridge`.
+   *
    * NOTE: This does NOT remove property subscribers from domain.propertySubscribers.
    * The bridge factory must handle that cleanup using getPropertySubscribers().
    */
   // @cpt-begin:cpt-frontx-algo-mfe-host-communication-bridge-delegation:p1:inst-parent-handle
   dispose(): void {
-    if (this.disposed) {
+    if (this.destroyed) {
       return; // Idempotent
     }
-    this.disposed = true;
     this.childActionHandler = null;
     this.propertySubscribers.clear();
-    this.childBridge.cleanup();
+    this.childBridge.destroy();
   }
   // @cpt-end:cpt-frontx-algo-mfe-host-communication-bridge-delegation:p1:inst-parent-handle
 
@@ -152,8 +179,11 @@ export class ParentMfeBridgeImpl extends ParentMfeBridge {
    * @returns Promise resolving when execution is complete
    */
   handleChildAction(chain: ActionsChain): Promise<void> {
-    if (this.disposed) {
-      return Promise.reject(new Error('Bridge has been disposed'));
+    if (this.destroyed) {
+      return Promise.reject(new BridgeDisposedError(this.instanceId));
+    }
+    if (!this.active) {
+      return Promise.reject(new BridgeInactiveError(this.instanceId));
     }
     if (!this.childActionHandler) {
       return Promise.reject(new Error('No child action handler registered'));

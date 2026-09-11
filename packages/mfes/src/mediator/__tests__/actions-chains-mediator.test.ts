@@ -128,6 +128,41 @@ describe('DefaultActionsChainsMediator — hierarchy-aware handler resolution', 
     expect(handled).toBe(true);
   });
 
+  it('does not misroute an ActionHandler that happens to define its own `send` method as a CrossHopRoute', async () => {
+    // Regression guard for the old duck-typed `isCrossHopRoute` check, which
+    // identified a resolved handler as a cross-hop route purely by the
+    // presence of a `send` method. An ordinary application `ActionHandler`
+    // is free to name its own unrelated method `send` — under duck-typing
+    // this handler would have been misrouted into `CrossHopRoute` handling
+    // and crashed calling `registerInFlight`, which it doesn't implement.
+    class HandlerWithOwnSendMethod extends ActionHandler {
+      handled = false;
+      sentCount = 0;
+
+      async handleAction(): Promise<void> {
+        this.handled = true;
+      }
+
+      // Unrelated application-level method that happens to share a name
+      // with CrossHopRoute.send — must not affect dispatch resolution.
+      async send(): Promise<void> {
+        this.sentCount += 1;
+      }
+    }
+
+    const mediator = makeMediator();
+    const handler = new HandlerWithOwnSendMethod();
+    mediator.registerHandler('domain-1', MOUNT_EXT, handler);
+
+    const result = await mediator.executeActionsChain({
+      action: { type: MOUNT_EXT, target: 'domain-1', payload: { subject: 'ext-1' } },
+    });
+
+    expect(result.completed).toBe(true);
+    expect(handler.handled).toBe(true);
+    expect(handler.sentCount).toBe(0);
+  });
+
   it('still fails with NoHandlerForActionTargetError semantics for a genuinely unrelated action type', async () => {
     const mediator = makeMediator();
     mediator.registerHandler('domain-1', MOUNT_EXT, ActionHandler.fromFunction(async () => {}));
@@ -137,7 +172,7 @@ describe('DefaultActionsChainsMediator — hierarchy-aware handler resolution', 
     });
 
     expect(result.completed).toBe(false);
-    expect(result.error).toContain('No handler found');
+    expect(result.path).toEqual(['mock.action.v1~unrelated.v1~']);
   });
 
   it('exempts a DERIVED infrastructure action from entry declaration validation', async () => {

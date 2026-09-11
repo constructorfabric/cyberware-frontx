@@ -8,8 +8,8 @@ function screenTranslationsTestBridge(
   overrides: Partial<Pick<ChildMfeBridge, 'getProperty' | 'subscribeToProperty'>>
 ): ChildMfeBridge {
   return {
-    domainId: 'test-domain',
-    instanceId: 'test-instance',
+    extDomainId: 'test-domain',
+    extensionId: 'test-instance',
     executeActionsChain: vi.fn().mockResolvedValue(undefined),
     registerActionHandler: vi.fn(),
     getProperty: overrides.getProperty ?? vi.fn(),

@@ -1,0 +1,105 @@
+/*
+ * Marker styles, translated from shadcn/ui (MIT) to CSS Modules. The base
+ * registry (registry/bases/base/ui/marker.tsx) ships no color/spacing
+ * classes of its own — only structural Tailwind and the `data-variant`
+ * state hook; the actual geometry translated below comes from the
+ * new-york-v4 style pack's version of the same file, the same source
+ * badge.module.css's own header note points to. Consumes only theme.css
+ * variables — no raw colors.
+ */
+
+.marker {
+  position: relative;
+  display: flex;
+  width: 100%;
+  /* min-h-4 = 1rem, matching --space-4 exactly. */
+  min-height: var(--space-4);
+  align-items: center;
+  gap: var(--space-2);
+  text-align: left;
+  /* Studio/Body, same role Message's own text-sm maps to (message.module.css). */
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  color: var(--muted-foreground);
+}
+
+.marker svg {
+  pointer-events: none;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.marker a {
+  text-decoration-line: underline;
+  /* Literal, not tokenized — text-underline-offset sits outside the
+   * spacing/type-metric scales the token guard polices, same idiom as
+   * Badge's link variant (badge.module.css's 4px). */
+  text-underline-offset: 3px;
+}
+
+.marker a:hover {
+  color: var(--foreground);
+}
+
+/* Deliberately empty — do not delete as dead CSS. Kept so `variant="default"`
+   is a real DOM-visible class (like Card's `sizeDefault`, see
+   card.module.css) and cva has a defaultVariants target; `.marker` above
+   already carries every rule the default variant needs. */
+.variantDefault {
+}
+
+/* A bottom-bordered row: keeps the default marker's alignment while
+ * separating the row below it. */
+.variantBorder {
+  border-bottom: var(--border-width) solid var(--border);
+  padding-bottom: var(--space-2);
+}
+
+/* A centered label with divider lines on each side — the lines are the
+ * root's own ::before/::after (flex items flanking the icon/content
+ * between them), not a child element, so no extra DOM node is needed. */
+.variantSeparator::before,
+.variantSeparator::after {
+  content: '';
+  height: 1px;
+  min-width: 0;
+  flex: 1 1 0%;
+  background-color: var(--border);
+}
+
+.variantSeparator::before {
+  margin-inline-end: var(--space-1);
+}
+
+.variantSeparator::after {
+  margin-inline-start: var(--space-1);
+}
+
+.markerIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.markerIcon svg {
+  pointer-events: none;
+  width: 100%;
+  height: 100%;
+}
+
+.markerContent {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+/*
+ * Sits between the separator's two growing lines: `flex: none` (rather than
+ * the default shrink:1) keeps the label at its natural width instead of
+ * also competing for space with them, so only the lines flex to fill the
+ * row.
+ */
+.variantSeparator .markerContent {
+  flex: none;
+  text-align: center;
+}

@@ -1,0 +1,305 @@
+/*
+ * Bubble styles, translated from shadcn/ui (MIT) to CSS Modules. The base
+ * registry (registry/bases/base/ui/bubble.tsx) ships no color/spacing
+ * classes of its own — only structural Tailwind and the `data-variant`/
+ * `data-align` state hooks; the actual geometry and per-variant colors
+ * translated below come from the new-york-v4 style pack's version of the
+ * same file, the same source badge.module.css's own header note points to.
+ * One rule below is NOT a translation: the speaker-side corner notch, which
+ * upstream does not draw. Its reasoning is recorded at the rule itself.
+ * Consumes only theme.css variables — no raw colors.
+ */
+
+.bubbleGroup {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.bubble {
+  position: relative;
+  display: flex;
+  width: fit-content;
+  max-width: 80%;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Self-standing alignment: also set from Message when a Bubble sits inside
+ * one (see message.module.css's `[data-align='end'] .messageContent > *`),
+ * but Bubble reacts to its own attribute too so it aligns correctly used
+ * on its own, outside a Message row. */
+.bubble[data-align='end'] {
+  align-self: flex-end;
+}
+
+.bubbleContent {
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-lg);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-body-size);
+  /*
+   * Upstream reads "leading-relaxed" (a 1.625 unitless multiplier), which
+   * has no counterpart on this kit's fixed-rem line-height ramp — every
+   * --text-*-line-height token is an absolute value, not a ratio, and the
+   * metric-scale guard (tokens.test.ts) rejects a hand-rolled
+   * `calc(var(--text-body-size) * 1.625)` the same way it rejects any other
+   * literal multiplier. Snapped to --text-body-line-height per the kit-wide
+   * "tokens win" ruling (see theme.css) — tighter than upstream's relaxed
+   * target, but the correct role (body copy) at the nearest scale step that
+   * actually exists.
+   */
+  line-height: var(--text-body-line-height);
+}
+
+.bubble[data-align='end'] > .bubbleContent {
+  align-self: flex-end;
+}
+
+/*
+ * Speaker-side corner - the one deliberate departure from upstream, which
+ * frames every bubble in a uniform --radius-lg on all four corners
+ * (`rounded-xl` there; the same value, since upstream's own xl step is
+ * --radius + 4px, exactly this kit's --radius-lg). A uniformly rounded,
+ * filled, content-width box carrying one short line is the shape of a
+ * BUTTON, and that is how the kit's bubbles were being read. Notching the
+ * corner nearest the speaker down to --radius-xs is the cue that makes the
+ * same box read as speech instead: the flat corner points back at whoever
+ * said it, so the shape itself, not just the fill or the alignment,
+ * carries the sender, which is also what keeps the two sides
+ * distinguishable for a reader who cannot separate the fills by color.
+ *
+ * Logical (`start`/`end`) rather than physical corners, so an RTL
+ * conversation notches the mirrored corner without a direction override.
+ *
+ * Deliberately placed ABOVE the variant rules: `ghost` resets
+ * `border-radius` wholesale, and at equal specificity that later shorthand
+ * must win over these longhands to keep unframed content square.
+ */
+.bubble[data-align='start'] > .bubbleContent {
+  border-start-start-radius: var(--radius-xs);
+}
+
+.bubble[data-align='end'] > .bubbleContent {
+  border-start-end-radius: var(--radius-xs);
+}
+
+.bubbleContent:is(button, a) {
+  cursor: pointer;
+  text-align: left;
+  outline: none;
+  /* Colour crossfade only, no transform/geometry — not motion under WCAG
+     2.3.3, so deliberately left unguarded under prefers-reduced-motion. */
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.bubbleContent:is(button, a):focus-visible {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent);
+}
+
+@media (forced-colors: active) {
+  .bubbleContent:is(button, a):focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+/*
+ * default — a strong primary bubble, usually for the current user.
+ */
+.bubble.variantDefault > .bubbleContent {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.bubble.variantDefault > .bubbleContent:is(button, a):hover {
+  background-color: color-mix(in oklab, var(--primary) 80%, transparent);
+}
+
+/*
+ * secondary — the standard neutral bubble for conversation content.
+ */
+.bubble.variantSecondary > .bubbleContent {
+  background-color: var(--secondary);
+  color: var(--secondary-foreground);
+}
+
+.bubble.variantSecondary > .bubbleContent:is(button, a):hover {
+  background-color: color-mix(in oklch, var(--secondary), var(--foreground) 5%);
+}
+
+/*
+ * muted — a lower-emphasis bubble for quiet supporting content. No text
+ * color override upstream either — it inherits the ambient foreground.
+ */
+.bubble.variantMuted > .bubbleContent {
+  background-color: var(--muted);
+}
+
+.bubble.variantMuted > .bubbleContent:is(button, a):hover {
+  background-color: color-mix(in oklch, var(--muted), var(--foreground) 5%);
+}
+
+/*
+ * tinted — a subtle primary-tinted bubble. Upstream derives this with a
+ * bespoke relative-color recipe built from the primary token (a
+ * lightness-shifted derivation, different per theme); this kit already
+ * has that exact concept as a named token pair —
+ * --accent/--accent-foreground, the same primary-tinted
+ * surface Badge's ghost/outline hover and DropdownMenu already paint with
+ * — so tinted reuses it instead of re-deriving the recipe. Free per-theme
+ * correctness as a result: --accent already carries its own light/dark
+ * values in theme.css, with no dark override needed here.
+ */
+.bubble.variantTinted > .bubbleContent {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.bubble.variantTinted > .bubbleContent:is(button, a):hover {
+  background-color: color-mix(in oklab, var(--accent) 90%, var(--foreground) 10%);
+}
+
+/*
+ * outline — a bordered bubble for secondary or rich content.
+ */
+.bubble.variantOutline > .bubbleContent {
+  border-color: var(--border);
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+.bubble.variantOutline > .bubbleContent:is(button, a):hover {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+[data-theme='dark'] .bubble.variantOutline > .bubbleContent:is(button, a):hover {
+  background-color: color-mix(in oklab, var(--input) 30%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .bubble.variantOutline > .bubbleContent:is(button, a):hover {
+    background-color: color-mix(in oklab, var(--input) 30%, transparent);
+  }
+}
+
+/*
+ * ghost — unframed content for assistant text or rich content. The content
+ * loses its frame entirely (no border, fill, padding, or radius) and the
+ * bubble drops its 80% width cap so the unframed text can span the full row.
+ */
+.bubble.variantGhost {
+  max-width: 100%;
+}
+
+.bubble.variantGhost > .bubbleContent {
+  border-color: transparent;
+  background-color: transparent;
+  border-radius: 0;
+  padding: 0;
+}
+
+.bubble.variantGhost > .bubbleContent:is(button, a):hover {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+[data-theme='dark'] .bubble.variantGhost > .bubbleContent:is(button, a):hover {
+  background-color: color-mix(in oklab, var(--muted) 50%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .bubble.variantGhost > .bubbleContent:is(button, a):hover {
+    background-color: color-mix(in oklab, var(--muted) 50%, transparent);
+  }
+}
+
+/*
+ * destructive — a destructive bubble for error or failed actions. Dark
+ * mode reads at double the light-mode alpha (20% vs. 10%, hover 30% vs.
+ * 20%) — a tinted fill this faint needs more opacity on a dark surface to
+ * stay legibly tinted at all, the same reasoning button.module.css's own
+ * destructive hover mix documents.
+ */
+.bubble.variantDestructive > .bubbleContent {
+  background-color: color-mix(in oklab, var(--destructive) 10%, transparent);
+  color: var(--destructive);
+}
+
+.bubble.variantDestructive > .bubbleContent:is(button, a):hover {
+  background-color: color-mix(in oklab, var(--destructive) 20%, transparent);
+}
+
+[data-theme='dark'] .bubble.variantDestructive > .bubbleContent {
+  background-color: color-mix(in oklab, var(--destructive) 20%, transparent);
+}
+
+[data-theme='dark'] .bubble.variantDestructive > .bubbleContent:is(button, a):hover {
+  background-color: color-mix(in oklab, var(--destructive) 30%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .bubble.variantDestructive > .bubbleContent {
+    background-color: color-mix(in oklab, var(--destructive) 20%, transparent);
+  }
+
+  :root:not([data-theme='light']) .bubble.variantDestructive > .bubbleContent:is(button, a):hover {
+    background-color: color-mix(in oklab, var(--destructive) 30%, transparent);
+  }
+}
+
+.bubbleReactions {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  width: fit-content;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  border-radius: 9999px;
+  background-color: var(--muted);
+  /* 2px/6px (upstream's py-0.5/px-1.5) sit off the --space-* scale on both
+   * axes; snapped to Badge's own pill formula (badge.module.css) rather
+   * than an independent tie-break — a reaction pill reads at the same
+   * visual weight as a Badge. */
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  box-shadow: 0 0 0 3px var(--card);
+}
+
+/* Interactive reactions (buttons) supply their own sizing/padding — the
+ * pill itself goes flush around them instead of double-padding. */
+.bubbleReactions:has(button) {
+  padding: 0;
+}
+
+.sideTop {
+  top: 0;
+  transform: translateY(-75%);
+}
+
+.sideBottom {
+  bottom: 0;
+  transform: translateY(75%);
+}
+
+.alignStart {
+  left: var(--space-3);
+}
+
+.alignEnd {
+  right: var(--space-3);
+}

@@ -1,0 +1,397 @@
+/*
+ * Questionnaire styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Behavior is @shadcn/react's, not Base UI's (see questionnaire.tsx); only
+ * the visual language is translated from upstream's Tailwind here.
+ * Consumes only theme.css variables — no raw colors.
+ */
+
+/*
+ * The stepper's whole "one question at a time" behavior rides on the native
+ * `hidden` attribute the engine stamps on every inactive Item and every
+ * inactive nav button. `hidden` is enforced only by the UA sheet's
+ * `[hidden] { display: none }`, which carries NO `!important` — so any
+ * author `display` declaration on the same element silently defeats it and
+ * the whole questionnaire paints at once. Both places that happens here are
+ * re-blocked below: `.item`'s own `display: flex`, and the `display:
+ * inline-flex` the kit `Button` brings to the four nav buttons. Tailwind
+ * consumers never meet this because their preflight-normalized utilities
+ * are ordered against it; a CSS Modules port has to say it out loud.
+ */
+.item[hidden],
+.previous[hidden],
+.skip[hidden],
+.next[hidden],
+.submit[hidden] {
+  display: none;
+}
+
+.root {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.progress {
+  /* min-width holds 14 characters and the digits are tabular, so "Question
+   * 9 of 12" doesn't reflow the row as the count climbs. */
+  width: fit-content;
+  min-width: 14ch;
+  min-height: 1lh;
+  color: var(--muted-foreground);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  font-weight: var(--text-label-weight);
+  letter-spacing: var(--text-meta-tracking);
+  font-variant-numeric: tabular-nums;
+}
+
+.item {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  border: 0;
+  padding: 0;
+  outline: none;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-heading-2-size);
+  line-height: var(--text-heading-2-line-height);
+  font-weight: var(--text-heading-2-weight);
+  letter-spacing: var(--text-heading-2-tracking);
+  text-wrap: pretty;
+}
+
+/* A Description carries its own gap from `.item`; without one the title
+ * would sit one gap away from the choices instead of upstream's two, so it
+ * pays the missing gap itself. */
+.title:not(:has(~ .description)) {
+  margin-block-end: var(--space-4);
+}
+
+.description {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-body-tracking);
+  text-wrap: pretty;
+}
+
+.choices {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+/*
+ * One choice row — a bordered card, not a bare list row. The real input
+ * (.choiceInput) is stretched over the whole card and made invisible so a
+ * click/tap anywhere in it toggles the choice; the label wraps the input
+ * natively, so no explicit `htmlFor`/`id` wiring is needed.
+ */
+.choice {
+  /* Substitutes for the preflight the kit lacks: content-box (this kit's
+   * ambient default) would pile border and padding on top of min-height,
+   * inflating the 2.75rem row — same scoped fix as checkbox.module.css. */
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  min-height: 2.75rem;
+  /*
+   * Two different alignments, one per axis of the problem.
+   *
+   * `align-items: flex-start` is about where the indicator and the shortcut
+   * cap sit *relative to the label*: a choice may carry a description under
+   * its label, and both belong beside the label's FIRST line, not centred
+   * against a two-line block. Centring the items would drop the indicator to
+   * the middle of a tall row, so it stays start-aligned.
+   *
+   * `align-content: center` is about where that whole one-line row of items
+   * sits *inside the card*. The card's 2.75rem minimum is a touch-target
+   * floor, not a content height: a single-line choice is only
+   * --text-body-line-height tall, so flex leaves the surplus below the
+   * content and the card reads top-heavy. Centring the flex line spends the
+   * surplus evenly above and below, and costs nothing once the content is
+   * taller than the minimum (a choice with a description already fills the
+   * card, so there is no surplus left to distribute and multi-line rows keep
+   * their plain --space-2 inset).
+   *
+   * `align-content` is inert on a nowrap flex container by spec, hence the
+   * `wrap` — the line never actually breaks: `.choiceLabel` is `flex: 1` off
+   * a zero basis with `min-width: 0`, so it contributes nothing to the line's
+   * break decision and only the fixed indicator/shortcut boxes do.
+   */
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: center;
+  gap: var(--space-2);
+  border: var(--border-width) solid var(--input);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  text-align: start;
+  -webkit-user-select: none;
+  user-select: none;
+  outline: none;
+  /* Colour and box-shadow crossfades only, no transform/geometry — not
+     motion under WCAG 2.3.3, so deliberately left unguarded under
+     prefers-reduced-motion. */
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.choice:hover {
+  background-color: color-mix(in oklab, var(--muted) 50%, transparent);
+}
+
+/*
+ * Focus lands on the invisible native input, which has no box of its own to
+ * outline — so the card wears the focus instead, in the same recolored
+ * border + inset ring the kit's field controls use (input.module.css), the
+ * shape upstream draws here too.
+ */
+.choice:has(> .choiceInput:focus-visible) {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 var(--ring-inset) var(--ring);
+}
+
+/* The ring above is an inset box-shadow, and forced-colors mode doesn't
+ * render box-shadow at all — add an explicit outline or the focus
+ * indicator disappears entirely under the mode. */
+@media (forced-colors: active) {
+  .choice:has(> .choiceInput:focus-visible) {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+/* Selected: the whole card responds — tinted fill and a primary-tinted
+ * border — not just the indicator glyph. Declared after :hover so a checked
+ * row keeps its fill while hovered. */
+.choice[data-checked] {
+  border-color: color-mix(in oklab, var(--primary) 40%, transparent);
+  background-color: var(--muted);
+}
+
+/* Declared after the checked rules so an invalid item's border wins. */
+.choice[data-invalid] {
+  border-color: var(--destructive);
+}
+
+/*
+ * Failed validation focuses the item's first answer control, so invalid and
+ * focused is the *normal* state after a blocked Next — not a corner case.
+ * The focus rule above matches at :has() specificity, so the invalid
+ * treatment has to restate itself here to win, and it recolors the ring
+ * too rather than leaving a --ring halo around a --destructive border
+ * (same ruling, and same paired border+ring recolor, as input.module.css).
+ */
+.choice[data-invalid]:has(> .choiceInput:focus-visible) {
+  border-color: var(--destructive);
+  box-shadow: inset 0 0 0 var(--ring-inset) var(--destructive);
+}
+
+/* disabled opacity: see input.module.css */
+.choice[data-disabled] {
+  cursor: not-allowed;
+  pointer-events: none;
+  opacity: 0.42;
+}
+
+.choiceInput {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  opacity: 0;
+}
+
+/*
+ * The visible indicator. Same filled-on-checked treatment as
+ * checkbox.module.css's own root, at the smaller glyph scale upstream uses
+ * inside a choice row.
+ */
+.indicator {
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  /*
+   * `.choice` is align-items: flex-start, so this box and the label's first
+   * line both start flush at the top of the flex line (wherever `.choice`'s
+   * own align-content has placed that line in the card) — the glyph
+   * (--icon-size-sm) is shorter than the line box it sits beside
+   * (--text-body-line-height),
+   * so it renders high unless nudged down by half that gap. Upstream copies
+   * a flat `translate-y-0.5` (2px) because its own label line-height is
+   * also 20px, coincidentally the same number; deriving it from our own
+   * tokens instead means it stays correct if either token moves, and it is
+   * what `.shortcut` below should have done too instead of borrowing this
+   * same constant for a differently-sized box (see there). Position
+   * geometry, not an on-grid space — hence a transform rather than a margin
+   * that would also push the row's content box.
+   */
+  transform: translateY(calc((var(--text-body-line-height) - var(--icon-size-sm)) / 2));
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  border: var(--border-width) solid var(--input);
+  border-radius: var(--radius-xs);
+  background-color: var(--surface-elevated);
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.choice[data-type='radio'] .indicator {
+  border-radius: 9999px;
+}
+
+/* Checked fills the box for both types — the glyph inside is what differs. */
+.choice[data-checked] .indicator {
+  border-color: var(--primary);
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.choice[data-invalid] .indicator {
+  border-color: var(--destructive);
+}
+
+.choice[data-invalid][data-checked] .indicator {
+  border-color: var(--primary);
+}
+
+/* Radio's mark: a dot knocked out of the filled circle. */
+.dot {
+  display: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background-color: var(--primary-foreground);
+}
+
+.choice[data-type='radio'][data-checked] .dot {
+  display: block;
+}
+
+/* Checkbox's mark: a check drawn in the filled square. */
+.check {
+  display: none;
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.choice[data-type='checkbox'][data-checked] .check {
+  display: block;
+}
+
+.choiceLabel {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  /* Upstream's 2px label/description split, snapped up to the kit's
+   * smallest space step — the scale has no 2px rung. */
+  gap: var(--space-1);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-body-tracking);
+}
+
+.choiceDescription {
+  color: var(--muted-foreground);
+}
+
+/*
+ * The key hint, drawn as a key cap. Empty and `hidden` unless the root's
+ * `shortcuts` mode assigned this choice one, so display is keyed off the
+ * stamped data-shortcut rather than overridden back on.
+ */
+.shortcut {
+  box-sizing: border-box;
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  /*
+   * Same reasoning as .indicator's own nudge, but computed against this
+   * box's own size: --icon-size-md (20px) already equals
+   * --text-body-line-height (20px), so the two are flush with no nudge
+   * needed — reusing .indicator's fixed 2px here (upstream doesn't draw
+   * this shortcut cap at all, so there's no upstream value to match) pushed
+   * it visibly below the label's first-line centre.
+   */
+  transform: translateY(calc((var(--text-body-line-height) - var(--icon-size-md)) / 2));
+  margin-inline-start: auto;
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  border: var(--border-width) solid var(--input);
+  border-radius: var(--radius-sm);
+  background-color: var(--background);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: var(--text-mono-line-height);
+  font-weight: var(--text-label-weight);
+  pointer-events: none;
+}
+
+.shortcut[data-shortcut] {
+  display: inline-flex;
+}
+
+.error {
+  /* The item's own gap already separates the error from the choices; this
+   * is the extra step upstream gives it so a validation message reads as a
+   * response to the block above rather than another field in it. */
+  margin: var(--space-2) 0 0;
+  color: var(--destructive);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-body-tracking);
+}
+
+.actions {
+  display: grid;
+  min-height: 2.75rem;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.previous {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+}
+
+.skip {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+}
+
+/* Next and Submit share one cell — the engine keeps exactly one of them
+ * visible, so they never collide. */
+.next,
+.submit {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+}

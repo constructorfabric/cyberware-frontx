@@ -61,9 +61,8 @@
 
   /*
    * Popover chrome shared by every card-like popup (Dialog/DropdownMenu/
-   * Select/Toast): a 1px ring plus a two-layer drop shadow, previously
-   * hand-duplicated verbatim in all four modules (plus the ring half in
-   * Card, which has no real `border` to spend — see card.module.css). All
+   * Select/Toast): a 1px ring plus a two-layer drop shadow, declared once
+   * here rather than hand-duplicated in each module. All
    * four consumers already paint their surface from the --popover/
    * --popover-foreground pair, so this chrome takes the same family name
    * rather than "--overlay-*", which would read as a variant of --overlay
@@ -132,11 +131,11 @@
    * border. Every 2px ring drawn this way — a recolored 1px border plus an
    * inset shadow of this width, rather than a real border-width switch —
    * thickens without the element's box changing: a genuine width switch
-   * grows it 1px on each edge, which shifts a control's text and, in a
-   * table, every row below the selected one. Named here rather than
-   * spelled out per module because it is one decision shared by the seven
-   * components that draw it this way (Tabs, Input, Toast, Table's selected
-   * row, Textarea, Badge, Select), not seven coincidences. Button is the
+   * grows it 1px on each edge, which shifts a control's text. Named here
+   * rather than spelled out per module because it is one decision shared
+   * by the components that draw it this way (Tabs, Input, Toast, Textarea,
+   * Badge, Select, Menubar, Combobox, Item, InputOtp, InputGroup,
+   * NativeSelect), not a pile of coincidences. Button is the
    * deliberate exception: its focus ring is drawn OUTSIDE the button as an
    * `outline` (see button.module.css), so it never consumes --ring-inset.
    */
@@ -255,6 +254,22 @@
   --subtle-foreground: #5f6f88;
   --accent: #f3e8ff;
   --accent-foreground: #6d28d9;
+  /*
+   * The tint a row carries while it is selected. Table's row-state hooks
+   * are the only consumer (see table.module.css). Its own token rather
+   * than --muted or --accent because the Studio Data Table frame
+   * (40001455:6353) draws selection in neither: --accent is the violet
+   * brand tint, and --muted is a neutral slate the drawn value is visibly
+   * bluer and one step stronger than — selection has to read as a state at
+   * a glance across a column of rows, which a fill that close to the
+   * page's own neutrals does not.
+   * Light is the frame's own drawn value. derived (dark only): the frame
+   * has no dark specimen, so dark takes the same hue and saturation at the
+   * lightness that puts it one clear step above --card-hover, the fill it
+   * has to stay distinguishable from. --foreground clears AA on both
+   * (14.2:1 light, 13.1:1 dark).
+   */
+  --selection-subtle: #dce7f2;
 
   /* derived: no mockup node draws with destructive/*, so it aliases danger —
    * one red, two names, both overridable separately. White text clears AA
@@ -285,18 +300,16 @@
 
   /* Status colors with their -soft fills. The status colors themselves are
    * consumed — Badge's dot and label text, Table's stale/restricted row
-   * rings; the four -soft fills are NOT read by any component yet — nothing
-   * in the kit currently paints a tinted status surface, since Badge draws
-   * its status on the dot and label over a neutral fill and the table states
-   * recolor the row's ring. They are kept as the Figma collection's own
-   * pairs so a later tinted surface doesn't have to re-derive them, and
-   * because the pair is what makes the derivation below reviewable. Dark
-   * warning-soft and info-soft are
-   * corroborated by the workflow aliases that resolve to the same values;
-   * dark danger-soft and light warning-soft are drawn nowhere — derived:
-   * chosen to sit in the same tint family as their corroborated siblings,
-   * not from one reproducible mix recipe (the four -soft values don't share
-   * a single formula against their base hue). */
+   * rings; the four -soft fills are read by Badge's tone variants
+   * (success/warning/danger/info backgrounds, badge.module.css) and by
+   * Avatar's tone-by-variant fill matrix (avatar.module.css) - both paint a
+   * tinted surface: the -soft fill as background, the base status token as
+   * foreground text. Dark warning-soft and info-soft are corroborated by
+   * the workflow aliases that resolve to the same values; dark danger-soft
+   * and light warning-soft are drawn nowhere — derived: chosen to sit in
+   * the same tint family as their corroborated siblings, not from one
+   * reproducible mix recipe (the four -soft values don't share a single
+   * formula against their base hue). */
   --success: #059669;
   --success-soft: #e8f8f1;
   --warning: #d97706;
@@ -373,6 +386,7 @@
   --subtle-foreground: #7a8396;
   --accent: #2e1065;
   --accent-foreground: #ede9fe;
+  --selection-subtle: #1c2d3f;
   --destructive: #d63853;
   --destructive-foreground: #ffffff;
   --destructive-ring: #f87f8f;
@@ -424,6 +438,7 @@
     --subtle-foreground: #7a8396;
     --accent: #2e1065;
     --accent-foreground: #ede9fe;
+    --selection-subtle: #1c2d3f;
     --destructive: #d63853;
     --destructive-foreground: #ffffff;
     --destructive-ring: #f87f8f;

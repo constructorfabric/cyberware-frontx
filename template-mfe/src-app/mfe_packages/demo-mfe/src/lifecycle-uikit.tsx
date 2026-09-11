@@ -1,10 +1,10 @@
 import React from 'react';
 import type { ChildMfeBridge } from '@gears-frontx/react';
-import { ThemeAwareReactLifecycle } from '@gears-frontx/react';
+import { KitThemedLifecycle } from './shared/KitThemedLifecycle';
 import { mfeApp } from './init';
 import { UIKitElementsScreen } from './screens/uikit/UIKitElementsScreen';
 
-class UIKitElementsLifecycle extends ThemeAwareReactLifecycle {
+class UIKitElementsLifecycle extends KitThemedLifecycle {
   constructor() {
     super(mfeApp);
   }

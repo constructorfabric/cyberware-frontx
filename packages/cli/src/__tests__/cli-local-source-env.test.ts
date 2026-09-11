@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
+import { joinWithinRoot } from '@gears-frontx/test-support/path-guard';
 import { createRealDeps } from '../cli';
 
 describe('createRealDeps — TEST-ONLY FRONTX_TEST_LOCAL_SOURCE_DIR hook', () => {
@@ -25,7 +26,7 @@ describe('createRealDeps — TEST-ONLY FRONTX_TEST_LOCAL_SOURCE_DIR hook', () =>
   });
 
   it('wires the local adapter when the env var is set — fetchFn reads the local directory, ignoring the url', async () => {
-    fs.writeFileSync(path.join(localDir, 'frontx-template.json'), '{"name":"fixture","version":"1.0.0"}');
+    fs.writeFileSync(joinWithinRoot(localDir, 'frontx-template.json'), '{"name":"fixture","version":"1.0.0"}');
     process.env.FRONTX_TEST_LOCAL_SOURCE_DIR = localDir;
 
     const deps = createRealDeps();

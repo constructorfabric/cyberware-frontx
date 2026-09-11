@@ -5,10 +5,7 @@ import styles from './tooltip.module.css';
 
 export const Tooltip = TooltipPrimitive.Root;
 /**
- * The root is a Base UI pass-through, but its props type is still exported:
- * a consumer writing a typed wrapper imports it from this kit — Base UI is
- * this package's dependency, not necessarily theirs. Same idiom as
- * TooltipProviderProps below.
+ * Base UI pass-through; props type re-exported (see dialog.tsx).
  */
 export type TooltipProps = TooltipPrimitive.Root.Props;
 

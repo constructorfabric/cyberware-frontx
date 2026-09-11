@@ -20,6 +20,6 @@ export class MfeBridgeFactoryDefault extends MfeBridgeFactory<ChildMfeBridgeImpl
   }
 
   dispose(bridge: ChildMfeBridgeImpl): void {
-    bridge.cleanup();
+    bridge.destroy();
   }
 }

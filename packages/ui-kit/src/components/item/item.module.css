@@ -1,0 +1,260 @@
+/*
+ * Item styles, translated from shadcn/ui base (registry/bases/base/ui/
+ * item.tsx, style-vega.css's .cn-item rules) to CSS Modules. Consumes only
+ * theme.css variables — no raw colors.
+ *
+ * The three sizes each snap gap/padding-inline/padding-block to ONE shared
+ * step (default -> --space-4, sm -> --space-3, xs -> --space-2): upstream's
+ * own gap-3.5/px-4/py-3.5 (default), gap-2.5/px-3/py-2.5 (sm), and
+ * gap-2/px-2.5/py-2 (xs) are all close to, but not exactly on, the space
+ * scale — snapping every value in a size to the SAME nearest step (rounding
+ * a tie up) keeps each size's own padding/gap uniform and the three sizes
+ * strictly descending, rather than reproducing three slightly-mismatched
+ * numbers per size (see theme.css's "tokens win" ruling).
+ */
+
+/* Local `box-sizing: border-box` - same per-module fix as tabs.module.css/
+ * carousel.module.css/calendar.module.css (the reset the kit lacks; see
+ * tabs.module.css's comment for the full rationale). Without it, `padding`
+ * and `border` below add on top of `width: 100%` under content-box instead
+ * of being absorbed within it, so every Item overshoots its container by
+ * exactly `2 * padding + 2 * border-width` (measured: 34px at the default
+ * size, 26px at sm, 18px at xs) regardless of variant or section. */
+.item {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid transparent;
+  /* Same fix as toggle.module.css/tabs.module.css: Item can render as a
+   * native <button> (render={<button/>}), which paints an opaque UA
+   * buttonface background in dark theme unless overridden here. Idle
+   * rows must be transparent; .variantMuted sets its own fill below. */
+  background-color: transparent;
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-body-tracking);
+  outline: none;
+  /* Upstream's duration-100 (100ms), not the kit's more common 150ms. */
+  transition:
+    color 100ms ease,
+    background-color 100ms ease,
+    border-color 100ms ease;
+}
+
+.item a {
+  transition:
+    color 100ms ease,
+    background-color 100ms ease,
+    border-color 100ms ease;
+}
+
+.item a:hover {
+  background-color: var(--muted);
+}
+
+/*
+ * Border recolor + inset ring — the same focus-ring idiom Input/Textarea/
+ * Select/Tabs/Toast/Table/Badge already share (see theme.css's
+ * --ring-inset comment), not a literal translation of upstream's
+ * `ring-[3px] ring-ring/50` halo: Item is a new bordered control joining
+ * that same family, so it draws its focus state the way every other one
+ * in the kit already does.
+ */
+.item:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 var(--ring-inset) var(--ring);
+}
+
+@media (forced-colors: active) {
+  .item:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+.variantDefault {
+  border-color: transparent;
+}
+
+.variantOutline {
+  border-color: var(--border);
+}
+
+.variantMuted {
+  background-color: color-mix(in oklab, var(--muted) 50%, transparent);
+  border-color: transparent;
+}
+
+.sizeDefault {
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.sizeSm {
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.sizeXs {
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+.itemMedia {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.itemMedia svg {
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+/* Media aligns to the top of a multi-line title+description pair instead
+   of the row's vertical center — detected structurally (an ItemDescription
+   present), matching upstream's own `group-has-data-[slot=item-description]`
+   hook without needing a data-slot attribute. */
+.item:has(.itemDescription) .itemMedia {
+  translate: 0 2px;
+  align-self: flex-start;
+}
+
+.itemMediaVariantDefault {
+  background-color: transparent;
+}
+
+.itemMediaVariantIcon svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.itemMediaVariantImage {
+  width: 2.5rem; /* upstream size-10; a dimension, not guarded */
+  height: 2.5rem;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+
+.itemMediaVariantImage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Shrinks with the ancestor Item's own size — reads the size class
+   already on the Item root instead of a separate data attribute. */
+.sizeSm .itemMediaVariantImage {
+  width: 2rem; /* upstream size-8 */
+  height: 2rem;
+}
+
+.sizeXs .itemMediaVariantImage {
+  width: 1.5rem; /* upstream size-6 */
+  height: 1.5rem;
+}
+
+/* `min-width: 0` matches upstream's `flex-1 min-w-0` (registry/bases/base/
+ * ui/item.tsx's ItemContent): a flex item's automatic min-width otherwise
+ * floors it at its content's min-content size, which for a nowrap
+ * ItemTitle is the full unwrapped text width - that stops ItemContent (and
+ * the row it sits in) from ever shrinking below a long title/description,
+ * overriding the ellipsis/line-clamp truncation set on ItemTitle/
+ * ItemDescription below instead of letting it take effect. */
+.itemContent {
+  display: flex;
+  flex: 1 1 0%;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.itemContent + .itemContent {
+  flex: none;
+}
+
+.sizeXs .itemContent {
+  gap: 0;
+}
+
+.itemTitle {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: var(--space-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap; /* line-clamp-1 at a single line */
+  font-weight: var(--text-label-weight); /* upstream's font-medium (500) */
+  text-underline-offset: 4px;
+}
+
+.itemDescription {
+  margin: 0;
+  color: var(--muted-foreground);
+  text-align: left;
+  font-weight: var(--text-body-weight); /* upstream's font-normal */
+  /* line-clamp-2 */
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.itemDescription a {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.itemDescription a:hover {
+  color: var(--primary);
+}
+
+.sizeXs .itemDescription {
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  letter-spacing: var(--text-meta-tracking);
+}
+
+.itemActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.itemHeader,
+.itemFooter {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.itemGroup {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* The group's own gap shrinks to match the smallest Item size it holds —
+   detected via the size class already on any descendant Item, no data
+   attribute needed. */
+.itemGroup:has(.sizeSm) {
+  gap: var(--space-3);
+}
+
+.itemGroup:has(.sizeXs) {
+  gap: var(--space-2);
+}
+
+.itemSeparator {
+  margin-block: var(--space-2);
+}

@@ -1,0 +1,349 @@
+/*
+ * InputGroup styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ *
+ * Upstream (registry/.../ui/input-group.tsx) states the whole design in
+ * Tailwind utilities on the parts themselves: the GROUP owns the field
+ * chrome (`rounded-md border border-input`, a fixed control height,
+ * `has-[...:focus-visible]:border-ring`, `has-[[aria-invalid=true]]:
+ * border-destructive`), and the wrapped Input/Textarea is stripped down to
+ * `border-0 bg-transparent shadow-none focus-visible:ring-0`. This file is
+ * that same division of labour on this kit's tokens: no seams between the
+ * addons and the field, one border, one ring.
+ *
+ * `.group .control`/`.group .control:focus-visible` are deliberately
+ * two-class-or-more compound selectors, not a bare `.control`: Input's own
+ * `.input`/`.input:focus-visible` rules (input.module.css) are each
+ * (0,1,0)/(0,2,0) — a same-specificity override would depend on which
+ * stylesheet a consumer's bundler happens to load first. Nesting under
+ * `.group` adds a class without needing to touch input.module.css at all,
+ * giving (0,2,0)/(0,3,0), which reliably
+ * outranks Input's own rules regardless of load order. Every rule below
+ * that reaches into Button/Input/Textarea territory is specificity-checked
+ * the same way, and each says so where it isn't obvious.
+ */
+
+.group {
+  /*
+   * Substitutes for the preflight the kit lacks: without it, content-box
+   * (this kit's ambient default) piles the 1px border on top of the
+   * `width: 100%` below, so a group under a 20rem cap measured 322px
+   * instead of 320 and overhung whatever laid it out. Same acute case as
+   * input.module.css/textarea.module.css, scoped the same way.
+   */
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  /*
+   * Wrapping, plus the explicit `order` steps on the four align classes
+   * below, is what lets block-start/block-end addons take a row of their
+   * own while inline-start/inline-end addons share the field's row.
+   * Upstream instead flips the whole group to `flex-col` when a block
+   * addon is present, which drops inline addons onto their own rows too —
+   * a group can't mix the two axes there. Wrapping keeps both usable at
+   * once and reaches the same layout for the block-only and inline-only
+   * cases upstream supports.
+   */
+  flex-wrap: wrap;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  /*
+   * The field height, matching a standalone Input (`--control-height-lg`,
+   * see input.module.css) so a group and a plain field line up in the same
+   * form rather than the group collapsing to whatever its contents happen
+   * to measure. min-height, not height: a block-start/block-end addon or a
+   * wrapped Textarea grows the group past one row — upstream's
+   * `has-[>textarea]:h-auto` / `has-[>[data-align=block-*]]:h-auto`
+   * escapes, expressed once as a floor instead of three exceptions.
+   */
+  min-height: var(--control-height-lg);
+  border: var(--border-width) solid var(--input);
+  border-radius: var(--radius-md);
+  /* Fields sit raised, not transparent, per the Field spec — same token
+   * Input/Textarea use, since the group replaces their chrome. */
+  background-color: var(--surface-elevated);
+  outline: none;
+  /* Colour and box-shadow crossfades only, no transform/geometry — not motion under
+     WCAG 2.3.3, so deliberately left unguarded under prefers-reduced-motion. */
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+/*
+ * The ring belongs to the GROUP and is driven by the CONTROL's focus, not
+ * by `:focus-within`: `:focus-within` also fires when a button inside an
+ * addon takes focus, which would light the whole field up as if the text
+ * cursor were in it while the button drew its own ring at the same time —
+ * two rings, one of them lying. Keyed off `.control:focus-visible`, this is
+ * upstream's `has-[[data-slot=input-group-control]:focus-visible]` selector
+ * with this kit's class standing in for the data-slot attribute the kit
+ * deliberately doesn't emit (see kbd.tsx). Same 1px-recolor + inset-ring
+ * drawing as Input's own focus, so text never shifts on focus/blur.
+ */
+.group:has(.control:focus-visible) {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 var(--ring-inset) var(--ring);
+}
+
+/* Declared after :focus-visible so the invalid border wins while focused —
+ * same ordering rule as input.module.css/textarea.module.css, and the same
+ * job as upstream's `has-[[data-slot][aria-invalid=true]]:border-destructive`.
+ * Scoped to `.control` so an aria-invalid button or addon inside the group
+ * can't put the whole field into the error state. */
+.group:has(.control[aria-invalid='true']) {
+  border-color: var(--destructive);
+  box-shadow: inset 0 0 0 var(--ring-inset) var(--destructive);
+}
+
+/* The rings above are inset box-shadows, and forced-colors mode doesn't
+ * render box-shadow at all — add an explicit outline or the focus
+ * indicator disappears entirely under the mode. */
+@media (forced-colors: active) {
+  .group:has(.control:focus-visible) {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+/*
+ * A wrapped Textarea grows tall — the group's addons then align to the top
+ * of the field instead of the middle of a box the text has already left.
+ * Matches upstream's `has-[>textarea]:h-auto` intent; the height part is
+ * already covered by `min-height` above.
+ */
+.group:has(> textarea) {
+  align-items: flex-start;
+}
+
+/*
+ * Disabled dims the whole group once — chrome, addons and text together —
+ * at the kit-wide 0.42. The control's OWN `:disabled` dim has to be undone
+ * for that (see `.group .control:disabled` below): nested opacity
+ * multiplies, and 0.42 x 0.42 = 0.18 rendered the field's text and
+ * placeholder all but invisible. Keyed on `.control:disabled` rather than
+ * a bare `:disabled` so a disabled action button inside an addon dims
+ * itself without dragging the entire field down with it.
+ */
+.group:has(.control:disabled) {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.addon {
+  /* Preflight substitute again: `.alignBlockStart`/`.alignBlockEnd` below
+   * pair `width: 100%` with horizontal padding, which content-box would
+   * push 24px past the group's inner width. */
+  box-sizing: border-box;
+  display: flex;
+  /*
+   * Addons hold their size and let the field absorb the shrinking (the
+   * control is `flex: 1 1 0` below). Without this a narrow group shaves
+   * pixels off a prefix like "https://" — or wraps it onto a row of its
+   * own — before touching the input it is attached to.
+   */
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--muted-foreground);
+  /* Studio/Label, whole — upstream's `text-sm font-medium` on the addon.
+   * Declared here rather than on `.text` so a bare string, a `Kbd` or an
+   * icon dropped straight into an addon reads the same as a wrapped one. */
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  font-weight: var(--text-label-weight);
+  letter-spacing: var(--text-label-tracking);
+  cursor: text;
+  user-select: none;
+}
+
+/*
+ * Direct children only. A bare `<SearchIcon />` handed to an addon is an
+ * <svg> with no intrinsic size, so without this it rendered at the SVG
+ * default (measured 0x0 once the flex row squeezed it) — upstream's
+ * `[&>svg:not([class*='size-'])]:size-4`. Restricting to `>` is what keeps
+ * it from reaching an icon nested inside a `Kbd` or an `InputGroupButton`,
+ * both of which size their own icons (--icon-size-xs / the button's slot).
+ */
+.addon > svg {
+  flex-shrink: 0;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+/*
+ * The four alignment axes. `order` puts each addon on the right side of
+ * the control (order 0) regardless of DOM position, and the two block
+ * steps sit outside the two inline ones so a group carrying both keeps
+ * block-start above / block-end below the shared field row.
+ */
+.alignInlineStart {
+  order: -1;
+  padding-inline-start: var(--space-3);
+}
+
+.alignInlineEnd {
+  order: 1;
+  padding-inline-end: var(--space-3);
+}
+
+.alignBlockStart {
+  order: -2;
+  width: 100%;
+  justify-content: flex-start;
+  padding: var(--space-3) var(--space-3) var(--space-1);
+}
+
+.alignBlockEnd {
+  order: 2;
+  width: 100%;
+  justify-content: flex-start;
+  padding: var(--space-1) var(--space-3) var(--space-3);
+}
+
+/*
+ * A ghost button brings its own horizontal padding, so an addon holding
+ * one would set its label a full --space-3 further in than the field text
+ * it sits beside. Pulling the addon's own inset back to --space-1 lands
+ * the label at --space-1 + the xs button's --space-2 = --space-3, flush
+ * with the field. Upstream does the same with a negative margin
+ * (`has-[>button]:ml-[-0.45rem]`); a smaller padding says it without
+ * needing a magic number.
+ */
+.alignInlineStart:has(> .button) {
+  padding-inline-start: var(--space-1);
+}
+
+.alignInlineEnd:has(> .button) {
+  padding-inline-end: var(--space-1);
+}
+
+.button {
+  flex-shrink: 0;
+  /* Upstream's `shadow-none`: the group is the raised surface here, an
+   * action inside it is not a second one. */
+  box-shadow: none;
+}
+
+/*
+ * The in-group button scale. Upstream ships xs/sm (plus icon-only twins of
+ * each, which this kit derives from Button's own `icon` prop instead of a
+ * size of its own — see button.tsx). `sm` needs nothing: Button's own
+ * --control-height-sm geometry is already it. `xs` is the compact step
+ * this kit's control scale doesn't reach, composed from the scale rather
+ * than hardcoded, so a consumer who retunes the control heights gets a
+ * button that still sits a step below the small one.
+ *
+ * `.button.sizeXs` is (0,2,0) — deliberately above Button's own `.sizeSm`
+ * (0,1,0), so the compression applies regardless of stylesheet load order.
+ */
+.button.sizeXs {
+  height: calc(var(--control-height-sm) - var(--space-2));
+  gap: var(--space-1);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-xs);
+}
+
+/* Button squares up an icon-only button with `aspect-ratio: 1; padding: 0`
+ * at (0,2,0) — the same specificity as `.button.sizeXs` above, so the
+ * padding-inline there would win on load order alone. Restated at (0,3,0)
+ * to settle it. */
+.button.sizeXs[data-icon-only] {
+  padding-inline: 0;
+}
+
+/*
+ * Button draws its focus ring OUTSIDE itself (`outline` at
+ * `outline-offset: 2px`, see button.module.css) — which has no room here:
+ * an sm button is --control-height-sm tall inside a --control-height-lg
+ * group, and a 2px ring standing 2px clear of it overshoots the group's
+ * own border. Pulling the offset to one border-width keeps the ring inside
+ * the field. Nested under `.group` at (0,3,0) both to outrank Button's own
+ * (0,2,0) rule without depending on load order, and because a standalone
+ * InputGroupButton, outside any group, should keep the kit's normal ring.
+ */
+.group .button:focus-visible {
+  outline-offset: var(--border-width);
+}
+
+.text {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  /* From `.addon`, which sets the addon's own muted tone and Label metrics. */
+  color: inherit;
+}
+
+.text svg {
+  pointer-events: none;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+/*
+ * The wrapped Input/Textarea itself: draws no border/background/ring of
+ * its own (the group draws all three above), and fills the row.
+ *
+ * `flex: 1 1 0` — the basis is what matters. Input carries `width: 100%`
+ * (input.module.css), which a basis of `auto` resolves to, so in the
+ * wrapping group above the field claimed a whole flex line for itself and
+ * pushed EVERY inline addon onto a row of its own: measured, a prefix/
+ * suffix group rendered 58px tall in three stacked rows instead of one
+ * 40px field. A zero basis makes the field the only thing that flexes, so
+ * addons sit beside it and shrinking lands on the field, not on them.
+ *
+ * `align-self: stretch` + `height: auto` replaces Input's fixed
+ * --control-height-lg with "fill the row the group defines", so the click
+ * target covers the full field height and no rounding gap opens between
+ * the text box and the group's border.
+ */
+.group .control {
+  flex: 1 1 0;
+  align-self: stretch;
+  min-width: 0;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+  /* Input's own resting inset, kept so the field text starts exactly where
+   * a standalone Input's would. The two rules below trim it on whichever
+   * side an inline addon has already paid for. */
+  padding-inline: var(--space-3);
+}
+
+/* Upstream's `has-[>[data-align=inline-start]]:[&>input]:pl-2` /
+ * `...inline-end...:pr-2`: an inline addon already sets the field's
+ * distance from the group edge, so the control only needs the gap between
+ * the two, not a second full inset. (0,3,0), above `.group .control`. */
+.group:has(> .alignInlineStart) > .control {
+  padding-inline-start: var(--space-2);
+}
+
+.group:has(> .alignInlineEnd) > .control {
+  padding-inline-end: var(--space-2);
+}
+
+/* Input/Textarea recolor their own border and redraw their own ring on
+ * focus and on aria-invalid; inside a group the border isn't theirs to
+ * draw. (0,3,0)/(0,3,1) — both above `.input:focus-visible` (0,2,0) and
+ * `.input[aria-invalid='true']` (0,1,1). */
+.group .control:focus-visible,
+.group .control[aria-invalid='true'] {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* The group already dims itself as a whole (see `.group:has(.control:disabled)`);
+ * without this the control would be dimmed twice over, once by the group's
+ * opacity and once by its own. (0,2,1), above `.input:disabled` (0,1,1). */
+.group .control:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.group .textareaControl {
+  resize: none;
+}

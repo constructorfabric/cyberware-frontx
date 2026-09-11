@@ -98,7 +98,7 @@ const SIDEBAR_MENU_BUTTON_BASE_CLASSES =
 
 const SIDEBAR_MENU_BUTTON_VARIANT_CLASSES: Record<SidebarMenuButtonVariant, string> = {
   default: "",
-  outline: "bg-background shadow-[0_0_0_1px_hsl(var(--border))] hover:bg-mainMenu-hover",
+  outline: "bg-background shadow-[0_0_0_1px_var(--border)] hover:bg-mainMenu-hover",
 }
 
 const SIDEBAR_MENU_BUTTON_SIZE_CLASSES: Record<SidebarMenuButtonSize, string> = {

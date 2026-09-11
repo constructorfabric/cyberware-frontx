@@ -1,5 +1,3 @@
-// @cpt-flow:cpt-frontx-flow-request-lifecycle-query-client-lifecycle:p2
-
 /**
  * MFE Bootstrap
  *
@@ -41,6 +39,11 @@ import type {
   ActionPayload,
   MountStrategy,
 } from '@gears-frontx/react';
+import {
+  CHROME_ACTION_SCHEMAS,
+  CHROME_SET_MENU_COLLAPSED,
+  CHROME_SET_THEME,
+} from './chrome-actions';
 
 const MFE_MANIFESTS_URL = '/generated-mfe-manifests.json';
 
@@ -90,15 +93,77 @@ class HostContainerHooks implements ContainerHooks {
   }
 }
 
+// The two readers below state, to TypeScript, an invariant the type system
+// already enforces at runtime: `chrome-actions.ts` closes each chrome payload
+// around a single required field of a declared type, and the mediator validates
+// an action against that schema before it resolves any handler for it. So a
+// handler never sees a payload missing its field, and neither reader is a
+// refusal path a caller can trigger — reaching a throw means the schema and the
+// handler disagree about the payload, which is a defect in one of the two.
+
+function readThemeId(payload: Record<string, unknown> | undefined): string {
+  const themeId = payload?.themeId;
+  if (typeof themeId !== 'string') {
+    throw new Error(
+      '[MFE Bootstrap] set_theme payload has no string themeId; the action schema should have refused this action before it reached the handler',
+    );
+  }
+  return themeId;
+}
+
+function readCollapsed(payload: Record<string, unknown> | undefined): boolean {
+  const collapsed = payload?.collapsed;
+  if (typeof collapsed !== 'boolean') {
+    throw new Error(
+      '[MFE Bootstrap] set_menu_collapsed payload has no boolean collapsed; the action schema should have refused this action before it reached the handler',
+    );
+  }
+  return collapsed;
+}
+
 class ScreenDomainImpl extends ExtensionDomainImplementation {
   private readonly strategy: ExclusiveMountStrategy;
 
-  constructor(ctx: DomainContext, hooks: ContainerHooks, registry: MfeRegistry, domainId: string) {
+  constructor(
+    ctx: DomainContext,
+    hooks: ContainerHooks,
+    registry: MfeRegistry,
+    domainId: string,
+    app: FrontXApp,
+  ) {
     super();
     this.strategy = new ExclusiveMountStrategy(ctx.mounter, hooks, registry, domainId);
     ctx.registerHandler(
       FRONTX_ACTION_MOUNT_EXT,
       ActionHandler.fromFunction((_t, p) => this.strategy.mount(p as ActionPayload)),
+    );
+    // The host chrome a mounted screen may drive. The one thing neither the
+    // action schema nor the domain declaration can decide is whether THIS host
+    // runs the plugin the action needs — `themes` and `layout` are both opt-in
+    // — so each handler resolves rather than throws when it does not: chrome is
+    // decoration around a screen, and a request the shell cannot honour should
+    // leave the screen running instead of failing its chain.
+    ctx.registerHandler(
+      CHROME_SET_THEME,
+      ActionHandler.fromFunction((_t, p) => {
+        if (typeof app.actions.changeTheme !== 'function') {
+          console.warn('[MFE Bootstrap] set_theme ignored: no themes plugin on this host');
+        } else {
+          app.actions.changeTheme({ themeId: readThemeId(p) });
+        }
+        return Promise.resolve();
+      }),
+    );
+    ctx.registerHandler(
+      CHROME_SET_MENU_COLLAPSED,
+      ActionHandler.fromFunction((_t, p) => {
+        if (typeof app.actions.toggleMenuCollapsed !== 'function') {
+          console.warn('[MFE Bootstrap] set_menu_collapsed ignored: no layout plugin on this host');
+        } else {
+          app.actions.toggleMenuCollapsed({ collapsed: readCollapsed(p) });
+        }
+        return Promise.resolve();
+      }),
     );
   }
 
@@ -129,9 +194,18 @@ class OptionalDomainImpl extends ExtensionDomainImplementation {
 }
 
 class ScreenDomainFactory extends ExtensionDomainImplementationFactory {
-  constructor(private readonly registry: MfeRegistry) { super(); }
+  constructor(
+    private readonly registry: MfeRegistry,
+    private readonly app: FrontXApp,
+  ) { super(); }
   build(ctx: DomainContext): ScreenDomainImpl {
-    return new ScreenDomainImpl(ctx, new HostContainerHooks(), this.registry, screenDomain.id);
+    return new ScreenDomainImpl(
+      ctx,
+      new HostContainerHooks(),
+      this.registry,
+      screenDomain.id,
+      this.app,
+    );
   }
 }
 
@@ -145,7 +219,6 @@ class OptionalDomainFactory extends ExtensionDomainImplementationFactory {
   }
 }
 
-// @cpt-begin:cpt-frontx-dod-mfe-registry-mfe-schema-registration:p1:inst-1
 /**
  * Scoped schema registration: only register schemas whose $id matches an action ID
  * declared by at least one entry in this package. Action schemas are validated
@@ -210,7 +283,6 @@ function registerNonActionSchemas(
     }
   }
 }
-// @cpt-end:cpt-frontx-dod-mfe-registry-mfe-schema-registration:p1:inst-1
 
 /**
  * First pass over every package: register all non-action schemas on the gts
@@ -281,6 +353,18 @@ async function registerMfePackage(
     // skip-and-defer rule moves into L2 and the host bootstrap becomes a pure
     // GTS-runtime-store registrar.
     if (!hostOwnsDomain(registry, extension.domain)) {
+      // This host doesn't own the target domain, so it must not admit/mount
+      // this extension — but it still needs the declaration present on its
+      // own type system: each `GtsPlugin` instance owns an independent
+      // GtsStore (plugin.ts), and `x-gts-ref` admission validation for an
+      // action originating here (e.g. Hello World's ping dispatched at the
+      // shell's own registry, escalating down to widget-a two hops away)
+      // checks referenced entities against THIS store, before the action
+      // ever reaches cross-hop routing. Registering opaquely here (no
+      // `registerExtension`/mounting) mirrors the widgets-host's own
+      // registration of foreign-domain entities in
+      // `bootstrapWidgetsRuntime`.
+      registry.typeSystem.register(extension);
       continue;
     }
     await registry.registerExtension(extension);
@@ -300,14 +384,28 @@ async function registerMfePackage(
  *
  * @param app - FrontX application instance
  */
-// @cpt-begin:cpt-frontx-flow-request-lifecycle-query-client-lifecycle:p2:inst-bootstrap-mfe
 export async function bootstrapMFE(app: FrontXApp): Promise<void> {
   const registry = app.mfeRegistry;
   if (!registry) {
     throw new Error('[MFE Bootstrap] mfeRegistry is not available on app instance');
   }
 
-  registry.registerDomain(screenDomain, new ScreenDomainFactory(registry));
+  // The chrome action schemas must be on the type system before any action
+  // carrying one of these types can be dispatched, and `registerDomain` is the
+  // first thing a mounted screen can act against.
+  for (const schema of CHROME_ACTION_SCHEMAS) {
+    registry.typeSystem.registerSchema(schema);
+  }
+
+  // The shipped `screenDomain` is spread rather than edited: the framework
+  // declaration stays the default every template gets, and this shell opts
+  // itself into the two chrome actions its handlers above answer. The
+  // declaration's `extensionsActions` is deliberately untouched - listing them
+  // there would make them mandatory for every screen extension in the repo.
+  registry.registerDomain(
+    { ...screenDomain, actions: [...screenDomain.actions, CHROME_SET_THEME, CHROME_SET_MENU_COLLAPSED] },
+    new ScreenDomainFactory(registry, app),
+  );
   registry.registerDomain(sidebarDomain, new OptionalDomainFactory(registry, sidebarDomain.id));
   registry.registerDomain(popupDomain, new OptionalDomainFactory(registry, popupDomain.id));
   registry.registerDomain(overlayDomain, new OptionalDomainFactory(registry, overlayDomain.id));
@@ -340,4 +438,3 @@ export async function bootstrapMFE(app: FrontXApp): Promise<void> {
     await registerMfePackage(registry, config);
   }
 }
-// @cpt-end:cpt-frontx-flow-request-lifecycle-query-client-lifecycle:p2:inst-bootstrap-mfe

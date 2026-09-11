@@ -1,0 +1,7 @@
+/*
+ * Direction ships no styling: DirectionProvider renders no DOM element of
+ * its own (a bare Context.Provider — see direction.tsx), so there is no
+ * class for this module to define. The file exists only for the kit's
+ * file-set convention (docs.test.ts reads it to look for documented
+ * variant/size axes, and finds none here).
+ */

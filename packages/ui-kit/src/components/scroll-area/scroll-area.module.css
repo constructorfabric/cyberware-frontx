@@ -1,0 +1,73 @@
+/*
+ * ScrollArea styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ *
+ * The base registry source ships Root/Viewport structurally
+ * ("relative"/"size-full rounded-[inherit] ...") but leaves the
+ * Scrollbar/Thumb's own geometry (track width, invisible padding border,
+ * pill-shaped thumb) and Root's own size/overflow to the consumer — the
+ * sibling new-york variant (same Base UI props, styled with Radix
+ * upstream) fills in exactly those gaps identically for both primitives,
+ * and is used here as the concrete reference: track 0.625rem, hairline
+ * transparent border, rounded-full thumb (see scroll-area.md).
+ */
+
+.root {
+  position: relative;
+}
+
+.viewport {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  outline: none;
+  transition:
+    color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.viewport:focus-visible {
+  /* Same outside-the-box ring idiom as button.module.css's :focus-visible
+   * (drawn clear of the viewport's own edge) rather than input.module.css's
+   * inset ring — the viewport has no border of its own to draw an inset
+   * ring against. */
+  outline: var(--border-width-focus) solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .viewport:focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+.scrollbar {
+  display: flex;
+  touch-action: none;
+  user-select: none;
+  /* The invisible inset border scroll-area.md/this file's own header
+   * comment call out — same 1px hairline as every other border in the kit,
+   * so it reads off --border-width rather than a literal (tokens.test.ts's
+   * metric-scale guard treats padding as a token-scale property). */
+  padding: var(--border-width);
+  transition: background-color 150ms ease;
+}
+
+.scrollbar[data-orientation='vertical'] {
+  height: 100%;
+  width: 0.625rem;
+  border-left: var(--border-width) solid transparent;
+}
+
+.scrollbar[data-orientation='horizontal'] {
+  height: 0.625rem;
+  flex-direction: column;
+  border-top: var(--border-width) solid transparent;
+}
+
+.thumb {
+  position: relative;
+  flex: 1 1 0%;
+  border-radius: 9999px;
+  background-color: var(--border);
+}

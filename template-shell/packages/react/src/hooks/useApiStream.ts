@@ -50,15 +50,23 @@ export interface ApiStreamResult<TEvent> {
  * Manages the status lifecycle for a single SSE stream connection.
  *
  * **Status values**
- * - `'idle'` — no connection is being attempted. This is the initial status
- *   before the first connect effect runs, and it is ordinarily the status
- *   while `enabled` is `false`. Consumers must not assume `'idle'` means "never
+ * - `'idle'` — no connection is being attempted. This is the status whenever
+ *   `enabled` is `false`, including on mount: a hook that mounts disabled
+ *   never reports anything but `'idle'` until `enabled` flips to `true`. A
+ *   hook that mounts enabled skips `'idle'` entirely — the status is set
+ *   during render, so its very first render already reports `'connecting'`.
+ *   Consumers must not assume `'idle'` means "never
  *   connected" — a stream that is disabled after having connected returns to
  *   `'idle'` too, and `data`/`events` from the earlier connection are not
  *   cleared by that transition alone (they are cleared by mode/key changes,
  *   see below).
- * - `'connecting'` — `descriptor.connect()` has been called and its promise
- *   has not yet settled.
+ * - `'connecting'` — a connection attempt is committed to but has not settled.
+ *   It is published during the render that turns the stream on, which is
+ *   before `descriptor.connect()` runs: the call is made from an effect after
+ *   that render commits. So `'connecting'` means "this stream is being
+ *   opened", not "the connect promise is pending" — for one render the two
+ *   differ, and a consumer that reads the status as proof a request is already
+ *   in flight is reading it too strongly.
  * - `'connected'` — set both when `connect()` resolves (unless a disconnect
  *   was requested while it was pending) and, independently, whenever the
  *   `onEvent` callback delivers a new event. Because every event re-asserts
@@ -66,20 +74,33 @@ export interface ApiStreamResult<TEvent> {
  * - `'disconnected'` — reached via any of: the descriptor's `onComplete`
  *   callback firing (the stream ended normally), `connect()` rejecting while
  *   a disconnect was requested concurrently, or the manual `disconnect()`
- *   function being called. `disconnect()` has no `enabled` guard: called
- *   while the stream is disabled it still sets `'disconnected'`, which
- *   persists until the next connect-effect run.
+ *   function being called. `disconnect()` has no `enabled` guard, but calling
+ *   it while the stream is disabled is not observable: the stored status moves
+ *   to `'disconnected'` while the published one stays `'idle'`, and flipping
+ *   `enabled` back to `true` sets `'connecting'` during that render, so the
+ *   stored `'disconnected'` is overwritten before it is ever returned.
  * - `'error'` — `connect()` rejected and no disconnect was requested while it
  *   was pending. `error` holds the rejection, coerced to an `Error` if it
  *   wasn't one already.
  *
  * **Transitions**
- * - Mount / `enabled` becomes `true` / `descriptor.key` or `mode` changes:
- *   `data`, `events`, and `error` are reset, then status goes to
- *   `'connecting'` and `connect()` is called.
- * - `enabled` becomes `false` (or starts `false`): status is forced to
- *   `'idle'` and `connect()` is never called; no other field is reset by
- *   this transition alone.
+ * - Mounting enabled, `enabled` becoming `true`, or `descriptor.key` / `mode`
+ *   changing while `enabled` is `true`: `data`, `events`, and `error` are reset
+ *   and status is set to `'connecting'` synchronously during render (not from
+ *   an effect); `connect()` is then called from an effect that runs after that
+ *   render commits.
+ * - `descriptor.key` or `mode` changing while `enabled` is `false`: `data`,
+ *   `events`, and `error` are reset all the same, since that reset is not gated
+ *   on `enabled`, but the status write is - so no `'connecting'` is written and
+ *   the published status stays `'idle'`; `connect()` is not called. The skipped
+ *   `'connecting'` is not owed later either: the change counts as handled when
+ *   it happens, so what publishes `'connecting'` is the subsequent flip of
+ *   `enabled` to `true`, once, for whichever key and mode are in force by then.
+ * - `enabled` becomes `false` (or starts `false`): the published status is
+ *   `'idle'` for as long as `enabled` stays `false` — it is derived from
+ *   `enabled` rather than written, so nothing a prior connection stored can
+ *   surface through it — and `connect()` is never called; no other field is
+ *   reset by this transition alone.
  * - Unmount, `descriptor.key` change, `mode` change, or `enabled` flipping to
  *   `false` while connected or connecting: the previous connection is torn
  *   down via `descriptor.disconnect()` once its `connect()` promise settles

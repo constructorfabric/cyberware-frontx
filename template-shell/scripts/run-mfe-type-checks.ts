@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 
 /**
- * Type-check every MFE package independently.
+ * Type-check every MFE package - and every verification package - independently.
  *
  * Each package under `src-app/mfe_packages/` has its own install boundary and
  * its own `tsconfig`, so there is no single `tsc` invocation that covers them
- * all - this delegates to each package's own `type-check` script.
+ * all - this delegates to each package's own `type-check` script. The same
+ * goes for `src-app/verify_packages/`, the workspace root an overlay such as
+ * template-design-guardrails lands its `design-verify` package in: it is a
+ * workspace like the MFEs, declares its own `type-check`, and until it was
+ * scanned here nothing in CI ever ran that script (PR #586 review).
  *
  * A package whose `mfe.json` declares `"templateExample": true` is left out by
  * default, on the same rule the other package scanners apply: it is content the
@@ -52,6 +56,21 @@ const defaultMfeRoot = path.resolve(
   '..',
   'src-app/mfe_packages',
 );
+
+/**
+ * The verification packages root, resolved the same way. Declared in the shell's
+ * `workspaces` (`src-app/verify_packages/*`) and populated only once an overlay
+ * lands a package there; absent on a shell-only seed, which `discoverMfeProjects`
+ * reads as an empty set rather than a failure.
+ */
+const defaultVerifyRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'src-app/verify_packages',
+);
+
+/** Every workspace root this run scans, in the order their packages are reported. */
+const defaultProjectRoots: readonly string[] = [defaultMfeRoot, defaultVerifyRoot];
 
 /**
  * A path with symlinks resolved, or the path itself when it cannot be resolved.
@@ -260,6 +279,36 @@ export async function discoverMfeProjects(
   }
 
   return { projects, missingTypeCheckScript, skippedExamples };
+}
+
+/**
+ * Scan every workspace root this run covers - MFE packages and verification
+ * packages - and merge the results in root order.
+ *
+ * The example filter and the missing-`type-check` refusal apply per package
+ * regardless of root: a verification package carries no `mfe.json`, so it is
+ * never an example and is always checked; one without a `type-check` script
+ * refuses the run exactly as an MFE would, since a package present in the tree
+ * and silently unchecked is the state this script exists to prevent.
+ *
+ * @param roots - Directories to scan. Defaults to the MFE and verification
+ *   roots resolved from this file's location; tests pass them explicitly
+ */
+export async function discoverTypeCheckProjects(
+  roots: readonly string[] = defaultProjectRoots,
+): Promise<MfeProjectDiscovery> {
+  const merged: MfeProjectDiscovery = {
+    projects: [],
+    missingTypeCheckScript: [],
+    skippedExamples: [],
+  };
+  for (const root of roots) {
+    const discovery = await discoverMfeProjects(root);
+    merged.projects.push(...discovery.projects);
+    merged.missingTypeCheckScript.push(...discovery.missingTypeCheckScript);
+    merged.skippedExamples.push(...discovery.skippedExamples);
+  }
+  return merged;
 }
 
 /**
@@ -559,7 +608,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const { projects, missingTypeCheckScript, skippedExamples } = await discoverMfeProjects();
+  const { projects, missingTypeCheckScript, skippedExamples } = await discoverTypeCheckProjects();
 
   refuseMissingTypeCheckScript(missingTypeCheckScript);
 
@@ -567,7 +616,9 @@ async function main(): Promise<void> {
     // `noDiscoveredPackagesNotice` already names the skipped examples when they
     // are the whole reason the set is empty, so the skip line below would only
     // repeat it.
-    console.log(`${noDiscoveredPackagesNotice(skippedExamples)} Skipping MFE type-check.`);
+    console.log(
+      `${noDiscoveredPackagesNotice(skippedExamples)} No verification packages either. Skipping per-package type-check.`,
+    );
     return;
   }
 

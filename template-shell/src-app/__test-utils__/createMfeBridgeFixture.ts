@@ -6,8 +6,8 @@ import { vi, type Mock } from 'vitest';
 type PropertyCallback = Parameters<ChildMfeBridge['subscribeToProperty']>[1];
 
 type CreateMfeBridgeFixtureOptions = {
-  domainId: string;
-  instanceId: string;
+  extDomainId: string;
+  extensionId: string;
   initialProperties?: Record<string, unknown>;
   executeActionsChain?: Mock<ChildMfeBridge['executeActionsChain']>;
   registerActionHandler?: Mock<ChildMfeBridge['registerActionHandler']>;
@@ -84,8 +84,8 @@ export function createMfeBridgeFixture(
 
   return {
     bridge: {
-      domainId: options.domainId,
-      instanceId: options.instanceId,
+      extDomainId: options.extDomainId,
+      extensionId: options.extensionId,
       executeActionsChain,
       registerActionHandler,
       getProperty,

@@ -22,7 +22,7 @@ describe('accountsMockMap', () => {
       department: 'Platform',
     }) as GetCurrentUserResponse;
 
-    expect(initialResponse.user.firstName).toBe('Demo');
+    expect(initialResponse.user.firstName).toBe('Alex');
     expect(updatedResponse.user.firstName).toBe('Ada');
     expect(updatedResponse.user.lastName).toBe('Lovelace');
     expect(updatedResponse.user.extra).toEqual({ department: 'Platform' });

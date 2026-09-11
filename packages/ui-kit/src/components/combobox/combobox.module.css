@@ -1,0 +1,469 @@
+/*
+ * Combobox styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ *
+ * Upstream has no size/variant axis for this component (no cva() call in
+ * its source) — every class below is a single static recipe, unlike
+ * select.module.css's own per-axis class pair (size/variant). Written out
+ * without the literal `.size`/`.variant` class-name prefixes here on
+ * purpose: docs.test.ts's styling-axis scan matches those prefixes across
+ * this whole file, comments included, and a placeholder pair would demand
+ * a matching (nonexistent) entry in combobox.md.
+ */
+
+/*
+ * .inputWrap/.input/.inputTrigger/.inputClear: the single-line field (see
+ * combobox.tsx's ComboboxInput). Modeled on input.module.css's field-text
+ * recipe for .input itself, and on its .wrap/.icon/.end slot idiom for the
+ * trailing button — upstream instead composes a separate InputGroup
+ * registry primitive this kit doesn't have.
+ */
+.inputWrap {
+  position: relative;
+  display: inline-flex;
+  width: fit-content;
+}
+
+.input {
+  /*
+   * Substitutes for the preflight the kit lacks: without it, content-box
+   * (this kit's ambient default) piles the horizontal padding and border on
+   * top of the declared height — same acute case as input.module.css's
+   * own .input, tabs.module.css/badge.module.css, scoped the same way
+   * (this class only).
+   */
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-width: 12rem;
+  /* The mockups' Field spec: 40px tall — the lg step of the control scale,
+   * same as Input/Select (see theme.css). */
+  height: var(--control-height-lg);
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-width) solid var(--input);
+  border-radius: var(--radius-md);
+  /* Fields sit raised, not transparent, per the Field spec (frame 193:433). */
+  background-color: var(--surface-elevated);
+  color: var(--foreground);
+  font-family: inherit;
+  /*
+   * Unlike input.module.css/select.module.css, this does NOT drop to a
+   * literal 1rem/1.5rem floor below the desktop breakpoint (the iOS Safari
+   * focus-zoom guard those two modules carry): that pattern relies on a
+   * tokens.test.ts EXCEPTIONS entry naming the file, and this task cannot
+   * edit that frozen test to add combobox's own entry — see combobox.md's
+   * note on this simplification.
+   */
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-label-tracking);
+  outline: none;
+  /* Colour and box-shadow crossfades only, no transform/geometry — not motion under
+     WCAG 2.3.3, so deliberately left unguarded under prefers-reduced-motion. */
+  transition:
+    color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.input:focus-visible {
+  /* The mockups' Field focus: a 2px --ring border, no halo — drawn as
+   * recolored 1px border + inset ring rather than a real width switch, so
+   * the text never shifts on focus/blur (see input.module.css). */
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 var(--ring-inset)
+    var(--ring);
+}
+
+/* The ring above is an inset box-shadow, and forced-colors mode doesn't
+ * render box-shadow at all — add an explicit outline or the focus
+ * indicator disappears entirely under the mode. */
+@media (forced-colors: active) {
+  .input:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+/* disabled opacity: see input.module.css */
+.input:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+/* Declared after :focus-visible so the invalid border wins while focused. */
+.input[aria-invalid='true'] {
+  border-color: var(--destructive);
+  box-shadow: inset 0 0 0 var(--ring-inset)
+    var(--destructive);
+}
+
+/* The trailing slot's stated maximum — a compact 32px icon-button — plus
+ * its inset and a gap, same formula as input.module.css's .hasEnd. Applies
+ * whichever of trigger/clear is showing: only one is ever visible at once
+ * (see .inputWrap:has(.inputClear) below), so one reservation covers both. */
+.hasTrailingControl {
+  padding-inline-end: calc(var(--space-2) + var(--control-height-sm) + var(--space-1));
+}
+
+.inputTrigger,
+.inputClear {
+  /* Substitutes for the preflight the kit lacks, same reasoning as .input
+   * above — without it the padding below would inflate this button past
+   * its declared width/height. */
+  box-sizing: border-box;
+  position: absolute;
+  inset-inline-end: var(--space-2);
+  top: 50%;
+  translate: 0 -50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background-color: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+/*
+ * Both are borderless icon buttons — transparent, square on the sm control
+ * step — so they take the ghost icon-button hover the drawn Button / Icon
+ * masters specify: a --muted fill under --foreground, with the accent tint
+ * left to mean `selected` (see the borderless variant's hover in
+ * button.module.css). Neither of these is ever selected, so accent had
+ * nothing to say here.
+ */
+.inputTrigger:hover,
+.inputClear:hover {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+.inputTrigger:focus-visible,
+.inputClear:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.inputTrigger:disabled,
+.inputClear:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+/*
+ * Base UI's Clear part only mounts (default `keepMounted={false}`) once
+ * there's a value to clear — while it's in the DOM it must win the shared
+ * inline-end slot instead of stacking with the trigger. Upstream expresses
+ * the equivalent rule as `group-has-data-[slot=combobox-clear]:hidden`;
+ * this kit has no data-slot attributes, so a plain :has() does the same job
+ * off the two classes directly.
+ */
+.inputWrap:has(.inputClear) .inputTrigger {
+  display: none;
+}
+
+.positioner {
+  isolation: isolate;
+  z-index: 50;
+}
+
+.popup {
+  /*
+   * Substitutes for the preflight the kit lacks: without it, content-box
+   * (this kit's ambient default) piles this class's own border on top of
+   * `width: var(--anchor-width)`, rendering the popup wider than the field
+   * it's anchored to — same acute case as select.module.css's own .popup.
+   */
+  box-sizing: border-box;
+  /*
+   * Combobox has no scroll-arrow pair (unlike Select), so there's no reason
+   * to split scrolling onto a child element the way select.module.css's
+   * .popup/.list do — the popup clips, .list below is the one that
+   * actually scrolls, kept only to leave room for a non-scrolling
+   * ComboboxEmpty sibling of the same List (see combobox.md's example).
+   */
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  isolation: isolate;
+  z-index: 50;
+  max-height: var(--available-height);
+  width: var(--anchor-width);
+  min-width: 9rem;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--popover-border);
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  /* --popover-shadow: the ring-plus-drop-shadow recipe every card-like
+   * popup in the kit shares (see theme.css). */
+  box-shadow: var(--popover-shadow);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity 100ms ease,
+    transform 100ms ease;
+}
+
+/*
+ * Mixed transition: opacity (a fade, not motion under WCAG 2.3.3 — kept)
+ * and transform (the popup scaling in/out, which is — suppressed). Split
+ * rather than a blanket `transition: none` so the fade still plays; the
+ * popup just snaps to its final scale instead of animating there.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .popup {
+    transition: opacity 100ms ease;
+  }
+}
+
+.popup[data-starting-style],
+.popup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+/*
+ * The list — not the group — carries the dropdown's inner padding, so a
+ * groupless list (items placed directly under ComboboxContent) is padded
+ * too. Same rationale as select.module.css's .list; `min-height: 0` is
+ * required alongside `overflow-y: auto` as a child of .popup's flex
+ * column, or it refuses to shrink below its content's height and grows
+ * the popup instead of scrolling within it.
+ */
+.list {
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 0;
+  padding: var(--space-1);
+}
+
+.empty {
+  padding: var(--space-4) var(--space-2);
+  color: var(--muted-foreground);
+  text-align: center;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+}
+
+.group {
+  scroll-margin: var(--space-1) 0;
+}
+
+.groupLabel {
+  padding: var(--space-1) var(--space-2);
+  color: var(--muted-foreground);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+}
+
+.item {
+  /*
+   * Substitutes for the preflight the kit lacks: without it, content-box
+   * (this kit's ambient default) piles the horizontal padding on top of
+   * `width: 100%`, rendering each item wider than the popup's content box
+   * — clipped by .popup's own `overflow: hidden` above, which cuts off
+   * .itemIndicator (the checkmark) entirely. Same acute case as
+   * select.module.css's own .item.
+   */
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-8) var(--space-2) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: default;
+  user-select: none;
+  /* The drawn dropdown options are 12px — Meta; the hand-set 17px line
+   * normalizes to the ramp's 16 under the tokens-win ruling (see
+   * theme.css) — same as select.module.css's own .item. */
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  outline: none;
+}
+
+.item:focus,
+.item[data-highlighted] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* disabled opacity: see input.module.css */
+.item[data-disabled] {
+  pointer-events: none;
+  opacity: 0.42;
+}
+
+.itemIndicator {
+  pointer-events: none;
+  position: absolute;
+  inset-inline-end: var(--space-2);
+  display: flex;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * Carries the entire gap between sections, not half of it — same idiom and
+ * same reasoning as select.module.css's own .separator: .list already owns
+ * the dropdown's padding, so nothing else contributes to the gap.
+ */
+.separator {
+  pointer-events: none;
+  margin: var(--space-2) calc(-1 * var(--space-1));
+  height: var(--border-width);
+  background-color: var(--border);
+}
+
+/*
+ * .chips/.chip/.chipRemove/.chipsInput: the multi-select field (see
+ * combobox.tsx's ComboboxChips/ComboboxChip/ComboboxChipsInput). Not
+ * modeled on any existing kit part — Select has no multi-select mode — so
+ * this is drawn fresh from theme.css tokens only: the field-border recipe
+ * above for the container, and the muted/secondary pair (the kit's
+ * existing "small tag" tokens, also used by badge.module.css) for the
+ * pills inside it.
+ */
+.chips {
+  /* Same preflight substitute as .input above. */
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 12rem;
+  min-height: var(--control-height-lg);
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-width) solid var(--input);
+  border-radius: var(--radius-md);
+  background-color: var(--surface-elevated);
+  cursor: text;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+/* Keyboard focus lands on .chipsInput, not this container — :focus-within
+ * carries the same field-focus ring as .input above so the whole field
+ * reads as focused, not just its inner caret. */
+.chips:focus-within {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 var(--ring-inset)
+    var(--ring);
+}
+
+@media (forced-colors: active) {
+  .chips:focus-within {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+.chips[aria-invalid='true'] {
+  border-color: var(--destructive);
+  box-shadow: inset 0 0 0 var(--ring-inset)
+    var(--destructive);
+}
+
+/* Pill radius: the exact literal badge.module.css already uses for the
+ * kit's other small tag — not on the --radius-* scale (a "full" step it
+ * has no name for), so kept as the same hand-set value rather than two
+ * independent guesses at the same shape. */
+.chip {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 9999px;
+  background-color: var(--secondary);
+  color: var(--secondary-foreground);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  white-space: nowrap;
+}
+
+/* disabled opacity: see input.module.css */
+.chip[data-disabled] {
+  opacity: 0.42;
+}
+
+.chipRemove {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background-color: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chipRemove:hover {
+  background-color: color-mix(in oklab, var(--secondary-foreground) 15%, transparent);
+}
+
+.chipRemove:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.chipRemove:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.chipRemoveIcon {
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.chipsInput {
+  flex: 1 1 auto;
+  min-width: 4rem;
+  border: none;
+  outline: none;
+  background-color: transparent;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-label-tracking);
+}
+
+.chipsInput::placeholder {
+  color: var(--muted-foreground);
+}
+
+.chipsInput:disabled {
+  cursor: not-allowed;
+}
+
+.svgIcon {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  flex-shrink: 0;
+  pointer-events: none;
+}

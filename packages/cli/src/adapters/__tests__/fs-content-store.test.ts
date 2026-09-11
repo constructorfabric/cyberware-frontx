@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
+import { joinWithinRoot } from '@gears-frontx/test-support/path-guard';
 import { FsContentStore } from '../fs-content-store';
 import { resolveInstalledContentPath } from '../fs-installed-content-path';
 import { MANIFEST_FILENAME } from '../../manifest/types';
@@ -27,7 +28,7 @@ describe('FsContentStore', () => {
     const store = new FsContentStore(root);
     store.write('my-template', '{"name":"my-template"}');
 
-    const manifestPath = path.join(resolveInstalledContentPath(root, 'my-template'), MANIFEST_FILENAME);
+    const manifestPath = joinWithinRoot(resolveInstalledContentPath(root, 'my-template'), MANIFEST_FILENAME);
     expect(fs.existsSync(manifestPath)).toBe(true);
     expect(fs.readFileSync(manifestPath, 'utf-8')).toBe('{"name":"my-template"}');
     expect(store.read('my-template')).toBe('{"name":"my-template"}');
@@ -44,8 +45,8 @@ describe('FsContentStore', () => {
     store.write('my-template', JSON.stringify({ $frontxTemplateFiles: bundle }));
 
     const installedPath = resolveInstalledContentPath(root, 'my-template');
-    expect(fs.readFileSync(path.join(installedPath, MANIFEST_FILENAME), 'utf-8')).toBe(bundle[MANIFEST_FILENAME]);
-    expect(fs.readFileSync(path.join(installedPath, 'src/index.ts'), 'utf-8')).toBe(bundle['src/index.ts']);
+    expect(fs.readFileSync(joinWithinRoot(installedPath, MANIFEST_FILENAME), 'utf-8')).toBe(bundle[MANIFEST_FILENAME]);
+    expect(fs.readFileSync(joinWithinRoot(installedPath, 'src', 'index.ts'), 'utf-8')).toBe(bundle['src/index.ts']);
 
     const roundTripped = JSON.parse(store.read('my-template')!);
     expect(roundTripped).toEqual({ $frontxTemplateFiles: bundle });
@@ -69,8 +70,8 @@ describe('FsContentStore', () => {
     store.replace('my-template', JSON.stringify({ $frontxTemplateFiles: { [MANIFEST_FILENAME]: 'v2' } }));
 
     const installedPath = resolveInstalledContentPath(root, 'my-template');
-    expect(fs.existsSync(path.join(installedPath, 'old-file.txt'))).toBe(false);
-    expect(fs.readFileSync(path.join(installedPath, MANIFEST_FILENAME), 'utf-8')).toBe('v2');
+    expect(fs.existsSync(joinWithinRoot(installedPath, 'old-file.txt'))).toBe(false);
+    expect(fs.readFileSync(joinWithinRoot(installedPath, MANIFEST_FILENAME), 'utf-8')).toBe('v2');
   });
 
   // inst-bupd-boundary-confirm — no path outside the store root is ever

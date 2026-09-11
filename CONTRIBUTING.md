@@ -63,7 +63,7 @@ git commit -s -m "feat: describe the change"
 
 To add a missing sign-off to the latest commit, run `git commit --amend -s --no-edit`. To sign off a range of commits, run `git rebase --signoff <base>` (e.g. `git rebase --signoff HEAD~3` to cover the last three), then push with `--force-with-lease`. Note that `git rebase --signoff` appends the trailer even when a `Signed-off-by` already exists earlier in the message (it only skips when an identical sign-off is last), so rebasing over already-signed commits that end in `Co-Authored-By` adds a duplicate line - pick a `<base>` that spans only the commits missing the trailer.
 
-This is enforced locally by a `commit-msg` hook (`require-signoff` in [`.pre-commit-config.yaml`](.pre-commit-config.yaml)); commits without the trailer are rejected before they're made. The hook is installed automatically by `npm install` (via the `prepare` script) — if commits aren't being checked, run `npx prek install`.
+This is enforced locally by a `commit-msg` hook (`require-signoff` in [`.pre-commit-config.yaml`](.pre-commit-config.yaml), backed by `scripts/check-dco-signoff.mjs`); commits without the trailer, or whose trailer matches neither the author nor the committer, are rejected before they're made; merge commits are exempt, as they are in CI. The hook only runs for `git commit` — `git cherry-pick`, `git rebase` and `git rebase --signoff` bypass `commit-msg` hooks entirely, so check those results yourself. CI's DCO check enforces the same rules after push, where fixing it means rewriting history. The hook is installed automatically by `npm install` (via the `prepare` script) — if commits aren't being checked, run `npx prek install`.
 
 ## Versioning
 
@@ -82,6 +82,14 @@ The project is **pre-1.0** — backward compatibility is not guaranteed.
 
 A PR that changes non-documentation source under `src/`, or the dependency fields of `package.json`, for a governed package (non-private `@gears-frontx`-scoped packages: `packages/*`, `template-shell`, and `template-shell/packages/*`) must bump that package's own `version` in the same PR — and update every exact pin on it (see `policy:template-pin-drift`). CI (`policy:version-bump-on-change`, pull requests only) compares the version at the PR's merge base against the version at its head, so a bump that is later reverted within the same PR does not count. Packages the PR itself adds or removes are exempt, as are private packages (e.g. the `template-mfe` fixture apps), which are pinned consumers rather than published sources.
 
+### Dependency Pinning
+
+Third-party dependencies are pinned to exact versions so installs are deterministic.
+
+- **Exact pins everywhere** — every non-`@gears-frontx` dependency in `packages/*`, `template-shell`, and `template-shell/packages/*` declares an exact version, never a range.
+- **21-day eligibility** — a version may only be pinned once it has been published for at least 21 days, so a just-released version is never pulled in before it has been vetted.
+- **One exception** — the `@gears-frontx/mfes` → `@gears-frontx/gts-plugin` edge stays a semver range, per the ecosystem-distribution rule, to avoid forcing two copies of the MFE runtime into one tree.
+
 ## Publishing
 
 Publishing is automated via CI/CD. On push to a publishing branch, CI detects version changes and publishes affected packages.
@@ -98,7 +106,7 @@ Publishing is automated via CI/CD. On push to a publishing branch, CI detects ve
 ### Publish Order
 
 Packages are published in dependency order:
-1. L1 SDK: `@gears-frontx/state`, `@gears-frontx/mfes`, `@gears-frontx/api`, `@gears-frontx/i18n`
+1. L1 SDK: `@gears-frontx/state`, `@gears-frontx/mfes`, `@gears-frontx/api`, `@gears-frontx/i18n`, `@gears-frontx/gts-plugin`
 2. L2 Framework: `@gears-frontx/framework`
 3. L3 React: `@gears-frontx/react`
 4. Standalone: `@gears-frontx/studio`, `@gears-frontx/cli`
@@ -153,7 +161,7 @@ cd template-shell && npm run dev
 
 The silence is local only: the [Template Drift workflow](.github/workflows/template-drift.yml) runs this same relink-and-check sequence in CI for the in-repo inputs it watches, so a working tree that has drifted from `template-shell` goes red there even when every local check passes ([#518](https://github.com/constructorfabric/gears-frontx/issues/518)).
 
-This was not always the steady state. Until the pins reached `0.3.0-alpha.1` ([#485](https://github.com/constructorfabric/gears-frontx/issues/485)), the published `0.3.0-alpha.0` tarballs predated the move of `FRONTX_ACTION_*` into `@gears-frontx/gts-plugin` and the addition of `DomainContext.typeSystem` to `@gears-frontx/mfes`, so `type-check` and `build:packages` failed against the pins alone and linking was mandatory rather than an optimisation. That took two merges to clear - one to publish the fixed surfaces, one to move the pins onto them, because a lockfile cannot resolve a tarball that does not exist yet - and both have landed. A seeded project now builds from its pins with no monorepo present.
+A feature branch's pins routinely name a version that has not been published yet: `policy:version-bump-on-change` requires the bump the moment a package's `src/` changes substantively, while [publish-packages.yml](.github/workflows/publish-packages.yml) only publishes from `main`/`develop`/`release/*`. A plain `npm ci` inside `template-shell` on such a branch therefore fails with `ETARGET` - a lockfile cannot resolve a tarball that does not exist yet - and the relink step above, which repoints those pins at the working tree, must run before any template command that touches `node_modules`.
 
 To go back to the pinned registry versions, run `npm ci` inside `template-shell`. There is no `--unlink`: the links replace published tarball *content*, which only npm can restore.
 
@@ -163,6 +171,16 @@ Two ways to lose the links without meaning to:
 - **`npm run clean:artifacts`** at the repo root removes `packages/*/dist`, so the links survive but point at nothing. `npm run build:packages` restores them; the link script refuses to run at all if the build is missing.
 
 The dev loop uses symlinks on macOS and Linux and directory junctions on Windows, so no elevated shell or Developer Mode is required on any platform. If a link cannot be created anyway, the run moves each installed directory aside rather than deleting it, so it rolls the tree back to the pinned versions and names what it could not restore. Read that last part: a failed link usually costs only a re-run, but if the rollback itself could not put a directory back, the message says so and names it - and that case does need `npm ci` inside `template-shell`, exactly as the message instructs.
+
+### Why template drift CI installs without a lockfile
+
+The [Template Drift workflow](.github/workflows/template-drift.yml) points the template's `@gears-frontx` pins at the working tree's `packages/*` builds, then installs with `npm install --no-package-lock` instead of `npm ci`. Both departures from the ordinary install exist for reasons that are easy to re-break without this record.
+
+**Why not `npm ci` against the rewritten manifests.** Rewriting the pins ahead of install desyncs `template-shell/package-lock.json` from `template-shell/package.json` by construction, and `npm ci` refuses to run against a desynced lockfile. `npm install` reconciles it instead - which is exactly the operation that trips `--no-package-lock`'s reason below.
+
+**Why `--no-package-lock` is load-bearing.** `template-shell` pins its own root package to itself via a `file:.` override, materialized as an npm-managed symlink that `packages/framework`'s re-exports resolve through. Reconciling a desynced lockfile is exactly the operation npm `<= 11.13.0` gets wrong for a self-referential `file:.` entry (npm/cli#524, already referenced by `scripts/template-lockfile-selflink-check.mjs`): it drops the link from the *installed tree*, not just from the lockfile, so `packages/framework`'s import of its own template root resolves to nothing and the build fails. GitHub's `ubuntu-latest` runner's Node 25.x ships npm 11.12.1, squarely in the broken range; the upstream fix lands in 11.14.0. Skipping lockfile reconciliation with `--no-package-lock` sidesteps the bug entirely regardless of which npm version the runner carries, so the flag stays correct even after the runner's npm moves past 11.14.0 - there is nothing to remember to remove later.
+
+**The tradeoff this accepts.** Without the lockfile guiding resolution, transitive dependencies float to their latest in-range version instead of the exact one the lockfile pinned - verified on a test run at 41 of 546 packages resolving differently, all patch-level bumps within their declared ranges. That is acceptable for this job specifically, since its purpose is detecting drift between `packages/*` and `template-shell`, not verifying that the exact pinned dependency tree installs cleanly; the latter is Template Validate's job ([main.yml](.github/workflows/main.yml)), which runs an unmodified `npm ci` and is unaffected by this workflow's substitutions.
 
 ## Validation
 

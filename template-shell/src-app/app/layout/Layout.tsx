@@ -9,7 +9,6 @@
 import React, { useEffect } from 'react';
 import { fetchCurrentUser } from '@/app/actions/bootstrapActions';
 import { Header } from './Header';
-import { Footer } from './Footer';
 import { Menu } from './Menu';
 import { Sidebar } from './Sidebar';
 import { Screen } from './Screen';
@@ -49,8 +48,12 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
       </div>
 
-      {/* Footer - full width */}
-      <Footer />
+      {/*
+        No <Footer /> here on purpose: it frames the children it is given and
+        this layout has none for it, so mounting one would lay an empty
+        full-width band under every screen. A project with something to show
+        there renders `Footer` itself, with that content as its children.
+      */}
 
       {/* Popups */}
       <Popup />

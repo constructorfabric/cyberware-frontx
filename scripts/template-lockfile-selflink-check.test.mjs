@@ -200,6 +200,29 @@ describe('runCli', () => {
     expect(output).toContain('1 installable template(s) of 2 discovered');
   });
 
+  // The doc-only template shape (template-design-guardrails): a
+  // manifest, a DESIGN.md, and its own .frontx/ai bundle subtree. No root
+  // package.json and no lockfile means no `npm ci` contract to protect -
+  // correctly skipped, never a crash or a false failure.
+  it('skips a doc-only template (no package.json, no lockfile) instead of failing on it', async () => {
+    const root = await makeRoot();
+    const shell = path.join(root, 'template-shell');
+    await writeManifest(shell);
+    await writeJson(path.join(shell, 'package.json'), manifestWithSelfLink);
+    await writeJson(path.join(shell, 'package-lock.json'), lockfileWithSelfLink);
+    const docOnly = path.join(root, 'template-design-guardrails');
+    await writeManifest(docOnly);
+    await writeFile(path.join(docOnly, 'DESIGN.md'), '# Design guardrails\n');
+    await writeJson(
+      path.join(docOnly, '.frontx', 'ai', '@gears-frontx/template-design-guardrails', 'extension.json'),
+      { skills: [] },
+    );
+
+    const { exitCode, output } = run(root);
+    expect(exitCode).toBe(0);
+    expect(output).toContain('1 installable template(s) of 2 discovered');
+  });
+
   it('skips a template that has a package.json but no lockfile', async () => {
     const root = await makeRoot();
     const shell = path.join(root, 'template-shell');

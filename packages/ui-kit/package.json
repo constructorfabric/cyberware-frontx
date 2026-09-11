@@ -1,6 +1,6 @@
 {
   "name": "@gears-frontx/ui-kit",
-  "version": "0.3.0-alpha.3",
+  "version": "0.4.0-alpha.2",
   "description": "Standard React component base for FrontX templates - Base UI behavior, CSS Modules styling on semantic tokens, CVA variants",
   "type": "module",
   "types": "./dist/index.d.ts",
@@ -17,7 +17,9 @@
       "types": "./dist/*.d.ts",
       "import": "./dist/*.js"
     },
-    "./theme.css": "./dist/theme.css"
+    "./theme.css": "./dist/theme.css",
+    "./utilities.css": "./dist/utilities.css",
+    "./typeset.css": "./dist/typeset.css"
   },
   "files": [
     "dist",
@@ -41,13 +43,23 @@
   },
   "dependencies": {
     "@base-ui/react": "1.6.0",
-    "class-variance-authority": "0.7.1"
+    "@shadcn/react": "0.3.0",
+    "@tanstack/react-table": "9.1.2",
+    "class-variance-authority": "0.7.1",
+    "cmdk": "1.1.1",
+    "date-fns": "4.4.0",
+    "embla-carousel-react": "8.6.0",
+    "lucide-react": "1.33.0",
+    "react-day-picker": "10.0.1",
+    "react-resizable-panels": "4.12.3",
+    "recharts": "3.10.1"
   },
   "peerDependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.2",
     "@types/node": "^25.5.0",
     "@types/react": "19.2.17",

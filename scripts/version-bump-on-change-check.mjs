@@ -49,6 +49,20 @@
  * check is what would exempt a future `template-shell/src-app/mfe_packages/*`
  * member too, should that workspace pattern ever gain one.
  *
+ * A MANIFEST-ONLY template - a top-level template dir with
+ * `frontx-template.json` but no `package.json` at all - is governed too,
+ * discovered separately by `discoverManifestOnlyTemplateRoots`: nothing
+ * installable lives there, so the manifest's own `version` field is the
+ * version this gate compares, and the substantive rule is
+ * `hasSubstantiveTemplateChange` (the whole tree, not a `src/` convention).
+ * "Manifest-only" describes a ROOT (no package.json, only the template
+ * manifest); it is unrelated to "docs-only", which describes a FILE that
+ * `isDocsOnlyPath` exempts (`*.md`, `llms.txt`). Whether a root is
+ * manifest-only is decided by whether it had a `package.json` AT THE MERGE
+ * BASE, not at HEAD: a PR that both adds a `package.json` to such a template
+ * and changes its content must not thereby talk its way out of the manifest
+ * bump the base classification demands.
+ *
  * ## What counts as a substantive change
  *
  * Per file, relative to its package root:
@@ -88,6 +102,11 @@
  * is skipped rather than failed: a brand-new package has no prior version to
  * have bumped FROM. Likewise a package whose `package.json` no longer exists
  * at HEAD (removed by this PR) is skipped - there is no version left to check.
+ * The same two skips apply to a manifest-only template root, with
+ * `frontx-template.json` in the role of the manifest that must exist at the
+ * ref. A manifest that EXISTS at a ref but declares no usable `version` is
+ * a different situation entirely and is never a silent skip - `versionAt`
+ * fails loudly instead.
  *
  * CLI entry: `node scripts/version-bump-on-change-check.mjs [--base-ref <ref>]`
  * (exit 0 on success). `--base-ref` defaults to `VERSION_BUMP_BASE_REF`, then
@@ -107,6 +126,7 @@ import {
   readPackageManifest,
   readTemplateEcosystemPackages,
 } from './template-ecosystem-packages.mjs';
+import { MANIFEST_FILENAME, findTemplateDirs } from './template-discovery.mjs';
 
 /**
  * @typedef {{
@@ -169,6 +189,55 @@ export function discoverPackageRoots(rootDir) {
     .filter((dir) => !isPrivatePackage(rootDir, dir))
     .map((dir) => dir.split(path.sep).join('/'))
     .sort();
+}
+
+/**
+ * Every manifest-only template root this gate governs: a top-level template
+ * dir (manifest-presence rule, via `findTemplateDirs`) that carries NO
+ * `package.json` at all - by design nothing installable, so
+ * `readTemplateEcosystemPackages` rightly contributes nothing for it and the
+ * `version` field of `frontx-template.json` itself is the only version truth
+ * its changes can be held against.
+ *
+ * `hasPackageManifest` decides the "no package.json" half of the rule.
+ * `check()` passes a git-blob check AT THE MERGE BASE, not a working-tree
+ * check: a PR that adds a `package.json` to a previously manifest-only
+ * template would otherwise flip the root out of this governance in the very
+ * PR that changes it (see module docblock). The working-tree default exists
+ * for direct callers with no diff in play.
+ *
+ * @param {string} rootDir monorepo root
+ * @param {(templateRoot: string) => boolean} [hasPackageManifest] given a
+ *   repo-root-relative posix root, whether it has a `package.json`
+ * @returns {string[]} repo-root-relative, posix-separated, sorted
+ */
+export function discoverManifestOnlyTemplateRoots(rootDir, hasPackageManifest) {
+  const hasManifest = hasPackageManifest ?? ((templateRoot) => fs.existsSync(path.join(rootDir, templateRoot, 'package.json')));
+  return findTemplateDirs(rootDir)
+    .map((dir) => path.relative(rootDir, dir).split(path.sep).join('/'))
+    .filter((templateRoot) => !hasManifest(templateRoot))
+    .sort();
+}
+
+/**
+ * The substantive-change rule for a manifest-only template root. There is no
+ * `src/` convention to trust here - the template IS its content - so every
+ * changed file under the root counts, except a pure-docs file (same
+ * `isDocsOnlyPath` exemption as everywhere else in this gate) and
+ * `frontx-template.json` itself. The manifest exemption is UNCONDITIONAL,
+ * which is deliberately stricter-in-simplicity than the `package.json` rule
+ * in `hasSubstantiveChange` (there the manifest still counts when
+ * `dependencyFieldsChanged()` is true): `frontx-template.json` declares no
+ * dependency fields, so there is no edit to it that this gate would want to
+ * classify as substantive.
+ *
+ * @param {string} templateRoot repo-root-relative, posix-separated
+ * @param {string[]} filesInRoot already filtered to this root
+ * @returns {boolean}
+ */
+export function hasSubstantiveTemplateChange(templateRoot, filesInRoot) {
+  const manifestPath = `${templateRoot}/${MANIFEST_FILENAME}`;
+  return filesInRoot.some((file) => file !== manifestPath && !isDocsOnlyPath(file));
 }
 
 /**
@@ -287,24 +356,39 @@ export function hasSubstantiveChange(packageRoot, filesInRoot, baseRef, git) {
 }
 
 /**
- * The `version` field of `<packageRoot>/package.json` as it reads AT `ref`,
- * read directly from that ref's blob rather than from a diff - see the
+ * The `version` field of `<packageRoot>/<manifestFilename>` as it reads AT
+ * `ref`, read directly from that ref's blob rather than from a diff - see the
  * module docblock for why that is what makes bump-then-revert fail.
+ * `manifestFilename` is `package.json` for every package root and
+ * `frontx-template.json` for a manifest-only template root.
+ *
+ * `null` means exactly one thing: the manifest does not EXIST at `ref` (the
+ * deliberate new-package/removed-package skip in `check()`). A manifest that
+ * exists but declares no usable `version` (missing, non-string, or blank) is
+ * NOT a skip - conflating the two would let a versionless manifest silently
+ * exempt its root from this gate forever - so that case throws instead,
+ * naming the root and ref.
  *
  * @param {string} ref
  * @param {string} packageRoot
  * @param {GitReader} git
- * @returns {string | null} `null` when the manifest does not exist at `ref`,
- *   or declares no valid `version`
+ * @param {string} [manifestFilename]
+ * @returns {string | null} `null` only when the manifest does not exist at `ref`
  */
-export function versionAt(ref, packageRoot, git) {
-  const manifestPath = `${packageRoot}/package.json`;
+export function versionAt(ref, packageRoot, git, manifestFilename = 'package.json') {
+  const manifestPath = `${packageRoot}/${manifestFilename}`;
   const raw = git.readTextAtRef(ref, manifestPath);
   if (raw === null) return null;
   const manifest = parseManifestText(raw, `${manifestPath} @ ${ref}`);
-  if (typeof manifest !== 'object' || manifest === null) return null;
-  const version = /** @type {Record<string, unknown>} */ (manifest)['version'];
-  return typeof version === 'string' && version.trim() !== '' ? version : null;
+  const version =
+    typeof manifest === 'object' && manifest !== null ? /** @type {Record<string, unknown>} */ (manifest)['version'] : undefined;
+  if (typeof version !== 'string' || version.trim() === '') {
+    throw new Error(
+      `${manifestPath} @ ${ref} exists but declares no usable "version" (missing, non-string, or blank) - ` +
+        `${packageRoot} cannot be governed without one; add a "version" field to it.`,
+    );
+  }
+  return version;
 }
 
 /**
@@ -347,23 +431,39 @@ function check({ rootDir, baseRef, git, log, logError }) {
     );
     return 1;
   }
+  // Manifest-only template roots ride the same grouping and version
+  // comparison as package roots; only the substantive rule and the manifest
+  // the version is read from differ. Classification is by package.json
+  // presence AT THE MERGE BASE (a blob read, same as every other
+  // at-a-ref question here), so a PR that adds a package.json to such a
+  // template stays under manifest governance for this run - and when that
+  // addition also makes the root a discovered package root, the
+  // manifest-only classification deliberately wins below.
+  const manifestOnlyRoots = new Set(
+    discoverManifestOnlyTemplateRoots(rootDir, (templateRoot) => git.readTextAtRef(mergeBaseSha, `${templateRoot}/package.json`) !== null),
+  );
   const changedFiles = git.listChangedFiles(mergeBaseSha);
-  const grouped = groupChangedFilesByPackageRoot(changedFiles, packageRoots);
+  const grouped = groupChangedFilesByPackageRoot(changedFiles, [...packageRoots, ...manifestOnlyRoots]);
 
   /** @type {UnbumpedPackage[]} */
   const unbumped = [];
   let substantiveCount = 0;
 
   for (const [packageRoot, files] of grouped) {
-    if (!hasSubstantiveChange(packageRoot, files, mergeBaseSha, git)) continue;
+    const isManifestOnlyRoot = manifestOnlyRoots.has(packageRoot);
+    const substantive = isManifestOnlyRoot
+      ? hasSubstantiveTemplateChange(packageRoot, files)
+      : hasSubstantiveChange(packageRoot, files, mergeBaseSha, git);
+    if (!substantive) continue;
     substantiveCount += 1;
 
-    const baseVersion = versionAt(mergeBaseSha, packageRoot, git);
+    const manifestFilename = isManifestOnlyRoot ? MANIFEST_FILENAME : 'package.json';
+    const baseVersion = versionAt(mergeBaseSha, packageRoot, git, manifestFilename);
     // No version at the merge base: this PR introduced the package itself -
     // there is no prior version it could have bumped FROM.
     if (baseVersion === null) continue;
 
-    const headVersion = versionAt('HEAD', packageRoot, git);
+    const headVersion = versionAt('HEAD', packageRoot, git, manifestFilename);
     // No version at HEAD: this PR removed the package - nothing left to bump.
     if (headVersion === null) continue;
 
@@ -380,7 +480,8 @@ function check({ rootDir, baseRef, git, log, logError }) {
       for (const file of files) logError(`    ${file}`);
     }
     logError(
-      `\nBump the "version" in each package's package.json above (and any exact pin on it elsewhere - see ` +
+      `\nBump the "version" in each package's package.json above (frontx-template.json for a manifest-only ` +
+        `template) (and any exact pin on it elsewhere - see ` +
         '`npm run policy:template-pin-drift`), then rerun `npm run policy:version-bump-on-change` to confirm.',
     );
     return 1;
@@ -388,9 +489,10 @@ function check({ rootDir, baseRef, git, log, logError }) {
 
   log(
     substantiveCount === 0
-      ? `Version-bump-on-change check passed: none of ${packageRoots.length} governed package(s) had ` +
-          `substantive changes since ${baseRef} (merge base ${mergeBaseSha}).`
-      : `Version-bump-on-change check passed: every one of ${substantiveCount} package(s) with substantive ` +
+      ? `Version-bump-on-change check passed: none of ${packageRoots.length} governed package(s) and ` +
+          `${manifestOnlyRoots.size} manifest-only template(s) had substantive changes since ${baseRef} ` +
+          `(merge base ${mergeBaseSha}).`
+      : `Version-bump-on-change check passed: every one of ${substantiveCount} governed root(s) with substantive ` +
           `changes since ${baseRef} (merge base ${mergeBaseSha}) also bumped its version.`,
   );
   return 0;

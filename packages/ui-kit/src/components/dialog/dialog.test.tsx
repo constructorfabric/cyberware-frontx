@@ -143,4 +143,22 @@ describe('Dialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
+
+  it('stamps data-size on the popup for the width CSS to key off', () => {
+    render(
+      <Dialog defaultOpen>
+        <DialogTrigger>Open</DialogTrigger>
+        <DialogContent size="lg">
+          <DialogTitle>Wide form</DialogTitle>
+        </DialogContent>
+      </Dialog>,
+    );
+    expect(screen.getByRole('dialog').getAttribute('data-size')).toBe('lg');
+  });
+
+  it('defaults data-size to "default"', () => {
+    renderDialog();
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(screen.getByRole('dialog').getAttribute('data-size')).toBe('default');
+  });
 });

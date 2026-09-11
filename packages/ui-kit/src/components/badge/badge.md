@@ -1,96 +1,108 @@
 # Badge
 
-A status label: an intent-colored caption with an optional status dot or
-icon, as a soft pill or a bare label. Badge has no Base UI primitive — it's a
-styled `span`, plus a `render` prop (via Base UI's `useRender`/`mergeProps`
-utilities) for the one case that needs it: rendering as a link.
+A compact inline label — a faithful port of [shadcn/ui's base
+Badge](https://ui.shadcn.com/docs/components/base/badge). Badge has no
+Base UI primitive — it's a styled `span`, plus a `render` prop (via Base
+UI's `useRender`/`mergeProps` utilities) for the one case that needs it:
+rendering as a link.
 
-Badge speaks **semantic intent only** (per the Studio design): you say what
-kind of state you're marking (`success`, `warning`, `info`, `danger`,
-`muted`), never how to paint it. The prop is the kit-wide `variant` — like
-every other component — but its values are states, not paint jobs: there is
-no `primary`/`outline`/`ghost` here, and picking `warning` because you want
-orange is a misuse, not a style choice.
+Badge's variant axis is **paint only**, in two groups on one axis:
+
+- **Upstream paint** — `default`, `secondary`, `destructive`, `outline`,
+  `ghost`, `link`: the same six names and the same meaning as
+  [Button](button.md)'s.
+- **Tone** — `success`, `warning`, `danger`, `info`, `accent`: a soft
+  tinted fill with the tone's own color as the label, matching the Studio
+  design's Badge row. Its sixth specimen, Neutral, is `secondary` — that
+  variant already paints the drawn pair exactly, so there is no separate
+  `neutral` name.
+
+Note that `destructive` and `danger` are both present on purpose: solid
+red with a white label, and a soft red fill with a red label — two
+emphasis levels of the same red.
+
+A tone is still paint, not state: it colors a label, it does not track
+one. Badge's five tones (`success`, `warning`, `danger`, `info`, `accent`)
+are the semantic-ish colors available — pick the one that best matches the
+status, but keep the label text itself explicit; color alone is not a
+substitute for a state machine.
+
+> **Accessibility caveat on tones.** At Badge's 12px/500 label, WCAG 1.4.3
+> asks 4.5:1. Four of the drawn tone pairs currently fall short — light
+> `success` 3.43:1, `warning` 2.90:1, `danger` 4.28:1, `info` 3.73:1, and
+> dark `danger` 3.80:1 — because the shortfall is in the theme's status
+> token pairs, not in this component. Until those pairs are re-pinned, do
+> not let a tone's color be the only thing carrying the meaning: keep the
+> label text itself explicit. `accent` and `secondary` clear AA in both
+> themes, as do `success`, `warning` and `info` in dark.
 
 ## When to use
 
-- A status attached to an entity in a list, table cell, or page header:
-  `running` → `success`, `failed` → `danger`, `pending` → `warning`,
-  `beta`/`new` → `info`, anything neutral (`draft`, `archived`, a count,
-  a category) → `muted`.
-- `shape="pill"` (default) on busy surfaces where the label needs its own
-  soft fill; `shape="plain"` inline with text or in dense tables where a
-  fill would be noise. Add `dot` when the state deserves a colored marker,
-  or pass `icon` for a more specific one — neither renders by default.
-- A clickable status filter — pass `render={<a href="..." />}`. The pill's
-  fill deepens on hover and the plain shape underlines, but only when actually
-  rendered as a link; a plain badge stays visually inert and never looks
-  clickable when it isn't. The kit's focus ring appears automatically once
-  the anchor receives keyboard focus. Give it discernible text — a badge
-  with no accessible name is unusable via keyboard or screen reader.
+- A short, static inline label: a count, a category tag, a plan name, a
+  version number.
+- A status label that benefits from color (running/failed/pending/beta) —
+  pick the tone variant (`success`/`warning`/`danger`/`info`/`accent`)
+  that matches the meaning, and still spell the status out in the label
+  text; a tone is paint, not a live indicator.
+- A clickable tag — pass `render={<a href="..." />}`. The kit's focus
+  ring appears once the anchor receives keyboard focus, and hover
+  feedback (background/underline) only applies once actually rendered as
+  a link. Give it discernible text — a badge with no accessible name is
+  unusable via keyboard or screen reader.
 
 ## When not to use
 
 - A clickable action with its own visual weight — use `button`.
 - Long or wrapping text — Badge is single-line (`white-space: nowrap`) and
   clips overflow.
-- Prose-colored emphasis or arbitrary brand colors — intents are the whole
-  vocabulary; recoloring a badge via CSS breaks the semantic contract.
 
 ## Props (kit level)
 
 | Prop | Type | Default |
 |------|------|---------|
-| `variant` | `success` \| `warning` \| `info` \| `danger` \| `muted` | `muted` |
-| `shape` | `pill` \| `plain` | `pill` |
-| `dot` | `boolean` — show the status dot in the variant's accent color; ignored when `icon` is set | `false` |
-| `icon` | `ReactNode` — leading icon, decorative (`aria-hidden`), 12px, accent-colored; replaces the dot | — |
+| `variant` | `default` \| `secondary` \| `destructive` \| `outline` \| `ghost` \| `link` \| `success` \| `warning` \| `danger` \| `info` \| `accent` | `default` |
 | `render` | `ReactElement` — replaces the root `span`, e.g. with an `<a>` | — |
-| `className` | `string` — merged after the variant/shape classes | — |
+| `className` | `string` — merged after the variant class | — |
 
 All other props are native `<span>` props (or the target element's props
 when using `render`) and are forwarded as-is, including `aria-invalid`
 (shows a destructive-tinted border and ring, independent of `variant`).
+
+`badgeVariants` (the underlying `cva` recipe) is also exported, for a
+consumer that needs the class string without the component — e.g. styling
+a link that must stay a real `<a>` outside of `render`.
 
 ## Examples
 
 ```tsx
 import { Badge } from '@gears-frontx/ui-kit';
 
-// Status labels (pill is the default shape)
-<Badge variant="success">Running</Badge>
-<Badge variant="danger">Failed</Badge>
-<Badge variant="warning">Degraded</Badge>
-<Badge variant="info">Beta</Badge>
-<Badge>Draft</Badge>  // muted is the default variant
+// Upstream paint
+<Badge>default</Badge>
+<Badge variant="secondary">secondary</Badge>
+<Badge variant="destructive">destructive</Badge>
+<Badge variant="outline">outline</Badge>
+<Badge variant="ghost">ghost</Badge>
+<Badge variant="link">link</Badge>
 
-// Status dot is opt-in
-<Badge variant="success" dot>Running</Badge>
-
-// Bare label for dense/inline placements (dot optional there too)
-<Badge variant="success" shape="plain" dot>Online</Badge>
-
-// A custom marker instead of the dot
-<Badge variant="info" icon={<BetaIcon />}>Beta</Badge>
+// Tone — soft fill, tone-colored label ("secondary" is this row's Neutral)
+<Badge variant="success">success</Badge>
+<Badge variant="warning">warning</Badge>
+<Badge variant="danger">danger</Badge>
+<Badge variant="info">info</Badge>
+<Badge variant="accent">accent</Badge>
 
 // A badge that is actually a link — hover feedback only applies here
-<Badge variant="info" render={<a href="/filters/open" />}>
-  3 open
+<Badge variant="outline" render={<a href="/plans/pro" />}>
+  Pro plan
 </Badge>
 ```
 
 ## Anti-patterns
 
-- Do not pick a variant for its color ("warning looks nice and orange") —
-  intents are semantics; if no state maps, use `muted`.
-- Do not recolor a badge via `className`/`style` — the intent palette and
-  its contrast math live in the kit; brand changes belong in theme tokens.
-- Do not expect hover feedback from a plain (non-`render`) badge — it only
-  appears when the badge actually renders as a link via `render`.
+- Do not let a tone carry meaning on its own — a tone paints, it does not
+  announce. Always spell out the meaning in the label text itself.
 - Do not nest interactive controls inside a Badge — it is a label, not a
   container.
-- Do not pass both `icon` and `dot` expecting both to render — `icon`
-  replaces the dot by design.
-- Do not drop an icon into Badge's children (`<Badge><Icon />label</Badge>`)
-  — the kit no longer sizes a bare svg child; use the `icon` prop, which is
-  sized and accent-colored automatically.
+- Do not expect hover feedback from a plain (non-`render`) badge — it only
+  appears when the badge actually renders as a link via `render`.

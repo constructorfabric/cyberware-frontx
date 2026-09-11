@@ -1,0 +1,365 @@
+/*
+ * ContextMenu styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ *
+ * Structurally near-identical to dropdown-menu.module.css (same underlying
+ * Menu primitives). It diverges on two rules, each marked at its own site:
+ * .trigger (a right-click surface, not a clickable button) and .popup's
+ * sizing (content-sized floor here vs. --anchor-width there — a context menu
+ * has no trigger box to match). The `<part> svg` sizing and the shortcut
+ * highlight covering checkbox/radio rows landed here first as upstream-parity
+ * fixes and have since been ported to dropdown-menu.module.css (menubar
+ * inherits them from there); .subPopup's numeric floor was re-synced to
+ * match this file's too. Treat this file and dropdown-menu.module.css as
+ * kept in sync on everything but .trigger and .popup's sizing.
+ */
+
+/*
+ * The trigger wraps arbitrary content (a table row, a canvas, a page
+ * section) rather than rendering its own button — user-select:none stops a
+ * right-click from also landing a native text-selection drag on that
+ * content, which would otherwise fight the menu for the same gesture.
+ */
+.trigger {
+  user-select: none;
+}
+
+.positioner {
+  isolation: isolate;
+  z-index: 50;
+  outline: none;
+}
+
+/* Elevation shadow, not a scrim: a popup menu sits over content rather
+ * than blocking it, so it borrows Select's popup idiom (border + two-layer
+ * shadow) instead of Dialog's full-page --overlay backdrop token. */
+.popup {
+  /*
+   * Substitutes for the preflight the kit lacks — see dropdown-menu.module.css
+   * for the full box-sizing rationale, which applies identically here.
+   * Unlike dropdown-menu's popup, this one is NOT sized to --anchor-width:
+   * a context menu anchors to a virtual point (the pointer), not a real
+   * trigger element, so there is no trigger width to match — content-sizing
+   * with a fixed min-width (the shadcn/ui registry's own choice for this
+   * component) is the only option.
+   *
+   * 9rem is the Base UI registry's `min-w-36` for this part. A dimension, so
+   * it stays a literal rather than snapping to a --space-* step — the same
+   * carve-out command.module.css's `max-height` records. It matters more here
+   * than on a trigger-anchored menu: nothing else establishes a floor, so a
+   * short menu ("Back" / "Reload") collapsed to barely wider than its own
+   * labels and read as cramped next to the reference.
+   */
+  box-sizing: border-box;
+  position: relative;
+  isolation: isolate;
+  z-index: 50;
+  max-height: var(--available-height);
+  min-width: 9rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--popover-border);
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  /* --popover-shadow: the ring-plus-drop-shadow recipe every card-like
+   * popup in the kit shares (see theme.css) — was hand-duplicated here. */
+  box-shadow: var(--popover-shadow);
+  transform-origin: var(--transform-origin);
+  outline: none;
+  transition:
+    opacity 100ms ease,
+    transform 100ms ease;
+}
+
+/*
+ * Mixed transition: opacity (a fade, not motion under WCAG 2.3.3 — kept)
+ * and transform (the popup scaling in/out, which is — suppressed). Split
+ * rather than a blanket `transition: none` so the fade still plays; the
+ * popup just snaps to its final scale instead of animating there. Distinct
+ * from the `[data-instant]` rule below: that's Base UI declaring a specific
+ * state change must not animate at all (so it fully suppresses, including
+ * opacity); this is the user's own reduced-motion preference, which only
+ * objects to the scale.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .popup {
+    transition: opacity 100ms ease;
+  }
+}
+
+.popup[data-starting-style],
+.popup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+/*
+ * Base UI sets `data-instant` on the popup when an open/close change must
+ * not animate — a keyboard-activated item click or Escape/outside-press
+ * dismissal (`click`/`dismiss`, MenuRoot.js:232), a menubar/toolbar losing
+ * hover to a sibling menu (`group`, MenuRoot.js:230), or a submenu popup
+ * re-anchoring to a different trigger (`trigger-change`,
+ * MenuPositioner.js:213) — all in node_modules/@base-ui/react/menu/ (the
+ * Context Menu's popup/positioner parts are the same Menu primitives, see
+ * context-menu.tsx). The attribute carries the reason as its value, not a
+ * boolean, but every reason means the same thing here: skip the transition.
+ * Same specificity as the starting/ending-style rule above (one class + one
+ * attribute), so this doesn't depend on being declared after it — it wins
+ * regardless of source order because `transition` isn't set by that rule at
+ * all, only by `.popup` itself, which this outranks either way.
+ */
+.popup[data-instant] {
+  transition: none;
+}
+
+/* A submenu's anchor is its own (usually narrow) SubTrigger item, not the
+ * pointer the root menu opened at, so it sizes to content with its own floor
+ * rather than inheriting the root popup's. 8rem is the registry's `min-w-32`
+ * for this part — one step under the root's 9rem, which is the proportion
+ * upstream draws. dropdown-menu's .subPopup matches this value (see that
+ * file's own header on why its main .popup still sizes differently). */
+.subPopup {
+  width: auto;
+  min-width: 8rem;
+}
+
+/* A group caption over Meta-sized items, emphasized via --text-label-weight
+ * (also 500) rather than a literal — no "Meta at 500" style exists in the
+ * Studio ramp to name instead (see table.module.css's .tableFooter for the
+ * same idiom). Applied whole, like .item/.checkboxItem/.radioItem/
+ * .subTrigger below: all five of this file's Meta-sized parts state the
+ * same four metrics instead of each dropping a different one or two. */
+.label {
+  padding: var(--space-1) var(--space-2);
+  color: var(--muted-foreground);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  font-weight: var(--text-label-weight);
+  letter-spacing: var(--text-meta-tracking);
+}
+
+/* Item text (here and on .checkboxItem/.radioItem/.subTrigger below):
+ * matches dropdown-menu.module.css's .item under the same tokens-win
+ * ruling (see theme.css). Applied whole (size/line-height/weight/
+ * tracking), matching .label above. */
+.item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: default;
+  user-select: none;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  font-weight: var(--text-meta-weight);
+  letter-spacing: var(--text-meta-tracking);
+  outline: none;
+}
+
+.item:focus,
+.item[data-highlighted] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* disabled opacity: see input.module.css */
+.item[data-disabled] {
+  pointer-events: none;
+  opacity: 0.42;
+}
+
+/*
+ * `inset` (Item/Label/SubTrigger/CheckboxItem/RadioItem — a shadcn/ui prop
+ * this port carries that dropdown-menu's has no equivalent for) aligns a
+ * plain item's text with a sibling item's text past its leading icon
+ * column, for a menu that mixes icon and non-icon rows. The offset is
+ * derived from tokens already on the ramp — icon width plus the gap and
+ * padding an icon item would spend on it either side — rather than the
+ * registry's own hand-set 1.875rem, under the tokens-win ruling (see
+ * theme.css). It lands close (2rem) without inventing a value the scale
+ * doesn't name.
+ */
+.item[data-inset],
+.label[data-inset],
+.checkboxItem[data-inset],
+.radioItem[data-inset],
+.subTrigger[data-inset] {
+  padding-inline-start: calc(var(--space-2) + var(--space-2) + var(--icon-size-sm));
+}
+
+.variantDefault {
+  color: inherit;
+}
+
+/*
+ * Text mixes a little --foreground in rather than reading --destructive raw,
+ * same deviation from the registry (and same reasoning) as
+ * badge.module.css's destructive variant. Measured on the highlighted state,
+ * where this item is at its worst: --destructive text over its own 10% tint
+ * on --popover is 3.97:1 in light mode, under the 4.5:1 floor — the tint
+ * pulls the surface toward the text it has to contrast with. The mix moves
+ * the text away from it in both themes, since --foreground flips with the
+ * theme: 4.82:1 light / 6.09:1 dark highlighted, 5.78:1 / 6.92:1 at rest.
+ */
+.variantDestructive {
+  color: color-mix(in oklab, var(--destructive) 90%, var(--foreground) 10%);
+}
+
+.variantDestructive:focus,
+.variantDestructive[data-highlighted] {
+  background-color: color-mix(in oklab, var(--destructive) 10%, transparent);
+  color: color-mix(in oklab, var(--destructive) 90%, var(--foreground) 10%);
+}
+
+.checkboxItem,
+.radioItem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-8) var(--space-2) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: default;
+  user-select: none;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  font-weight: var(--text-meta-weight);
+  letter-spacing: var(--text-meta-tracking);
+  outline: none;
+}
+
+.checkboxItem:focus,
+.checkboxItem[data-highlighted],
+.radioItem:focus,
+.radioItem[data-highlighted] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* disabled opacity: see input.module.css */
+.checkboxItem[data-disabled],
+.radioItem[data-disabled] {
+  pointer-events: none;
+  opacity: 0.42;
+}
+
+.itemIndicator {
+  pointer-events: none;
+  position: absolute;
+  inset-inline-end: var(--space-2);
+  display: flex;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  align-items: center;
+  justify-content: center;
+}
+
+.separator {
+  pointer-events: none;
+  margin: var(--space-1) calc(-1 * var(--space-1));
+  height: var(--border-width);
+  background-color: var(--border);
+}
+
+.shortcut {
+  margin-inline-start: auto;
+  color: var(--muted-foreground);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  font-weight: var(--text-meta-weight);
+  letter-spacing: var(--text-meta-tracking);
+}
+
+/*
+ * A shortcut is legal on a checkbox/radio row too — it lands clear of the
+ * indicator, which the 2rem end padding those rows reserve already keeps for
+ * itself. Upstream only recolours the shortcut on plain items, because it
+ * hangs the rule off a `group/context-menu-item` marker it puts on Item and
+ * nowhere else; that is an oversight in the registry, not a decision — the
+ * muted shortcut simply stays muted while the label beside it turns
+ * --accent-foreground, on a row that is visibly highlighted. Since this file
+ * already rules that a highlighted row recolours its shortcut, the three
+ * row kinds that can hold one follow the same rule rather than three
+ * different ones.
+ */
+.item:focus .shortcut,
+.item[data-highlighted] .shortcut,
+.checkboxItem:focus .shortcut,
+.checkboxItem[data-highlighted] .shortcut,
+.radioItem:focus .shortcut,
+.radioItem[data-highlighted] .shortcut {
+  color: var(--accent-foreground);
+}
+
+.subTrigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: default;
+  user-select: none;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line-height);
+  font-weight: var(--text-meta-weight);
+  letter-spacing: var(--text-meta-tracking);
+  outline: none;
+}
+
+.subTrigger:focus,
+.subTrigger[data-highlighted],
+.subTrigger[data-popup-open] {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* disabled opacity: see input.module.css */
+.subTrigger[data-disabled] {
+  pointer-events: none;
+  opacity: 0.42;
+}
+
+.subTriggerIcon {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+}
+
+/*
+ * Sizes the CONSUMER's leading icon, not this file's own Check/Chevron (those
+ * carry .svgIcon below). An `<svg>` with no width/height attribute is a
+ * replaced element with no intrinsic size, so it falls back to 300x150 and
+ * then gets squeezed to whatever the flex row has left — which is a different
+ * width per row, since it depends on how long that row's label is. Every
+ * icon row in the menu therefore rendered at its own arbitrary size, tens of
+ * pixels tall, and the effect scaled with the label. Upstream's registry
+ * spends three utilities on exactly this (`[&_svg]:pointer-events-none
+ * [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4`); this port shipped
+ * none of them and so had no defence. Same rule and same reasoning as
+ * command.module.css's `.item svg` — the kit's other menu-shaped item list,
+ * which does carry it.
+ *
+ * Upstream's `:not([class*='size-'])` escape hatch has no CSS-Modules
+ * equivalent (it reads Tailwind's own class names); a consumer overrides by
+ * out-specifying this selector or setting the size inline, the same contract
+ * as every other `<part> svg` rule in the kit.
+ */
+.item svg,
+.checkboxItem svg,
+.radioItem svg,
+.subTrigger svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.svgIcon {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  flex-shrink: 0;
+  pointer-events: none;
+}

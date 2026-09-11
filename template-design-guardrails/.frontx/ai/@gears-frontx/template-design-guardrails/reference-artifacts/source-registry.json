@@ -1,0 +1,21 @@
+{
+  "version": "0.1.0-alpha.2",
+  "revisionDate": "2026-08-18",
+  "policy": "Primary official sources inform the contract. They are not copied as visual themes.",
+  "auditedKit": {"package": "@gears-frontx/ui-kit", "version": "0.4.0-alpha.2", "commit": "0ce3ab78"},
+  "sources": [
+    {"id": "wcag-22", "authority": "W3C", "url": "https://www.w3.org/TR/WCAG22/", "use": ["contrast", "reflow", "zoom", "focus", "target size", "drag alternatives"]},
+    {"id": "wai-aria-apg", "authority": "W3C WAI", "url": "https://www.w3.org/WAI/ARIA/apg/", "use": ["component semantics", "keyboard conventions", "focus management"]},
+    {"id": "carbon-spacing", "authority": "IBM Carbon", "url": "https://carbondesignsystem.com/elements/spacing/overview/", "use": ["2x/4x/8x spacing rationale", "tokenized spacing"]},
+    {"id": "carbon-grid", "authority": "IBM Carbon", "url": "https://carbondesignsystem.com/elements/2x-grid/overview/", "use": ["responsive grid rationale", "geometric alignment"]},
+    {"id": "carbon-motion", "authority": "IBM Carbon", "url": "https://carbondesignsystem.com/elements/motion/overview/", "use": ["productive versus expressive motion", "consistent easing"]},
+    {"id": "fluent-layout", "authority": "Microsoft Fluent 2", "url": "https://fluent2.microsoft.design/layout", "use": ["4 px spacing ramp", "proximity", "responsive spacing"]},
+    {"id": "fluent-motion", "authority": "Microsoft Fluent 2", "url": "https://fluent2.microsoft.design/motion", "use": ["functional, natural and consistent motion"]},
+    {"id": "material-states", "authority": "Google Material Design 3", "url": "https://m3.material.io/foundations/interaction/states/overview", "use": ["combined interaction-state cues"]},
+    {"id": "vercel-web-interface-guidelines", "authority": "Vercel Labs", "url": "https://github.com/vercel-labs/web-interface-guidelines", "use": ["generated web UI audit corpus", "interaction", "content", "animation", "theming"]},
+    {"id": "vercel-agent-skills", "authority": "Vercel Labs", "url": "https://github.com/vercel-labs/agent-skills", "use": ["skill packaging", "fresh review-source pattern", "100+ rule audit precedent"]},
+    {"id": "storybook-accessibility", "authority": "Storybook", "url": "https://storybook.js.org/docs/writing-tests/accessibility-testing", "use": ["component accessibility checks in the separate testing stage"]},
+    {"id": "playwright-accessibility", "authority": "Microsoft Playwright", "url": "https://playwright.dev/docs/accessibility-testing", "use": ["axe-assisted browser checks and manual-testing boundary"]},
+    {"id": "anthropic-frontend-design", "authority": "Anthropic", "url": "https://github.com/anthropics/skills/blob/main/skills/frontend-design/SKILL.md", "use": ["comparison example for aesthetics-oriented generation, not normative product styling"]}
+  ]
+}

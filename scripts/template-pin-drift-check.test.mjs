@@ -184,6 +184,32 @@ describe('runCli', () => {
     expect(run(root).exitCode).toBe(0);
   });
 
+  // The doc-only template shape (template-design-guardrails): a
+  // manifest, a DESIGN.md, and its own .frontx/ai bundle subtree - no
+  // package.json anywhere, so no pin site to declare and nothing to drift.
+  // The guard must count it as discovered and pass, never throw or
+  // false-fail on the absence of manifests.
+  it('passes a doc-only template with no package.json anywhere - nothing it declares can drift', async () => {
+    const root = await makeRoot();
+    await writeEcosystemPackages(root);
+    await writeManifest(path.join(root, 'template-shell'));
+    await writeJson(path.join(root, 'template-shell', 'package.json'), {
+      dependencies: { '@gears-frontx/api': '0.3.0-alpha.0' },
+    });
+    const docOnly = path.join(root, 'template-design-guardrails');
+    await writeManifest(docOnly);
+    await writeFile(path.join(docOnly, 'DESIGN.md'), '# Design guardrails\n');
+    await writeJson(
+      path.join(docOnly, '.frontx', 'ai', '@gears-frontx/template-design-guardrails', 'extension.json'),
+      { skills: [] },
+    );
+
+    const { exitCode, output } = run(root);
+
+    expect(exitCode).toBe(0);
+    expect(output).toContain('across 2 template(s)');
+  });
+
   it('fails when a template pin has drifted from the ecosystem\'s actual version', async () => {
     const root = await makeRoot();
     await writeEcosystemPackages(root, { api: '0.4.0-alpha.0' });

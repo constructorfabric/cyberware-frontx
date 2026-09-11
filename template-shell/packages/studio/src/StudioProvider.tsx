@@ -1,8 +1,4 @@
-// @cpt-flow:cpt-frontx-flow-studio-devtools-restore-settings:p1
-// @cpt-state:cpt-frontx-state-studio-devtools-panel-visibility:p1
-// @cpt-dod:cpt-frontx-dod-studio-devtools-persistence:p1
-// @cpt-dod:cpt-frontx-dod-studio-devtools-conditional-loading:p1
-import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { I18nRegistry, Language, i18nRegistry } from '@gears-frontx/react';
 import { saveStudioState, loadStudioState } from './utils/persistence';
 import { STORAGE_KEYS } from './types';
@@ -77,14 +73,19 @@ export const useStudioContext = () => {
 };
 
 interface StudioProviderProps {
-  children: ReactNode;
+  children: React.ReactNode;
 }
 
-// @cpt-begin:cpt-frontx-state-studio-devtools-panel-visibility:p1:inst-1
-// @cpt-begin:cpt-frontx-dod-studio-devtools-persistence:p1:inst-1
 export const StudioProvider: React.FC<StudioProviderProps> = ({ children }) => {
+  // A first visit has nothing stored under STORAGE_KEYS.COLLAPSED, so this
+  // default is what every freshly scaffolded project shows. It is `true`
+  // because the expanded panel is a fixed overlay above the product's own UI:
+  // left open by default it covers the screen's controls and takes their
+  // clicks. Collapsed is the only default that cannot obstruct the product,
+  // and a developer who wants the panel is one click away from it - so the
+  // cost falls on the party who can undo it, not on the one who cannot.
   const [collapsed, setCollapsed] = useState(() =>
-    loadStudioState(STORAGE_KEYS.COLLAPSED, false)
+    loadStudioState(STORAGE_KEYS.COLLAPSED, true)
   );
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
 
@@ -120,5 +121,3 @@ export const StudioProvider: React.FC<StudioProviderProps> = ({ children }) => {
 };
 
 StudioProvider.displayName = 'StudioProvider';
-// @cpt-end:cpt-frontx-state-studio-devtools-panel-visibility:p1:inst-1
-// @cpt-end:cpt-frontx-dod-studio-devtools-persistence:p1:inst-1

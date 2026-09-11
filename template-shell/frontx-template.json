@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0",
   "name": "@gears-frontx/frontx-template-shell",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.4",
   "description": "Establishes a new repository as a runnable FrontX application shell: the host app that boots, routes, and mounts microfrontends into extension domains, wired to the ecosystem runtime, type-system and API packages, with the Vite build, the Module Federation manifest pipeline, and the type-check, lint and test toolchain already in place. Apply this to start a project; it contributes the ground every other template extends and holds no microfrontend of its own.",
   "ownershipBoundaries": {
     "exclusiveSubtrees": [

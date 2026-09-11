@@ -9,6 +9,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { joinWithinRoot } from '@gears-frontx/test-support/path-guard';
 import { discoverAndActivateFromScaffoldedProject } from '../live-project-discovery.js';
 import type { BaseCapabilities } from '../scan.js';
 
@@ -30,23 +31,23 @@ afterEach(() => {
 describe('discoverAndActivateFromScaffoldedProject (live fs, id-scoped .frontx/ai/<template-identity>/)', () => {
   it('discovers and composes >=2 disjoint identity subtrees from a real .frontx/ai/ tree', () => {
     projectRoot = mkdtempSync(join(tmpdir(), 'frontx-ai-discovery-'));
-    const aiRoot = join(projectRoot, '.frontx', 'ai');
+    const aiRoot = joinWithinRoot(projectRoot, '.frontx', 'ai');
 
     // First conforming bundle: template-alpha, contributes one skill.
-    const alphaRoot = join(aiRoot, 'template-alpha');
-    mkdirSync(join(alphaRoot, 'skills', 'greet'), { recursive: true });
-    writeFileSync(join(alphaRoot, 'skills', 'greet', 'SKILL.md'), '# greet skill');
+    const alphaRoot = joinWithinRoot(aiRoot, 'template-alpha');
+    mkdirSync(joinWithinRoot(alphaRoot, 'skills', 'greet'), { recursive: true });
+    writeFileSync(joinWithinRoot(alphaRoot, 'skills', 'greet', 'SKILL.md'), '# greet skill');
     writeFileSync(
-      join(alphaRoot, 'extension.json'),
+      joinWithinRoot(alphaRoot, 'extension.json'),
       JSON.stringify({ id: 'template-alpha', entries: [{ id: 'greet', category: 'skills', path: 'skills/greet' }] }),
     );
 
     // Second, DISJOINT conforming bundle: template-beta, contributes one workflow.
-    const betaRoot = join(aiRoot, 'template-beta');
-    mkdirSync(join(betaRoot, 'workflows'), { recursive: true });
-    writeFileSync(join(betaRoot, 'workflows', 'release.md'), '# release workflow');
+    const betaRoot = joinWithinRoot(aiRoot, 'template-beta');
+    mkdirSync(joinWithinRoot(betaRoot, 'workflows'), { recursive: true });
+    writeFileSync(joinWithinRoot(betaRoot, 'workflows', 'release.md'), '# release workflow');
     writeFileSync(
-      join(betaRoot, 'extension.json'),
+      joinWithinRoot(betaRoot, 'extension.json'),
       JSON.stringify({
         id: 'template-beta',
         entries: [{ id: 'release', category: 'workflows', path: 'workflows/release.md' }],
@@ -62,22 +63,22 @@ describe('discoverAndActivateFromScaffoldedProject (live fs, id-scoped .frontx/a
 
   it('reports a structural error for a malformed bundle without affecting a sibling conforming bundle', () => {
     projectRoot = mkdtempSync(join(tmpdir(), 'frontx-ai-discovery-'));
-    const aiRoot = join(projectRoot, '.frontx', 'ai');
+    const aiRoot = joinWithinRoot(projectRoot, '.frontx', 'ai');
 
     // Malformed: anchor declares an entry whose category is outside the closed set.
-    const malformedRoot = join(aiRoot, 'template-malformed');
+    const malformedRoot = joinWithinRoot(aiRoot, 'template-malformed');
     mkdirSync(malformedRoot, { recursive: true });
     writeFileSync(
-      join(malformedRoot, 'extension.json'),
+      joinWithinRoot(malformedRoot, 'extension.json'),
       JSON.stringify({ id: 'template-malformed', entries: [{ id: 'bad', category: 'mocks', path: 'mocks/bad.md' }] }),
     );
 
     // Sibling conforming bundle under the same .frontx/ai/.
-    const conformingRoot = join(aiRoot, 'template-conforming');
-    mkdirSync(join(conformingRoot, 'guidelines'), { recursive: true });
-    writeFileSync(join(conformingRoot, 'guidelines', 'style.md'), '# style guideline');
+    const conformingRoot = joinWithinRoot(aiRoot, 'template-conforming');
+    mkdirSync(joinWithinRoot(conformingRoot, 'guidelines'), { recursive: true });
+    writeFileSync(joinWithinRoot(conformingRoot, 'guidelines', 'style.md'), '# style guideline');
     writeFileSync(
-      join(conformingRoot, 'extension.json'),
+      joinWithinRoot(conformingRoot, 'extension.json'),
       JSON.stringify({
         id: 'template-conforming',
         entries: [{ id: 'style', category: 'guidelines', path: 'guidelines/style.md' }],

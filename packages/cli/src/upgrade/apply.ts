@@ -121,8 +121,8 @@ export async function applyChangeSet(
   // nothing has been written yet, so `{ok:false}` is returned directly, per
   // ApplyResult's contract, with the project untouched — never a thrown
   // error surfacing after entries have already been rewritten on disk with
-  // no way back (`inst-app-restore-on-error`'s snapshot only covers the
-  // for-each-entry loop below, not a failure ahead of it).
+  // no way back (`inst-app-restore-on-error`'s restore only covers the
+  // `try` block below, not a failure ahead of it).
   let existingRecords: ProvenanceRecord[];
   try {
     existingRecords = parseProvenanceRecordSet(provContent, provPath);
@@ -176,6 +176,29 @@ export async function applyChangeSet(
       // @cpt-end:cpt-frontx-algo-upgrade-changeset-apply:p1:inst-app-apply-entry
     }
     // @cpt-end:cpt-frontx-algo-upgrade-changeset-apply:p1:inst-app-for-each-entry
+
+    // @cpt-begin:cpt-frontx-algo-upgrade-changeset-apply:p1:inst-app-update-prov
+    // Provenance is a SET — one record per applied template (ADR-0019) — never
+    // a single whole-repository record. `existingRecords`/`targetIndex` were
+    // validated above, before any file was written (see the precondition
+    // block for why validation stays outside this `try`). Only the record for
+    // the template this upgrade targets changes; every other applied
+    // template's record is re-serialized untouched (ADR-0021 Confirmation
+    // (d): "the other applied template and its provenance record are
+    // unaffected").
+    //
+    // Invariant: the `writeProvenance` FILESYSTEM WRITE is not pure — it can
+    // fail exactly like any project-file write can (issue #506) — so it MUST
+    // stay inside this `try`, on the same rollback boundary as
+    // `inst-app-for-each-entry`. A failure here lands in the `catch` below,
+    // which restores every snapshotted file — `provPath` included,
+    // snapshotted at the top of this function — so the prior provenance
+    // bytes come back exactly like any rolled-back project file.
+    const updatedRecords = existingRecords.map((record, index) =>
+      index === targetIndex ? { ...record, scaffoldedFromVersion: changeSet.targetVersion } : record,
+    );
+    await deps.writeProvenance(provPath, JSON.stringify(updatedRecords, null, 2));
+    // @cpt-end:cpt-frontx-algo-upgrade-changeset-apply:p1:inst-app-update-prov
   } catch (err) {
     // @cpt-end:cpt-frontx-algo-upgrade-changeset-apply:p1:inst-app-try
     // @cpt-begin:cpt-frontx-algo-upgrade-changeset-apply:p1:inst-app-catch
@@ -198,21 +221,6 @@ export async function applyChangeSet(
     // @cpt-end:cpt-frontx-algo-upgrade-changeset-apply:p1:inst-app-return-failure
     // @cpt-end:cpt-frontx-algo-upgrade-changeset-apply:p1:inst-app-catch
   }
-
-  // @cpt-begin:cpt-frontx-algo-upgrade-changeset-apply:p1:inst-app-update-prov
-  // Provenance is a SET — one record per applied template (ADR-0019) — never
-  // a single whole-repository record. `existingRecords`/`targetIndex` were
-  // already validated above, before any file was written, so this step is a
-  // pure substitution into an already-known-good array — it cannot itself
-  // throw. Only the record for the template this upgrade targets changes;
-  // every other applied template's record is re-serialized untouched
-  // (ADR-0021 Confirmation (d): "the other applied template and its
-  // provenance record are unaffected").
-  const updatedRecords = existingRecords.map((record, index) =>
-    index === targetIndex ? { ...record, scaffoldedFromVersion: changeSet.targetVersion } : record,
-  );
-  await deps.writeProvenance(provPath, JSON.stringify(updatedRecords, null, 2));
-  // @cpt-end:cpt-frontx-algo-upgrade-changeset-apply:p1:inst-app-update-prov
 
   // @cpt-begin:cpt-frontx-algo-upgrade-changeset-apply:p1:inst-app-retain-snapshot
   // Snapshot is returned to the caller for rollback — retained until a new upgrade cycle

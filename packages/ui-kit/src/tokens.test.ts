@@ -29,6 +29,37 @@ const BASE_UI_RUNTIME_VARS = new Set([
   '--toast-swipe-movement-x',
   '--toast-swipe-movement-y',
   '--toast-frontmost-height',
+  // Written by Base UI's Collapsible primitive: the panel's measured
+  // content height/width, kept in sync while mounted so CSS can animate
+  // toward/from an intrinsic (not hand-authored) size — see
+  // collapsible.module.css.
+  '--collapsible-panel-height',
+  '--collapsible-panel-width',
+  // Written by Base UI's Accordion primitive: the same measured-height
+  // mechanism as Collapsible's panel, one per accordion item — see
+  // accordion.module.css.
+  '--accordion-panel-height',
+  // Written by Base UI's Popover/Menu-family positioner (shared by
+  // NavigationMenu's single popup): the positioner's own box size and the
+  // currently active item's popup size, kept in sync as NavigationMenu
+  // morphs the shared popup/Viewport to each newly active item's measured
+  // content — see navigation-menu.module.css.
+  '--positioner-width',
+  '--positioner-height',
+  '--popup-width',
+  '--popup-height',
+  // Written by Base UI's Drawer primitive during a swipe gesture: progress/
+  // strength/movement along the swipe axis, whether a nested drawer is
+  // present, and (for snap points) the panel's own height/frontmost-height/
+  // active-snap-point offset — see drawer.module.css.
+  '--drawer-swipe-progress',
+  '--drawer-swipe-strength',
+  '--drawer-swipe-movement-x',
+  '--drawer-swipe-movement-y',
+  '--nested-drawers',
+  '--drawer-height',
+  '--drawer-frontmost-height',
+  '--drawer-snap-point-offset',
 ]);
 
 // Strip comments before scanning for declarations: theme.css's prose quotes
@@ -276,17 +307,45 @@ describe('theme tokens', () => {
     });
   });
 
+  // Function notations plus the named colors someone might actually reach
+  // for. `white`/`black` need the lookarounds: `white-space` and
+  // custom-property names like `--color-black` must not trip this.
+  const RAW_COLOR =
+    /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|oklch\(|oklab\(|hwb\(|\blab\(|\blch\(|\bcolor\(|(?<![-\w])(?:white|black)(?![-\w])/i;
+
+  // An attribute selector matching a colour is not a colour this kit
+  // chooses — it is how a rule FINDS elements a third party has already
+  // painted, so it can retint them onto the tokens. chart.module.css needs
+  // it to reach Recharts' stock grid/dot strokes, which Recharts writes as
+  // literal hex attributes on its own default-drawn SVG. Blanking those
+  // fragments before the scan keeps that legal while leaving every place a
+  // declaration could actually paint a colour — values, and the prose
+  // around them — under the same rule as before. Deliberately narrow: only
+  // a quoted `[attr='value']` form is blanked, which no declaration value
+  // in this kit takes.
+  const ATTRIBUTE_SELECTOR_VALUE = /\[[a-z-]+\s*[~|^$*]?=\s*(['"])[^'"]*\1\]/gi;
+  const withoutAttributeSelectorValues = (css: string) =>
+    css.replace(ATTRIBUTE_SELECTOR_VALUE, '[]');
+
   it('keeps raw colors out of component modules', () => {
-    // Function notations plus the named colors someone might actually
-    // reach for. `white`/`black` need the lookarounds: `white-space` and
-    // custom-property names like `--color-black` must not trip this.
-    const rawColor =
-      /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|oklch\(|oklab\(|hwb\(|\blab\(|\blch\(|\bcolor\(|(?<![-\w])(?:white|black)(?![-\w])/i;
     for (const file of moduleFiles) {
-      const css = readFileSync(file, 'utf8');
-      const raw = css.match(rawColor);
+      const css = withoutAttributeSelectorValues(readFileSync(file, 'utf8'));
+      const raw = css.match(RAW_COLOR);
       expect(raw, `raw color "${raw?.[0]}" in ${file}`).toBeNull();
     }
+  });
+
+  // Synthetic fixture, in the same spirit as the metric guard's own above:
+  // the exemption carved out for attribute selectors is exactly the kind
+  // that quietly widens into "hex is fine now", so it is pinned to the two
+  // cases that define its edge, using the same regex and the same blanking
+  // step the real guard runs.
+  it('exempts hex in an attribute selector but not in a declaration value', () => {
+    const selectorCase = ".container :global(.recharts-dot[stroke='#fff']) { stroke: transparent; }";
+    expect(withoutAttributeSelectorValues(selectorCase).match(RAW_COLOR)).toBeNull();
+
+    const declarationCase = ".container :global(.recharts-dot[stroke='#fff']) { stroke: #ccc; }";
+    expect(withoutAttributeSelectorValues(declarationCase).match(RAW_COLOR)?.[0]).toBe('#ccc');
   });
 
   // Guards the token blocks in theme.css against drift: the dark palette is

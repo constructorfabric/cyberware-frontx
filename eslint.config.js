@@ -117,6 +117,19 @@ export default [
     },
   },
 
+  // Kit-shipped scripts: node programs installed as kit resources rather than
+  // compiled from this repo's TypeScript. The L0 block above is scoped to
+  // .ts/.tsx, so without this block every `fetch`, `process` and `console` in
+  // them is a `no-undef` error against globals node actually provides.
+  {
+    files: ['packages/**/skills/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
+  },
+
   // React hooks
   {
     files: ['**/*.{ts,tsx}'],
@@ -141,6 +154,7 @@ export default [
       '.agents/**', // Agent infrastructure (gitignored)
       'template-shell/**', // Self-contained template; ships its own eslint.config.js
       'template-mfe/**', // MFE content extracted from template-shell (issue #470); linted as part of the assembled shell+mfe tree, not from this ecosystem root
+      'template-design-guardrails/**', // Manifest-only template; its verify package ships a lint fragment the shell consumes, linted as part of the assembled shell+overlay tree, not from this ecosystem root
     ],
   },
 

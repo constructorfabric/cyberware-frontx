@@ -95,12 +95,27 @@ export function buildPlugin(): PluginOption[] {
         // Design tokens are plain CSS (not a module) and must ship as a
         // separate, consumer-importable file — Vite's lib build only emits
         // CSS that JS actually imports, and theme.css is deliberately never
-        // imported by JS (see design-notes.md's Architecture section). The
+        // imported by JS (see design-notes.md's Architecture section).
+        // utilities.css (scroll-fade/shimmer/no-scrollbar) and typeset.css
+        // (the prose stylesheet) are the same kind of file — global CSS no
+        // component ever `import`s from JS — so they ship the same way,
+        // alongside theme.css rather than folded into it: a consumer who
+        // only wants tokens (or only wants the utilities, or only Typeset)
+        // can import just that file instead of paying for all three. The
         // per-component usage docs ship under dist/docs/ so agents can read
         // them from node_modules via llms.txt.
         fs.copyFileSync('src/styles/theme.css', 'dist/theme.css');
+        fs.copyFileSync('src/styles/utilities.css', 'dist/utilities.css');
+        fs.copyFileSync('src/styles/typeset.css', 'dist/typeset.css');
         fs.mkdirSync('dist/docs', { recursive: true });
-        for (const file of fs.globSync('src/components/*/*.md')) {
+        // src/styles/*.md alongside the per-component ones: typeset.md
+        // documents a shipped stylesheet the same way a component doc
+        // documents a component, and llms.txt links it from the same
+        // dist/docs/ path.
+        for (const file of [
+          ...fs.globSync('src/components/*/*.md'),
+          ...fs.globSync('src/styles/*.md'),
+        ]) {
           fs.copyFileSync(file, path.join('dist/docs', path.basename(file)));
         }
       },
@@ -123,31 +138,82 @@ export function buildPlugin(): PluginOption[] {
    * actual chunk granularity: remember which source module declared the
    * directive, then re-add it to whichever chunk that module's code lands in.
    *
-   * A chunk earns the banner if ANY of its modules declared it (only
-   * badge.tsx, dropdown-menu.tsx, and toast.tsx do, each calling a hook —
-   * useRender/useContext/useToastManager — directly in its own render
-   * body). A component that merely renders a Base UI primitive as JSX
-   * (Button, Dialog, Select, …) does not need the directive on its own
-   * chunk: Base UI's own dist already carries 'use client' on the modules
-   * that call hooks, so composing them is safe as a Server Component and
-   * stays server-renderable — marking it here anyway would take that away
-   * for no reason.
+   * A chunk earns the banner if ANY of its modules declared it — the
+   * source directive is the only input, so this plugin never needs a list
+   * of component names to keep current (src/client-boundaries.test.ts is
+   * what keeps the lists that DO exist, in verify-consumer.sh and the
+   * docs, honest against those same directives). A component that merely
+   * renders a Base UI primitive as JSX (Button, Dialog, Select, …) does not
+   * need the directive on its own chunk: Base UI's own dist already
+   * carries 'use client' on the modules that call hooks, so composing them
+   * is safe as a Server Component and stays server-renderable — marking it
+   * here anyway would take that away for no reason.
    */
   function preserveUseClientPlugin(): Plugin {
     const USE_CLIENT = "'use client';";
-    // Matches the directive as the file's first statement, tolerating
-    // leading whitespace (which also covers a byte-order mark — `\s`
-    // matches U+FEFF), license/comment headers, and either quote
-    // style/semicolon — esbuild only preserves a directive prologue found
-    // in exactly that position.
-    const directiveRe = /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*['"]use client['"];?/;
+    // Matches the directive once the leading whitespace/comment run has
+    // already been stripped by `hasLeadingUseClientDirective` below — this
+    // regex itself is deliberately trivial (no repetition, no ambiguity).
+    const directiveRe = /^['"]use client['"];?/;
     const clientModuleIds = new Set<string>();
+
+    /**
+     * Do NOT collapse this loop back into a single regex. The obvious form —
+     * `/^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*['"]use client['"];?/` — is a
+     * textbook catastrophic-backtracking (ReDoS) shape: a `*`-repeated
+     * alternation where one branch (`\/\*[\s\S]*?\*\/`) itself contains an
+     * unbounded lazy quantifier. On input with FEW leading comment blocks
+     * (most component .tsx files: one header comment, then code) the engine
+     * fails fast. On input with MANY of them — this kit's own CSS Modules
+     * files, commented block-by-block throughout; sidebar.module.css alone
+     * carries 59 separate block comments and hangs a single `.test()` call
+     * past 5 seconds — the number of ways to partition that leading run
+     * before concluding "no directive here" grows combinatorially with the
+     * comment-block count. `transform` runs this check on every one of the
+     * package's ~65 components' CSS modules, which is enough to turn
+     * `vite build` from roughly a minute into effectively unbounded.
+     *
+     * This is instead the fast path bash's own `verify-consumer.sh` already
+     * uses for the same "what is the file's first real statement" question
+     * (`has_client_directive`'s awk skip-loop), generalized here to also
+     * skip a genuine MULTI-line block comment (bash's version only skips a
+     * comment that opens and closes on one line): strip one leading
+     * whitespace run, `//` line comment, or `/* ... *\/` block comment at a
+     * time, left to right, until none of the three match at the current
+     * position — each step consumes a strictly non-empty prefix (so this
+     * always terminates in at most `code.length` steps) and each step's own
+     * regex has no repeated/ambiguous quantifier to backtrack through, so
+     * total cost is linear in the comment/whitespace run's length, not
+     * combinatorial in how many comment blocks it contains.
+     */
+    function hasLeadingUseClientDirective(code: string): boolean {
+      let rest = code;
+      for (;;) {
+        const whitespace = /^\s+/.exec(rest);
+        if (whitespace) {
+          rest = rest.slice(whitespace[0].length);
+          continue;
+        }
+        const lineComment = /^\/\/[^\n]*/.exec(rest);
+        if (lineComment) {
+          rest = rest.slice(lineComment[0].length);
+          continue;
+        }
+        const blockComment = /^\/\*[\s\S]*?\*\//.exec(rest);
+        if (blockComment) {
+          rest = rest.slice(blockComment[0].length);
+          continue;
+        }
+        break;
+      }
+      return directiveRe.test(rest);
+    }
 
     return {
       name: 'ui-kit-preserve-use-client',
       apply: 'build',
       transform(code, id) {
-        if (directiveRe.test(code)) {
+        if (hasLeadingUseClientDirective(code)) {
           clientModuleIds.add(id);
         }
         return null;

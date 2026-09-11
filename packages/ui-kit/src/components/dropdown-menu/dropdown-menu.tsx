@@ -5,6 +5,7 @@
 
 import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 import { cva, cx, type VariantProps } from 'class-variance-authority';
+import { CheckIcon, ChevronRightIcon } from 'lucide-react';
 import { type ComponentProps, createContext, useContext } from 'react';
 
 import styles from './dropdown-menu.module.css';
@@ -17,47 +18,9 @@ import styles from './dropdown-menu.module.css';
  */
 const MenuContainerContext = createContext<MenuPrimitive.Portal.Props['container']>(undefined);
 
-/* Inline lucide paths (ISC) — the kit carries no icon dependency. */
-function CheckIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cx(styles.svgIcon, className)}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  );
-}
-
-function ChevronRightIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cx(styles.svgIcon, className)}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="m9 18 6-6-6-6" />
-    </svg>
-  );
-}
-
 export const DropdownMenu = MenuPrimitive.Root;
 /**
- * The root is a Base UI pass-through, but its props type is still exported:
- * a consumer writing a typed wrapper imports it from this kit — Base UI is
- * this package's dependency, not necessarily theirs. Same idiom as
- * TooltipProviderProps.
+ * Base UI pass-through; props type re-exported (see dialog.tsx).
  */
 export type DropdownMenuProps = MenuPrimitive.Root.Props;
 
@@ -184,7 +147,7 @@ export function DropdownMenuCheckboxItem({
     <MenuPrimitive.CheckboxItem className={cx(styles.checkboxItem, className)} {...props}>
       {children}
       <MenuPrimitive.CheckboxItemIndicator className={styles.itemIndicator}>
-        <CheckIcon />
+        <CheckIcon className={styles.svgIcon} />
       </MenuPrimitive.CheckboxItemIndicator>
     </MenuPrimitive.CheckboxItem>
   );
@@ -213,7 +176,7 @@ export function DropdownMenuRadioItem({
     <MenuPrimitive.RadioItem className={cx(styles.radioItem, className)} {...props}>
       {children}
       <MenuPrimitive.RadioItemIndicator className={styles.itemIndicator}>
-        <CheckIcon />
+        <CheckIcon className={styles.svgIcon} />
       </MenuPrimitive.RadioItemIndicator>
     </MenuPrimitive.RadioItem>
   );
@@ -251,7 +214,7 @@ export function DropdownMenuSubTrigger({
   return (
     <MenuPrimitive.SubmenuTrigger className={cx(styles.subTrigger, className)} {...props}>
       {children}
-      <ChevronRightIcon className={styles.subTriggerIcon} />
+      <ChevronRightIcon className={cx(styles.svgIcon, styles.subTriggerIcon)} />
     </MenuPrimitive.SubmenuTrigger>
   );
 }

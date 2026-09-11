@@ -75,7 +75,23 @@
   max-height: calc(100% - var(--space-8));
   overflow-y: auto;
   gap: var(--space-6);
-  padding: var(--space-6);
+  /*
+   * Deliberately unpadded: the inset lives on the flow regions below
+   * instead. A scroll container's padding is not a frame its content stays
+   * inside: overflow clips at the *padding* box, so scrolled content
+   * paints straight through the padding strips, and a sticky region cannot
+   * cover them either, because sticky offsets resolve against the
+   * scrollport already inset by that padding (`top: 0` pinned the header
+   * 24px *below* the popup's top edge). Measured on the "Sticky footer"
+   * demo at 50% scroll while this was `var(--space-6)`: paragraph text
+   * repainted in the 24px band above the pinned header (diff bbox from
+   * y=20 with the popup's inner top at y=17) and `elementFromPoint` in the
+   * band below the pinned footer returned the scrolled <p>, at every
+   * column. With the inset on the regions, header and footer span the full
+   * width and reach the top and bottom edges, so every masked pixel is
+   * theirs.
+   */
+  padding: 0;
   border: var(--border-width) solid var(--popover-border);
   border-radius: var(--radius-xl);
   background-color: var(--popover);
@@ -109,6 +125,14 @@
   .popup {
     max-width: 28rem;
   }
+
+  /* `lg`: a wider cap for content the default 28rem crowds (a multi-field
+   * form, a taller textarea) - see DialogContentProps.size. The attribute
+   * selector's specificity wins over the bare class rule above regardless
+   * of declaration order. */
+  .popup[data-size='lg'] {
+    max-width: 36rem;
+  }
 }
 
 .popup[data-starting-style],
@@ -117,22 +141,103 @@
   transform: translate(-50%, -50%) scale(0.95);
 }
 
+/*
+ * The popup's inset, re-expressed on the regions that scroll inside it (see
+ * `.popup`): every flow child carries the side inset, the first and last
+ * carry the block inset. Same rendered geometry as padding on `.popup`:
+ * a region's own padding is inside its background box, so the strip is
+ * opaque instead of see-through. Positional rather than per-region
+ * (`.header`/`.footer`) so an arbitrary child (a consumer's own scroll
+ * wrapper, or a header-only popup that has to supply the bottom inset
+ * itself) is inset too.
+ *
+ * `:where()` pins all four rules at single-class weight. Left bare, the
+ * `:not()`/`:first-child`/`:last-child` parts would each add a class's
+ * worth of specificity and outrank a consumer's own `className` on a
+ * region, making the inset unoverridable; wrapping the whole selector in
+ * `:where()` instead would drop below an ambient `ul { padding: 0 }`-style
+ * reset in the host app and silently lose the inset. `.popup` outside the
+ * `:where()` is what holds the balance.
+ */
+.popup > :where(*:not(.closeButton)) {
+  /*
+   * Same substitute-for-the-missing-preflight reason as `.popup` itself:
+   * under the kit's ambient content-box a child sized `width: 100%` would
+   * add the inset below on top of the track width and overflow the popup
+   * by it, and a fixed-width child would grow instead of being inset.
+   */
+  box-sizing: border-box;
+  padding-inline: var(--space-6);
+}
+
+.popup > :where(*:not(.closeButton):first-child) {
+  padding-block-start: var(--space-6);
+}
+
+.popup > :where(*:not(.closeButton):last-child) {
+  padding-block-end: var(--space-6);
+}
+
+/*
+ * `showCloseButton` renders the X after the children, so with it on, the
+ * last flow region is the one right before it and the `:last-child` rule
+ * above misses it.
+ */
+.popup > :where(*:has(+ .closeButton)) {
+  padding-block-end: var(--space-6);
+}
+
 .closeButton {
   position: absolute;
   top: var(--space-4);
   right: var(--space-4);
+  /*
+   * Above `.header`'s stacking level: the header is now a full-bleed sticky
+   * layer that starts at the popup's top edge, so it covers this button's
+   * box outright: at z-index auto the button was behind it and
+   * `elementFromPoint` over the X returned the header, not the button.
+   * It still scrolls away with the content (see `.popup`'s overflow note);
+   * the popup's own overflow clips it, so it cannot float over the pinned
+   * header once scrolled past.
+   */
+  z-index: 2;
 }
 
+/*
+ * Sticky + opaque + full-bleed, not just flow siblings: .popup is itself
+ * the scroll container (see its own comment above) - a consumer who doesn't
+ * wrap tall content in their own overflow-y div (the "Sticky footer" demo
+ * shape) gets that fallback, and header/footer must survive it. Three
+ * things are load-bearing together:
+ *  - `position: sticky`, or the region scrolls away with the content;
+ *  - an explicit background, or the region is a transparent box that wins
+ *    hit-testing (elementFromPoint reports it, since it's the topmost box)
+ *    while scrolled paragraph text paints straight through it - measured as
+ *    zero alpha, text visibly bleeding under the Decline/Accept buttons;
+ *  - the region spanning .popup's full width and reaching its top/bottom
+ *    edge (why .popup is unpadded), or the background box masks only its
+ *    own rect and text keeps bleeding through the strips around it.
+ * Opaque var(--popover) matches .popup's own background exactly, so the
+ * pinned region and the surface around it read as one continuous fill.
+ */
 .header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  background-color: var(--popover);
 }
 
 .footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
   display: flex;
   flex-direction: column-reverse;
   gap: var(--space-2);
+  background-color: var(--popover);
 }
 
 @media (min-width: 640px) {
@@ -140,6 +245,27 @@
     flex-direction: row;
     justify-content: flex-end;
   }
+}
+
+/*
+ * `.popup`'s `gap` (see above) only reaches its own direct children. A
+ * consumer wrapping the whole body in `<form>` - the standard pattern for
+ * Enter-to-submit, used by every form dialog in the demo app - puts
+ * `.header`, the fields and `.footer` one level deeper, as siblings inside
+ * that form instead of grid items of `.popup`: the grid gap no longer
+ * applies between them at all, so header-to-field and field-to-footer both
+ * collapsed to 0px (measured on the "New channel" and "New message"
+ * dialogs). These margins reinstate the same `--space-6` rhythm the grid
+ * gap already gives non-form dialogs, scoped to exactly that wrapped case
+ * (`form >`) so an unwrapped dialog's existing gap is untouched instead of
+ * doubling up.
+ */
+.popup form > .header {
+  margin-bottom: var(--space-6);
+}
+
+.popup form > .footer {
+  margin-top: var(--space-6);
 }
 
 /* Studio/Heading 2 — the dialog's one heading-role text. */

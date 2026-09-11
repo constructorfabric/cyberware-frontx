@@ -6,7 +6,7 @@
 
 import type { ThemeConfig } from '@gears-frontx/react';
 import colors from './tailwindColors';
-import { hslToVar } from './utils';
+import { cssColor } from './utils';
 
 /**
  * Dark theme ID
@@ -16,33 +16,36 @@ export const DARK_THEME_ID = 'dark' as const;
 export const darkTheme: ThemeConfig = {
   id: DARK_THEME_ID,
   name: 'Dark',
+  appearance: 'dark',
   variables: {
     // Shadcn color variables
-    '--background': hslToVar(colors.zinc[950]),
-    '--foreground': hslToVar(colors.zinc[50]),
-    '--card': hslToVar(colors.zinc[950]),
-    '--card-foreground': hslToVar(colors.zinc[50]),
-    '--popover': hslToVar(colors.zinc[950]),
-    '--popover-foreground': hslToVar(colors.zinc[50]),
-    '--primary': hslToVar(colors.zinc[50]),
-    '--primary-foreground': hslToVar(colors.zinc[950]),
-    '--secondary': hslToVar(colors.zinc[800]),
-    '--secondary-foreground': hslToVar(colors.zinc[50]),
-    '--muted': hslToVar(colors.zinc[800]),
-    '--muted-foreground': hslToVar(colors.zinc[50]),
-    '--accent': hslToVar(colors.zinc[400]),
-    '--accent-foreground': hslToVar(colors.zinc[950]),
-    '--destructive': hslToVar(colors.red[900]),
-    '--destructive-foreground': hslToVar(colors.zinc[50]),
-    '--border': hslToVar(colors.zinc[800]),
-    '--input': hslToVar(colors.zinc[800]),
-    '--ring': hslToVar(colors.zinc[50]),
+    '--background': cssColor(colors.zinc[950]),
+    '--foreground': cssColor(colors.zinc[50]),
+    '--card': cssColor(colors.zinc[950]),
+    '--card-foreground': cssColor(colors.zinc[50]),
+    '--card-hover': 'color-mix(in oklab, var(--card) 96%, var(--foreground))',
+    '--popover': cssColor(colors.zinc[950]),
+    '--popover-foreground': cssColor(colors.zinc[50]),
+    '--primary': cssColor(colors.zinc[50]),
+    '--primary-foreground': cssColor(colors.zinc[950]),
+    '--primary-hover': 'color-mix(in oklab, var(--primary) 90%, var(--background))',
+    '--secondary': cssColor(colors.zinc[800]),
+    '--secondary-foreground': cssColor(colors.zinc[50]),
+    '--muted': cssColor(colors.zinc[800]),
+    '--muted-foreground': cssColor(colors.zinc[50]),
+    '--accent': cssColor(colors.zinc[400]),
+    '--accent-foreground': cssColor(colors.zinc[950]),
+    '--destructive': cssColor(colors.red[900]),
+    '--destructive-foreground': cssColor(colors.zinc[50]),
+    '--border': cssColor(colors.zinc[800]),
+    '--input': cssColor(colors.zinc[800]),
+    '--ring': cssColor(colors.zinc[50]),
 
     // State colors
-    '--error': hslToVar(colors.red[900]),
-    '--warning': hslToVar(colors.orange[500]),
-    '--success': hslToVar(colors.green[500]),
-    '--info': hslToVar(colors.sky[500]),
+    '--error': cssColor(colors.red[900]),
+    '--warning': cssColor(colors.orange[500]),
+    '--success': cssColor(colors.green[500]),
+    '--info': cssColor(colors.sky[500]),
 
     // Chart colors (OKLCH format, shadcn/ui dark theme)
     '--chart-1': 'oklch(0.488 0.243 264.376)',
@@ -52,11 +55,11 @@ export const darkTheme: ThemeConfig = {
     '--chart-5': 'oklch(0.645 0.246 16.439)',
 
     // Left menu colors
-    '--left-menu': hslToVar(colors.black),
-    '--left-menu-foreground': hslToVar(colors.zinc[400]),
-    '--left-menu-hover': hslToVar(colors.zinc[900]),
-    '--left-menu-selected': hslToVar(colors.zinc[500]),
-    '--left-menu-border': hslToVar(colors.zinc[800]),
+    '--left-menu': cssColor(colors.black),
+    '--left-menu-foreground': cssColor(colors.zinc[400]),
+    '--left-menu-hover': cssColor(colors.zinc[900]),
+    '--left-menu-selected': cssColor(colors.zinc[500]),
+    '--left-menu-border': cssColor(colors.zinc[800]),
 
     // Spacing
     '--spacing-xs': '0.25rem',

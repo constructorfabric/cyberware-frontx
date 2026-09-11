@@ -46,6 +46,24 @@ each step names the concrete command or file template-mfe ships.
 
 5. **Implement the screen**
    - Rename/replace `src/screens/home/HomeScreen.tsx` with the real screen.
+   - Build the UI from `@gears-frontx/ui-kit` components and semantic tokens —
+     the kit is the only component source: no other component library, and no
+     shadcn components or APIs (the kit follows shadcn conventions, so shadcn
+     patterns may guide which kit component maps to a UI pattern, nothing more).
+     Confirm the package declares `@gears-frontx/ui-kit` in its dependencies (add
+     it if the scaffold copy predates the kit migration and lacks it) and read the
+     installed kit's `llms.txt` for the component inventory before writing markup.
+     Plan before markup: map every visible UI pattern to a concrete kit
+     component or approved composition from that inventory, and record the
+     screen's grid columns, alignment anchors, and responsive breakpoints; a
+     pattern with no kit mapping is reported as a gap, never guessed at.
+     Hand-rolling a look-alike of an existing kit component is a defect.
+   - If a design-contract bundle is installed — any AI bundle that ships a
+     `generate-interface` skill (check for
+     `.frontx/ai/*/*/skills/generate-interface/`) — that skill and its design
+     contract govern the screen's generation — follow them. If none is
+     installed, state in the plan that the screen is generated without a
+     design contract.
    - Update `src/screens/home/i18n/*.json` (or rename the directory) with real copy
      for every locale the template ships.
    - Keep `src/lifecycle.tsx` extending `ThemeAwareReactLifecycle`; keep `init.ts`'s
@@ -57,10 +75,20 @@ each step names the concrete command or file template-mfe ships.
    npm run build:mfes
    npm run generate:mfe-manifests
    ```
+   While iterating after this first full pass, rebuild only the changed MFE
+   (`npm run build --workspace=<package-name>`) before regenerating manifests;
+   `build:mfes` rebuilds every MFE and belongs in the final gate.
 
 7. **Validate**
+   While iterating, scope to the MFE's workspace:
+   ```bash
+   npm run type-check --workspace=<package-name>
+   npm run test:unit --workspace=<package-name>
+   ```
+   Once the MFE is complete, run the full gate exactly once:
    ```bash
    npm run type-check
+   npm run test:unit
    npm run arch:deps
    ```
 
@@ -69,6 +97,15 @@ each step names the concrete command or file template-mfe ships.
    npm run dev:all
    ```
    - Open the app, confirm the new screen mounts, and confirm zero console errors.
+   - When the installed design-contract bundle ships a `verify-interface`
+     skill (check for `.frontx/ai/*/*/skills/verify-interface/`), run its
+     `verify-interface` flow against the new screen's route and review the
+     screenshots it produces — the same closing pass `add-mfe-packages-parallel.md`
+     requires. When no such bundle is installed, complete a manual visual
+     review instead — look at the rendered screen at its target widths and
+     themes and check layout alignment, overflow, and each visual state —
+     and state in the hand-off that the screen was reviewed by eye because
+     no design contract exists.
 
 ## Rollback
 

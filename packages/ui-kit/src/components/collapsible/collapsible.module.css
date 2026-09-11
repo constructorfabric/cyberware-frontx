@@ -1,0 +1,75 @@
+/*
+ * Collapsible styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables (plus Base UI's own runtime
+ * --collapsible-panel-height/-width, see tokens.test.ts) — no raw colors.
+ *
+ * Root (collapsible.tsx) gets no class here: it's a plain, unstyled
+ * grouping element upstream and stays that way — there is nothing to
+ * translate for it.
+ */
+
+/*
+ * Reset to a plain full-width row: Base UI's Trigger renders a native
+ * <button> (see @base-ui/react/collapsible's CollapsibleTrigger), which
+ * ships browser button chrome this kit's ambient CSS doesn't reset any
+ * more broadly than per-component (same reasoning as button.module.css's
+ * own reset, scoped to `.button` there rather than a global preflight).
+ */
+.trigger {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.trigger:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: var(--border-width-focus) solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .trigger:focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+.trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+/*
+ * Height-animates open/close using Base UI's own measured panel height
+ * (--collapsible-panel-height, kept in sync while mounted — see
+ * CollapsiblePanelCssVars in @base-ui/react/collapsible) rather than a
+ * hardcoded max-height: content of arbitrary height animates to its exact
+ * intrinsic size instead of an approximate cap. `data-starting-style`/
+ * `data-ending-style` pin the two open/close transition endpoints to 0,
+ * mirroring the height-animation idiom shadcn's own tw-animate-css-based
+ * translation would otherwise supply.
+ */
+.content {
+  height: var(--collapsible-panel-height);
+  overflow: hidden;
+  transition: height 200ms ease-out;
+}
+
+.content[data-starting-style],
+.content[data-ending-style] {
+  height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content {
+    transition: none;
+  }
+}

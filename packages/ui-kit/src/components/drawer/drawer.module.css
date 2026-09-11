@@ -1,0 +1,519 @@
+/*
+ * Drawer styles, translated from shadcn/ui's base-variant registry (MIT,
+ * https://ui.shadcn.com/registry/bases/base/ui/drawer.tsx) to CSS Modules.
+ * Consumes only theme.css variables, Base UI's own Drawer runtime custom
+ * properties (documented inline at each use, and listed in tokens.test.ts's
+ * BASE_UI_RUNTIME_VARS), and this file's own locally-declared geometry math (Toast's `--peek` is the
+ * kit's established precedent for that last category).
+ *
+ * The fetched source's `cn-drawer-*` class names (cn-drawer-overlay,
+ * cn-drawer-popup, cn-drawer-swipe-handle, cn-drawer-content-base,
+ * cn-drawer-header-base, cn-drawer-footer-base, cn-drawer-title,
+ * cn-drawer-description) are shadcn's own base recipe classes, defined in a
+ * companion stylesheet this port did not have access to (only the
+ * component's .tsx, with its Tailwind arbitrary-value overrides layered on
+ * top, was fetched) — every declaration below that isn't traceable to one
+ * of those documented Tailwind utilities is this port's own inference, and
+ * is called out at its own declaration.
+ */
+
+/*
+ * Backdrop (`cn-drawer-overlay`). `--drawer-swipe-progress` and
+ * `--drawer-swipe-strength` are written directly onto THIS element by Base
+ * UI's own DrawerViewport during a live swipe of the drawer this backdrop
+ * belongs to (both are in tokens.test.ts's BASE_UI_RUNTIME_VARS).
+ * Background color is this port's own inference:
+ * not in the fetched Tailwind class list (the `cn-drawer-overlay` base
+ * recipe most likely supplies it), taken from the SAME --overlay scrim
+ * token Dialog's and Sheet's own backdrops already use for the identical
+ * modal-dimming role.
+ */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  isolation: isolate;
+  z-index: 50;
+  min-height: 100dvh;
+  background-color: var(--overlay);
+  opacity: max(var(--drawer-overlay-min-opacity, 0), calc(1 - var(--drawer-swipe-progress)));
+  user-select: none;
+  /* Upstream's own verified duration/curve — deliberately not Dialog's
+   * 100ms ease: Drawer's fetched source specifies this exact pair. */
+  transition: opacity 450ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* iOS Safari's `position: fixed` can misbehave against the drawer's own
+ * 100dvh/vh-relative math during a swipe (the fetched source's own
+ * `supports-[-webkit-touch-callout:none]` probe — a long-press-callout
+ * feature test that, in practice, is true only on WebKit touch browsers). */
+@supports (-webkit-touch-callout: none) {
+  .backdrop {
+    position: absolute;
+  }
+}
+
+.backdrop[data-snap-points] {
+  --drawer-overlay-min-opacity: 0.5;
+}
+
+.backdrop[data-starting-style] {
+  opacity: 0;
+}
+
+.backdrop[data-ending-style] {
+  pointer-events: none;
+  opacity: 0;
+  /* --drawer-swipe-strength (0.1–1): scales the release transition shorter
+   * the harder/faster the dismiss swipe was — see the Popup rule below for
+   * the same math applied to its own ending transform/opacity. */
+  transition-duration: calc(var(--drawer-swipe-strength) * 400ms);
+}
+
+.backdrop[data-swiping] {
+  transition-duration: 0s;
+}
+
+/*
+ * Viewport: a full-viewport positioning/gesture-capture layer. Pointer
+ * events pass through everywhere except where the popup itself sits
+ * (data-modal='true' is a plain hand-set attribute this component's own
+ * JSX writes from the `modal` prop, not a Base UI runtime one — matching
+ * upstream's own `data-[modal=true]:pointer-events-auto`).
+ */
+.viewport {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  user-select: none;
+  pointer-events: none;
+}
+
+.viewport[data-modal='true'] {
+  pointer-events: auto;
+}
+
+/*
+ * Popup (`cn-drawer-popup`) — the swipe-driven panel itself. Surface chrome
+ * (background/border/shadow/text metrics) is this port's own inference,
+ * same reasoning as .backdrop's background above: taken from the
+ * --popover/--popover-border/--popover-shadow trio theme.css documents as
+ * shared by every card-like popup in the kit (Dialog/DropdownMenu/Select/
+ * Toast), not from a fetchable `cn-drawer-popup` recipe declaration. Border
+ * starts at 0 width on every edge; each .sideXxx rule below re-enables it
+ * on just that side's INNER edge — same technique sheet.module.css already
+ * uses for its own edge-anchored panel, and for the same reason: the OUTER
+ * edge sits flush against the viewport boundary, where a border would be
+ * (at best) an invisible sliver.
+ *
+ * Deliberately square (no border-radius): sheet.md's own precedent for an
+ * edge-anchored panel with an unverifiable recipe class is to stay
+ * unrounded rather than invent a value — applied here for the identical
+ * reason (`cn-drawer-popup` isn't fetchable either).
+ */
+.popup {
+  /*
+   * Substitutes for the preflight the kit lacks: without it, content-box
+   * (this kit's ambient default) piles this class's own border on top of
+   * the declared width/height math below — same acute case as dialog.
+   * module.css's/sheet.module.css's own .popup.
+   */
+  box-sizing: border-box;
+  position: fixed;
+  isolation: isolate;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  outline: none;
+  user-select: none;
+  will-change: transform;
+  /* interpolate-size: allow-keywords — lets `height` transition to/from
+   * `auto` (its value while no snap point pins it to a pixel height)
+   * instead of jumping instantly, matching the fetched source's own
+   * `[interpolate-size:allow-keywords]` arbitrary property exactly. */
+  interpolate-size: allow-keywords;
+  border: 0 solid var(--popover-border);
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  box-shadow: var(--popover-shadow);
+
+  /*
+   * `--drawer-inset`: this component's own consumer-override hook
+   * (button.module.css's `--button-bg` etc. is the established idiom).
+   * Declared here with a literal default rather than read via a `var(...,
+   * fallback)` expression: `margin` is a tokens.test.ts GUARDED_PROP, and
+   * that guard's fallback-stripping regex only recognizes a bare
+   * `var(--token)` with no fallback — a fallback on a guarded property is
+   * flagged as a literal metric no matter what the fallback value is. A
+   * consumer overriding this custom property (inline style, or their own
+   * selector matching this popup) still wins over this class declaration,
+   * same overridability as the fallback form would have given.
+   * `--drawer-bleed-background` below has no such constraint since
+   * `background-color` isn't a guarded property, so it keeps the ordinary
+   * fallback form.
+   *
+   * The default MUST carry a unit. This property is substituted into the
+   * `--closed-transform` calc()s below (`calc(100% + var(--drawer-inset) +
+   * 2px)`), and inside calc() a bare `0` is a <number>, not a <length> —
+   * adding it to a <length-percentage> is a type error, which makes
+   * `--closed-transform` invalid at computed-value time and collapses
+   * `transform: var(--closed-transform)` to `none`. That silently disables
+   * BOTH the starting and the ending style: the panel materialises at its
+   * resting place and vanishes from it, while only the backdrop still
+   * fades — which is exactly how the drawer shipped before this `0px`.
+   * Outside calc() (`margin: var(--drawer-inset)`) `0` and `0px` are
+   * identical, so the unit costs nothing there.
+   */
+  --drawer-inset: 0px;
+  margin: var(--drawer-inset);
+  height: var(--drawer-content-height);
+  max-height: var(--drawer-content-max-height, none);
+  width: var(--drawer-content-width, auto);
+  min-height: 0;
+
+  /*
+   * Local geometry math — same idiom as toast.module.css's --peek/--scale/
+   * --shrink: computed once here, read only from this same .popup class
+   * (including its own [data-swipe-direction]/[data-swipe-axis] variants
+   * below), so none of it needs a tokens.test.ts exemption entry.
+   */
+  --drawer-content-height: var(--drawer-height, auto);
+  --bleed: 3rem;
+  --peek: 1rem;
+  --stack-height: var(--drawer-frontmost-height, var(--drawer-height, 0px));
+  --stack-progress: clamp(0, var(--drawer-swipe-progress), 1);
+  --stack-step: 0.05;
+  --stack-peek-offset: max(0px, calc((var(--nested-drawers) - var(--stack-progress)) * var(--peek)));
+  --stack-scale-base: max(0, calc(1 - (var(--nested-drawers) * var(--stack-step))));
+  --stack-scale: clamp(0, calc(var(--stack-scale-base) + (var(--stack-step) * var(--stack-progress))), 1);
+  --stack-shrink: calc(1 - var(--stack-scale));
+
+  transform: translate3d(var(--translate-x, 0px), var(--translate-y, 0px), 0) scale(var(--stack-scale));
+  transition:
+    transform 450ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 450ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 450ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 450ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+ * Mixed transition, same split rationale as dialog.module.css/toast.
+ * module.css: opacity is a fade (kept), transform/height/filter are all
+ * spatial motion (suppressed). Unlike Dialog/Toast, Drawer's own opacity
+ * never carries an independent visual signal of its own here — the ONLY
+ * opacity value the fetched source ever sets on Popup is the 0.9999
+ * Safari-repaint nudge below, imperceptible either way — so in practice a
+ * reduced-motion user sees the panel snap directly between open/closed with
+ * no animation at all, which is the WCAG 2.3.3-compliant outcome; this
+ * keeps the same transition-property shape as every other kit popup rather
+ * than special-casing Drawer with a bare `transition: none`.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .popup {
+    transition: opacity 450ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+.popup[data-nested-drawer-open] {
+  overflow: hidden;
+  filter: brightness(0.95);
+}
+
+/*
+ * The "bleed": extends the popup's own fill past its edge by --bleed so an
+ * elastic/rubber-band overscroll during a swipe never reveals a gap of page
+ * background behind it. `--drawer-bleed-background` is the consumer hook
+ * described above; its fallback is this same --popover fill.
+ */
+.popup::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  background-color: var(--drawer-bleed-background, var(--popover));
+}
+
+.popup[data-swipe-axis='x']::after {
+  inset-block: 0;
+  width: var(--bleed);
+}
+
+.popup[data-swipe-axis='y']::after {
+  inset-inline: 0;
+  height: var(--bleed);
+}
+
+.popup[data-swipe-direction='down']::after {
+  top: 100%;
+}
+
+.popup[data-swipe-direction='up']::after {
+  bottom: 100%;
+}
+
+.popup[data-swipe-direction='left']::after {
+  right: 100%;
+}
+
+.popup[data-swipe-direction='right']::after {
+  left: 100%;
+}
+
+.popup[data-swipe-axis='x'] {
+  inset-block: 0;
+  flex-direction: row;
+  --drawer-content-width: 75%;
+}
+
+.popup[data-swipe-axis='y'] {
+  inset-inline: 0;
+  --drawer-content-max-height: calc(100dvh - 6rem);
+}
+
+.popup[data-swipe-axis='y'][data-nested-drawer-open] {
+  height: var(--stack-height);
+}
+
+.popup[data-swipe-axis='y'][data-snap-points] {
+  --drawer-content-height: 100dvh;
+}
+
+@media (min-width: 640px) {
+  .popup[data-swipe-axis='x'] {
+    --drawer-content-width: 24rem;
+  }
+}
+
+/*
+ * [data-swipe-direction]: Base UI's own runtime attribute, always present
+ * (it mirrors the `swipeDirection` prop this port's `side` translates to —
+ * see drawer.tsx), reflecting live changes without a remount. This is why
+ * direction-specific geometry lives here rather than only on the CVA
+ * .sideXxx classes below: an attribute Base UI itself writes is the only
+ * mechanism guaranteed to stay in sync with its own swipe/transform state.
+ */
+.popup[data-swipe-direction='down'] {
+  bottom: 0;
+  transform-origin: bottom;
+  --closed-transform: translate3d(0, calc(100% + var(--drawer-inset, 0px) + 2px), 0);
+  --translate-y: calc(
+    var(--drawer-snap-point-offset, 0px) + var(--drawer-swipe-movement-y) - var(--stack-peek-offset) -
+      (var(--stack-shrink) * var(--stack-height))
+  );
+}
+
+.popup[data-swipe-direction='up'] {
+  top: 0;
+  transform-origin: top;
+  --closed-transform: translate3d(0, calc(-100% - var(--drawer-inset, 0px) - 2px), 0);
+  --translate-y: calc(
+    var(--drawer-snap-point-offset, 0px) + var(--drawer-swipe-movement-y) + var(--stack-peek-offset) +
+      (var(--stack-shrink) * var(--stack-height))
+  );
+}
+
+.popup[data-swipe-direction='left'] {
+  left: 0;
+  transform-origin: left;
+  --closed-transform: translate3d(calc(-100% - var(--drawer-inset, 0px) - 2px), 0, 0);
+  --translate-x: calc(var(--drawer-swipe-movement-x) + var(--stack-peek-offset) + (var(--stack-shrink) * 100%));
+}
+
+.popup[data-swipe-direction='right'] {
+  right: 0;
+  transform-origin: right;
+  --closed-transform: translate3d(calc(100% + var(--drawer-inset, 0px) + 2px), 0, 0);
+  --translate-x: calc(var(--drawer-swipe-movement-x) - var(--stack-peek-offset) - (var(--stack-shrink) * 100%));
+}
+
+.popup[data-starting-style] {
+  transform: var(--closed-transform);
+}
+
+.popup[data-ending-style] {
+  transform: var(--closed-transform);
+  /* Not exactly 1: a sub-1 value that reads as fully opaque but still
+   * registers as a CHANGED value, working around a well-known Safari
+   * failure to retrigger a transition on `transform` alone when `opacity`
+   * stays literally unchanged at 1 across the starting/ending style swap —
+   * the fetched source's own `opacity-[0.9999]`. */
+  opacity: 0.9999;
+  transition-duration: calc(var(--drawer-swipe-strength) * 400ms);
+}
+
+.popup[data-nested-drawer-swiping] {
+  transition-duration: 0s;
+}
+
+.popup[data-ending-style][data-nested-drawer-swiping] {
+  transition-duration: calc(var(--drawer-swipe-strength) * 400ms);
+}
+
+.popup[data-swiping] {
+  transition-duration: 0s;
+}
+
+.popup[data-ending-style][data-swiping] {
+  transition-duration: calc(var(--drawer-swipe-strength) * 400ms);
+}
+
+/*
+ * .sideXxx: the CVA-selected, `side`-prop-driven counterpart to the
+ * [data-swipe-direction] rules above — same naming convention as Sheet's
+ * own side variants. Owns exactly what a static, prop-time class can safely
+ * own without duplicating Base UI's own runtime-synced geometry: which
+ * edge's border to re-enable (see the .popup rule's own comment for why the
+ * base border starts at 0 on every side).
+ */
+.sideTop {
+  border-bottom-width: var(--border-width);
+}
+
+.sideBottom {
+  border-top-width: var(--border-width);
+}
+
+.sideLeft {
+  border-right-width: var(--border-width);
+}
+
+.sideRight {
+  border-left-width: var(--border-width);
+}
+
+/*
+ * Content (`cn-drawer-content-base`): the padded, scrollable inner region —
+ * Popup above stays a pure positioning/transform box, matching upstream's
+ * own Popup/Content split. Padding and header/body/footer gap are this
+ * port's own inference (not in the fetched Tailwind list — presumably
+ * supplied by the unfetchable `cn-drawer-content-base` recipe), taken from
+ * the SAME --space-6 Dialog's own .popup already uses for the identical
+ * "card-like popup's inner spacing" role.
+ */
+.content {
+  box-sizing: border-box;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0%;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-6);
+  /* Both axes hidden, no auto-scroll here — matches the fetched source's
+   * own plain `overflow-hidden` exactly. A naturally-scrolling .content
+   * would fight the popup's own swipe-to-dismiss touch gesture over the
+   * same touch-move events; a consumer needing a scrollable body wraps its
+   * own region inside DrawerContent's children instead. */
+  overflow: hidden;
+  overscroll-behavior: contain;
+  border-radius: inherit;
+  user-select: text;
+  /* Opacity-only, no transform/geometry — a crossfade isn't motion under
+   * WCAG 2.3.3, so deliberately left unguarded under prefers-reduced-motion,
+   * same reasoning as toast.module.css's .content. */
+  transition: opacity 300ms cubic-bezier(0.45, 1.005, 0, 1.005);
+}
+
+.popup[data-nested-drawer-open] .content {
+  opacity: 0;
+}
+
+.popup[data-nested-drawer-swiping] .content {
+  opacity: 1;
+}
+
+.popup[data-swiping] .content {
+  user-select: none;
+}
+
+/*
+ * The grab-handle bar. `cn-drawer-swipe-handle`'s own base recipe (size/
+ * color) wasn't fetchable either — this port's own inference: a small
+ * pill in --border-strong, the kit's existing "visible but quiet" divider
+ * tone, oriented to the swipe axis and centered on the cross axis.
+ */
+.swipeHandle {
+  flex-shrink: 0;
+  cursor: grab;
+  border-radius: var(--radius-xl);
+  background-color: var(--border-strong);
+  transition: opacity 200ms ease;
+}
+
+.swipeHandle:active {
+  cursor: grabbing;
+}
+
+.popup[data-swipe-axis='y'] .swipeHandle {
+  align-self: center;
+  width: 2.5rem;
+  height: 0.25rem;
+  margin: var(--space-2) auto;
+}
+
+.popup[data-swipe-axis='x'] .swipeHandle {
+  align-self: center;
+  width: 0.25rem;
+  height: 2.5rem;
+  margin: auto var(--space-2);
+}
+
+/* The handle always sits at the panel's own INNERMOST edge: unchanged
+ * (first in flex order) for down/right, moved to the end for up/left —
+ * matches the fetched source's own group-data-[swipe-direction=left|up]:
+ * order-last exactly. */
+.sideTop .swipeHandle,
+.sideLeft .swipeHandle {
+  order: 1;
+}
+
+.popup[data-nested-drawer-open] .swipeHandle {
+  opacity: 0;
+}
+
+.popup[data-nested-drawer-swiping] .swipeHandle {
+  opacity: 1;
+}
+
+.header {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.popup[data-swipe-axis='y'] .header {
+  text-align: center;
+}
+
+/*
+ * Unlike Dialog's/Sheet's own footer: no sm:flex-row swap. The fetched
+ * source's own footer className (`mt-auto flex shrink-0 flex-col`) never
+ * goes horizontal at any breakpoint — a genuine, verified divergence, not
+ * an omission.
+ */
+.footer {
+  margin-top: auto;
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Studio/Heading 2 — same heading role as Dialog's/Sheet's own title. */
+.title {
+  margin: 0;
+  font-size: var(--text-heading-2-size);
+  line-height: var(--text-heading-2-line-height);
+  font-weight: var(--text-heading-2-weight);
+  letter-spacing: var(--text-heading-2-tracking);
+}
+
+.description {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  /* text-wrap: balance — the fetched source's own `text-balance`. */
+  text-wrap: balance;
+}

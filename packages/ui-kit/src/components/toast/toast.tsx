@@ -5,136 +5,32 @@
 
 import { Toast as ToastPrimitive } from '@base-ui/react/toast';
 import { cx } from 'class-variance-authority';
+import {
+  CircleCheckIcon,
+  InfoIcon,
+  LoaderCircleIcon,
+  OctagonXIcon,
+  TriangleAlertIcon,
+  XIcon,
+} from 'lucide-react';
 
 import { Button } from '../button/button';
 import styles from './toast.module.css';
 
-/*
- * Inline lucide paths (ISC) — the kit carries no icon dependency. One icon
- * per toast `type`; an unset/unrecognized type renders no icon, matching
- * the base-vega source's <ToastIcon>.
- */
-function CheckCircleIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cx(styles.icon, className)}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <path d="m9 12 2 2 4-4" />
-    </svg>
-  );
-}
-
-function InfoIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cx(styles.icon, className)}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 16v-4" />
-      <path d="M12 8h.01" />
-    </svg>
-  );
-}
-
-function TriangleAlertIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cx(styles.icon, className)}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
-      <path d="M12 9v4" />
-      <path d="M12 17h.01" />
-    </svg>
-  );
-}
-
-function OctagonXIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cx(styles.icon, className)}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="m15 9-6 6" />
-      <path d="M2.586 16.726A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2h6.624a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586z" />
-      <path d="m9 9 6 6" />
-    </svg>
-  );
-}
-
-function LoaderIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cx(styles.icon, className)}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-    </svg>
-  );
-}
-
-function CloseIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cx(styles.svgIcon, className)}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M18 6 6 18M6 6l12 12" />
-    </svg>
-  );
-}
-
+/* One icon per toast `type`; an unset/unrecognized type renders no icon,
+ * matching the base-vega source's <ToastIcon>. */
 function ToastTypeIcon({ type }: { type?: string }) {
   switch (type) {
     case 'success':
-      return <CheckCircleIcon />;
+      return <CircleCheckIcon className={styles.icon} />;
     case 'info':
-      return <InfoIcon />;
+      return <InfoIcon className={styles.icon} />;
     case 'warning':
-      return <TriangleAlertIcon />;
+      return <TriangleAlertIcon className={styles.icon} />;
     case 'error':
-      return <OctagonXIcon className={styles.iconDestructive} />;
+      return <OctagonXIcon className={cx(styles.icon, styles.iconDestructive)} />;
     case 'loading':
-      return <LoaderIcon className={styles.iconSpin} />;
+      return <LoaderCircleIcon className={cx(styles.icon, styles.iconSpin)} />;
     default:
       return null;
   }
@@ -168,14 +64,13 @@ function ToastCard({
         <ToastPrimitive.Close
           aria-label={closeLabel}
           className={styles.close}
-          render={<Button variant="ghost" icon={<CloseIcon />} />}
+          render={<Button variant="ghost" icon={<XIcon className={styles.svgIcon} />} />}
         />
       </ToastPrimitive.Content>
     </ToastPrimitive.Root>
   );
 }
 
-/* Reads the live toast list from context and renders one ToastCard each. */
 function ToastList({ closeLabel }: { closeLabel: string }) {
   const { toasts } = ToastPrimitive.useToastManager();
   return toasts.map((item) => <ToastCard key={item.id} toast={item} closeLabel={closeLabel} />);

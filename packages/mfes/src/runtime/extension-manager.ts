@@ -9,7 +9,7 @@
  */
 
 import type { ExtensionDomain, Extension, MfeEntry } from '../types';
-import type { ParentMfeBridge } from '../handler/types';
+import type { ParentMfeBridge, ChildMfeBridge } from '../handler/types';
 import type { ExtensionMounter } from './ExtensionMounter';
 import type { DomainLifecycleTrigger } from './DomainLifecycleTrigger';
 import type { ExtensionDomainImplementation } from './ExtensionDomainImplementation';
@@ -39,7 +39,10 @@ export interface ExtensionDomainState {
 export interface ExtensionState {
   extension: Extension;
   entry: MfeEntry;
+  /** Retained for the extension's whole registration lifetime — released only by `releaseExtension`. */
   bridge: ParentMfeBridge | null;
+  /** Retained for the extension's whole registration lifetime — released only by `releaseExtension`. */
+  childBridge: ChildMfeBridge | null;
   loadState: 'idle' | 'loading' | 'loaded' | 'error';
   mountState: 'unmounted' | 'mounting' | 'mounted' | 'error';
   container: Element | null;

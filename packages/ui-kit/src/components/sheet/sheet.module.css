@@ -1,0 +1,250 @@
+/*
+ * Sheet styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
+ */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  isolation: isolate;
+  z-index: 50;
+  background-color: var(--overlay);
+  /* Opacity-only, no transform/geometry — a fade isn't motion under
+     WCAG 2.3.3, so deliberately left unguarded under prefers-reduced-motion. */
+  transition: opacity 100ms ease;
+}
+
+.backdrop[data-starting-style],
+.backdrop[data-ending-style] {
+  opacity: 0;
+}
+
+.popup {
+  /*
+   * Same fix as dialog.module.css's .popup: content-box (this kit's
+   * ambient default) would pile this class's own padding and border on
+   * top of the side variants' declared width/height below.
+   */
+  box-sizing: border-box;
+  position: fixed;
+  isolation: isolate;
+  z-index: 50;
+  display: grid;
+  /* minmax(0, 1fr): same overflow-containment fix as dialog.module.css's
+   * .popup — without it a child wider than the panel drags the implicit
+   * grid track (and the panel) past the side variants' fixed width/max-width
+   * below instead of overflowing inside it. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  /*
+   * Deliberately unpadded, same as dialog.module.css's `.popup`. See there
+   * for the measurement. A scroll container's padding does not clip its
+   * content (overflow clips at the padding box) and sticky offsets resolve
+   * against the scrollport already inset by it, so padding here leaves
+   * strips no sticky region can cover and scrolled text bleeds through
+   * them. The inset lives on the flow regions below instead.
+   */
+  padding: 0;
+  border: 0 solid var(--popover-border);
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  /* Studio/Body — matches Dialog's popup text. */
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  outline: none;
+  overflow-y: auto;
+  /* --popover-shadow: the ring-plus-drop-shadow recipe every card-like
+   * popup in the kit shares (see theme.css) — was hand-duplicated here. */
+  box-shadow: var(--popover-shadow);
+  transition:
+    opacity 100ms ease,
+    transform 100ms ease;
+}
+
+/*
+ * Mixed transition: opacity (a fade, not motion under WCAG 2.3.3 — kept)
+ * and transform (the panel sliding in/out, which is — suppressed). Split
+ * rather than a blanket `transition: none` so the fade still plays; the
+ * panel just snaps to its final position instead of animating there.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .popup {
+    transition: opacity 100ms ease;
+  }
+}
+
+.sideTop,
+.sideBottom {
+  right: 0;
+  left: 0;
+  width: 100%;
+  max-height: calc(100% - var(--space-8));
+}
+
+.sideTop {
+  top: 0;
+  border-bottom-width: var(--border-width);
+}
+
+.sideBottom {
+  bottom: 0;
+  border-top-width: var(--border-width);
+}
+
+.sideRight,
+.sideLeft {
+  top: 0;
+  bottom: 0;
+  height: 100%;
+  width: 75%;
+}
+
+.sideRight {
+  right: 0;
+  border-left-width: var(--border-width);
+}
+
+.sideLeft {
+  left: 0;
+  border-right-width: var(--border-width);
+}
+
+/* Upstream's `sm:max-w-sm`: 75% width fills a small viewport, capped at
+   24rem from the 640px breakpoint up so the panel stops growing on a wide
+   screen. Top/bottom stay full-width at every size — upstream never caps
+   that axis. */
+@media (min-width: 640px) {
+  .sideRight,
+  .sideLeft {
+    max-width: 24rem;
+  }
+}
+
+/*
+ * Off-screen distance matches the fetched Base UI upstream's own enter/exit
+ * transform (2.5rem), not a full 100%-off-viewport slide — a subtler
+ * entrance than the classic Radix-era Sheet's slide-in-from-edge.
+ */
+.sideTop[data-starting-style],
+.sideTop[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-2.5rem);
+}
+
+.sideBottom[data-starting-style],
+.sideBottom[data-ending-style] {
+  opacity: 0;
+  transform: translateY(2.5rem);
+}
+
+.sideLeft[data-starting-style],
+.sideLeft[data-ending-style] {
+  opacity: 0;
+  transform: translateX(-2.5rem);
+}
+
+.sideRight[data-starting-style],
+.sideRight[data-ending-style] {
+  opacity: 0;
+  transform: translateX(2.5rem);
+}
+
+/*
+ * The panel's inset, re-expressed on the regions that scroll inside it:
+ * same structure and reasoning as dialog.module.css's `.popup > *` rules.
+ */
+.popup > :where(*:not(.closeButton)) {
+  /* Same missing-preflight guard as `.popup` itself. See
+   * dialog.module.css for why the inset needs border-box here. */
+  box-sizing: border-box;
+  padding-inline: var(--space-6);
+}
+
+.popup > :where(*:not(.closeButton):first-child) {
+  padding-block-start: var(--space-6);
+}
+
+.popup > :where(*:not(.closeButton):last-child) {
+  padding-block-end: var(--space-6);
+}
+
+/* `showCloseButton` renders the X last, which shifts the last flow region
+ * to the one right before it. See dialog.module.css for the full note. */
+.popup > :where(*:has(+ .closeButton)) {
+  padding-block-end: var(--space-6);
+}
+
+.closeButton {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  /* Above `.header`'s stacking level, which now starts at the panel's top
+   * edge and would otherwise cover this button. See dialog.module.css. */
+  z-index: 2;
+}
+
+/*
+ * Sticky + opaque + full-bleed, not just flow siblings: .popup is itself the
+ * scroll container (see its own comment above) - same footgun as
+ * dialog.module.css's header/footer, see there for the full reasoning.
+ * Without position and an explicit background, a merely-sticky header/footer
+ * still wins hit-testing (elementFromPoint reports it) but scrolled content
+ * paints straight through it; and without the region spanning the panel's
+ * full width and edges, the strips around its box keep bleeding. Opaque
+ * var(--popover) matches .popup's own background exactly.
+ */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background-color: var(--popover);
+}
+
+/*
+ * Unlike DialogFooter, stays column-stacked at every breakpoint (no
+ * sm:flex-row swap) and is pinned to the panel's bottom edge via
+ * margin-top: auto — mirrors the fetched upstream's actual footer classes
+ * (`mt-auto flex-col`, no responsive row swap), a genuine divergence from
+ * Dialog's centered-modal footer. `position: sticky` + `margin-top: auto`
+ * coexist without conflict: the margin trick pins the footer to the bottom
+ * of the flow when content is short (no scrolling needed), while sticky
+ * keeps it pinned to the scrollport's bottom edge once content overflows —
+ * same header/footer-bleed fix as dialog.module.css, see there for the
+ * full reasoning.
+ */
+.footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: auto;
+  background-color: var(--popover);
+}
+
+/* Studio/Heading 2 — the sheet's one heading-role text, same as Dialog's title. */
+.title {
+  margin: 0;
+  font-size: var(--text-heading-2-size);
+  line-height: var(--text-heading-2-line-height);
+  font-weight: var(--text-heading-2-weight);
+  letter-spacing: var(--text-heading-2-tracking);
+}
+
+.description {
+  color: var(--muted-foreground);
+  /* Studio/Body, muted — same migration as the popup root. */
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+}
+
+.svgIcon {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  flex-shrink: 0;
+  pointer-events: none;
+}

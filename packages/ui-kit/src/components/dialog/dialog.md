@@ -111,6 +111,39 @@ long unbroken string, an image — either wrap in an element with
 unbreakable strings). Widening the dialog itself is a `className` width on
 `DialogContent`, not something to fix from the child.
 
+## Scrolling content
+
+`DialogHeader` and `DialogFooter` are `position: sticky` (top / bottom)
+with an opaque background matching the popup, by default. That covers two
+shapes:
+
+- A consumer-wrapped middle region (`overflow-y: auto` on a child div
+  between header and footer, as in the "Scrollable content" example) -
+  the popup itself never needs to scroll, so the sticky positioning is
+  inert and simply does nothing.
+- Long content dropped in unwrapped (as in the "Sticky footer" example) -
+  `DialogContent`'s own `max-height` + `overflow-y: auto` becomes the
+  scroll container (see "Wide content" above for the matching horizontal
+  case), and header/footer stay pinned at the top/bottom of it, masking
+  whatever scrolls underneath. No inline `background` or `position` prop
+  needed on `DialogFooter` for this - it is the built-in behavior.
+
+For the mask to be complete, `DialogContent` itself carries no padding:
+the inset lives on its direct children instead (side inset on every child,
+top inset on the first, bottom inset on the last), so header and footer
+span the popup's full width and reach its top and bottom edges. A scroll
+container's padding would not have worked - it does not clip content
+(overflow clips at the padding box) and sticky offsets resolve against the
+scrollport already inset by it, so scrolled text stayed visible in the
+strips beside and beyond the pinned regions.
+
+This matters when you style children of `DialogContent`: a `className`
+that sets `padding` on `DialogHeader`, `DialogFooter`, or on a middle
+region overrides that inset rather than adding to it (the kit rule is
+deliberately held at single-class weight so your class can win), and a
+full-width child such as a divider or a banner reaches the popup edges by
+zeroing its own `padding-inline`.
+
 ## Anti-patterns
 
 - Do not nest interactive page content's focus expectations across the

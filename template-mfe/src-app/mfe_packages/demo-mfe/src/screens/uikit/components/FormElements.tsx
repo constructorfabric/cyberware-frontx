@@ -1,265 +1,303 @@
 /**
  * Form Elements Category
  *
- * Demonstrates: Input, TextArea, Select, Checkbox, Radio, Switch, DatePicker, FileUpload, Slider, Rating
+ * Demonstrates: Field, Label, Input, Textarea, Select, Checkbox, RadioGroup, Switch
  */
 
 import React, { useState } from 'react';
-import { Separator } from '../../../components/ui/separator';
-import { Input } from '../../../components/ui/input';
-import { Label } from '../../../components/ui/label';
-import { Textarea } from '../../../components/ui/textarea';
 import {
+  Checkbox,
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+  Input,
+  Label,
+  RadioGroup,
+  RadioGroupItem,
   Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
-  SelectContent,
-  SelectItem,
-} from '../../../components/ui/select';
-import { Checkbox } from '../../../components/ui/checkbox';
-import { RadioGroup, RadioGroupItem } from '../../../components/ui/radio-group';
-import { Switch } from '../../../components/ui/switch';
-import { Slider } from '../../../components/ui/slider';
-import {
-  DatePicker,
-  DatePickerTrigger,
-  DatePickerContent,
-  DatePickerInput,
-} from '../../../components/ui/date-picker';
+  Switch,
+  Textarea,
+} from '@gears-frontx/ui-kit';
+import { ElementDemo } from './ElementDemo';
+import styles from '../UIKitElements.module.css';
 
 interface FormElementsProps {
   t: (key: string) => string;
+  /**
+   * Element inside this MFE's shadow root that Select's popup portals into.
+   * Left to the kit's `<body>` default the popup lands in the light DOM, where
+   * neither the adopted component stylesheets nor this host's tokens reach it.
+   */
+  portalContainer: React.RefObject<HTMLElement | null>;
 }
 
-const ElementDemo: React.FC<{ id: string; title: string; description: string; children: React.ReactNode }> = ({
-  id,
-  title,
-  description,
-  children,
-}) => (
-  <div id={id} className="scroll-mt-4 mb-8">
-    <h3 className="text-xl font-semibold mb-2">{title}</h3>
-    <p className="text-sm text-muted-foreground mb-4">{description}</p>
-    <div className="border border-border rounded-lg p-6 bg-background">{children}</div>
-  </div>
-);
+/**
+ * Select renders the closed trigger from this list, not from the popup's items:
+ * without it the trigger shows the raw value until the popup has been opened
+ * once. Hoisted to module level so the array keeps a stable identity across
+ * renders.
+ */
+const REGION_ITEMS = [
+  { value: 'eu-central', label: 'Frankfurt' },
+  { value: 'eu-west', label: 'Dublin' },
+  { value: 'us-east', label: 'Virginia' },
+];
 
-export const FormElements: React.FC<FormElementsProps> = ({ t }) => {
-  const [sliderValue, setSliderValue] = useState([50]);
-  const [date, setDate] = useState<Date>();
+/**
+ * Which of the two `ValidityState` flags the demo reacts to, kept as a reason
+ * rather than as the message it resolves to: the host can switch language while
+ * an error is on screen, and a stored message would keep the language it was
+ * produced in until the field is blurred again.
+ */
+type EmailErrorReason = 'required' | 'malformed';
+
+const EMAIL_ERROR_KEYS: Record<EmailErrorReason, string> = {
+  required: 'form_email_required',
+  malformed: 'form_email_invalid',
+};
+
+export const FormElements: React.FC<FormElementsProps> = ({ t, portalContainer }) => {
+  const [region, setRegion] = useState('eu-central');
+  const [plan, setPlan] = useState('free');
+  const [notifications, setNotifications] = useState(true);
+  const [emailError, setEmailError] = useState<EmailErrorReason | null>(null);
+
+  /**
+   * Field derives no validation of its own, so the demo runs the check the
+   * browser already did: `<input type="email" required>` fills in `validity`
+   * either way, and this only picks which message the field shows. Read on
+   * blur rather than on every keystroke so a half-typed address is not
+   * flagged as malformed while it is still being typed.
+   */
+  const validateEmail = (event: React.SyntheticEvent<HTMLInputElement>) => {
+    const { validity } = event.currentTarget;
+    if (validity.valueMissing) {
+      setEmailError('required');
+    } else if (validity.typeMismatch) {
+      setEmailError('malformed');
+    } else {
+      setEmailError(null);
+    }
+  };
+
+  /**
+   * A message already on screen has to come off the moment the field is
+   * corrected, so once there is one, every keystroke re-runs the same check.
+   * The gate is what keeps the blur-only rule intact for a field that has not
+   * been flagged yet: with no error showing there is nothing to clear, and
+   * validating from the first character is exactly what reading on blur avoids.
+   */
+  const revalidateEmail = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (emailError) {
+      validateEmail(event);
+    }
+  };
 
   return (
-    <div id="category-forms" className="space-y-8">
-      <div>
-        <h2 className="text-2xl font-bold mb-2">{t('category.forms')}</h2>
-        <Separator className="mb-6" />
-      </div>
+    <section id="category-forms" className={styles.category}>
+      <h2 className={styles.categoryTitle}>{t('category.forms')}</h2>
 
-      {/* Input */}
       <ElementDemo
-        id="element-input"
+        id="field"
+        title={t('element.field.title')}
+        description={t('element.field.description')}
+      >
+        <div className={styles.stack}>
+          {/*
+            Field is the kit's layout for a labelled control and nothing more:
+            it wires no ids and derives no validity, so `htmlFor`,
+            `aria-describedby` and the invalid state are all set by hand here.
+            The description stays in `aria-describedby` when the error joins it
+            — replacing it would drop the hint the moment it is most useful.
+          */}
+          <Field data-invalid={emailError ? true : undefined}>
+            <FieldLabel htmlFor="form-demo-email">Email</FieldLabel>
+            <Input
+              id="form-demo-email"
+              type="email"
+              required
+              placeholder="you@company.com"
+              aria-invalid={emailError ? true : undefined}
+              aria-describedby={
+                emailError
+                  ? 'form-demo-email-description form-demo-email-error'
+                  : 'form-demo-email-description'
+              }
+              onBlur={validateEmail}
+              onChange={revalidateEmail}
+            />
+            <FieldDescription id="form-demo-email-description">
+              We only use it for the invoice.
+            </FieldDescription>
+            <FieldError id="form-demo-email-error">
+              {emailError ? t(EMAIL_ERROR_KEYS[emailError]) : null}
+            </FieldError>
+          </Field>
+        </div>
+      </ElementDemo>
+
+      <ElementDemo
+        id="label"
+        title={t('element.label.title')}
+        description={t('element.label.description')}
+      >
+        {/*
+          Label is a styled native `<label>` with no id wiring of its own, for
+          controls that stand outside a Field. Nesting the control gives the
+          pair one click target without an `htmlFor`.
+        */}
+        <Label>
+          <Checkbox name="standalone-terms" />
+          Nesting the control needs no htmlFor
+        </Label>
+
+        <div className={styles.stack}>
+          <Label htmlFor="label-demo-input">Associated through htmlFor</Label>
+          <Input id="label-demo-input" placeholder="Project name" />
+        </div>
+      </ElementDemo>
+
+      <ElementDemo
+        id="input"
         title={t('element.input.title')}
         description={t('element.input.description')}
       >
-        <div className="space-y-4 max-w-md">
-          <div>
-            <Label htmlFor="input-text">Text Input</Label>
-            <Input id="input-text" type="text" placeholder="Enter text..." />
-          </div>
-          <div>
-            <Label htmlFor="input-email">Email Input</Label>
-            <Input id="input-email" type="email" placeholder="email@example.com" />
-          </div>
-          <div>
-            <Label htmlFor="input-password">Password Input</Label>
-            <Input id="input-password" type="password" placeholder="Password" />
-          </div>
-          <div>
-            <Label htmlFor="input-disabled">Disabled Input</Label>
-            <Input id="input-disabled" type="text" placeholder="Disabled" disabled />
-          </div>
+        <div className={styles.stack}>
+          <Input type="text" placeholder="Plain text" />
+          <Input type="password" placeholder="Password" />
+          {/* `type="search"` grows a magnifier and a searchbox role, with no prop. */}
+          <Input type="search" placeholder="Search projects" />
+          <Input aria-invalid defaultValue="Rejected value" />
+          <Input disabled placeholder="Disabled" />
         </div>
       </ElementDemo>
 
-      {/* TextArea */}
       <ElementDemo
-        id="element-textarea"
+        id="textarea"
         title={t('element.textarea.title')}
         description={t('element.textarea.description')}
       >
-        <div className="space-y-4 max-w-md">
-          <div>
-            <Label htmlFor="textarea-default">Default TextArea</Label>
-            <Textarea id="textarea-default" placeholder="Type your message here..." />
-          </div>
-          <div>
-            <Label htmlFor="textarea-rows">TextArea with custom rows</Label>
-            <Textarea id="textarea-rows" placeholder="More space..." rows={6} />
-          </div>
+        <div className={styles.stack}>
+          <Textarea placeholder="Type your message here..." />
+          <Textarea rows={6} placeholder="Six rows to start with" />
         </div>
       </ElementDemo>
 
-      {/* Select */}
       <ElementDemo
-        id="element-select"
+        id="select"
         title={t('element.select.title')}
         description={t('element.select.description')}
       >
-        <div className="max-w-md">
-          <Label htmlFor="select-demo">Select an option</Label>
-          <Select>
-            <SelectTrigger id="select-demo">
-              <SelectValue placeholder="Choose an option" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="option1">Option 1</SelectItem>
-              <SelectItem value="option2">Option 2</SelectItem>
-              <SelectItem value="option3">Option 3</SelectItem>
-              <SelectItem value="option4">Option 4</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className={styles.stack}>
+          <Field>
+            {/*
+              SelectTrigger renders the button that carries the field's
+              accessible name, so the label points at the trigger's own id.
+            */}
+            <FieldLabel htmlFor="form-demo-region">Region</FieldLabel>
+            {/*
+              Select reports `null` when a selection is cleared, which this demo
+              has no control for; the fallback keeps the trigger showing a region
+              rather than the placeholder.
+            */}
+            <Select
+              items={REGION_ITEMS}
+              value={region}
+              onValueChange={(value) => setRegion(value ?? REGION_ITEMS[0].value)}
+            >
+              <SelectTrigger id="form-demo-region">
+                <SelectValue placeholder="Pick a region" />
+              </SelectTrigger>
+              <SelectContent container={portalContainer}>
+                {/* The group carries the list padding; items directly under the content lose it. */}
+                <SelectGroup>
+                  <SelectLabel>Europe</SelectLabel>
+                  {REGION_ITEMS.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
         </div>
       </ElementDemo>
 
-      {/* Checkbox */}
       <ElementDemo
-        id="element-checkbox"
+        id="checkbox"
         title={t('element.checkbox.title')}
         description={t('element.checkbox.description')}
       >
-        <div className="space-y-3">
-          <div className="flex items-center space-x-2">
-            <Checkbox id="checkbox-1" />
-            <Label htmlFor="checkbox-1">Accept terms and conditions</Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Checkbox id="checkbox-2" defaultChecked />
-            <Label htmlFor="checkbox-2">Checked by default</Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Checkbox id="checkbox-3" disabled />
-            <Label htmlFor="checkbox-3">Disabled checkbox</Label>
-          </div>
-        </div>
+        <Label className={styles.inlineControl}>
+          <Checkbox name="terms" />
+          Accept terms and conditions
+        </Label>
+        <Label className={styles.inlineControl}>
+          <Checkbox name="newsletter" defaultChecked />
+          Checked by default
+        </Label>
+        <Label className={styles.inlineControl}>
+          {/* Reports `aria-checked="mixed"` rather than a third boolean state. */}
+          <Checkbox name="partial" indeterminate />
+          Indeterminate
+        </Label>
+        <Label className={styles.inlineControl}>
+          <Checkbox name="locked" disabled />
+          Disabled
+        </Label>
       </ElementDemo>
 
-      {/* Radio */}
       <ElementDemo
-        id="element-radio"
+        id="radio"
         title={t('element.radio.title')}
         description={t('element.radio.description')}
       >
-        <RadioGroup defaultValue="option1">
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem value="option1" id="radio-1" />
-            <Label htmlFor="radio-1">Option 1</Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem value="option2" id="radio-2" />
-            <Label htmlFor="radio-2">Option 2</Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem value="option3" id="radio-3" />
-            <Label htmlFor="radio-3">Option 3</Label>
-          </div>
+        <RadioGroup value={plan} onValueChange={(value) => setPlan(String(value))}>
+          <Label className={styles.inlineControl}>
+            <RadioGroupItem value="free" />
+            Free
+          </Label>
+          <Label className={styles.inlineControl}>
+            <RadioGroupItem value="pro" />
+            Pro
+          </Label>
+          <Label className={styles.inlineControl}>
+            <RadioGroupItem value="enterprise" disabled />
+            Enterprise (unavailable)
+          </Label>
         </RadioGroup>
+        <p className={styles.note}>
+          Selected: <span className={styles.mono}>{plan}</span>
+        </p>
       </ElementDemo>
 
-      {/* Switch */}
       <ElementDemo
-        id="element-switch"
+        id="switch"
         title={t('element.switch.title')}
         description={t('element.switch.description')}
       >
-        <div className="space-y-3">
-          <div className="flex items-center space-x-2">
-            <Switch id="switch-1" />
-            <Label htmlFor="switch-1">Enable notifications</Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Switch id="switch-2" defaultChecked />
-            <Label htmlFor="switch-2">Enabled by default</Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Switch id="switch-3" disabled />
-            <Label htmlFor="switch-3">Disabled switch</Label>
-          </div>
-        </div>
+        <Label className={styles.inlineControl}>
+          <Switch checked={notifications} onCheckedChange={setNotifications} />
+          Enable notifications
+        </Label>
+        <Label className={styles.inlineControl}>
+          <Switch size="sm" defaultChecked />
+          Small switch
+        </Label>
+        <Label className={styles.inlineControl}>
+          <Switch disabled />
+          Disabled
+        </Label>
       </ElementDemo>
-
-      {/* DatePicker */}
-      <ElementDemo
-        id="element-date_picker"
-        title={t('element.date_picker.title')}
-        description={t('element.date_picker.description')}
-      >
-        <div className="max-w-md">
-          <Label htmlFor="date-picker">Select a date</Label>
-          <DatePicker date={date} onDateChange={setDate}>
-            <DatePickerTrigger id="date-picker">
-              <DatePickerInput placeholder="Pick a date" />
-            </DatePickerTrigger>
-            <DatePickerContent align="start" />
-          </DatePicker>
-          {date && (
-            <p className="mt-2 text-sm text-muted-foreground">
-              Selected: {date.toLocaleDateString()}
-            </p>
-          )}
-        </div>
-      </ElementDemo>
-
-      {/* FileUpload */}
-      <ElementDemo
-        id="element-file_upload"
-        title={t('element.file_upload.title')}
-        description={t('element.file_upload.description')}
-      >
-        <div className="max-w-md">
-          <Label htmlFor="file-upload">Choose a file</Label>
-          <Input id="file-upload" type="file" />
-          <p className="mt-2 text-xs text-muted-foreground">
-            Note: UIKit uses native file input. Custom file upload components can be built on top.
-          </p>
-        </div>
-      </ElementDemo>
-
-      {/* Slider */}
-      <ElementDemo
-        id="element-slider"
-        title={t('element.slider.title')}
-        description={t('element.slider.description')}
-      >
-        <div className="space-y-4 max-w-md">
-          <div>
-            <Label htmlFor="slider-default">Default Slider</Label>
-            <Slider
-              id="slider-default"
-              value={sliderValue}
-              onValueChange={setSliderValue}
-              max={100}
-              step={1}
-              className="mt-2"
-            />
-            <p className="mt-2 text-sm text-muted-foreground">Value: {sliderValue[0]}</p>
-          </div>
-        </div>
-      </ElementDemo>
-
-      {/* Rating */}
-      <ElementDemo
-        id="element-rating"
-        title={t('element.rating.title')}
-        description={t('element.rating.description')}
-      >
-        <div className="text-sm text-muted-foreground">
-          <p>Rating component is not exported from UIKit.</p>
-          <p className="mt-2">
-            Star ratings can be implemented using Button or custom components with star icons.
-          </p>
-        </div>
-      </ElementDemo>
-    </div>
+    </section>
   );
 };
 

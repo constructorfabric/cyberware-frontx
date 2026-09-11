@@ -6,6 +6,7 @@
   "navigation_description": "Klik op de knop hieronder om programmatisch naar het Thema-scherm te navigeren.",
   "go_to_theme": "Ga naar Thema-scherm",
   "open_profile_refresh": "Open Profile & Refresh",
+  "mount_widgets_host_and_ping": "Mount Widgets Host + Widget A + Ping (nested)",
   "bridge_info": "Bridge Info",
   "domain_id": "Domain ID:",
   "instance_id": "Instance ID:",

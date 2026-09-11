@@ -1,0 +1,160 @@
+/*
+ * Accordion styles, translated from shadcn/ui (MIT) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors, except
+ * `--accordion-panel-height` (Base UI runtime var, see comment below).
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.item:not(:last-child) {
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+/*
+ * Base UI's Accordion.Header renders a native <h3> (see
+ * @base-ui/react/accordion's AccordionHeader), which ships UA heading
+ * chrome — margin and a larger, bold font — this kit's ambient CSS doesn't
+ * reset any more broadly than per-component (same reasoning as
+ * collapsible.module.css's .trigger reset). Left un-reset, that margin was
+ * the actual source of the oversized trigger-row spacing this component
+ * shipped with: .trigger's own padding-block was already the compact
+ * --space-4 upstream uses, the UA <h3> margin was stacking on top of it.
+ */
+.header {
+  display: flex;
+  margin: 0;
+  font: inherit;
+}
+
+.trigger {
+  display: flex;
+  flex: 1;
+  /*
+   * Centered, not upstream's items-start + a 2px icon nudge: Base UI's
+   * Trigger renders a native <button>, whose UA stylesheet supplies no
+   * cross-axis alignment of its own, so plain flexbox centering already
+   * lines the chevron up with the label's line box — upstream needs the
+   * nudge only because its icon sits a fixed 2px off a top-aligned row,
+   * and the kit's --space-* scale bottoms out at 4px, too coarse to
+   * reproduce that offset without a hardcoded value.
+   */
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  padding-block: var(--space-4);
+  /* <button> ships UA inline padding (~6px each side in Chromium) that
+   * padding-block above doesn't touch — left unreset it indents the label
+   * past the panel content's flush left edge below it. */
+  padding-inline: 0;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-md);
+  background: none;
+  color: inherit;
+  text-align: left;
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+  /* Studio/Body at Label weight — "font-medium" translated to the ramp's
+   * medium-weight role, same idiom as popover.module.css's .title. */
+  font-weight: var(--text-label-weight);
+  cursor: pointer;
+  outline: none;
+  transition: text-decoration-color 150ms ease;
+}
+
+.trigger:hover {
+  text-decoration: underline;
+}
+
+.trigger:focus-visible {
+  border-color: var(--ring);
+  outline: var(--border-width-focus) solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* The ring above is already an outline, not a box-shadow — forced-colors
+ * mode still flattens its author --ring color, so pin it to the system's
+ * Highlight color explicitly (same reasoning as checkbox.module.css's ring). */
+@media (forced-colors: active) {
+  .trigger:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+/* disabled opacity: see input.module.css */
+.trigger[data-disabled] {
+  pointer-events: none;
+  opacity: 0.42;
+}
+
+.triggerIcon {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  pointer-events: none;
+  transition: transform 150ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .triggerIcon {
+    transition: none;
+  }
+}
+
+.trigger[data-panel-open] .triggerIcon {
+  transform: rotate(180deg);
+}
+
+/*
+ * Height animation, not opacity/transform like the kit's other overlays:
+ * upstream's own base-registry source (not the tw-animate-css keyframe
+ * chain in the shared style sheet, which targets a Radix/other-library CSS
+ * var that doesn't exist under Base UI) drives this the same way —
+ * `height: var(--accordion-panel-height)` at rest, forced to `0` during
+ * the starting/ending transition frames so the browser has two concrete
+ * values to interpolate between (`height: auto` cannot be transitioned).
+ * `--accordion-panel-height` is Base UI's own measured-height custom
+ * property (ResizeObserver-backed), written directly on the Panel element
+ * — not currently listed in tokens.test.ts's BASE_UI_RUNTIME_VARS, see
+ * this component's .md for the reported gap.
+ *
+ * All of height/transition/the data-starting-style|data-ending-style hooks
+ * MUST live on .panel itself, not the inner .content div: Base UI's own
+ * useCollapsiblePanel detects which animation idiom an author used by
+ * reading getComputedStyle() of the Panel DOM node directly (see
+ * @base-ui/react's collapsible/panel/useCollapsiblePanel.js getAnimationType,
+ * shared by Accordion.Panel) and only coordinates the measured-height
+ * write-back with a *transition* it finds there. A transition declared one
+ * level down on .content is invisible to that check — Base UI falls back to
+ * its no-animation path and snaps the panel open/closed instantly instead of
+ * interpolating. (An earlier revision of this file made exactly that
+ * mistake, targeting .content instead of .panel.)
+ */
+.panel {
+  overflow: hidden;
+  height: var(--accordion-panel-height);
+  transition: height 150ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    transition: none;
+  }
+}
+
+.panel[data-starting-style],
+.panel[data-ending-style] {
+  height: 0;
+}
+
+.content {
+  padding-bottom: var(--space-4);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line-height);
+}

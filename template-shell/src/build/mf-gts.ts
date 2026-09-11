@@ -303,6 +303,166 @@ interface ResolvedSharedDep {
   externals: string[];
 }
 
+/**
+ * One minted shared-dependency chunk and the sibling shared chunks its
+ * emitted file actually imports — the outgoing edges of the shared-chunk
+ * graph.
+ *
+ * `imports` comes from esbuild's metafile (the external imports left
+ * unresolved in the output), NOT from the dep's declared `externals`. The
+ * two differ, and the difference is the whole point: `externals` is derived
+ * from package.json and marks what *may* stay unbundled, while only the
+ * imports the bundled code truly emits are edges between chunks.
+ * `@gears-frontx/mfes` and `@gears-frontx/gts-plugin`, for instance, declare
+ * each other as dependencies and each is external to the other, yet neither
+ * minted file imports the other because every cross-reference between them
+ * is `import type` or JSDoc. A guard over declared externals would fail that
+ * perfectly healthy build.
+ */
+export interface SharedChunkNode {
+  name: string;
+  imports: string[];
+}
+
+// ── Shared-dependency cycle guard ──────────────────────────────────────────
+
+/**
+ * The external (unbundled) import paths esbuild left in `outfile`, read from
+ * a build's metafile — the outgoing edges of one minted shared chunk.
+ *
+ * Metafile output keys are paths relative to esbuild's working directory, so
+ * the entry is matched by resolved absolute path rather than by key equality.
+ * External imports carry the specifier exactly as written, which for a shared
+ * dep is the bare package name the graph uses as its node key. Both
+ * `import`-statement and `require-call` edges count: a CJS package bundled to
+ * ESM reaches its externals through `__require()`, which `patchCjsExternals`
+ * later rewrites into real ESM imports — an edge either way.
+ *
+ * Pure; exported for unit tests.
+ */
+export function externalImportsOf(
+  metafile: esbuild.Metafile,
+  outfile: string
+): string[] {
+  const target = path.resolve(outfile);
+  for (const [file, output] of Object.entries(metafile.outputs)) {
+    if (path.resolve(file) !== target) continue;
+    return output.imports
+      .filter((imported) => imported.external)
+      .map((imported) => imported.path);
+  }
+  return [];
+}
+
+/**
+ * Finds a cycle in the shared-chunk import graph, or `undefined` when the
+ * graph is acyclic.
+ *
+ * Why this layer needs its own check: Rollup guards its own chunk graph
+ * (it hoists module cycles into a single chunk and warns `CIRCULAR_CHUNK`
+ * when it cannot), but the shared deps minted here are esbuild output that
+ * Rollup never sees — one standalone ESM file per shared package, with every
+ * sibling shared dep left external. esbuild has no `CIRCULAR_CHUNK`
+ * equivalent, so nothing else can catch a cycle among these files. It is the
+ * more dangerous of the two layers: every MFE mints the same shared chunks,
+ * so a single cyclic shared graph breaks every MFE at once.
+ *
+ * Why a cycle is fatal at runtime: per-load isolation means the
+ * cycle-closing import can no longer be satisfied from the origin module
+ * instance (that fallback shared one instance across all loads and broke the
+ * isolation property), so the import fails and the MFE never mounts.
+ *
+ * Algorithm: iterative depth-first search over the directed graph with the
+ * classic white/grey/black colouring. The first back edge into a node still
+ * on the DFS stack closes a cycle, which is returned as the node sequence in
+ * traversal order with the entry node repeated at the end. A self-edge is a
+ * length-1 cycle and is reported the same way. Edges pointing at names that
+ * are not themselves minted shared deps are ignored (they are not chunks).
+ * Linear in nodes + edges over a handful of packages, on metadata esbuild
+ * produced anyway — and it writes nothing, so an acyclic graph leaves the
+ * emitted output exactly as it was.
+ *
+ * Pure; exported for unit tests.
+ */
+export function findSharedDepCycle(
+  chunks: readonly SharedChunkNode[]
+): string[] | undefined {
+  const edges = new Map<string, string[]>();
+  for (const chunk of chunks) edges.set(chunk.name, []);
+  for (const chunk of chunks) {
+    const out = edges.get(chunk.name) as string[];
+    for (const target of chunk.imports) {
+      // Only sibling shared deps are chunks in this graph.
+      if (edges.has(target)) out.push(target);
+    }
+  }
+
+  const GREY = 1;
+  const BLACK = 2;
+  const colour = new Map<string, number>();
+  const stack: string[] = [];
+  const onStack = new Set<string>();
+
+  for (const root of edges.keys()) {
+    if (colour.get(root) !== undefined) continue;
+    // Explicit work list: each frame is a node plus the index of the next
+    // outgoing edge to visit, so deep graphs cannot blow the call stack.
+    const frames: Array<{ node: string; edgeIndex: number }> = [
+      { node: root, edgeIndex: 0 },
+    ];
+    colour.set(root, GREY);
+    stack.push(root);
+    onStack.add(root);
+
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1];
+      const out = edges.get(frame.node) as string[];
+      if (frame.edgeIndex < out.length) {
+        const next = out[frame.edgeIndex];
+        frame.edgeIndex += 1;
+        if (onStack.has(next)) {
+          // Back edge — the cycle is the stack suffix starting at `next`.
+          return [...stack.slice(stack.indexOf(next)), next];
+        }
+        if (colour.get(next) === undefined) {
+          colour.set(next, GREY);
+          stack.push(next);
+          onStack.add(next);
+          frames.push({ node: next, edgeIndex: 0 });
+        }
+      } else {
+        colour.set(frame.node, BLACK);
+        onStack.delete(frame.node);
+        stack.pop();
+        frames.pop();
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Formats the cycle guard failure, naming the packages on the cycle in
+ * traversal order so the message points at the offending dependency edge
+ * rather than merely asserting that a cycle exists.
+ */
+export function formatSharedDepCycleError(cycle: readonly string[]): string {
+  return (
+    `[frontx-mf-gts] Cyclic shared-dependency graph: ` +
+    `${cycle.join(' -> ')}\n` +
+    `Each shared dependency is minted as one standalone ESM file that leaves ` +
+    `its sibling shared deps external, so this package cycle becomes a cycle ` +
+    `between the emitted shared chunks. Every MFE mints the same shared ` +
+    `chunks, so at runtime the cycle-closing import cannot be resolved within ` +
+    `the load — per-load isolation forbids falling back to the origin module ` +
+    `instance — and every MFE fails to mount.\n` +
+    `Fix: break one edge of the cycle (make one direction 'import type' only, ` +
+    `move the shared code into a third package, or stop sharing one of these ` +
+    `packages).`
+  );
+}
+
 class StandaloneEsmBuilder {
   private readonly sharedDeps: string[];
   private readonly outputDir: string;
@@ -316,14 +476,32 @@ class StandaloneEsmBuilder {
     this.nodeRequire = createRequire(path.join(packageRoot, 'package.json'));
   }
 
-  async build(): Promise<void> {
+  /**
+   * Mints one standalone ESM file per shared dep.
+   *
+   * `onError` aborts the build (the Rollup plugin context's `this.error`);
+   * it is taken as a callback so the pure resolution/cycle logic stays
+   * independent of the plugin context, matching `transformLazyImports`.
+   * The cycle guard reads the emitted files' real import edges, so it runs
+   * once every dep is minted — and it only reads, so a healthy graph is
+   * bit-for-bit unaffected by it.
+   */
+  async build(onError: (message: string) => never): Promise<void> {
     fs.mkdirSync(this.outputDir, { recursive: true });
 
     const resolved = this.resolveTransitiveDeps();
 
+    const graph: SharedChunkNode[] = [];
     for (const dep of resolved) {
-      await this.buildEntry(dep);
+      graph.push(await this.buildEntry(dep));
     }
+
+    // ── Guard: the minted shared chunks must form an acyclic graph ────────
+    // Runs on the real emitted import edges, after minting and before the
+    // manifest that publishes these chunks is written. Nothing emitted
+    // depends on the check, so an acyclic graph is bit-for-bit unaffected.
+    const cycle = findSharedDepCycle(graph);
+    if (cycle) onError(formatSharedDepCycleError(cycle));
   }
 
   /**
@@ -387,7 +565,11 @@ class StandaloneEsmBuilder {
     return pkgJsonPath;
   }
 
-  private async buildEntry(dep: ResolvedSharedDep): Promise<void> {
+  /**
+   * Mints one shared dep's standalone ESM file and reports the sibling
+   * shared chunks the emitted file actually imports.
+   */
+  private async buildEntry(dep: ResolvedSharedDep): Promise<SharedChunkNode> {
     const outfile = path.join(
       this.outputDir,
       StandaloneEsmBuilder.normalizeDepName(dep.name) + '.js'
@@ -400,11 +582,14 @@ class StandaloneEsmBuilder {
       );
     }
 
-    await esbuild.build({
+    const result = await esbuild.build({
       entryPoints: [dep.name],
       bundle: true,
       format: 'esm',
       outfile,
+      // Reports which imports were left unresolved in the output, feeding
+      // the cycle guard. Analysis metadata only — it alters no emitted byte.
+      metafile: true,
       plugins,
       platform: 'browser',
       target: 'esnext',
@@ -433,6 +618,11 @@ class StandaloneEsmBuilder {
     console.log(
       `  [frontx-mf-gts] ${dep.name} -> ${path.basename(outfile)} ${label}`
     );
+
+    return {
+      name: dep.name,
+      imports: externalImportsOf(result.metafile, outfile),
+    };
   }
 
   /**
@@ -576,6 +766,107 @@ class StandaloneEsmBuilder {
   }
 }
 
+
+// ── Expose CSS-delivery guard ────────────────────────────────────────────────
+
+/**
+ * Chunk facts captured during `generateBundle`, the only hook that still sees
+ * Rollup's chunk graph. `ownCssModules` holds the module ids of stylesheets
+ * this chunk owns that came from the package's own source: `.css` module ids
+ * excluding `?inline` imports (those travel inside the JS as strings, nothing
+ * to deliver separately) and excluding `node_modules` (the UI kit's
+ * CSS-module styles are delivered by `adoptHostStylesIntoShadowRoot()` from
+ * the host document, by design — see the `mfe-package-contract` guideline).
+ */
+export interface CapturedChunk {
+  fileName: string;
+  imports: string[];
+  dynamicImports: string[];
+  ownCssModules: string[];
+}
+
+/** The `ownCssModules` filter, applied to a raw Rollup module id. */
+export function isOwnCssModule(moduleId: string): boolean {
+  const [pathPart, query] = moduleId.split('?', 2);
+  if (!pathPart.endsWith('.css')) return false;
+  if (query !== undefined && /(^|&)inline(=|&|$)/.test(query)) return false;
+  return !pathPart.includes('/node_modules/');
+}
+
+/**
+ * Detects package-own CSS an expose needs at runtime but that
+ * mf-manifest.json does not attribute to it — CSS that can never reach the
+ * MFE's shadow root.
+ *
+ * Failure mode this guards: an exposed lifecycle (or a module in its graph)
+ * imports a package-own stylesheet normally (`import './styles.css'`).
+ * Rollup may hoist the extracted CSS into a chunk shared with other exposes
+ * or the standalone entry; the federation manifest then reports
+ * `css: { async: [], sync: [] }` for the expose, the host's stylesheet
+ * injection has nothing to inject, and the screen renders unstyled with no
+ * error anywhere. This turns that silence into a build failure.
+ *
+ * For each expose whose manifest attributes no CSS at all: walk the chunk
+ * graph reachable from its declared JS assets (static and dynamic imports)
+ * and collect the package-own CSS modules found there. An expose that does
+ * declare CSS is trusted — the guard targets the empty-attribution hoist,
+ * not attribution completeness. Pure; exported for unit tests.
+ */
+export function findUndeclaredExposeCss(
+  exposes: readonly MfManifestExpose[],
+  chunks: ReadonlyMap<string, CapturedChunk>
+): Array<{ exposePath: string; missingCss: string[] }> {
+  const results: Array<{ exposePath: string; missingCss: string[] }> = [];
+  for (const expose of exposes) {
+    if (expose.assets.css.sync.length > 0 || expose.assets.css.async.length > 0) {
+      continue;
+    }
+    const needed = new Set<string>();
+    const queue = [...expose.assets.js.sync, ...expose.assets.js.async];
+    const seen = new Set<string>(queue);
+    while (queue.length > 0) {
+      const chunk = chunks.get(queue.pop() as string);
+      if (!chunk) continue;
+      for (const css of chunk.ownCssModules) needed.add(css);
+      for (const next of [...chunk.imports, ...chunk.dynamicImports]) {
+        if (!seen.has(next)) {
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+    }
+    if (needed.size > 0) {
+      results.push({ exposePath: expose.path, missingCss: Array.from(needed) });
+    }
+  }
+  return results;
+}
+
+/**
+ * Formats the guard failure. The reliable fix is inlining: `?inline` turns
+ * the stylesheet into a string bundled with the lifecycle chunk itself, and
+ * `initializeStyles()` (the `ThemeAwareReactLifecycle` hook) appends it to
+ * the mount container, so delivery no longer depends on manifest CSS
+ * attribution at all. See the `mfe-package-contract` guideline, "CSS
+ * delivery" section.
+ */
+export function formatUndeclaredExposeCssError(
+  findings: ReadonlyArray<{ exposePath: string; missingCss: string[] }>
+): string {
+  const lines = findings.map(
+    (f) => `  - expose '${f.exposePath}' needs: ${f.missingCss.join(', ')}`
+  );
+  return (
+    `[frontx-mf-gts] CSS imported by an exposed module was not attributed ` +
+    `to that expose in mf-manifest.json — the host injects only ` +
+    `manifest-attributed CSS into the MFE's shadow root, so these styles ` +
+    `would silently never render:\n${lines.join('\n')}\n` +
+    `Fix: import the stylesheet with '?inline' in the lifecycle module and ` +
+    `append it in an initializeStyles() override ` +
+    `(see the mfe-package-contract guideline, "CSS delivery"), or keep the ` +
+    `CSS in the expose's own chunk so the manifest attributes it.`
+  );
+}
 
 // ── Lazy-import AST transform ───────────────────────────────────────────────
 
@@ -818,6 +1109,7 @@ export function frontxMfGts(): Plugin {
   let packageRoot = '';
   let distDirPath = '';
   let resolvedExternals: string[] = [];
+  const capturedChunks = new Map<string, CapturedChunk>();
 
   return {
     name: 'frontx-mf-gts',
@@ -892,6 +1184,23 @@ export function frontxMfGts(): Plugin {
       }
     },
 
+    // Capture the chunk graph while it is still visible — closeBundle (where
+    // the manifests are read) runs after Rollup discards it. `moduleIds`
+    // still lists the extracted CSS modules a chunk owned; the CSS-delivery
+    // guard below checks them against the federation manifest's per-expose
+    // CSS attribution.
+    generateBundle(_options, bundle) {
+      for (const [fileName, output] of Object.entries(bundle)) {
+        if (output.type !== 'chunk') continue;
+        capturedChunks.set(fileName, {
+          fileName,
+          imports: [...output.imports],
+          dynamicImports: [...output.dynamicImports],
+          ownCssModules: output.moduleIds.filter(isOwnCssModule),
+        });
+      }
+    },
+
     async closeBundle() {
       const distDir = path.isAbsolute(distDirPath)
         ? distDirPath
@@ -918,6 +1227,15 @@ export function frontxMfGts(): Plugin {
           fs.readFileSync(mfManifestPath, 'utf-8')
         ) as MfManifest;
 
+        // ── Guard: every stylesheet an expose needs must be deliverable ─────
+        const undeclaredCss = findUndeclaredExposeCss(
+          mfManifest.exposes,
+          capturedChunks
+        );
+        if (undeclaredCss.length > 0) {
+          throw new Error(formatUndeclaredExposeCssError(undeclaredCss));
+        }
+
         // With shared:{}, the MF 2.0 build no longer produces:
         //   - localSharedImportMap (no shared dep chunks)
         //   - __mf_init__ keys (no FederationHost initialization)
@@ -937,7 +1255,7 @@ export function frontxMfGts(): Plugin {
           console.log(
             '[frontx-mf-gts] Building shared deps as standalone ESM...'
           );
-          await esmBuilder.build();
+          await esmBuilder.build((message) => this.error({ message }));
           console.log('[frontx-mf-gts] Shared deps build complete.');
         }
 

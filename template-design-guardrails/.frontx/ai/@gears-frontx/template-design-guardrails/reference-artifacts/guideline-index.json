@@ -1,0 +1,102 @@
+{
+  "contractVersion": "1.0.0",
+  "generatedBy": "scripts/generate-guideline-index.mjs from guideline front matter - do not edit by hand",
+  "guidelines": [
+    {
+      "id": "accessibility-and-states",
+      "path": "guidelines/accessibility-and-states.md",
+      "summary": "WCAG 2.2 AA baseline, semantic structure, keyboard behavior, and the required state inventory.",
+      "tier": "core"
+    },
+    {
+      "id": "color-and-theming",
+      "path": "guidelines/color-and-theming.md",
+      "summary": "Color roles, theming, contrast pairing, and visualization palettes.",
+      "tier": "conditional",
+      "loadWhen": [
+        "dashboard or timeline screens",
+        "theme creation or modification",
+        "charts or visualization palettes",
+        "custom status or severity colors"
+      ]
+    },
+    {
+      "id": "component-anatomy-and-interaction",
+      "path": "guidelines/component-anatomy-and-interaction.md",
+      "summary": "Required anatomy, states, keyboard behavior, and token mapping for interactive components.",
+      "tier": "conditional",
+      "loadWhen": [
+        "form or authentication screens",
+        "table or workbench screens",
+        "overlay, inspector, or master-detail screens",
+        "custom interactive controls beyond ui-kit defaults"
+      ]
+    },
+    {
+      "id": "composition-patterns",
+      "path": "guidelines/composition-patterns.md",
+      "summary": "Fallback screen compositions per archetype; read the section matching the screen archetype.",
+      "tier": "conditional",
+      "loadWhen": [
+        "authentication or form screens",
+        "table or list screens",
+        "dashboard or timeline screens",
+        "overlay, inspector, or master-detail screens",
+        "navigation or empty-state screens",
+        "new screen with no comparable existing composition"
+      ]
+    },
+    {
+      "id": "data-display-and-dashboard",
+      "path": "guidelines/data-display-and-dashboard.md",
+      "summary": "Decision-first metrics, charts, tables, evidence routing, and dense-workbench rules.",
+      "tier": "conditional",
+      "loadWhen": [
+        "table or workbench screens",
+        "dashboard or timeline screens",
+        "metrics, charts, or dense data display"
+      ]
+    },
+    {
+      "id": "foundations",
+      "path": "guidelines/foundations.md",
+      "summary": "Normative language, source precedence, and the working model every screen task starts from.",
+      "tier": "core"
+    },
+    {
+      "id": "layout-and-responsive",
+      "path": "guidelines/layout-and-responsive.md",
+      "summary": "Spacing system, grid ownership, width tiers, and wide/medium/narrow region transformations.",
+      "tier": "core"
+    },
+    {
+      "id": "motion-and-feedback",
+      "path": "guidelines/motion-and-feedback.md",
+      "summary": "Motion purpose, durations, reduced motion, and progress/feedback patterns.",
+      "tier": "conditional",
+      "loadWhen": [
+        "dashboard or timeline screens",
+        "overlay, inspector, or master-detail screens",
+        "animation or transition work",
+        "loading, progress, or optimistic-update feedback"
+      ]
+    },
+    {
+      "id": "typography-content-and-iconography",
+      "path": "guidelines/typography-content-and-iconography.md",
+      "summary": "Information order, labels and copy rules, type hierarchy, and iconography.",
+      "tier": "conditional",
+      "loadWhen": [
+        "form screens",
+        "authentication screens",
+        "content-heavy or copy-sensitive surfaces"
+      ]
+    },
+    {
+      "id": "visual-foundations-and-tokens",
+      "path": "guidelines/visual-foundations-and-tokens.md",
+      "summary": "Token policy and layers, elevation, density, and type minimums governing every visual value.",
+      "tier": "core"
+    }
+  ]
+}

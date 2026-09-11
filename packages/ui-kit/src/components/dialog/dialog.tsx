@@ -1,34 +1,17 @@
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { cx } from 'class-variance-authority';
+import { XIcon } from 'lucide-react';
 import type { ComponentProps } from 'react';
 
 import { Button } from '../button/button';
 import styles from './dialog.module.css';
 
-/* Inline lucide path (ISC) — the kit carries no icon dependency. */
-function CloseIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cx(styles.svgIcon, className)}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M18 6 6 18M6 6l12 12" />
-    </svg>
-  );
-}
-
 export const Dialog = DialogPrimitive.Root;
 /**
  * The root is a Base UI pass-through, but its props type is still exported:
  * a consumer writing a typed wrapper imports it from this kit — Base UI is
- * this package's dependency, not necessarily theirs. Same idiom as
- * TooltipProviderProps.
+ * this package's dependency, not necessarily theirs. Every root-level
+ * pass-through in the kit re-exports its props type for the same reason.
  */
 export type DialogProps = DialogPrimitive.Root.Props;
 
@@ -73,6 +56,15 @@ export interface DialogContentProps extends Omit<DialogPrimitive.Popup.Props, 'c
    * @default true
    */
   showBackdrop?: boolean;
+  /**
+   * `lg` widens the popup's sm+ breakpoint cap from 28rem to 36rem, for
+   * content that needs more room (a multi-field form, a taller textarea)
+   * than the default width comfortably fits. Read by CSS off this popup's
+   * `data-size` attribute — same `data-size` idiom as AlertDialogContent's
+   * `size`.
+   * @default 'default'
+   */
+  size?: 'default' | 'lg';
 }
 
 export function DialogContent({
@@ -82,18 +74,19 @@ export function DialogContent({
   showCloseButton = true,
   showBackdrop = true,
   closeLabel = 'Close',
+  size = 'default',
   ...props
 }: DialogContentProps) {
   return (
     <DialogPrimitive.Portal container={container}>
       {showBackdrop && <DialogPrimitive.Backdrop className={styles.backdrop} />}
-      <DialogPrimitive.Popup className={cx(styles.popup, className)} {...props}>
+      <DialogPrimitive.Popup data-size={size} className={cx(styles.popup, className)} {...props}>
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close
             aria-label={closeLabel}
             className={styles.closeButton}
-            render={<Button variant="ghost" icon={<CloseIcon />} />}
+            render={<Button variant="ghost" icon={<XIcon className={styles.svgIcon} />} />}
           />
         )}
       </DialogPrimitive.Popup>

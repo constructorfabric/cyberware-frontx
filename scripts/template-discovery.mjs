@@ -8,8 +8,9 @@
  * `template-mfe/`, and a name-prefix glob would have kept passing while
  * quietly covering nothing.
  *
- * Both CI guards that walk templates (`validate-templates.mjs` and
- * `template-pin-drift-check.mjs`) discover them through this one function.
+ * Every CI guard that walks templates (`validate-templates.mjs`,
+ * `template-pin-drift-check.mjs`, `version-bump-on-change-check.mjs`)
+ * discovers them through this one function.
  * Two copies of the rule is how they would come to disagree about what a
  * template is - and a discovery rule that finds nothing reports as a pass in
  * every caller that forgets to check (CodeRabbit on #493, which found the

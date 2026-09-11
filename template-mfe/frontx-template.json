@@ -1,11 +1,15 @@
 {
   "schemaVersion": "1.0",
   "name": "@gears-frontx/frontx-template-mfe",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "Contributes the microfrontend workspace to a repository that already has an application shell: a working reference scaffold for an isolated UI unit with Shadow DOM isolation, host bridge communication, shared theme and language properties, per-unit translations, and its own Module Federation build. Apply this once to gain the ground microfrontends live in; adding each individual screen or unit inside that ground is carried by the skills this template activates in the project, not by applying it again.",
   "ownershipBoundaries": {
     "exclusiveSubtrees": [
-      "src-app/mfe_packages/",
+      "src-app/mfe_packages/README.md",
+      "src-app/mfe_packages/_blank-mfe/",
+      "src-app/mfe_packages/demo-mfe/",
+      "src-app/mfe_packages/widgets-fixture-a/",
+      "src-app/mfe_packages/widgets-fixture-b/",
       ".frontx/ai/@gears-frontx/frontx-template-mfe/"
     ],
     "sharedFiles": []

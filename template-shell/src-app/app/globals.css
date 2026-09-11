@@ -5,38 +5,52 @@
 /**
  * Theme CSS variables
  * Default values for initial load; overridden dynamically by themeRegistry.apply()
+ *
+ * Deliberately NOT inside Tailwind's `@layer base` directive: Tailwind 3.4
+ * emits no native cascade layers - the PostCSS plugin unwraps the directive
+ * and hoists its contents up to the `@tailwind base` position, i.e. above the
+ * rest of this file. @gears-frontx/ui-kit/theme.css declares identically
+ * named tokens (--background, --foreground, --radius-*, ...) on :root, and
+ * the winner is decided purely by source order: theme.css is imported first
+ * in main.tsx, this file second. Keeping this block out of the directive
+ * keeps it in place, so the shell's values keep winning for the names both
+ * sides define.
+ *
+ * Tokens are full CSS colors — the same format ui-kit's component CSS consumes
+ * via `var(--primary)` etc. — so the shell's palette drives both its own
+ * Tailwind utilities and ui-kit components, including inside MFE shadow roots
+ * (host styles are adopted there by ThemeAwareReactLifecycle). HSL-fragment
+ * values would resolve as invalid colors in ui-kit component CSS.
  */
 
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
-    --error: 0 84.2% 60.2%;
-    --warning: 38 92% 50%;
-    --success: 142 76% 36%;
-    --info: 199 89% 48%;
-    --radius-sm: 0.125rem;
-    --radius-md: 0.25rem;
-    --radius-lg: 0.5rem;
-    --radius-xl: 1rem;
-  }
+:root {
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(0 0% 3.9%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(0 0% 3.9%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(0 0% 3.9%);
+  --primary: hsl(0 0% 9%);
+  --primary-foreground: hsl(0 0% 98%);
+  --secondary: hsl(0 0% 96.1%);
+  --secondary-foreground: hsl(0 0% 9%);
+  --muted: hsl(0 0% 96.1%);
+  --muted-foreground: hsl(0 0% 45.1%);
+  --accent: hsl(0 0% 96.1%);
+  --accent-foreground: hsl(0 0% 9%);
+  --destructive: hsl(0 84.2% 60.2%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --border: hsl(0 0% 89.8%);
+  --input: hsl(0 0% 89.8%);
+  --ring: hsl(0 0% 3.9%);
+  --error: hsl(0 84.2% 60.2%);
+  --warning: hsl(38 92% 50%);
+  --success: hsl(142 76% 36%);
+  --info: hsl(199 89% 48%);
+  --radius-sm: 0.125rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 1rem;
 }
 
 @layer base {
@@ -56,14 +70,14 @@
 
 /* Sonner toast styles */
 [data-sonner-toaster] [data-sonner-toast] {
-  --normal-bg: hsl(var(--popover));
-  --normal-text: hsl(var(--popover-foreground));
-  --normal-border: hsl(var(--border));
+  --normal-bg: var(--popover);
+  --normal-text: var(--popover-foreground);
+  --normal-border: var(--border);
 }
 
 [data-sonner-toaster] [data-sonner-toast] [data-button] {
-  background-color: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
+  background-color: var(--primary);
+  color: var(--primary-foreground);
   font-weight: 500;
   font-size: 0.875rem;
   height: 2rem;
@@ -74,18 +88,18 @@
 }
 
 [data-sonner-toaster] [data-sonner-toast] [data-button]:hover {
-  background-color: hsl(var(--primary) / 0.9);
+  background-color: color-mix(in oklab, var(--primary) 90%, transparent);
 }
 
 [data-sonner-toaster] [data-sonner-toast] [data-cancel] {
-  background-color: hsl(var(--muted));
-  color: hsl(var(--muted-foreground));
+  background-color: var(--muted);
+  color: var(--muted-foreground);
 }
 
 [data-sonner-toaster] [data-sonner-toast] [data-cancel]:hover {
-  background-color: hsl(var(--muted) / 0.8);
+  background-color: color-mix(in oklab, var(--muted) 80%, transparent);
 }
 
 [data-sonner-toaster] [data-sonner-toast] [data-description] {
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }

@@ -74,6 +74,45 @@ three, on one shared predicate per rule rather than a copy each.
   `mf-manifest.json` directly, and throws if it is missing or was not built by
   a `frontxMfGts()`-configured pipeline.
 
+## CSS delivery into shadow roots
+
+MFE screens render inside open shadow roots, and shadow roots do not see the
+host document's stylesheets by default. Three delivery paths exist; pick by
+what the package owns:
+
+1. **No package-owned CSS (the `template-mfe` examples).** The host's compiled
+   Tailwind covers `src-app/mfe_packages/**` content paths, and
+   `ThemeAwareReactLifecycle.adoptHostStylesIntoShadowRoot()` clones every host
+   `<style>`/`<link>` into the shadow root. A package that only uses Tailwind
+   utilities and UI-kit components needs no stylesheet of its own.
+2. **Package-owned CSS, the reliable path: `?inline` + `initializeStyles()`.**
+   Import the stylesheet as a string (`import styles from './styles.css?inline'`)
+   and append it in an `initializeStyles(container)` override (the
+   `ThemeAwareReactLifecycle` hook) via a `<style>` element. Delivery then
+   travels with the lifecycle chunk itself and cannot be lost.
+3. **Manifest-attributed CSS (fragile — guarded).** A plain
+   `import './styles.css'` works only while the federation build keeps the
+   extracted CSS attributed to the expose in `mf-manifest.json`
+   (`exposeAssets.css`); the host injects exactly those files. Rollup may
+   instead hoist the CSS into a chunk shared across exposes, the attribution
+   list comes out empty, and the screen renders unstyled with no error
+   anywhere. `frontxMfGts()` now fails the build when an expose that declares
+   no CSS at all has package-own stylesheets in its chunk graph — the fix it
+   prescribes is path 2. (UI-kit CSS-modules from `node_modules` are exempt:
+   the host delivers those by style adoption, path 1.)
+
+**Package-owned CSS must never carry Tailwind's preflight (`@tailwind base` /
+the `@import "tailwindcss"` base layer).** A second preflight inside the shadow
+root — one the package compiled itself — lands after the UI-kit component CSS
+and its element resets (`button { background: transparent }` and friends)
+visibly break kit controls. A package-owned stylesheet destined for
+`initializeStyles()` must contain the utilities and components layers only;
+`injectBaseResets()` already provides the box-model resets a shadow root needs.
+This rule is about path 2 and 3 stylesheets. The shell's own preflight does
+reach the shadow root through path 1 (`adoptHostStylesIntoShadowRoot()` clones
+every host stylesheet), and the lifecycle deliberately neutralises it — see the
+counter-declarations in `ThemeAwareReactLifecycle`.
+
 ## What the shell does with a conforming package
 
 - `npm run dev:all` (`scripts/dev-all.ts`) builds every conforming package,

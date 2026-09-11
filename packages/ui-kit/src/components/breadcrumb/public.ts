@@ -1,0 +1,16 @@
+export {
+  Breadcrumb,
+  BreadcrumbEllipsis,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+  type BreadcrumbEllipsisProps,
+  type BreadcrumbItemProps,
+  type BreadcrumbLinkProps,
+  type BreadcrumbListProps,
+  type BreadcrumbPageProps,
+  type BreadcrumbProps,
+  type BreadcrumbSeparatorProps,
+} from './breadcrumb.js';

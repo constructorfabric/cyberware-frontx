@@ -16,8 +16,8 @@ type LanguageProperty = SharedProperty;
 
 function makeBridge(language: string): ChildMfeBridge {
   return {
-    domainId: 'test-domain',
-    instanceId: 'test-instance',
+    extDomainId: 'test-domain',
+    extensionId: 'test-instance',
     getProperty: vi.fn(() => ({
       id: FRONTX_SHARED_PROPERTY_LANGUAGE,
       value: language,
@@ -88,8 +88,8 @@ describe('useScreenTranslations', () => {
     };
     let subscriptionCallback: ((property: LanguageProperty) => void) | undefined;
     const bridge: ChildMfeBridge = {
-      domainId: 'test-domain',
-      instanceId: 'test-instance',
+      extDomainId: 'test-domain',
+      extensionId: 'test-instance',
       getProperty: vi.fn(() => ({
         id: FRONTX_SHARED_PROPERTY_LANGUAGE,
         value: 'en',
@@ -144,8 +144,8 @@ describe('useScreenTranslations', () => {
   it('unsubscribes from bridge language updates on unmount', async () => {
     const unsubscribe = vi.fn();
     const bridge: ChildMfeBridge = {
-      domainId: 'test-domain',
-      instanceId: 'test-instance',
+      extDomainId: 'test-domain',
+      extensionId: 'test-instance',
       getProperty: vi.fn(() => ({
         id: FRONTX_SHARED_PROPERTY_LANGUAGE,
         value: 'en',

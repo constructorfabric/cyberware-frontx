@@ -1,36 +1,219 @@
 /*
- * Field styles, translated from shadcn/ui (MIT) to CSS Modules.
- * Consumes only theme.css variables — no raw colors.
+ * Field styles, translated from shadcn/ui (MIT, registry/bases/base/ui/
+ * field.tsx) to CSS Modules. Consumes only theme.css variables — no raw
+ * colors.
+ *
+ * Cross-part rules below (`.field.orientationHorizontal .fieldContent`,
+ * `.field[data-disabled='true'] .fieldLabel`, ...) are the same sanctioned
+ * same-file, same-part-family pattern Card's header/title/content classes
+ * already use (see tokens.test.ts) — every part in this 10-part system
+ * lives in this one module, so a parent part's class or data attribute can
+ * style a child part directly instead of duplicating state onto each part.
+ *
+ * Off-scale upstream gap/margin values snap to the nearest --space-* step
+ * per the kit-wide "tokens win" ruling (see theme.css): FieldGroup's
+ * upstream gap-7 (28px) has no step of its own, so it shares FieldSet's
+ * --space-6 (24px) instead of introducing a literal.
  */
+
+.fieldSet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  /* Native <fieldset> ships a UA border/padding this kit doesn't want —
+   * FieldSet is a plain grouping box, not a drawn panel. */
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.fieldLegend {
+  font-family: inherit;
+  font-weight: var(--text-label-weight);
+  margin-bottom: var(--space-3);
+  padding: 0;
+}
+
+/* Legend variant: a heading-weight group title (Studio's Heading 2 role —
+ * matches upstream's text-base exactly at 16px). */
+.variantLegend {
+  font-size: var(--text-heading-2-size);
+  line-height: var(--text-heading-2-line-height);
+  letter-spacing: var(--text-heading-2-tracking);
+}
+
+/* Label variant: reads as a plain field label (same ramp role Label
+ * itself uses — see label.module.css) rather than a section heading. */
+.variantLabel {
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  letter-spacing: var(--text-label-tracking);
+}
+
+.fieldGroup {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: var(--space-6);
+  container-type: inline-size;
+  container-name: field-group;
+}
 
 .field {
   display: flex;
   width: 100%;
+  gap: var(--space-3);
+}
+
+.field[data-invalid='true'] {
+  color: var(--destructive);
+}
+
+.orientationVertical {
   flex-direction: column;
+}
+
+.orientationVertical > * {
+  width: 100%;
+}
+
+.orientationHorizontal {
+  flex-direction: row;
+  align-items: center;
+}
+
+.orientationHorizontal > .fieldLabel {
+  flex: 1 1 auto;
+}
+
+/* A control paired with FieldContent (title + description, e.g. beside a
+ * Switch) is taller than the bare control — align to its top edge instead
+ * of centering the whole row on it. */
+.orientationHorizontal:has(> .fieldContent) {
+  align-items: flex-start;
+}
+
+.orientationResponsive {
+  flex-direction: column;
+}
+
+.orientationResponsive > * {
+  width: 100%;
+}
+
+/* Switches to the horizontal layout once its OWN FieldGroup ancestor has
+ * room for it — a container query against field-group's inline size, not
+ * the viewport, so the same Field lays out narrow inside a sidebar and
+ * wide in a main column. */
+@container field-group (min-width: 28rem) {
+  .orientationResponsive {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .orientationResponsive > * {
+    width: auto;
+  }
+
+  .orientationResponsive > .fieldLabel {
+    flex: 1 1 auto;
+  }
+
+  .orientationResponsive:has(> .fieldContent) {
+    align-items: flex-start;
+  }
+}
+
+.fieldContent {
+  display: flex;
+  flex: 1 1 0%;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.fieldLabel {
+  width: fit-content;
+}
+
+.field[data-disabled='true'] .fieldLabel {
+  /* 0.42, matching every other disabled control in the kit. */
+  opacity: 0.42;
+}
+
+.fieldTitle {
+  display: flex;
+  width: fit-content;
+  align-items: center;
   gap: var(--space-2);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  font-weight: var(--text-label-weight);
+  letter-spacing: var(--text-label-tracking);
 }
 
-/* Base UI stamps data-invalid on the root when validation fails. */
-.field[data-invalid] {
-  color: var(--destructive);
+.field[data-disabled='true'] .fieldTitle {
+  opacity: 0.42;
 }
 
-/*
- * Studio/Meta for both helpers. No drawn specimen exists (the Field symbol,
- * 193:433, draws no caption), so this is role-reasoned: the field's own
- * text is 13px, and the shadcn translation's 14px helper OUTSIZED the field
- * it annotates; Meta is the ramp's supporting-text role below Label.
- */
-.description {
+.fieldDescription {
+  margin: 0;
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-label-tracking);
   color: var(--muted-foreground);
-  font-size: var(--text-meta-size);
-  line-height: var(--text-meta-line-height);
-  letter-spacing: var(--text-meta-tracking);
 }
 
-.error {
+.fieldDescription a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.fieldDescription a:hover {
+  color: var(--primary);
+}
+
+.fieldSeparator {
+  position: relative;
+  height: var(--space-5);
+  margin-top: calc(-1 * var(--space-2));
+  margin-bottom: calc(-1 * var(--space-2));
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+}
+
+.fieldSeparatorLine {
+  position: absolute;
+  inset: 0;
+  top: 50%;
+}
+
+.fieldSeparatorContent {
+  position: relative;
+  margin-inline: auto;
+  display: block;
+  width: fit-content;
+  padding-inline: var(--space-2);
+  background-color: var(--background);
+  color: var(--muted-foreground);
+}
+
+.fieldError {
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line-height);
+  font-weight: var(--text-body-weight);
+  letter-spacing: var(--text-label-tracking);
   color: var(--destructive);
-  font-size: var(--text-meta-size);
-  line-height: var(--text-meta-line-height);
-  letter-spacing: var(--text-meta-tracking);
+}
+
+.fieldErrorList {
+  margin: 0;
+  margin-left: var(--space-4);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  list-style: disc;
 }

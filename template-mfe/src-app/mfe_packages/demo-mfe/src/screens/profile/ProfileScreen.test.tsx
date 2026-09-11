@@ -104,24 +104,31 @@ async function setupProfileScreen(options?: {
 
   const { ProfileScreen } = await import('./ProfileScreen');
   const bridgeFixture = createMfeBridgeFixture({
-    domainId: 'profile-domain',
-    instanceId: 'profile-screen',
+    extDomainId: 'profile-domain',
+    extensionId: 'profile-screen',
     initialProperties: {
       [FRONTX_SHARED_PROPERTY_THEME]: 'corporate',
       [FRONTX_SHARED_PROPERTY_LANGUAGE]: 'sv',
     },
   });
-  const { container, unmount } = render(<ProfileScreen bridge={bridgeFixture.bridge} />);
+  // Raised before the render, so the screen's mount effect has a host to write
+  // its direction on. Attached afterwards, that first pass reaches no host at
+  // all and the initial LTR direction is asserted by nothing.
+  const { host } = mockShadowHost(HTMLDivElement);
+  const { container, rerender, unmount } = render(
+    <ProfileScreen bridge={bridgeFixture.bridge} />
+  );
   const rootElement = container.firstChild as HTMLElement | null;
-  const host = rootElement ? mockShadowHost(rootElement).host : document.createElement('div');
 
   await screen.findByRole('heading', { level: 1 });
 
   return {
+    ProfileScreen,
     bridgeFixture,
     host,
     mutationResult,
     queryResult,
+    rerender,
     rootElement,
     unmount,
   };
@@ -141,9 +148,12 @@ describe('ProfileScreen', () => {
   });
 
   it('renders profile data and bridge values', async () => {
-    const { rootElement } = await setupProfileScreen();
+    const { host, rootElement } = await setupProfileScreen();
 
     expect(mockGetService).toHaveBeenCalledWith(AccountsApiService);
+    // The direction lands on the shadow host, not on the screen root, and `sv`
+    // resolves to the left-to-right default.
+    expect(host.dir).toBe(TextDirection.LeftToRight);
     expect(rootElement?.getAttribute('dir')).toBeNull();
     expect(screen.getByText('Ada Lovelace')).toBeTruthy();
     expect(screen.getByText('ada@example.com')).toBeTruthy();
@@ -152,6 +162,32 @@ describe('ProfileScreen', () => {
     expect(screen.getByText('profile-screen')).toBeTruthy();
     expect(screen.getByText('corporate')).toBeTruthy();
     expect(screen.getByText('sv')).toBeTruthy();
+  });
+
+  // `ApiUser` types the three edited fields as `string`, but nothing validates
+  // the response body it describes, so a profile can arrive with nulls in them.
+  // The card trims all three during render: an unguarded trim there takes the
+  // whole screen down rather than showing an empty field.
+  it('renders a profile whose editable fields came back null', async () => {
+    const nullFieldsUser = {
+      ...defaultUser,
+      firstName: null,
+      lastName: null,
+      extra: { department: null },
+      // Cast because the type forbids exactly the payload under test.
+    } as unknown as typeof defaultUser;
+
+    await setupProfileScreen({
+      queryResult: createQueryResult({ data: { user: nullFieldsUser } }),
+    });
+
+    expect(screen.getByText('ada@example.com')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'edit_profile' }));
+
+    for (const label of ['first_name_label', 'last_name_label', 'department_label']) {
+      expect(screen.getByLabelText(label)).toHaveProperty('value', '');
+    }
   });
 
   it('refetches the profile when refresh is clicked', async () => {
@@ -196,6 +232,8 @@ describe('ProfileScreen', () => {
 
   it('updates the language value and host direction', async () => {
     const { host, bridgeFixture } = await setupProfileScreen();
+
+    expect(host.dir).toBe(TextDirection.LeftToRight);
 
     await act(async () => {
       bridgeFixture.setProperty(FRONTX_SHARED_PROPERTY_LANGUAGE, 'ar');

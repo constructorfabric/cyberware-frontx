@@ -65,8 +65,9 @@ repos:
         entry: npm run arch:guards
         language: system
         pass_filenames: false
+      # See check-dco-signoff.mjs's own docblock for what this hook checks.
       - id: require-signoff
         name: Require Signed-off-by trailer (commit with `git commit -s`)
-        entry: 'bash -c ''grep -qE "^Signed-off-by: .+ <.+>$" "$1" || { echo "Commit rejected: missing Signed-off-by trailer. Commit with: git commit -s"; exit 1; }'' --'
+        entry: node scripts/check-dco-signoff.mjs
         language: system
         stages: [commit-msg]

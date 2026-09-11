@@ -24,18 +24,16 @@ exclude_paths:
 
   # Dev-only scripts — spawn() and fs operations take paths from the
   # monorepo's own config, not user input. Not exposed to runtime.
+  # (#597 cleanup removed .semgrepignore's duplicate exclusion for this
+  # path; Codacy's exclusion here is unrelated to, not a stand-in for,
+  # whatever exclusion mechanism the corporate Semgrep scanner applies.)
   - "scripts/**"
-  - "packages/cli/scripts/**"
 
   # Root Vitest plumbing — `vitest.shared.ts` is a build-time test-config
   # module loaded by `tsx`. It calls `readFileSync` on paths derived from
   # `import.meta.url` (no external input) and embeds a `'[sharedSetupFile]'`
   # template token that trips Codacy's "potential secret" pattern.
   - "vitest.shared.ts"
-
-  # CLI scaffold templates — code meant to be copied into new projects,
-  # not to be linted in the kit itself.
-  - "packages/cli/template-sources/**"
 
   # Generated MFE manifest (build artifact).
   - "src/app/mfe/generated-mfe-manifests.json"
@@ -48,34 +46,6 @@ exclude_paths:
   # starting with `_`), producing duplicate-but-conflicting findings.
   # studio is the authoritative validator for this tree.
   - "architecture/**"
-
-  # CLI ai-sync command + project generator — construct every fs path
-  # from the resolved projectRoot/templatesDir plus string literals via
-  # resolvePathUnderProjectRoot() (path-traversal-safe helper). Dynamic-
-  # path findings on readFile/writeFile sinks here are false positives
-  # of the same shape as the already-excluded scripts/ tree.
-  - "packages/cli/src/commands/ai/sync.ts"
-  - "packages/cli/src/generators/project.ts"
-
-  # CLI path-resolver trust kernel — `joinUnderRoot` is the helper every
-  # other CLI module funnels untrusted segments through. It (1) rejects
-  # `.`/`..` segments and anything outside `[A-Za-z0-9_.-]+`, then
-  # (2) re-verifies the resolved path stays under `root` via
-  # `path.relative`. The `path.resolve(root)` call on L17 trips the
-  # "user input into path.join/resolve" rule because `root` is a
-  # parameter — but this file is the boundary that makes the rule
-  # unnecessary downstream. Editing requires security review.
-  - "packages/cli/src/utils/fs.ts"
-
-  # CLI project-root trust kernel — `resolvePathUnderProjectRoot` is the
-  # sibling of `joinUnderRoot` for project-rooted paths (config, screensets,
-  # monorepo lookup). Same shape: (1) rejects non-absolute roots and null
-  # bytes, (2) accepts only single path segments (no `.`/`..`/separators/
-  # null bytes), then (3) re-verifies containment via `path.relative`.
-  # The `path.resolve(projectRoot)` and `path.join(cursor, seg)` calls trip
-  # the "user input into path.join/resolve" rule for the same reason as
-  # fs.ts — this file is the boundary. Editing requires security review.
-  - "packages/cli/src/utils/project.ts"
 
   # Audited trust kernel — this file concentrates patterns that static
   # analyzers flag as unsafe (non-literal RegExp with escaped inputs,

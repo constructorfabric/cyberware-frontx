@@ -31,6 +31,11 @@ export const Header: React.FC<HeaderProps> = ({ children }) => {
 
   return (
     <header className="h-16 flex items-center px-4 border-b border-border bg-background">
+      {/* Every page needs one h1 (axe: page-has-heading-one). The visual
+          brand is the logo in the sidebar; this names the app for assistive
+          tech without adding visible chrome. Screens contribute their own
+          headings below it. */}
+      <h1 className="sr-only">FrontX</h1>
       {children}
       <div className="ml-auto">
         {loading ? (

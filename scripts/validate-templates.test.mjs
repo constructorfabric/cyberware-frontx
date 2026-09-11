@@ -40,6 +40,43 @@ describe('runCli', () => {
     expect(logs.some((l) => l.includes('PASS') && l.includes('template-shell'))).toBe(true);
   });
 
+  // The doc-only template shape (template-design-guardrails): a
+  // manifest, a DESIGN.md, and the template's own .frontx/ai/<identity>/
+  // bundle subtree - no package.json, no lockfile, no ecosystem pins. The
+  // manifest contract requires no installable content, and with no
+  // package.json anywhere self-containment has nothing to object to, so
+  // this must PASS, not crash or false-fail.
+  it('passes a doc-only template: manifest + DESIGN.md + its .frontx/ai bundle, no package.json', async () => {
+    const root = await makeRoot();
+    const name = '@gears-frontx/template-design-guardrails';
+    const dir = path.join(root, 'template-design-guardrails');
+    await mkdir(path.join(dir, '.frontx', 'ai', name, 'skills'), { recursive: true });
+    await writeFile(
+      path.join(dir, 'frontx-template.json'),
+      validManifest({
+        name,
+        version: '0.1.0-alpha.1',
+        ownershipBoundaries: {
+          exclusiveSubtrees: ['DESIGN.md', `.frontx/ai/${name}/`],
+          sharedFiles: [],
+        },
+      }),
+    );
+    await writeFile(path.join(dir, 'DESIGN.md'), '# Design guardrails\n');
+    await writeFile(path.join(dir, '.frontx', 'ai', name, 'extension.json'), JSON.stringify({ skills: [] }));
+    await writeFile(path.join(dir, '.frontx', 'ai', name, 'skills', 'guardrails.md'), '# skill\n');
+    /** @type {string[]} */
+    const logs = [];
+    /** @type {string[]} */
+    const errors = [];
+
+    const exitCode = await runCli({ rootDir: root, log: (l) => logs.push(l), logError: (l) => errors.push(l) });
+
+    expect(errors).toEqual([]);
+    expect(exitCode).toBe(0);
+    expect(logs.some((l) => l.includes('PASS') && l.includes('template-design-guardrails'))).toBe(true);
+  });
+
   it('fails when one template directory fails validation, and still checks the rest', async () => {
     const root = await makeRoot();
     await mkdir(path.join(root, 'template-mfe'), { recursive: true });

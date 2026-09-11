@@ -9,7 +9,7 @@
  * - FrontX context (app instance)
  *
  * Layout handles:
- * - Header, Menu, Footer, Sidebar rendering
+ * - Header, Menu, Sidebar rendering
  * - Theme-aware styling via hooks
  *
  * MfeScreenContainer handles:

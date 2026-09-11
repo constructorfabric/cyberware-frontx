@@ -1,6 +1,6 @@
 {
   "name": "@gears-frontx/auth",
-  "version": "0.2.0-alpha.1",
+  "version": "0.2.0-alpha.2",
   "description": "Headless authentication contract and types for Gears FrontX SDK",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -29,8 +29,9 @@
   },
   "dependencies": {},
   "devDependencies": {
-    "tsup": "8.0.0",
-    "typescript": "5.4.2"
+    "@types/node": "^24.0.0",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3"
   },
   "peerDependencies": {},
   "publishConfig": {

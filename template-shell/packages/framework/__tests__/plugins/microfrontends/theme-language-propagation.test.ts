@@ -49,7 +49,7 @@ describe('Theme and Language Propagation - decouple-domain-contracts', () => {
       app.themeRegistry.register({
         id: 'dark',
         name: 'Dark',
-        variables: { '--color-bg': 'hsl(var(--primary))' },
+        variables: { '--color-bg': 'color-mix(in oklab, var(--primary) 90%, transparent)' },
       });
 
       const setThemeSpy = vi.spyOn(app.mfeRegistry!, 'setTheme');
@@ -57,7 +57,7 @@ describe('Theme and Language Propagation - decouple-domain-contracts', () => {
 
       eventBus.emit('theme/changed', { themeId: 'dark' });
 
-      expect(setThemeSpy).toHaveBeenCalledWith({ '--color-bg': 'hsl(var(--primary))' });
+      expect(setThemeSpy).toHaveBeenCalledWith({ '--color-bg': 'color-mix(in oklab, var(--primary) 90%, transparent)' });
       expect(updateSpy).toHaveBeenCalledWith(FRONTX_SHARED_PROPERTY_THEME, 'dark');
     });
 

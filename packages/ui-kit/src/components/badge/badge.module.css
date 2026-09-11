@@ -1,57 +1,60 @@
 /*
- * Badge styles — the F-mockups' Badge/Status design (Figma frame 196:397):
- * an intent-colored label, as a soft pill or a bare label, with an
- * opt-in status dot (`dot` prop) or leading icon (`icon` slot) in front of
- * it. Replaces the shadcn-translated variant set; the focus
- * ring/forced-colors/aria-invalid plumbing carries over from that
- * translation. Consumes only theme.css variables — no raw colors.
+ * Badge styles, translated from shadcn/ui (MIT, registry/bases/base/ui/
+ * badge.tsx + the new-york-v4 style's Tailwind geometry) to CSS Modules.
+ * Consumes only theme.css variables — no raw colors.
  *
- * Every selector here leads with `.badge` so the per-variant custom
- * properties (--badge-accent, --badge-text) stay same-part local under
- * tokens.test's leading-class scoping.
+ * The Studio mockup's Badge row (Figma "Phase 3 / Remaining core controls",
+ * node 40001414:5973) draws six TONE specimens — Neutral, Success, Warning,
+ * Danger, Info, Accent — all on one recipe: a soft tinted fill with the
+ * tone's own color as the label. Its geometry is already what upstream's
+ * base rule below sets (4/8 padding, 4 gap, full radius, 12/16 medium), so
+ * the mockup added no geometry deltas; what it added is the tone family at
+ * the bottom of this file. Neutral is NOT among them: its drawn pair
+ * (muted fill, foreground label) is what `.variantSecondary` already paints
+ * token-for-token, so it stays that one variant rather than shipping a
+ * second name for the same paint.
+ *
+ * The mockup is silent on the other five upstream variants — it draws no
+ * solid-fill, bordered, or borderless badge at all — so `default`,
+ * `destructive`, `outline`, `ghost` and `link` keep their upstream paint
+ * rather than being overwritten by a tone that never claimed their slot.
+ * `destructive` (solid red under --destructive-foreground) and `danger`
+ * (soft red fill, red label) are therefore both here on purpose: two
+ * emphasis levels of the one red theme.css already names twice.
+ *
+ * Geometry follows upstream (px-2 py-0.5 text-xs, gap-1, rounded-full,
+ * size-3 icon) snapped onto the token scales per the kit-wide "tokens win"
+ * ruling (see theme.css): 2px vertical padding has no --space-* step of
+ * its own, so it rounds up to --space-1 (4px) rather than introducing a
+ * literal. Type metrics mix ramp roles the same way textarea.module.css
+ * does: size/line-height from --text-meta (12/16, matching upstream's
+ * text-xs exactly) but weight from --text-label (500, matching upstream's
+ * font-medium — --text-meta-weight alone is regular/400).
  */
 
 .badge {
-  /*
-   * Safe fallbacks for --badge-accent/--badge-text — the muted recipe
-   * (cva's defaultVariants sets `variant: 'muted'`, so this is what every
-   * Badge gets today), declared HERE instead of on `.variantMuted` (now
-   * deliberately empty below) so there is exactly one copy of it. A real
-   * cascade default, not a var() fallback expression, so it works the
-   * same way --button-focus-ring's base value does in button.module.css:
-   * whichever per-variant class is present overrides it via ordinary
-   * specificity, and a Badge rendered without one (bypassing cva) still
-   * paints instead of going transparent/colorless.
-   */
-  --badge-accent: var(--muted-foreground);
-  --badge-text: color-mix(in oklab, var(--muted-foreground) 80%, var(--foreground) 20%);
-  /*
-   * The mockups draw the pill at a fixed 24px; without a global border-box
-   * preflight, content-box would inflate past it — same acute case as
-   * tabs.module.css, scoped the same way (this class only).
-   */
   box-sizing: border-box;
   display: inline-flex;
-  height: 1.5rem;
   width: fit-content;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   overflow: hidden;
   border: var(--border-width) solid transparent;
   border-radius: 9999px;
-  /* Studio/Meta (not the 500 weight the shadcn translation used — the
-   * mockups set status labels in regular), via the ramp tokens. */
+  padding: var(--space-1) var(--space-2);
   font-family: inherit;
   font-size: var(--text-meta-size);
   line-height: var(--text-meta-line-height);
-  font-weight: var(--text-meta-weight);
+  font-weight: var(--text-label-weight);
   letter-spacing: var(--text-meta-tracking);
   white-space: nowrap;
-  color: var(--badge-text);
-  /* Colour and box-shadow crossfades only, no transform/geometry — not motion under
-     WCAG 2.3.3, so deliberately left unguarded under prefers-reduced-motion. */
+  /*
+   * Colour and box-shadow crossfades only, no transform/geometry — not
+   * motion under WCAG 2.3.3, so deliberately left unguarded under
+   * prefers-reduced-motion.
+   */
   transition:
     color 150ms ease,
     background-color 150ms ease,
@@ -59,35 +62,25 @@
     box-shadow 150ms ease;
 }
 
-/*
- * The status dot, drawn in both shapes when opted in via the `dot` prop
- * (badge.tsx derives data-dot from dot/icon: the icon slot, when present,
- * takes the dot's place). Pure decoration duplicating the label's intent
- * color, which is why the dot itself is not held to the 3:1 non-text
- * floor (light warning's dot alone measures 2.84:1) — the AA-checked label
- * carries the information.
- */
-.badge[data-dot]::before {
-  content: '';
-  flex-shrink: 0;
-  width: 0.375rem;
-  height: 0.375rem;
-  border-radius: 50%;
-  background-color: var(--badge-accent);
+.badge svg {
+  pointer-events: none;
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
 }
 
+/*
+ * Focus ring: the same inset idiom as Input/Textarea (border color swap +
+ * inset box-shadow, geometry-stable — see input.module.css), not Button's
+ * outside outline — Badge is a bordered pill, not Button's shape. Only
+ * reachable at all once rendered as a link via `render`; a plain span is
+ * never in the tab order.
+ */
 .badge:focus-visible {
   outline: none;
-  /* The kit-wide 2px focus border in --ring, geometry-stable (see
-   * input.module.css). */
   border-color: var(--ring);
-  box-shadow: inset 0 0 0 var(--ring-inset)
-    var(--ring);
+  box-shadow: inset 0 0 0 var(--ring-inset) var(--ring);
 }
 
-/* The ring above is an inset box-shadow, and forced-colors mode doesn't
- * render box-shadow at all — add an explicit outline or the focus
- * indicator disappears entirely under the mode. */
 @media (forced-colors: active) {
   .badge:focus-visible {
     outline: 2px solid Highlight;
@@ -98,93 +91,139 @@
 /* Declared after :focus-visible so the invalid border wins while focused. */
 .badge[aria-invalid='true'] {
   border-color: var(--destructive);
-  box-shadow: inset 0 0 0 var(--ring-inset)
-    var(--destructive);
+  box-shadow: inset 0 0 0 var(--ring-inset) var(--destructive);
+}
+
+.variantDefault {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+a.variantDefault:hover {
+  background-color: var(--primary-hover);
+}
+
+.variantSecondary {
+  background-color: var(--secondary);
+  color: var(--secondary-foreground);
+}
+
+a.variantSecondary:hover {
+  background-color: color-mix(in oklab, var(--secondary) 80%, transparent);
+}
+
+.variantDestructive {
+  background-color: var(--destructive);
+  color: var(--destructive-foreground);
+}
+
+.variantDestructive:focus-visible {
+  border-color: var(--destructive-ring);
+  box-shadow: inset 0 0 0 var(--ring-inset) var(--destructive-ring);
 }
 
 /*
- * The icon slot (badge.tsx renders it only when `icon` is passed) sits
- * where the dot would, fixed at 12px, painted in the same accent the dot
- * uses — it replaces the dot, so it speaks the same intent color.
+ * Mixes toward --foreground rather than a flat opacity fade — same
+ * reasoning and idiom as button.module.css's destructive hover: fading an
+ * already-marginal fill toward the page pulls it *toward* the label it has
+ * to contrast with.
  */
-.badge .icon {
-  display: inline-flex;
-  flex-shrink: 0;
-  color: var(--badge-accent);
-  pointer-events: none;
+a.variantDestructive:hover {
+  background-color: color-mix(in oklab, var(--destructive) 90%, var(--foreground) 10%);
 }
 
-.badge .icon svg {
-  width: var(--icon-size-xs);
-  height: var(--icon-size-xs);
+.variantOutline {
+  border-color: var(--border);
+  color: var(--foreground);
 }
 
-/*
- * Variants. --badge-accent paints the dot raw; --badge-text mixes
- * --foreground into that accent because no raw status color clears 4.5:1 for
- * this 12px label against all three surfaces it can sit on (the pill fill,
- * --card, --background). 80/20 carries every variant but warning, the
- * lightest accent, which takes 70/30. The measured ratios are in
- * design-notes.md — these mixes resolve at runtime, so no test can recompute
- * them from the CSS the way button's focus rings are checked.
- */
-.badge.variantSuccess {
-  --badge-accent: var(--success);
-  --badge-text: color-mix(in oklab, var(--success) 80%, var(--foreground) 20%);
+a.variantOutline:hover {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
 }
 
-.badge.variantWarning {
-  --badge-accent: var(--warning);
-  --badge-text: color-mix(in oklab, var(--warning) 70%, var(--foreground) 30%);
+.variantGhost {
+  color: var(--foreground);
 }
 
-.badge.variantInfo {
-  --badge-accent: var(--info);
-  --badge-text: color-mix(in oklab, var(--info) 80%, var(--foreground) 20%);
+a.variantGhost:hover {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
 }
 
-.badge.variantDanger {
-  --badge-accent: var(--danger);
-  --badge-text: color-mix(in oklab, var(--danger) 80%, var(--foreground) 20%);
-}
-
-/* Deliberately empty — do not delete as dead CSS. Same idiom as
-   card.module.css's `.sizeDefault {}`: kept so `variant="muted"` is a real
-   DOM-visible class and cva has a defaultVariants target, but the values
-   it would set already live on `.badge` itself above (see its fallback
-   comment) — muted IS the fallback, not a separate recipe, so there is
-   nothing left to override here. */
-.badge.variantMuted {
-}
-
-/*
- * Shapes. The pill's fill is a neutral 5% --foreground tint over the local
- * surface, not a status-colored *-soft token: the mockups' badge panel draws
- * it neutral, and a tint mixed from --foreground flips with the theme by
- * construction. (The *-soft tokens exist in the palette but no component
- * reads them — see theme.css.)
- */
-.badge.shapePill {
-  background-color: color-mix(in oklab, var(--foreground) 5%, transparent);
-  padding: 0 var(--space-2);
-}
-
-.badge.shapePlain {
-  background-color: transparent;
-  padding: 0;
-}
-
-/*
- * A badge only reads as interactive once it actually renders as a link via
- * `render` (same tag-gated idiom as the old translation): the pill's tint
- * deepens a step. The plain form gets underline instead — it has no fill
- * to deepen.
- */
-a.badge.shapePill:hover {
-  background-color: color-mix(in oklab, var(--foreground) 9%, transparent);
-}
-
-a.badge.shapePlain:hover {
-  text-decoration: underline;
+.variantLink {
+  color: var(--primary);
   text-underline-offset: 4px;
+}
+
+a.variantLink:hover {
+  text-decoration: underline;
+}
+
+/*
+ * Tone family — the mockup's Success/Warning/Danger/Info/Accent specimens.
+ * Each is the status pair theme.css already ships (`--x` over `--x-soft`),
+ * which is what those four -soft fills were carried for: theme.css records
+ * them as unread, kept "so a later tinted surface doesn't have to re-derive
+ * them". This is that surface. Accent is the same shape over the
+ * --accent/--accent-foreground pair, matching the mockup's Accent badge.
+ *
+ * KNOWN CONTRAST DEBT, not an oversight: at 12px/500 these labels need
+ * 4.5:1 (WCAG 1.4.3) and four pairs miss it — light success 3.43:1,
+ * warning 2.90:1, danger 4.28:1, info 3.73:1, and dark danger 3.80:1.
+ * The shortfall is in the token pairs themselves, which the mockup defines
+ * and this file may not redefine, so it is raised for a design decision
+ * rather than papered over with a local literal. Every other pair clears
+ * AA (light accent 6.02:1, dark success 8.05:1 / warning 9.16:1 /
+ * info 8.80:1 / accent 12.83:1), as does Neutral via --secondary.
+ *
+ * Hover is the color-mix-toward-foreground idiom `a.variantDestructive`
+ * uses above, for the same reason: fading a tint toward transparent pulls
+ * it toward the label it has to contrast with. The mockup draws no badge
+ * hover state, so this is the file's own existing recipe applied for
+ * consistency, not a drawn spec.
+ */
+.variantSuccess {
+  background-color: var(--success-soft);
+  color: var(--success);
+}
+
+a.variantSuccess:hover {
+  background-color: color-mix(in oklab, var(--success-soft) 90%, var(--foreground) 10%);
+}
+
+.variantWarning {
+  background-color: var(--warning-soft);
+  color: var(--warning);
+}
+
+a.variantWarning:hover {
+  background-color: color-mix(in oklab, var(--warning-soft) 90%, var(--foreground) 10%);
+}
+
+.variantDanger {
+  background-color: var(--danger-soft);
+  color: var(--danger);
+}
+
+a.variantDanger:hover {
+  background-color: color-mix(in oklab, var(--danger-soft) 90%, var(--foreground) 10%);
+}
+
+.variantInfo {
+  background-color: var(--info-soft);
+  color: var(--info);
+}
+
+a.variantInfo:hover {
+  background-color: color-mix(in oklab, var(--info-soft) 90%, var(--foreground) 10%);
+}
+
+.variantAccent {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+a.variantAccent:hover {
+  background-color: color-mix(in oklab, var(--accent) 90%, var(--foreground) 10%);
 }

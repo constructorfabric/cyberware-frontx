@@ -6,7 +6,7 @@
 // @cpt-algo:cpt-frontx-algo-ui-libraries-choice-theme-propagation:p1
 
 import type { ThemeConfig } from '@gears-frontx/react';
-import { hslToVar } from './utils';
+import { cssColor } from './utils';
 
 /**
  * Dracula theme ID
@@ -34,33 +34,36 @@ const dracula = {
 export const draculaTheme: ThemeConfig = {
   id: DRACULA_THEME_ID,
   name: 'Dracula',
+  appearance: 'dark',
   variables: {
     // Shadcn color variables
-    '--background': hslToVar(dracula.background),
-    '--foreground': hslToVar(dracula.foreground),
-    '--card': hslToVar(dracula.background),
-    '--card-foreground': hslToVar(dracula.foreground),
-    '--popover': hslToVar(dracula.background),
-    '--popover-foreground': hslToVar(dracula.foreground),
-    '--primary': hslToVar(dracula.purple),
-    '--primary-foreground': hslToVar(dracula.background),
-    '--secondary': hslToVar(dracula.comment),
-    '--secondary-foreground': hslToVar(dracula.foreground),
-    '--muted': hslToVar(dracula.currentLine),
-    '--muted-foreground': hslToVar(dracula.foreground),
-    '--accent': hslToVar(dracula.pink),
-    '--accent-foreground': hslToVar(dracula.background),
-    '--destructive': hslToVar(dracula.red),
-    '--destructive-foreground': hslToVar(dracula.foreground),
-    '--border': hslToVar(dracula.currentLine),
-    '--input': hslToVar(dracula.currentLine),
-    '--ring': hslToVar(dracula.purple),
+    '--background': cssColor(dracula.background),
+    '--foreground': cssColor(dracula.foreground),
+    '--card': cssColor(dracula.background),
+    '--card-foreground': cssColor(dracula.foreground),
+    '--card-hover': 'color-mix(in oklab, var(--card) 96%, var(--foreground))',
+    '--popover': cssColor(dracula.background),
+    '--popover-foreground': cssColor(dracula.foreground),
+    '--primary': cssColor(dracula.purple),
+    '--primary-foreground': cssColor(dracula.background),
+    '--primary-hover': 'color-mix(in oklab, var(--primary) 90%, var(--background))',
+    '--secondary': cssColor(dracula.comment),
+    '--secondary-foreground': cssColor(dracula.foreground),
+    '--muted': cssColor(dracula.currentLine),
+    '--muted-foreground': cssColor(dracula.foreground),
+    '--accent': cssColor(dracula.pink),
+    '--accent-foreground': cssColor(dracula.background),
+    '--destructive': cssColor(dracula.red),
+    '--destructive-foreground': cssColor(dracula.foreground),
+    '--border': cssColor(dracula.currentLine),
+    '--input': cssColor(dracula.currentLine),
+    '--ring': cssColor(dracula.purple),
 
     // State colors
-    '--error': hslToVar(dracula.red),
-    '--warning': hslToVar(dracula.yellow),
-    '--success': hslToVar(dracula.green),
-    '--info': hslToVar(dracula.cyan),
+    '--error': cssColor(dracula.red),
+    '--warning': cssColor(dracula.yellow),
+    '--success': cssColor(dracula.green),
+    '--info': cssColor(dracula.cyan),
 
     // Chart colors (OKLCH format, Dracula-inspired palette)
     '--chart-1': 'oklch(0.714 0.203 313.26)',
@@ -70,11 +73,11 @@ export const draculaTheme: ThemeConfig = {
     '--chart-5': 'oklch(0.822 0.131 194.77)',
 
     // Left menu colors
-    '--left-menu': hslToVar(dracula.backgroundDark),
-    '--left-menu-foreground': hslToVar(dracula.comment),
-    '--left-menu-hover': hslToVar(dracula.currentLine),
-    '--left-menu-selected': hslToVar(dracula.purple),
-    '--left-menu-border': hslToVar(dracula.currentLine),
+    '--left-menu': cssColor(dracula.backgroundDark),
+    '--left-menu-foreground': cssColor(dracula.comment),
+    '--left-menu-hover': cssColor(dracula.currentLine),
+    '--left-menu-selected': cssColor(dracula.purple),
+    '--left-menu-border': cssColor(dracula.currentLine),
 
     // Spacing
     '--spacing-xs': '0.25rem',

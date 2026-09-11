@@ -6,6 +6,7 @@
   "navigation_description": "Clique no botão abaixo para navegar para a tela de Tema programaticamente.",
   "go_to_theme": "Ir para a Tela de Tema",
   "open_profile_refresh": "Open Profile & Refresh",
+  "mount_widgets_host_and_ping": "Mount Widgets Host + Widget A + Ping (nested)",
   "bridge_info": "Bridge Info",
   "domain_id": "Domain ID:",
   "instance_id": "Instance ID:",

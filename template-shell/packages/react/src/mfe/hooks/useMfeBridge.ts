@@ -33,7 +33,7 @@ import type { ChildMfeBridge } from '@gears-frontx/framework';
  *   // bridge.executeActionsChain(chain);
  *   // bridge.subscribeToProperty(propertyTypeId, callback);
  *
- *   return <div>Domain: {bridge.domainId}</div>;
+ *   return <div>Domain: {bridge.extDomainId}</div>;
  * }
  * ```
  */

@@ -74,7 +74,7 @@
 
 /* Base UI renders the item as a <span role="radio">, so :disabled can
  * never match — the stamped data-disabled attribute is the disabled state. */
-/* 0.42 per the mockups' disabled specimens. */
+/* disabled opacity: see input.module.css */
 .item[data-disabled] {
   cursor: not-allowed;
   opacity: 0.42;

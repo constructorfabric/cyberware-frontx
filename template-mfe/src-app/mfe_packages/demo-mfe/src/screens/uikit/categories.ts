@@ -1,7 +1,11 @@
 /**
  * UIKit Elements Categories
  *
- * Defines the 9 element categories and their element mappings.
+ * The showcase covers `@gears-frontx/ui-kit`'s published surface and nothing
+ * else: every element below maps to exactly one exported component, and the kit
+ * exports no component that is missing here. An entry with no component behind
+ * it would be a promise the template cannot keep — a reader copying this
+ * scaffold takes the list as the inventory it is allowed to build from.
  */
 
 export const CATEGORIES = {
@@ -12,8 +16,6 @@ export const CATEGORIES = {
   feedback: 'feedback',
   dataDisplay: 'data_display',
   overlays: 'overlays',
-  media: 'media',
-  disclosure: 'disclosure',
 } as const;
 
 export type Category = typeof CATEGORIES[keyof typeof CATEGORIES];
@@ -23,78 +25,20 @@ export type Category = typeof CATEGORIES[keyof typeof CATEGORIES];
  * Each element maps to an ID used in translation keys and DOM element IDs.
  */
 export const CATEGORY_ELEMENTS: Record<Category, string[]> = {
-  [CATEGORIES.layout]: [
-    'grid',
-    'separator',
-    'divider',
-    'card',
-    'sidebar',
-    'footer',
-    'header',
-    'scroll_area',
-  ],
-  [CATEGORIES.navigation]: [
-    'breadcrumb',
-    'nav',
-    'tab',
-    'pagination',
-    'link',
-    'menu',
-  ],
+  [CATEGORIES.layout]: ['card', 'separator'],
+  [CATEGORIES.navigation]: ['tab'],
   [CATEGORIES.forms]: [
+    'field',
+    'label',
     'input',
     'textarea',
     'select',
     'checkbox',
     'radio',
     'switch',
-    'date_picker',
-    'file_upload',
-    'slider',
-    'rating',
   ],
-  [CATEGORIES.actions]: [
-    'button',
-    'toggle',
-    'dropdown',
-    'chip',
-  ],
-  [CATEGORIES.feedback]: [
-    'alert',
-    'notification',
-    'toast',
-    'progress',
-    'spinner',
-    'skeleton',
-    'loader',
-    'status_badge',
-    'empty_state',
-  ],
-  [CATEGORIES.dataDisplay]: [
-    'data_table',
-    'table',
-    'list',
-    'badge',
-    'tag',
-    'typography',
-    'icon',
-    'image',
-    'timeline',
-    'tooltip',
-  ],
-  [CATEGORIES.overlays]: [
-    'dialog',
-    'modal',
-    'drawer',
-    'popover',
-  ],
-  [CATEGORIES.media]: [
-    'image',
-    'chart',
-    'calendar',
-  ],
-  [CATEGORIES.disclosure]: [
-    'accordion',
-    'tree_view',
-  ],
+  [CATEGORIES.actions]: ['button', 'dropdown'],
+  [CATEGORIES.feedback]: ['toast', 'skeleton'],
+  [CATEGORIES.dataDisplay]: ['table', 'badge', 'tooltip'],
+  [CATEGORIES.overlays]: ['dialog'],
 };

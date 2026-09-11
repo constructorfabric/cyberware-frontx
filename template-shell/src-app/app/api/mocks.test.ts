@@ -23,7 +23,7 @@ describe('accountsMockMap', () => {
     expect(getMockUser()).toEqual(
       expect.objectContaining({
         id: 'mock-user-001',
-        firstName: 'Demo',
+        firstName: 'Alex',
       }),
     );
     expect(getMockUser()).not.toBe(initialUser);

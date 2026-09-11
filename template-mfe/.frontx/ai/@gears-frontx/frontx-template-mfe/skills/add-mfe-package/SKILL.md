@@ -19,7 +19,10 @@ repository standalone.
 
 The Project Developer wants to add a new microfrontend screen to a project that
 already has `template-shell` applied (a new screenset entry, a new isolated UI unit
-to mount into an extension domain).
+to mount into an extension domain). When the task adds two or more MFE packages,
+follow `workflows/add-mfe-packages-parallel.md` in this bundle: it phases this
+skill's steps so the per-package work runs concurrently — this skill remains the
+authority on each step.
 
 ## What template-mfe provides
 
@@ -84,12 +87,55 @@ to mount into an extension domain).
    from `@gears-frontx/react`; the MFE's own `init.ts` builds its app instance with
    `createFrontX().use(effects()).use(queryCacheShared()).use(mock()).build()` so it
    joins the host's shared `QueryClient` without owning a second one.
-6. **Regenerate manifests** — run `npm run generate:mfe-manifests` so the host's
+6. **Build the screen's UI from `@gears-frontx/ui-kit`** — the shell installs the
+   kit, and its installed `llms.txt` is the component inventory. The kit is the
+   only component source: no other component library, and no shadcn components
+   or APIs — the kit follows shadcn conventions, so shadcn patterns may guide
+   which kit component maps to a UI pattern, nothing more. Confirm the copied
+   package declares `@gears-frontx/ui-kit` in its dependencies (add it if the
+   scaffold copy predates the kit migration and lacks it). Before writing any
+   markup, produce an explicit plan: map every visible UI pattern on the
+   screen to a concrete kit component or approved composition from the
+   inventory, and record the screen's grid columns, alignment anchors, and
+   responsive breakpoints. A pattern with no kit mapping is reported in the
+   plan as a gap — never guessed at or recreated locally. Then compose from
+   kit components and semantic tokens; hand-rolling a
+   look-alike of an existing kit component is a defect, not a style choice. If a
+   design-contract bundle is installed in the project — any AI bundle that ships a
+   `generate-interface` skill (check for `.frontx/ai/*/*/skills/generate-interface/`) —
+   that skill and its design contract govern how the screen is generated — follow
+   them. If none is installed, say so in the plan: the screen is being generated
+   without a design contract.
+   Replace the scaffold's `HomeScreen` content wholesale: its "Bridge Info"
+   card (domain id, instance id, theme, language) is scaffold demo residue,
+   the screen equivalent of the `templateExample` flag — a shipped screen
+   that still renders it is a defect. Keep the lifecycle wiring the scaffold
+   demonstrates; drop the demo markup and its i18n keys, and add the
+   replacement keys to every locale file the scaffold ships
+   (`src/screens/home/i18n/*.json`) — the key sets must stay identical across
+   locales, or non-default locales render missing-translation placeholders.
+   One runtime fact to build against: under `dev:all` the MFEs are served
+   from a production build (`vite build && vite preview`), so
+   `import.meta.env.DEV` is `false` inside MFE code even in development —
+   never gate dev-only hooks or debug affordances on it in an MFE package;
+   only the host app runs on a true dev server.
+7. **Regenerate manifests** — run `npm run generate:mfe-manifests` so the host's
    `public/generated-mfe-manifests.json` picks up the new package; this step is
    mandatory before the new MFE is discoverable at runtime.
-7. **Verify** — `npm run type-check`, `npm run arch:deps` (dependency-cruiser
-   boundaries, shell-owned script), then `npm run dev:all` and confirm the new screen
-   mounts with zero console errors.
+8. **Verify** — while iterating on the MFE, scope checks to its workspace:
+   `npm run type-check --workspace=<package-name>` and
+   `npm run test:unit --workspace=<package-name>` (a full `type-check` or
+   `test:unit` sweep re-checks the shell and every other MFE on each fix —
+   repeated minutes that add no evidence about this package). When the MFE is
+   complete, run the full gate exactly once: `npm run type-check`,
+   `npm run test:unit`, `npm run arch:deps` (dependency-cruiser boundaries,
+   shell-owned script), then `npm run dev:all` and confirm the new screen
+   mounts with zero console errors. Automated checks passing is not the end
+   of verification: complete a final visual review of the screen at its
+   target widths and themes before calling the MFE complete — when a
+   design-contract bundle is installed, its `verify-interface` flow is that
+   review; without one, look at the rendered screen yourself and check
+   layout alignment, overflow, and each visual state.
 
 ## Boundaries
 

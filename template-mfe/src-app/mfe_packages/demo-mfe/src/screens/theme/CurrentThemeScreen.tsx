@@ -1,9 +1,25 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import type { ChildMfeBridge } from '@gears-frontx/react';
 import { FRONTX_SHARED_PROPERTY_THEME, FRONTX_SHARED_PROPERTY_LANGUAGE } from '@gears-frontx/react';
-import { Card, CardContent } from '../../components/ui/card';
-import { Skeleton } from '../../components/ui/skeleton';
 import { useScreenTranslations } from '../../shared/useScreenTranslations';
+import { useBridgeProperty } from '../../shared/useBridgeProperty';
+import { useHostDirection } from '../../shared/useHostDirection';
+
+/*
+ * This screen renders the SHELL's theme, so it paints from the shell's Tailwind
+ * colour utilities and takes no component from @gears-frontx/ui-kit. That is
+ * also why `lifecycle-theme` does not extend KitThemedLifecycle: the kit's
+ * tokens re-declare `--background`, `--primary` and their neighbours as
+ * complete colours, and the utilities below read the same names as HSL
+ * triplets. Anchoring kit tokens on this shadow host would blank every swatch
+ * the screen exists to display.
+ *
+ * `card` and `placeholder` below stand in for the kit's Card and Skeleton for
+ * that reason; they are the shell's own utility classes, not a second component
+ * library.
+ */
+const CARD_CLASS = 'rounded-lg border border-border bg-card text-card-foreground shadow-sm';
+const PLACEHOLDER_CLASS = 'animate-pulse rounded-md bg-muted';
 
 /**
  * Props for the CurrentThemeScreen component.
@@ -18,13 +34,6 @@ const languageModules = import.meta.glob('./i18n/*.json') as Record<
   () => Promise<{ default: Record<string, string> }>
 >;
 
-const RTL_LANGUAGES = ['ar', 'he', 'fa', 'ur'];
-
-function readBridgeProperty(bridge: ChildMfeBridge, property: string, fallback: string): string {
-  const current = bridge.getProperty(property);
-  return current && typeof current.value === 'string' ? current.value : fallback;
-}
-
 /**
  * Current Theme Screen for the MFE remote.
  *
@@ -33,9 +42,8 @@ function readBridgeProperty(bridge: ChildMfeBridge, property: string, fallback: 
  * destructive using the CSS custom properties.
  *
  * Receives a ChildMfeBridge for communication with the host application.
- * Demonstrates bridge usage by displaying domainId, instanceId, theme, and language.
+ * Demonstrates bridge usage by displaying extDomainId, extensionId, theme, and language.
  *
- * Uses local UI components (Card) for consistent styling.
  * Runs inside Shadow DOM with isolated styles.
  *
  * Subscribes to theme and language domain properties to demonstrate
@@ -43,60 +51,12 @@ function readBridgeProperty(bridge: ChildMfeBridge, property: string, fallback: 
  */
 export const CurrentThemeScreen: React.FC<CurrentThemeScreenProps> = ({ bridge }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  // Initial value read directly from the bridge's lazy useState initializer (runs once,
-  // synchronously, during the first render) instead of via setState in a mount effect —
-  // this avoids an extra render and the set-state-in-effect anti-pattern. The effect
-  // below only subscribes for subsequent property changes.
-  const [theme, setTheme] = useState<string>(() =>
-    readBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_THEME, 'default')
-  );
-  const [language, setLanguage] = useState<string>(() =>
-    readBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_LANGUAGE, 'en')
-  );
-  // The lazy initializers above run only on mount; if the host swaps the bridge
-  // instance, re-read its current properties during render ("adjusting state
-  // during render") — the subscription effect only delivers future changes.
-  const [prevBridge, setPrevBridge] = useState(bridge);
-  if (prevBridge !== bridge) {
-    setPrevBridge(bridge);
-    setTheme(readBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_THEME, 'default'));
-    setLanguage(readBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_LANGUAGE, 'en'));
-  }
+  const theme = useBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_THEME, 'default');
+  const language = useBridgeProperty(bridge, FRONTX_SHARED_PROPERTY_LANGUAGE, 'en');
+  useHostDirection(containerRef, language);
 
   // Load translations using the shared hook
   const { t, loading } = useScreenTranslations(languageModules, bridge);
-
-  useEffect(() => {
-    // Subscribe to theme domain property
-    const themeUnsubscribe = bridge.subscribeToProperty(FRONTX_SHARED_PROPERTY_THEME, (property) => {
-      if (typeof property.value === 'string') {
-        setTheme(property.value);
-      }
-    });
-
-    // Subscribe to language domain property
-    const languageUnsubscribe = bridge.subscribeToProperty(FRONTX_SHARED_PROPERTY_LANGUAGE, (property) => {
-      if (typeof property.value === 'string') {
-        setLanguage(property.value);
-      }
-    });
-
-    // Cleanup subscriptions on unmount
-    return () => {
-      themeUnsubscribe();
-      languageUnsubscribe();
-    };
-  }, [bridge]);
-
-  // Keep the Shadow DOM host's text direction in sync with the active language.
-  // An effect keyed by `language` (rather than logic inside the subscription
-  // callback) also covers the initial language, which never fires a callback.
-  useEffect(() => {
-    const rootNode = containerRef.current?.getRootNode();
-    if (rootNode && 'host' in rootNode) {
-      (rootNode.host as HTMLElement).dir = RTL_LANGUAGES.includes(language) ? 'rtl' : 'ltr';
-    }
-  }, [language]);
 
   // Color swatches data (names will be translated)
   const colorSwatches = [
@@ -112,18 +72,18 @@ export const CurrentThemeScreen: React.FC<CurrentThemeScreenProps> = ({ bridge }
   // Show skeleton while translations are loading
   if (loading) {
     return (
-      <div ref={containerRef} className="p-8">
-        <Skeleton className="h-8 w-64 mb-4" />
-        <Skeleton className="h-4 w-96 mb-6" />
-        <Card>
-          <CardContent className="p-6">
-            <Skeleton className="h-6 w-48 mb-4" />
+      <div ref={containerRef} className="p-8" role="status" aria-busy="true">
+        <div className={`${PLACEHOLDER_CLASS} h-8 w-64 mb-4`} />
+        <div className={`${PLACEHOLDER_CLASS} h-4 w-96 mb-6`} />
+        <div className={CARD_CLASS}>
+          <div className="p-6">
+            <div className={`${PLACEHOLDER_CLASS} h-6 w-48 mb-4`} />
             <div className="space-y-3">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-full" />
+              <div className={`${PLACEHOLDER_CLASS} h-4 w-full`} />
+              <div className={`${PLACEHOLDER_CLASS} h-4 w-full`} />
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     );
   }
@@ -139,8 +99,8 @@ export const CurrentThemeScreen: React.FC<CurrentThemeScreenProps> = ({ bridge }
 
       <div className="max-w-4xl space-y-4">
         {/* Theme Info Card */}
-        <Card>
-          <CardContent className="p-6">
+        <div className={CARD_CLASS}>
+          <div className="p-6">
             <h2 className="text-xl font-semibold mb-3">
               {t('theme_information')}
             </h2>
@@ -150,12 +110,12 @@ export const CurrentThemeScreen: React.FC<CurrentThemeScreenProps> = ({ bridge }
                 <dd className="text-foreground font-mono text-lg">{theme}</dd>
               </div>
             </dl>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Color Swatches */}
-        <Card>
-          <CardContent className="p-6">
+        <div className={CARD_CLASS}>
+          <div className="p-6">
             <h2 className="text-xl font-semibold mb-3">
               {t('theme_color_swatches')}
             </h2>
@@ -170,12 +130,12 @@ export const CurrentThemeScreen: React.FC<CurrentThemeScreenProps> = ({ bridge }
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* CSS Variables Reference */}
-        <Card>
-          <CardContent className="p-6">
+        <div className={CARD_CLASS}>
+          <div className="p-6">
             <h2 className="text-xl font-semibold mb-3">
               {t('css_custom_properties')}
             </h2>
@@ -193,23 +153,23 @@ export const CurrentThemeScreen: React.FC<CurrentThemeScreenProps> = ({ bridge }
               <div>--destructive</div>
               <div>--destructive-foreground</div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Bridge Info Card */}
-        <Card>
-          <CardContent className="p-6">
+        <div className={CARD_CLASS}>
+          <div className="p-6">
             <h2 className="text-xl font-semibold mb-3">
               {t('bridge_info')}
             </h2>
             <dl className="grid gap-2">
               <div>
                 <dt className="font-medium">{t('domain_id')}</dt>
-                <dd className="font-mono text-sm text-muted-foreground">{bridge.domainId}</dd>
+                <dd className="font-mono text-sm text-muted-foreground">{bridge.extDomainId}</dd>
               </div>
               <div>
                 <dt className="font-medium">{t('instance_id')}</dt>
-                <dd className="font-mono text-sm text-muted-foreground">{bridge.instanceId}</dd>
+                <dd className="font-mono text-sm text-muted-foreground">{bridge.extensionId}</dd>
               </div>
               <div>
                 <dt className="font-medium">{t('current_theme')}</dt>
@@ -220,8 +180,8 @@ export const CurrentThemeScreen: React.FC<CurrentThemeScreenProps> = ({ bridge }
                 <dd className="font-mono text-sm text-muted-foreground">{language}</dd>
               </div>
             </dl>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

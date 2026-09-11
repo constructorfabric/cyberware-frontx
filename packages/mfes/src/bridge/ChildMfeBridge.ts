@@ -11,17 +11,22 @@
 import { ChildMfeBridge } from '../handler/types';
 import type { ActionHandler } from '../mediator/types';
 import type { SharedProperty, ActionsChain } from '../types';
-import { NoActionsChainHandlerError } from './errors';
+import { NoActionsChainHandlerError, BridgeDisposedError, BridgeInactiveError } from './errors';
 
 /**
  * Internal implementation of ChildMfeBridge.
  * This class is given to child MFEs for host communication.
  *
+ * One instance is created per extension, at its first mount, and handed to
+ * every subsequent mount of that extension as the same object
+ * (`inst-bridge-lifetime`). Its active/inactive/destroyed state is private
+ * implementation detail, visible on no public surface.
+ *
  * @internal
  */
 export class ChildMfeBridgeImpl extends ChildMfeBridge {
-  readonly domainId: string;
-  readonly instanceId: string;
+  readonly extDomainId: string;
+  readonly extensionId: string;
 
   /**
    * Internal: property subscriptions.
@@ -72,13 +77,67 @@ export class ChildMfeBridgeImpl extends ChildMfeBridge {
    */
   private readonly childDomainIds: Set<string> = new Set();
 
+  /**
+   * Internal: whether this bridge is currently mounted. `false` between an
+   * unmount (or failed mount) and the next reactivation.
+   */
+  private active = false;
+
+  /**
+   * Internal: whether this bridge has been permanently torn down (the
+   * extension it belongs to was unregistered). Once `true`, stays `true`.
+   */
+  private destroyed = false;
+
   constructor(
-    domainId: string,
-    instanceId: string
+    extDomainId: string,
+    extensionId: string
   ) {
     super();
-    this.domainId = domainId;
-    this.instanceId = instanceId;
+    this.extDomainId = extDomainId;
+    this.extensionId = extensionId;
+  }
+
+  /**
+   * INTERNAL: Reactivate this bridge for a fresh mount. Called by the
+   * runtime bridge factory. Throws if the bridge has been permanently
+   * disposed.
+   *
+   * @internal
+   */
+  activate(): void {
+    if (this.destroyed) {
+      throw new BridgeDisposedError(this.extensionId);
+    }
+    this.active = true;
+  }
+
+  /**
+   * INTERNAL: Deactivate this bridge on unmount or mount failure. Handler
+   * registrations and property subscriptions survive.
+   *
+   * @internal
+   */
+  deactivate(): void {
+    this.active = false;
+  }
+
+  /**
+   * INTERNAL: Whether this bridge is currently mounted and not destroyed.
+   *
+   * @internal
+   */
+  isActive(): boolean {
+    return this.active && !this.destroyed;
+  }
+
+  /**
+   * INTERNAL: Whether this bridge has been permanently disposed.
+   *
+   * @internal
+   */
+  isDestroyed(): boolean {
+    return this.destroyed;
   }
 
   /**
@@ -89,10 +148,18 @@ export class ChildMfeBridgeImpl extends ChildMfeBridge {
    *
    * @param chain - Actions chain to execute
    * @returns Promise resolving when execution is complete
+   * @throws {BridgeDisposedError} If the bridge has been permanently disposed
+   * @throws {BridgeInactiveError} If the extension is registered but not currently mounted
    */
   async executeActionsChain(chain: ActionsChain): Promise<void> {
+    if (this.destroyed) {
+      throw new BridgeDisposedError(this.extensionId);
+    }
+    if (!this.active) {
+      throw new BridgeInactiveError(this.extensionId);
+    }
     if (!this.executeActionsChainCallback) {
-      throw new Error(`Bridge not connected for instance '${this.instanceId}'`);
+      throw new Error(`Bridge not connected for extension '${this.extensionId}'`);
     }
     return this.executeActionsChainCallback(chain);
   }
@@ -104,10 +171,18 @@ export class ChildMfeBridgeImpl extends ChildMfeBridge {
    *
    * @param chain - Actions chain to send
    * @returns Promise resolving when execution is complete
+   * @throws {BridgeDisposedError} If the bridge has been permanently disposed
+   * @throws {BridgeInactiveError} If the extension is registered but not currently mounted
    */
   async sendActionsChain(chain: ActionsChain): Promise<void> {
+    if (this.destroyed) {
+      throw new BridgeDisposedError(this.extensionId);
+    }
+    if (!this.active) {
+      throw new BridgeInactiveError(this.extensionId);
+    }
     if (!this.parentBridge) {
-      throw new Error(`Bridge not connected for instance '${this.instanceId}'`);
+      throw new Error(`Bridge not connected for extension '${this.extensionId}'`);
     }
     return this.parentBridge.handleChildAction(chain);
   }
@@ -122,11 +197,19 @@ export class ChildMfeBridgeImpl extends ChildMfeBridge {
    */
   onActionsChain(handler: (chain: ActionsChain) => Promise<void>): () => void {
     if (this.actionsChainHandler !== null) {
-      console.warn(`onActionsChain: replacing existing handler for instance '${this.instanceId}'`);
+      console.warn(`onActionsChain: replacing existing handler for extension '${this.extensionId}'`);
     }
     this.actionsChainHandler = handler;
+    // Compare-and-clear: since this bridge object is the SAME one handed to
+    // every mount of this extension (`inst-bridge-lifetime`), an unsubscribe
+    // captured by an earlier registration must not clobber a DIFFERENT
+    // handler installed after it replaced this one — e.g. a nested registry
+    // rebuilt on a remount adopts this same bridge's still-live inbound
+    // link and re-subscribes before the previous adopter's own unlink runs.
     return () => {
-      this.actionsChainHandler = null;
+      if (this.actionsChainHandler === handler) {
+        this.actionsChainHandler = null;
+      }
     };
   }
 
@@ -169,12 +252,22 @@ export class ChildMfeBridgeImpl extends ChildMfeBridge {
 
   /**
    * INTERNAL: Called by ParentMfeBridge when domain property changes.
+   * Always records the value. Subscribers are notified only while the
+   * bridge is active; no replay happens on reactivation.
    *
    * @param propertyTypeId - Type ID of the property that changed
    * @param value - New property value
    */
   receivePropertyUpdate(propertyTypeId: string, value: SharedProperty): void {
+    if (this.destroyed) {
+      return; // Hard no-op after permanent teardown.
+    }
+
     this.properties.set(propertyTypeId, value);
+
+    if (!this.active) {
+      return; // Recorded, but subscribers are not notified while inactive.
+    }
 
     // Notify property-specific subscribers
     const propertySubscribers = this.propertySubscribers.get(propertyTypeId);
@@ -239,7 +332,9 @@ export class ChildMfeBridgeImpl extends ChildMfeBridge {
   /**
    * Register a handler for a specific action type on this MFE.
    * Delegates to the wired callback which calls mediator.registerHandler().
-   * May be called multiple times — once per action type.
+   * May be called multiple times — once per action type. The registration
+   * survives this bridge's deactivation and is released only at the
+   * extension's permanent unregistration.
    *
    * @param actionTypeId - The action type this handler handles
    * @param handler - The ActionHandler instance to invoke
@@ -290,22 +385,31 @@ export class ChildMfeBridgeImpl extends ChildMfeBridge {
    *
    * @param chain - Actions chain from parent
    * @returns Promise resolving when execution is complete
+   * @throws {BridgeDisposedError} If the bridge has been permanently disposed
+   * @throws {BridgeInactiveError} If the extension is registered but not currently mounted
    * @throws {NoActionsChainHandlerError} If no handler is registered
    */
   handleParentActionsChain(chain: ActionsChain): Promise<void> {
+    if (this.destroyed) {
+      throw new BridgeDisposedError(this.extensionId);
+    }
+    if (!this.active) {
+      throw new BridgeInactiveError(this.extensionId);
+    }
     if (this.actionsChainHandler === null) {
-      throw new NoActionsChainHandlerError(this.instanceId);
+      throw new NoActionsChainHandlerError(this.extensionId);
     }
     return this.actionsChainHandler(chain);
   }
 
   /**
-   * INTERNAL: Cleanup method called by bridge factory.
+   * INTERNAL: Permanent teardown, called by the bridge factory only when the
+   * extension this bridge belongs to is unregistered.
    *
    * CRITICAL ORDERING: Must unregister all child domains BEFORE nulling callbacks.
    * This ensures forwarding handlers are properly removed from the parent's mediator.
    */
-  cleanup(): void {
+  destroy(): void {
     // Step 1: Unregister all tracked child domains (callbacks MUST be wired at this point)
     for (const domainId of this.childDomainIds) {
       this.unregisterChildDomain(domainId);
@@ -325,5 +429,8 @@ export class ChildMfeBridgeImpl extends ChildMfeBridge {
     this.parentBridge = null;
     this.actionsChainHandler = null;
     this.executeActionsChainCallback = null;
+
+    this.active = false;
+    this.destroyed = true;
   }
 }

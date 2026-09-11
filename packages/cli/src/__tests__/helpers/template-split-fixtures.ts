@@ -12,6 +12,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { joinWithinRoot } from '@gears-frontx/test-support/path-guard';
 import { TemplateInventory } from '../../inventory/TemplateInventory';
 import { FsInventoryIndex } from '../../adapters/fs-inventory-index';
 import { FsContentStore } from '../../adapters/fs-content-store';
@@ -91,7 +92,7 @@ export function sha256(content: string): string {
 /** Reads and parses a template's manifest directly off disk (trusted,
  * source-controlled fixture content — not the validated read path). */
 export function readManifest(templateDir: string): TemplateManifest {
-  const raw = fs.readFileSync(path.join(templateDir, MANIFEST_FILENAME), 'utf-8');
+  const raw = fs.readFileSync(joinWithinRoot(templateDir, MANIFEST_FILENAME), 'utf-8');
   return JSON.parse(raw) as TemplateManifest;
 }
 
@@ -101,6 +102,13 @@ export function readManifest(templateDir: string): TemplateManifest {
  * documented, deferred risk in the SSOT, not something this fixture set
  * re-litigates). */
 export function listRealFiles(root: string, excludedDirs: Set<string> = EXCLUDED_DIRS, relativeDir = ''): string[] {
+  // `relativeDir` accumulates across recursive calls below (each level appends
+  // one more real directory-entry name via `path.join`), so by the time it
+  // reaches here it is a genuinely dynamic, already-multi-segment relative
+  // path — not a set of individually-known segments this call site could
+  // hand to `joinWithinRoot(root, ...segments)`. Left as `path.join`: every
+  // segment composing it originated from `fs.readdirSync` on `root` itself,
+  // not from untrusted input.
   const absoluteDir = path.join(root, relativeDir);
   const entries = fs.readdirSync(absoluteDir, { withFileTypes: true });
   const files: string[] = [];

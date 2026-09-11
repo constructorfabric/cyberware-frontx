@@ -6,6 +6,7 @@
   "navigation_description": "Klicken Sie auf die Schaltfläche unten, um programmgesteuert zum Themen-Bildschirm zu navigieren.",
   "go_to_theme": "Zum Themen-Bildschirm",
   "open_profile_refresh": "Open Profile & Refresh",
+  "mount_widgets_host_and_ping": "Mount Widgets Host + Widget A + Ping (nested)",
   "bridge_info": "Bridge Info",
   "domain_id": "Domain ID:",
   "instance_id": "Instance ID:",
