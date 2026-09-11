@@ -18,7 +18,16 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    // N2 (review round 16-re3): same reasoning as `packages/routing`'s own
+    // tsconfig — `tsup` reads this file to build the published declaration
+    // output, and without `stripInternal` an `@internal`-tagged export
+    // (`history-adaptation.ts`, `location-preserving-redirect.ts`) ships in
+    // `dist/index.d.ts` anyway. `tsconfig.typecheck.json` (used by
+    // `type-check:test`) extends this file but stays unaffected: it is
+    // `noEmit`, so `stripInternal` — a declaration-emit option — has no
+    // effect there.
+    "stripInternal": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "src/__tests__"]

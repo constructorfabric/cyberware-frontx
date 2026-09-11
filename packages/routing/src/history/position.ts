@@ -46,7 +46,12 @@ function isPositionState(value: unknown): value is PositionState {
     return false;
   }
   const { position } = value as { position?: unknown };
-  return typeof position === 'number' && Number.isInteger(position) && position >= 0;
+  // `Number.isSafeInteger`, not `Number.isInteger`: a value like `1e300` or
+  // `2 ** 53` passes `Number.isInteger` (it has no fractional part) but
+  // cannot represent an exact integer count of entries — `1e300 - 1 === 1e300`
+  // in IEEE 754 — so treating it as a real position this substrate could
+  // have written would be as wrong as accepting `NaN` or a negative number.
+  return typeof position === 'number' && Number.isSafeInteger(position) && position >= 0;
 }
 
 /**

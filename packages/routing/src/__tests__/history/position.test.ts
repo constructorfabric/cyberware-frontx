@@ -42,4 +42,12 @@ describe('readPosition — malformed or absent state', () => {
     expect(readPosition({ [POSITION_STATE_KEY]: { position: 0 } })).toBe(0);
     expect(readPosition({ [POSITION_STATE_KEY]: { position: 7 } })).toBe(7);
   });
+
+  it('returns undefined for a magnitude beyond exact integer representation', () => {
+    // `1e300` has no fractional part (`Number.isInteger` would accept it),
+    // but IEEE 754 cannot represent it exactly as a count of entries —
+    // `Number.isSafeInteger` is what actually guards this, not
+    // `Number.isInteger`.
+    expect(readPosition({ [POSITION_STATE_KEY]: { position: 1e300 } })).toBeUndefined();
+  });
 });

@@ -19,10 +19,11 @@ export type * from './types/index.js';
 // `resolveNavigationHistory` alone — not `createNavigationHistory` or
 // `createWindowHistoryAdapter` — is this package's own public construction
 // path (DESIGN §3.3, public surface); see `./history/index.ts` for why.
-// `HistoryAdapter` and `AdapterLocation` (its own return/parameter type)
-// stay re-exported as an `@internal` test seam.
+// `HistoryAdapter` and `AdapterLocation` (its own return/parameter type) are
+// not re-exported here (N2, review round 16-re3): see `./history/index.ts`'s
+// own comment for why an `@internal` re-export could not be relied on to
+// strip from the published `dist/index.d.ts`.
 export { resolveNavigationHistory } from './history/index.js';
-export type { AdapterLocation, HistoryAdapter } from './history/index.js';
 
 // URL grammar codec (`cpt-frontx-feature-routing-navigation-substrate` §3:
 // Grammar Parse, Grammar Serialize, Name Validity And Equality,
