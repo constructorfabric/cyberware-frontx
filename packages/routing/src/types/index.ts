@@ -36,6 +36,21 @@ export interface Location {
   readonly path: string;
   readonly search: string;
   readonly hash: string;
+  /**
+   * The 0-based index of the current entry within the shared history — the
+   * navigation substrate's own position bookkeeping, not an engine's or an
+   * occupant's (`cpt-frontx-constraint-routing-no-engine-leak`; §3, Position
+   * Tracking). `push` advances it by one over the previous entry's own
+   * position; `replace` leaves it unchanged; an externally observed
+   * navigation (a real back/forward step, a third-party `go`) restores it
+   * from the browser's own persisted per-entry state, defaulting to `0` for
+   * an entry this substrate never itself recorded a position for (a cold
+   * mount, or an entry a third party added).
+   *
+   * FEATURE (navigation-substrate) §1.5, "Location shape — Position"
+   * (ruling F8/D3, review round 16-re).
+   */
+  readonly position: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -97,8 +112,14 @@ export type ReleaseFunction = () => void;
  * single navigation-history instance every unit reads and writes.
  *
  * Deliberately narrower than any concrete engine's own history contract
- * (`cpt-frontx-constraint-routing-no-engine-leak`): no entry-carried state,
- * no route object, no engine-specific navigation options.
+ * (`cpt-frontx-constraint-routing-no-engine-leak`): an entry carries no
+ * engine-owned or occupant-owned state, no route object, and no
+ * engine-specific navigation options. The substrate does record one number
+ * of its own on the underlying browser entry — `Location.position` above —
+ * needed to keep a consumer's own `length`/`canGoBack` accurate; that is
+ * this substrate's own bookkeeping, never a channel for an engine's or an
+ * occupant's state, and it is the only thing this package ever writes into
+ * the host's own per-entry state (§3, Position Tracking).
  *
  * FEATURE (navigation-substrate) §1.5, "Navigation method signatures";
  * DESIGN §3.1, Domain Model, "Navigation History".

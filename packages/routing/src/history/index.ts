@@ -20,4 +20,4 @@ export { resolveNavigationHistory } from './singleton.js';
  * `HistoryAdapter` interface declaration in `./adapter.js`. Import
  * `./adapter.js` directly rather than relying on this type being re-exported
  * from the package's own public entry point. */
-export type { HistoryAdapter } from './adapter.js';
+export type { AdapterLocation, HistoryAdapter } from './adapter.js';

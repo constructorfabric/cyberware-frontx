@@ -6,7 +6,7 @@ import type { HistoryNotification } from '../../types/index.js';
 // and its Rationale.
 
 const notification: HistoryNotification = {
-  location: { path: '/en', search: '', hash: '' },
+  location: { path: '/en', search: '', hash: '', position: 0 },
   kind: 'push',
 };
 
@@ -104,7 +104,7 @@ describe('FanOutDispatcher — reentrant navigation', () => {
     const dispatcher = new FanOutDispatcher();
     const order: string[] = [];
     const second: HistoryNotification = {
-      location: { path: '/fr', search: '', hash: '' },
+      location: { path: '/fr', search: '', hash: '', position: 1 },
       kind: 'push',
     };
 

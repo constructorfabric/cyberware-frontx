@@ -30,11 +30,16 @@ import { RoutingError, type RoutingErrorCode } from '../errors.js';
 // checker is the tool that verifies them.
 
 describe('Location', () => {
-  it('carries exactly path, search, hash', () => {
+  // F8/D3 (review round 16-re): `position` is substrate-owned bookkeeping
+  // (§1.5, "Location shape — Position"), not engine- or occupant-owned
+  // state — added here alongside path/search/hash, never as a separate
+  // shape.
+  it('carries exactly path, search, hash, position', () => {
     expectTypeOf<Location>().toEqualTypeOf<{
       readonly path: string;
       readonly search: string;
       readonly hash: string;
+      readonly position: number;
     }>();
   });
 });

@@ -73,18 +73,6 @@ export interface VirtualLocationSource {
   createHref(pathname: string, search: string, hash?: string): string;
 }
 
-/** @internal Test seam, mirroring `resolveNavigationHistory`'s own
- * `createAdapter` parameter (`@gears-frontx/routing`): a conforming
- * consumer never passes this. `canGoBack`'s own fallback, before this
- * router has issued its first virtual push (FEATURE §3, step 3), reads the
- * page's own real history length — a real browser primitive this package
- * has no substrate-mediated channel to reach, so this default reads
- * `window` directly, exactly as the core's own default `HistoryAdapter`
- * does (`@gears-frontx/routing`'s `createWindowHistoryAdapter`). */
-function defaultCanGoBackFallback(): boolean {
-  return typeof window !== 'undefined' && window.history.length > 1;
-}
-
 /**
  * @internal Not part of the `RouterHistory` contract — a private channel
  * between this module and `./router-creation.js` only, keyed by object
@@ -137,7 +125,6 @@ function defaultReportError(error: unknown): void {
  * `defaultReportError` above otherwise.
  */
 export interface AdaptHistoryOptions {
-  readonly canGoBackFallback?: () => boolean;
   readonly reportError?: (error: unknown) => void;
 }
 
@@ -172,15 +159,17 @@ function dispatchToSubscribers(
   }
 }
 
-function buildHistoryLocation(parts: { pathname: string; search: string }, index: number): RouterHistoryLocation {
+function buildHistoryLocation(parts: { pathname: string; search: string }, position: number): RouterHistoryLocation {
   // `__TSR_index` mirrors what the engine's own real browser history keeps
-  // in `window.history.state` — this adapter's own virtual stack has no
-  // real per-entry state to read it back from (`NavigationHistory`'s own
-  // `Location` shape carries no `state` member at all), so `index` is this
-  // adapter's own running count, advanced at the same call sites `length`/
-  // `canGoBack` (step 3 below) are derived from, not reconstructed from a
-  // real browser entry.
-  const state = { __TSR_index: index } as RouterHistoryState;
+  // in `window.history.state` — `position` here is the navigation
+  // substrate's own `Location.position` (F8/D3, review round 16-re:
+  // `cpt-frontx-algo-routing-navigation-substrate-position-tracking`), not
+  // a counter this adapter keeps of its own: the substrate is the one
+  // party that sits on both sides of every write *and* every externally
+  // observed traversal, so it is the only party that can keep this number
+  // correct across a real back/forward step, a third-party `go`, or a
+  // second router sharing the identical shared history.
+  const state = { __TSR_index: position } as RouterHistoryState;
   return {
     href: `${parts.pathname}${parts.search}`,
     pathname: parts.pathname,
@@ -230,25 +219,13 @@ export function adaptVirtualLocationHistory(
   source: VirtualLocationSource,
   options: AdaptHistoryOptions = {},
 ): RouterHistory {
-  const canGoBackFallback = options.canGoBackFallback ?? defaultCanGoBackFallback;
   const reportError = options.reportError ?? defaultReportError;
 
-  // @cpt-begin:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-derive-missing-members
-  // F8: a real virtual stack index, not a monotonic counter — advanced on
-  // this adapter's own `push`, moved by this adapter's own `back`/
-  // `forward`/`go` calls (the only navigations this adapter can attribute a
-  // direction to), and left untouched by `replace` and by a `'history'`
-  // fan-out notification this adapter did not itself request (a real
-  // browser back/forward gesture, or a third-party `go`) — the substrate's
-  // own `NavigationHistory` contract carries no per-entry state a `popstate`
-  // could hand back the way a real browser's `window.history.state` does,
-  // so an externally driven move is the one case this index cannot follow
-  // (documented at its own read site, `canGoBack`/`length` below).
-  let virtualIndex = 0;
-  // @cpt-end:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-derive-missing-members
-
   // @cpt-begin:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-expose-direct-members
-  let currentLocation = buildHistoryLocation(projectParamsToVirtualLocation(source.readParams() ?? []), virtualIndex);
+  let currentLocation = buildHistoryLocation(
+    projectParamsToVirtualLocation(source.readParams() ?? []),
+    navigationHistory.location.position,
+  );
   // @cpt-end:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-expose-direct-members
 
   // @cpt-begin:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-derive-missing-members
@@ -296,7 +273,7 @@ export function adaptVirtualLocationHistory(
     // notification (which may not arrive until a later navigation).
     const params = source.readParams();
     if (params !== undefined) {
-      currentLocation = buildHistoryLocation(projectParamsToVirtualLocation(params), virtualIndex);
+      currentLocation = buildHistoryLocation(projectParamsToVirtualLocation(params), navigationHistory.location.position);
     }
     unsubscribeFromNavigationHistory = navigationHistory.subscribe((notification) => {
       // @cpt-begin:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-if-own-entry-absent
@@ -309,7 +286,12 @@ export function adaptVirtualLocationHistory(
         // @cpt-end:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-own-entry-absent-inert
       }
       // @cpt-end:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-if-own-entry-absent
-      currentLocation = buildHistoryLocation(projectParamsToVirtualLocation(params), virtualIndex);
+      // F8/D3 (review round 16-re): `notification.location.position` is the
+      // substrate's own recorded position for whichever entry this round's
+      // navigation landed on — read from the notification already in hand
+      // rather than a second `navigationHistory.location` access, though
+      // both report the identical value (§1.5, Contract commitment).
+      currentLocation = buildHistoryLocation(projectParamsToVirtualLocation(params), notification.location.position);
       const args = { location: currentLocation, action: toSubscriberAction(notification.kind) } as RouterSubscriberArgs;
       dispatchToSubscribers(subscribers, args, reportError);
     });
@@ -320,18 +302,15 @@ export function adaptVirtualLocationHistory(
   // @cpt-begin:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-expose-direct-members
   const write = (path: string, verb: HistoryVerb, hash?: string): void => {
     const { pathname, search } = splitHref(path);
-    // N3: `source.write` is a no-op once this occupant's own entry is no
-    // longer present (A5's own early return, `./composed-history-source.js`)
-    // — checked here, ahead of the call, so `virtualIndex` (and therefore
-    // `length`/`canGoBack`, step 3 below) counts only a write that actually
-    // reached the shared history, never a call this source silently
-    // dropped. A standalone source's own entry is always present, so this
-    // check never short-circuits a standalone push.
-    const ownEntryPresent = source.readParams() !== undefined;
     source.write(pathname, search, verb, hash);
-    if (verb === 'push' && ownEntryPresent) {
-      virtualIndex += 1;
-    }
+    // `length`/`canGoBack` below no longer count this write themselves
+    // (F8/D3, review round 16-re): `source.write`'s own push, when it
+    // actually reaches the shared history, already advances the
+    // substrate's own `Location.position` — N3's own "no write reached the
+    // shared history, so nothing should count" concern is satisfied for
+    // free, since a `source.write` this occupant's own entry is absent for
+    // never calls `navigationHistory[verb]` at all
+    // (`./composed-history-source.js`'s own A5 early return).
   };
   // @cpt-end:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-expose-direct-members
 
@@ -361,7 +340,7 @@ export function adaptVirtualLocationHistory(
     }
     if (typeof document !== 'undefined' && blockers.length > 0) {
       const { hash, ...pathnameAndSearch } = splitHref(path);
-      const nextLocation = buildHistoryLocation(pathnameAndSearch, virtualIndex);
+      const nextLocation = buildHistoryLocation(pathnameAndSearch, navigationHistory.location.position);
       const action: RouterBlockerAction = verb === 'push' ? 'PUSH' : 'REPLACE';
       for (const blocker of blockers) {
         let shouldBlock: boolean;
@@ -392,8 +371,16 @@ export function adaptVirtualLocationHistory(
     // @cpt-end:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-expose-direct-members
 
     // @cpt-begin:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-derive-missing-members
+    // F8/D3 (review round 16-re): derived from the navigation substrate's
+    // own `Location.position`
+    // (`cpt-frontx-algo-routing-navigation-substrate-position-tracking`),
+    // never a counter this adapter keeps of its own — the substrate is the
+    // one party correct across every write *and* every externally observed
+    // traversal (a real back/forward step, a third-party `go`, a second
+    // router sharing the identical shared history), which a provider-local
+    // counter could only ever approximate.
     get length() {
-      return virtualIndex;
+      return navigationHistory.location.position + 1;
     },
     subscribers,
     // @cpt-end:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-derive-missing-members
@@ -412,30 +399,35 @@ export function adaptVirtualLocationHistory(
     replace: (path: string, _state?: RouterHistoryState, navigateOpts?: RouterNavigateOptions) => {
       void tryNavigation(path, 'replace', navigateOpts);
     },
-    // F8: `go`/`back`/`forward` are the one place this adapter can attribute
-    // a direction to a stack move at all (see `virtualIndex`'s own doc
-    // comment above) — adjusted here, at the call site, optimistically
-    // ahead of the underlying substrate's own asynchronous confirmation,
-    // exactly as `write` already advances it optimistically for `push`.
-    // Clamped at 0: a `go`/`back` past the start of this adapter's own
-    // tracked stack is a no-op for `virtualIndex`'s own bookkeeping, even
-    // though the call is still forwarded to the shared history unconditionally.
+    // F8/D3 (review round 16-re): no optimistic local adjustment here
+    // anymore — `go`/`back`/`forward` simply delegate to the shared
+    // history and let its own asynchronous `popstate` observation
+    // (`cpt-frontx-algo-routing-navigation-substrate-position-tracking`,
+    // step 3) restore `Location.position` from the browser's own
+    // persisted per-entry state once the move actually lands. A stale
+    // `length`/`canGoBack` read in between the call and that
+    // confirmation is the same brief window `NavigationHistory#go` itself
+    // already has (§1.5, "observed asynchronously... never dispatched
+    // directly"), not a new one this adapter introduces.
     go: (delta: number) => {
-      virtualIndex = Math.max(0, virtualIndex + delta);
       navigationHistory.go(delta);
     },
     // @cpt-end:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-expose-direct-members
 
     // @cpt-begin:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-derive-missing-members
     back: () => {
-      virtualIndex = Math.max(0, virtualIndex - 1);
       navigationHistory.go(-1);
     },
     forward: () => {
-      virtualIndex += 1;
       navigationHistory.go(1);
     },
-    canGoBack: () => virtualIndex > 0 || canGoBackFallback(),
+    // F8/D3: `> 0`, no `|| canGoBackFallback()` — a fallback that read
+    // `window.history.length > 1` reported `true` in almost every real tab
+    // regardless of this occupant's own stack (the original F8 symptom);
+    // `Location.position` is accurate from construction (cold mount reads
+    // `0`, per the substrate's own Position Tracking), so no fallback is
+    // needed at all.
+    canGoBack: () => navigationHistory.location.position > 0,
     flush: () => {
       // No throttling queue to flush — every write this adapter performs
       // already lands synchronously, through the composed source's single

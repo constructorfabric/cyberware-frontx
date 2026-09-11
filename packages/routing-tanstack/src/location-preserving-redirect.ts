@@ -10,7 +10,7 @@ import { redirect, type RedirectOptions, type RouterHistory } from '@tanstack/re
 /** @internal Test/consumer seam mirroring this file's own default hash
  * reader: a conforming consumer never passes this except to avoid touching
  * `window` in a test, exactly like `history-adaptation.ts`'s own
- * `canGoBackFallback`. The page's own hash is unaffected by whether this
+ * `defaultReportError`. The page's own hash is unaffected by whether this
  * occupant is composed or standalone (FEATURE §3, Location-Preserving
  * Navigation Helper, Input: "the hash the navigation substrate copies
  * verbatim on every read and write is the page's own"), so this default

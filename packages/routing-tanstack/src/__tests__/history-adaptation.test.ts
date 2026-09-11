@@ -122,23 +122,30 @@ describe('createHref', () => {
   });
 });
 
+// F8/D3 (review round 16-re, ruling): `length`/`canGoBack` are derived from
+// the navigation substrate's own `Location.position`
+// (`cpt-frontx-algo-routing-navigation-substrate-position-tracking`), never
+// a counter this adapter keeps of its own. `length` therefore matches a
+// real browser's own `history.length` semantics: 1 for the cold-mount
+// entry alone, growing by one per push, exactly as `position + 1` — not
+// "count of pushes issued", which started at 0 under the old, removed
+// provider-local counter.
 describe('length and canGoBack', () => {
-  it('reports length as the count of virtual pushes issued since construction', () => {
+  it('reports length as position + 1 (real-history semantics: 1 for the cold-mount entry alone)', () => {
     resetRealm(EXAMPLE_7_3_URL);
     const navigationHistory = resolveNavigationHistory();
     const history = adaptVirtualLocationHistory(
       navigationHistory,
       createComposedVirtualLocationSource(navigationHistory, DASHBOARD_ENTRY_ADDRESS),
-      { canGoBackFallback: () => false },
     );
 
-    expect(history.length).toBe(0);
+    expect(history.length).toBe(1);
     history.push('/a');
-    expect(history.length).toBe(1);
-    history.replace('/b');
-    expect(history.length).toBe(1);
-    history.push('/c');
     expect(history.length).toBe(2);
+    history.replace('/b');
+    expect(history.length).toBe(2);
+    history.push('/c');
+    expect(history.length).toBe(3);
   });
 
   it('reports canGoBack true exactly once a virtual push has been issued', () => {
@@ -147,7 +154,6 @@ describe('length and canGoBack', () => {
     const history = adaptVirtualLocationHistory(
       navigationHistory,
       createComposedVirtualLocationSource(navigationHistory, DASHBOARD_ENTRY_ADDRESS),
-      { canGoBackFallback: () => false },
     );
 
     expect(history.canGoBack()).toBe(false);
@@ -156,37 +162,84 @@ describe('length and canGoBack', () => {
   });
 
   // N3: A5 (`composed-history-source.ts`) makes `source.write` a no-op once
-  // this occupant's own entry is no longer present — before that fix,
-  // `write` here still incremented `pushCount` for a push that reached no
-  // history at all, so `length`/`canGoBack` drifted ahead of the count of
-  // virtual pushes the adapter actually issued.
-  it('does not count a push toward length when the occupant own entry is absent (N3)', () => {
+  // this occupant's own entry is no longer present — a push that reaches no
+  // history at all never calls `navigationHistory.push`, so the
+  // substrate's own position — and this adapter's own `length`/`canGoBack`,
+  // derived from it — stay exactly where they already were.
+  it('does not advance length when the occupant own entry is absent (N3)', () => {
     const adapter = resetRealm('/en?sheet=tenant-details;route=contacts;tenantId=456');
     const navigationHistory = resolveNavigationHistory();
     const history = adaptVirtualLocationHistory(
       navigationHistory,
       createComposedVirtualLocationSource(navigationHistory, DASHBOARD_ENTRY_ADDRESS),
-      { canGoBackFallback: () => false },
     );
 
-    expect(history.length).toBe(0);
+    expect(history.length).toBe(1);
     history.push('/a');
 
     expect(adapter.lastWrite).toBeUndefined();
-    expect(history.length).toBe(0);
+    expect(history.length).toBe(1);
     expect(history.canGoBack()).toBe(false);
   });
 
-  it('delegates to the supplied fallback before any virtual push', () => {
+  // D3: a `forward()`/`go(+n)` past the real end of the stack must not
+  // inflate `length` — the FakeHistoryAdapter's own `go` is a silent no-op
+  // past either end (mirroring a real browser), so no `popstate` fires and
+  // the substrate's own position is never touched by it.
+  it('does not inflate length on a forward step past the real end of the stack (D3)', async () => {
     resetRealm(EXAMPLE_7_3_URL);
     const navigationHistory = resolveNavigationHistory();
-    const history = adaptVirtualLocationHistory(
+    const history = adaptComposedHistory(navigationHistory, DASHBOARD_ENTRY_ADDRESS);
+    history.push('/settings/profile?orientation=left');
+    expect(history.length).toBe(2);
+
+    history.forward();
+    history.forward();
+    history.forward();
+    await flushMicrotasks();
+
+    expect(history.length).toBe(2);
+    expect(history.canGoBack()).toBe(true);
+  });
+
+  // F8: an external `go(-1)` (a real back/forward step, or a third-party
+  // `history.go`) that lands this occupant back at the root must report
+  // `canGoBack: false` there, not `true` — the original symptom, caused by
+  // the removed `window.history.length > 1` fallback.
+  it('reports canGoBack false at the root after an external go(-1), not the removed window-length fallback', async () => {
+    resetRealm(EXAMPLE_7_3_URL);
+    const navigationHistory = resolveNavigationHistory();
+    const history = adaptComposedHistory(navigationHistory, DASHBOARD_ENTRY_ADDRESS);
+    history.push('/settings/profile?orientation=left');
+    expect(history.canGoBack()).toBe(true);
+
+    navigationHistory.go(-1);
+    await flushMicrotasks();
+
+    expect(history.canGoBack()).toBe(false);
+    expect(history.length).toBe(1);
+  });
+
+  // Two routers constructed over the identical shared history must agree
+  // on `length`/`canGoBack` — both derive from the one substrate-owned
+  // position, never a per-router counter that could drift between them.
+  it('two routers over one shared history report the identical length and canGoBack', () => {
+    resetRealm(EXAMPLE_7_3_URL);
+    const navigationHistory = resolveNavigationHistory();
+    const first = adaptVirtualLocationHistory(
       navigationHistory,
       createComposedVirtualLocationSource(navigationHistory, DASHBOARD_ENTRY_ADDRESS),
-      { canGoBackFallback: () => true },
+    );
+    const second = adaptVirtualLocationHistory(
+      navigationHistory,
+      createComposedVirtualLocationSource(navigationHistory, DASHBOARD_ENTRY_ADDRESS),
     );
 
-    expect(history.canGoBack()).toBe(true);
+    first.push('/a');
+
+    expect(second.length).toBe(first.length);
+    expect(second.canGoBack()).toBe(first.canGoBack());
+    expect(second.length).toBe(2);
   });
 });
 
@@ -281,7 +334,7 @@ describe('block (recognized, degraded adaptation)', () => {
 });
 
 describe('block actually enforced on push/replace issued through this same RouterHistory (A1)', () => {
-  it('a blocker returning true stops a push: no write, pushCount unchanged', async () => {
+  it('a blocker returning true stops a push: no write, length unchanged', async () => {
     const adapter = resetRealm(EXAMPLE_7_3_URL);
     const history = adaptComposedHistory(resolveNavigationHistory(), DASHBOARD_ENTRY_ADDRESS);
     history.block({ blockerFn: () => true });
@@ -290,7 +343,7 @@ describe('block actually enforced on push/replace issued through this same Route
     await flushMicrotasks();
 
     expect(adapter.lastWrite).toBeUndefined();
-    expect(history.length).toBe(0);
+    expect(history.length).toBe(1);
   });
 
   it('a blocker returning true stops a replace: no write issued', async () => {
@@ -315,7 +368,7 @@ describe('block actually enforced on push/replace issued through this same Route
     expect(adapter.lastWrite).toBe(
       '/en?screen=dashboard;route=settings/profile;orientation=left&sheet=tenant-details;route=contacts;tenantId=456',
     );
-    expect(history.length).toBe(1);
+    expect(history.length).toBe(2);
   });
 
   it('{ ignoreBlocker: true } bypasses a registered blocker', async () => {
@@ -587,51 +640,64 @@ describe('hash on push/createHref (F7)', () => {
   });
 });
 
-// F8: `length`/`canGoBack` track a real virtual index across push/back/
-// forward/go sequences, not a monotonic counter.
-describe('virtual stack index across push/back/forward/go (F8)', () => {
-  it('advances on push, retreats on back, advances on forward, follows go', () => {
+// F8/D3 (review round 16-re, ruling): `length`/`canGoBack` track the
+// navigation substrate's own `Location.position` across push/back/
+// forward/go sequences — restored from the browser's own persisted
+// per-entry state on each `popstate` (`./navigation-history.js`'s own
+// Position Tracking), asynchronously, exactly as any other externally
+// observed navigation is (§1.5, Contract commitment) — never a
+// synchronously self-adjusted local counter the way the removed
+// `virtualIndex` was.
+describe('substrate-owned position across push/back/forward/go (F8/D3)', () => {
+  it('advances on push, retreats on back, advances on forward, follows go — all confirmed asynchronously', async () => {
     resetRealm(EXAMPLE_7_3_URL);
     const history = adaptComposedHistory(resolveNavigationHistory(), DASHBOARD_ENTRY_ADDRESS);
 
-    expect(history.length).toBe(0);
+    expect(history.length).toBe(1);
     expect(history.canGoBack()).toBe(false);
 
     history.push('/settings/a?orientation=left');
-    expect(history.length).toBe(1);
+    expect(history.length).toBe(2);
     expect(history.canGoBack()).toBe(true);
 
     history.push('/settings/b?orientation=left');
-    expect(history.length).toBe(2);
+    expect(history.length).toBe(3);
 
     history.back();
-    expect(history.length).toBe(1);
+    await flushMicrotasks();
+    expect(history.length).toBe(2);
     expect(history.canGoBack()).toBe(true);
 
     history.back();
-    expect(history.length).toBe(0);
+    await flushMicrotasks();
+    expect(history.length).toBe(1);
     expect(history.canGoBack()).toBe(false);
 
-    // Past the start: clamped at 0, never negative.
+    // Past the start: the underlying adapter's own `go` is a silent no-op
+    // past either end of the real stack (mirroring a real browser) — no
+    // `popstate` fires, so position stays exactly where it already was.
     history.back();
-    expect(history.length).toBe(0);
-
-    history.forward();
+    await flushMicrotasks();
     expect(history.length).toBe(1);
 
-    history.go(1);
+    history.forward();
+    await flushMicrotasks();
     expect(history.length).toBe(2);
+
+    history.go(1);
+    await flushMicrotasks();
+    expect(history.length).toBe(3);
   });
 
-  it('replace does not move the index', () => {
+  it('replace does not move the position', () => {
     resetRealm(EXAMPLE_7_3_URL);
     const history = adaptComposedHistory(resolveNavigationHistory(), DASHBOARD_ENTRY_ADDRESS);
 
     history.push('/settings/a?orientation=left');
-    expect(history.length).toBe(1);
+    expect(history.length).toBe(2);
 
     history.replace('/settings/b?orientation=left');
-    expect(history.length).toBe(1);
+    expect(history.length).toBe(2);
   });
 });
 

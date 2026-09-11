@@ -7,9 +7,9 @@
 // mirroring the FEATURE's own observation that "moving through history
 // raises popstate only asynchronously" (navigation-substrate FEATURE §3,
 // Fan-Out Subscription Dispatch, step 3).
-import type { Location } from '../../types/index.js';
+import type { AdapterLocation } from '../../history/adapter.js';
 
-function splitPath(path: string): Location {
+function splitPath(path: string): AdapterLocation {
   const hashIndex = path.indexOf('#');
   const withoutHash = hashIndex === -1 ? path : path.slice(0, hashIndex);
   const hash = hashIndex === -1 ? '' : path.slice(hashIndex + 1);
@@ -22,7 +22,12 @@ function splitPath(path: string): Location {
 }
 
 export class FakeHistoryAdapter {
-  private entries: Location[];
+  private entries: AdapterLocation[];
+  // Mirrors `window.history.state` per entry — same index as `entries`, so
+  // `pushState`/`replaceState`/`getState` behave like the real browser API
+  // this adapter stands in for: a fresh entry starts with no state of its
+  // own until this adapter's own `pushState`/`replaceState` writes one.
+  private entryStates: unknown[];
   private index = 0;
   private popListeners = new Set<() => void>();
 
@@ -41,24 +46,32 @@ export class FakeHistoryAdapter {
 
   constructor(initialPath = '/') {
     this.entries = [splitPath(initialPath)];
+    this.entryStates = [undefined];
   }
 
-  getLocation(): Location {
+  getLocation(): AdapterLocation {
     return this.entries[this.index];
   }
 
-  pushState(path: string): void {
+  getState(): unknown {
+    return this.entryStates[this.index];
+  }
+
+  pushState(path: string, state?: unknown): void {
     this.lastWrite = path;
     // Real pushState truncates any forward entries a prior back step left
     // reachable, exactly like a real browser history stack.
     this.entries = this.entries.slice(0, this.index + 1);
+    this.entryStates = this.entryStates.slice(0, this.index + 1);
     this.entries.push(splitPath(path));
+    this.entryStates.push(state);
     this.index += 1;
   }
 
-  replaceState(path: string): void {
+  replaceState(path: string, state?: unknown): void {
     this.lastWrite = path;
     this.entries[this.index] = splitPath(path);
+    this.entryStates[this.index] = state;
   }
 
   go(delta: number): void {
@@ -82,7 +95,12 @@ export class FakeHistoryAdapter {
    * fragment-only anchor activation that adds a new entry. */
   simulateExternalPop(path: string): void {
     this.entries = this.entries.slice(0, this.index + 1);
+    this.entryStates = this.entryStates.slice(0, this.index + 1);
     this.entries.push(splitPath(path));
+    // A third party adding this entry never recorded this substrate's own
+    // position on it — a "foreign" entry (`./position.js`'s own doc
+    // comment), so it carries no state of its own here either.
+    this.entryStates.push(undefined);
     this.index += 1;
     this.firePopAsync();
   }

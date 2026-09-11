@@ -12,7 +12,7 @@ describe('createNavigationHistory — construction', () => {
     const adapter = new FakeHistoryAdapter('/en?screen=dashboard#top');
     const history = createNavigationHistory(adapter);
 
-    expect(history.location).toEqual({ path: '/en', search: 'screen=dashboard', hash: 'top' });
+    expect(history.location).toEqual({ path: '/en', search: 'screen=dashboard', hash: 'top', position: 0 });
   });
 });
 
@@ -25,7 +25,7 @@ describe('createNavigationHistory — push/replace', () => {
 
     history.push('/fr?screen=settings');
 
-    expect(history.location).toEqual({ path: '/fr', search: 'screen=settings', hash: '' });
+    expect(history.location).toEqual({ path: '/fr', search: 'screen=settings', hash: '', position: 1 });
   });
 
   it('replace overwrites the current entry through the adapter', () => {
@@ -34,7 +34,7 @@ describe('createNavigationHistory — push/replace', () => {
 
     history.replace('/fr');
 
-    expect(history.location).toEqual({ path: '/fr', search: '', hash: '' });
+    expect(history.location).toEqual({ path: '/fr', search: '', hash: '', position: 0 });
   });
 
   it('push dispatches a "push" notification synchronously to subscribers, with location already updated', () => {
@@ -47,7 +47,7 @@ describe('createNavigationHistory — push/replace', () => {
 
     expect(subscriber).toHaveBeenCalledTimes(1);
     expect(subscriber).toHaveBeenCalledWith({
-      location: { path: '/fr', search: 'screen=settings', hash: '' },
+      location: { path: '/fr', search: 'screen=settings', hash: '', position: 1 },
       kind: 'push',
     });
   });
@@ -62,7 +62,7 @@ describe('createNavigationHistory — push/replace', () => {
 
     expect(subscriber).toHaveBeenCalledTimes(1);
     expect(subscriber).toHaveBeenCalledWith({
-      location: { path: '/fr', search: '', hash: '' },
+      location: { path: '/fr', search: '', hash: '', position: 0 },
       kind: 'replace',
     });
   });
@@ -95,7 +95,7 @@ describe('createNavigationHistory — go', () => {
     await vi.waitFor(() => expect(subscriber).toHaveBeenCalledTimes(1));
 
     expect(subscriber).toHaveBeenCalledWith({
-      location: { path: '/en', search: '', hash: '' },
+      location: { path: '/en', search: '', hash: '', position: 0 },
       kind: 'history',
     });
   });
@@ -112,5 +112,121 @@ describe('createNavigationHistory — subscribe release', () => {
     history.push('/fr');
 
     expect(subscriber).not.toHaveBeenCalled();
+  });
+});
+
+// FEATURE §3, Position Tracking (`cpt-frontx-algo-routing-navigation-substrate-position-tracking`,
+// ruling F8/D3, review round 16-re): the substrate itself, not a
+// provider-local counter, owns the current entry's own position.
+describe('createNavigationHistory — position tracking', () => {
+  it('starts at 0 for a cold mount (no recorded position on the current entry)', () => {
+    const adapter = new FakeHistoryAdapter('/en');
+    const history = createNavigationHistory(adapter);
+
+    expect(history.location.position).toBe(0);
+  });
+
+  it('advances by one over the previous position on each push', () => {
+    const adapter = new FakeHistoryAdapter('/en');
+    const history = createNavigationHistory(adapter);
+
+    history.push('/a');
+    history.push('/b');
+    history.push('/c');
+
+    expect(history.location.position).toBe(3);
+  });
+
+  it('leaves the position unchanged on replace', () => {
+    const adapter = new FakeHistoryAdapter('/en');
+    const history = createNavigationHistory(adapter);
+
+    history.push('/a');
+    history.replace('/a-edited');
+
+    expect(history.location.position).toBe(1);
+  });
+
+  it('restores the position from the browser-persisted state on an externally observed back step', async () => {
+    const adapter = new FakeHistoryAdapter('/en');
+    const history = createNavigationHistory(adapter);
+    history.push('/a');
+    history.push('/b');
+    expect(history.location.position).toBe(2);
+
+    history.go(-1);
+    await vi.waitFor(() => expect(history.location.position).toBe(1));
+
+    expect(history.location).toEqual({ path: '/a', search: '', hash: '', position: 1 });
+  });
+
+  it('does not inflate past the real end of the stack on a forward step past it (no unbounded drift)', async () => {
+    const adapter = new FakeHistoryAdapter('/en');
+    const history = createNavigationHistory(adapter);
+    history.push('/a');
+    history.go(-1);
+    await vi.waitFor(() => expect(history.location.position).toBe(0));
+
+    // A `go` past either end of the real stack is a silent no-op
+    // (`FakeHistoryAdapter#go`, mirroring a real browser) — no `popstate`
+    // fires, so position is never touched by it.
+    history.go(5);
+
+    // Give any spurious pop a microtask to (not) fire.
+    await Promise.resolve();
+    expect(history.location.position).toBe(0);
+  });
+
+  it('treats an entry a third party added, with no position of this substrate\'s own, as position 0', async () => {
+    const adapter = new FakeHistoryAdapter('/en');
+    const history = createNavigationHistory(adapter);
+    history.push('/a');
+    expect(history.location.position).toBe(1);
+
+    adapter.simulateExternalPop('/b');
+    await vi.waitFor(() => expect(history.location.path).toBe('/b'));
+
+    expect(history.location.position).toBe(0);
+  });
+
+  it('records the cold-mount default position lazily, only on this instance\'s own next write, not at construction', () => {
+    const adapter = new FakeHistoryAdapter('/en');
+    createNavigationHistory(adapter);
+
+    expect(adapter.getState()).toBeUndefined();
+  });
+
+  it('push writes position into a fresh per-entry state, never carrying the previous entry\'s own state forward', () => {
+    const adapter = new FakeHistoryAdapter('/en');
+    const history = createNavigationHistory(adapter);
+    // Something else stored data on the *previous* entry's own state — a
+    // real `pushState` never carries it forward onto the new entry, and
+    // neither does this substrate's own write.
+    adapter.replaceState('/en', { hostOwnField: 'previous-entry-only' });
+
+    history.push('/a');
+
+    expect(adapter.getState()).toEqual({ '@gears-frontx/routing': { position: 1 } });
+  });
+
+  it('replace merges position into whatever state the host already carries on the current entry, preserving it', () => {
+    const adapter = new FakeHistoryAdapter('/en');
+    adapter.replaceState('/en', { hostOwnField: 'keep-me' });
+    const history = createNavigationHistory(adapter);
+
+    history.replace('/en-edited');
+
+    expect(adapter.getState()).toEqual({ hostOwnField: 'keep-me', '@gears-frontx/routing': { position: 0 } });
+  });
+
+  it('two instances constructed over the same underlying entries see the identical position', () => {
+    const adapter = new FakeHistoryAdapter('/en');
+    const first = createNavigationHistory(adapter);
+    first.push('/a');
+
+    const second = createNavigationHistory(adapter);
+
+    expect(second.location.position).toBe(first.location.position);
+    expect(second.location.position).toBe(1);
   });
 });

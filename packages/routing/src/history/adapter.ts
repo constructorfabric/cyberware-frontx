@@ -11,16 +11,37 @@
 // interchangeably, without either one depending on `window` directly.
 import type { Location } from '../types/index.js';
 
+/**
+ * The location shape this adapter itself reads and reports — `Location`
+ * minus `position`. Position is substrate-level bookkeeping layered on top
+ * by `createNavigationHistory` (`./navigation-history.js`, `./position.js`):
+ * this adapter's own job is the raw path/search/hash and the opaque
+ * per-entry state that bookkeeping is stored in (`getState`/`pushState`/
+ * `replaceState` below), never the position number itself.
+ */
+export type AdapterLocation = Omit<Location, 'position'>;
+
 /** @internal Test seam — not part of this package's own public surface (see
  * `../history/index.js`); a conforming consumer never constructs or reads
  * one, only `resolveNavigationHistory`'s own default builds it. */
 export interface HistoryAdapter {
   /** Reads the current location fresh — never cached by the adapter itself. */
-  getLocation(): Location;
-  /** Appends a new history entry for `path`, exactly as composed by the caller. */
-  pushState(path: string): void;
-  /** Overwrites the current history entry with `path`. */
-  replaceState(path: string): void;
+  getLocation(): AdapterLocation;
+  /** Appends a new history entry for `path`, exactly as composed by the
+   * caller, carrying `state` as that new entry's own opaque per-entry
+   * state (`navigation-history.ts`'s own position bookkeeping, merged with
+   * whatever the host already carries — never a raw caller-supplied value,
+   * since `NavigationHistory#push` itself accepts no state parameter). */
+  pushState(path: string, state: unknown): void;
+  /** Overwrites the current history entry with `path`, carrying `state` as
+   * that entry's own new opaque per-entry state, identically to `pushState`
+   * above. */
+  replaceState(path: string, state: unknown): void;
+  /** Reads the current entry's own opaque per-entry state fresh — never
+   * cached by the adapter itself, mirroring `getLocation`. `undefined`/`null`
+   * when the current entry carries none (a cold mount, or an entry this
+   * adapter never itself wrote to). */
+  getState(): unknown;
   /** Moves through existing history entries by a signed step count. */
   go(delta: number): void;
   /** Registers a listener for a browser-observed navigation-history change
@@ -29,7 +50,7 @@ export interface HistoryAdapter {
   onPop(listener: () => void): () => void;
 }
 
-function readWindowLocation(): Location {
+function readWindowLocation(): AdapterLocation {
   return {
     path: window.location.pathname,
     search: window.location.search.startsWith('?')
@@ -58,11 +79,14 @@ function readWindowLocation(): Location {
 export function createWindowHistoryAdapter(): HistoryAdapter {
   return {
     getLocation: readWindowLocation,
-    pushState(path: string): void {
-      window.history.pushState(null, '', path);
+    pushState(path: string, state: unknown): void {
+      window.history.pushState(state, '', path);
     },
-    replaceState(path: string): void {
-      window.history.replaceState(null, '', path);
+    replaceState(path: string, state: unknown): void {
+      window.history.replaceState(state, '', path);
+    },
+    getState(): unknown {
+      return window.history.state;
     },
     go(delta: number): void {
       window.history.go(delta);

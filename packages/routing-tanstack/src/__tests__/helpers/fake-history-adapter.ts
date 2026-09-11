@@ -3,9 +3,9 @@
 // Copied from that package's own `src/__tests__/history/fake-history-adapter.ts`
 // pattern — not imported across packages, since a package's own
 // `__tests__` tree is not part of its published surface.
-import type { Location } from '@gears-frontx/routing';
+import type { AdapterLocation } from '@gears-frontx/routing';
 
-function splitPath(path: string): Location {
+function splitPath(path: string): AdapterLocation {
   const hashIndex = path.indexOf('#');
   const withoutHash = hashIndex === -1 ? path : path.slice(0, hashIndex);
   const hash = hashIndex === -1 ? '' : path.slice(hashIndex + 1);
@@ -18,7 +18,12 @@ function splitPath(path: string): Location {
 }
 
 export class FakeHistoryAdapter {
-  private entries: Location[];
+  private entries: AdapterLocation[];
+  // Mirrors `window.history.state` per entry, exactly as the core
+  // package's own `FakeHistoryAdapter` does (see that copy's own comment) —
+  // needed now that position (F8/D3, review round 16-re) is restored from
+  // this per-entry state on an external pop.
+  private entryStates: unknown[];
   private index = 0;
   private popListeners = new Set<() => void>();
 
@@ -29,22 +34,30 @@ export class FakeHistoryAdapter {
 
   constructor(initialPath = '/') {
     this.entries = [splitPath(initialPath)];
+    this.entryStates = [undefined];
   }
 
-  getLocation(): Location {
+  getLocation(): AdapterLocation {
     return this.entries[this.index];
   }
 
-  pushState(path: string): void {
+  getState(): unknown {
+    return this.entryStates[this.index];
+  }
+
+  pushState(path: string, state?: unknown): void {
     this.lastWrite = path;
     this.entries = this.entries.slice(0, this.index + 1);
+    this.entryStates = this.entryStates.slice(0, this.index + 1);
     this.entries.push(splitPath(path));
+    this.entryStates.push(state);
     this.index += 1;
   }
 
-  replaceState(path: string): void {
+  replaceState(path: string, state?: unknown): void {
     this.lastWrite = path;
     this.entries[this.index] = splitPath(path);
+    this.entryStates[this.index] = state;
   }
 
   go(delta: number): void {
@@ -68,7 +81,9 @@ export class FakeHistoryAdapter {
    * fragment-only anchor activation. */
   simulateExternalPop(path: string): void {
     this.entries = this.entries.slice(0, this.index + 1);
+    this.entryStates = this.entryStates.slice(0, this.index + 1);
     this.entries.push(splitPath(path));
+    this.entryStates.push(undefined);
     this.index += 1;
     this.firePopAsync();
   }

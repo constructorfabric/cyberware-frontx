@@ -15,6 +15,7 @@ interface FakeWindow {
     pushState: (data: unknown, unused: string, url?: string | null) => void;
     replaceState: (data: unknown, unused: string, url?: string | null) => void;
     go: (delta?: number) => void;
+    state: unknown;
   };
   listeners: Map<string, Set<() => void>>;
   addEventListener: (type: string, listener: () => void) => void;
@@ -29,6 +30,7 @@ function createFakeWindow(): FakeWindow {
       pushState: vi.fn(),
       replaceState: vi.fn(),
       go: vi.fn(),
+      state: null,
     },
     listeners,
     addEventListener(type: string, listener: () => void): void {
@@ -106,23 +108,31 @@ describe('createWindowHistoryAdapter — getLocation', () => {
   });
 });
 
-describe('createWindowHistoryAdapter — pushState/replaceState/go', () => {
-  it('pushState delegates to window.history.pushState with a null state and empty title', () => {
+describe('createWindowHistoryAdapter — pushState/replaceState/go/getState', () => {
+  it('pushState delegates to window.history.pushState with the given state and empty title', () => {
     const fakeWindow = installFakeWindow();
     const adapter = createWindowHistoryAdapter();
 
-    adapter.pushState('/fr?screen=settings');
+    adapter.pushState('/fr?screen=settings', { '@gears-frontx/routing': { position: 1 } });
 
-    expect(fakeWindow.history.pushState).toHaveBeenCalledWith(null, '', '/fr?screen=settings');
+    expect(fakeWindow.history.pushState).toHaveBeenCalledWith(
+      { '@gears-frontx/routing': { position: 1 } },
+      '',
+      '/fr?screen=settings',
+    );
   });
 
-  it('replaceState delegates to window.history.replaceState with a null state and empty title', () => {
+  it('replaceState delegates to window.history.replaceState with the given state and empty title', () => {
     const fakeWindow = installFakeWindow();
     const adapter = createWindowHistoryAdapter();
 
-    adapter.replaceState('/fr');
+    adapter.replaceState('/fr', { '@gears-frontx/routing': { position: 0 } });
 
-    expect(fakeWindow.history.replaceState).toHaveBeenCalledWith(null, '', '/fr');
+    expect(fakeWindow.history.replaceState).toHaveBeenCalledWith(
+      { '@gears-frontx/routing': { position: 0 } },
+      '',
+      '/fr',
+    );
   });
 
   it('go delegates to window.history.go with the given delta', () => {
@@ -132,5 +142,14 @@ describe('createWindowHistoryAdapter — pushState/replaceState/go', () => {
     adapter.go(-1);
 
     expect(fakeWindow.history.go).toHaveBeenCalledWith(-1);
+  });
+
+  it('getState reads window.history.state fresh, not cached', () => {
+    const fakeWindow = installFakeWindow();
+    const adapter = createWindowHistoryAdapter();
+
+    fakeWindow.history.state = { '@gears-frontx/routing': { position: 3 } };
+
+    expect(adapter.getState()).toEqual({ '@gears-frontx/routing': { position: 3 } });
   });
 });

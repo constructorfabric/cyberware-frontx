@@ -32,7 +32,7 @@ describe('resolveNavigationHistory', () => {
 
     const second = resolveNavigationHistory(() => new FakeHistoryAdapter('/should-not-be-used'));
 
-    expect(second.location).toEqual({ path: '/fr', search: 'screen=settings', hash: '' });
+    expect(second.location).toEqual({ path: '/fr', search: 'screen=settings', hash: '', position: 1 });
   });
 
   // FEATURE §3, Realm-Global Singleton Resolution, Rationale: "a copy built
@@ -83,7 +83,7 @@ describe('resolveNavigationHistory', () => {
 
       const history = resolveNavigationHistory();
 
-      expect(history.location).toEqual({ path: '/en', search: 'screen=dashboard', hash: '' });
+      expect(history.location).toEqual({ path: '/en', search: 'screen=dashboard', hash: '', position: 0 });
     });
 
     // F1 (review scope): resolving with no adapter override, in a realm with

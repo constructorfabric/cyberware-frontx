@@ -21,7 +21,7 @@ export type * from './types/index.js';
 // path (DESIGN §3.3, public surface); see `./history/index.ts` for why.
 // `HistoryAdapter` stays re-exported as an `@internal` test seam.
 export { resolveNavigationHistory } from './history/index.js';
-export type { HistoryAdapter } from './history/index.js';
+export type { AdapterLocation, HistoryAdapter } from './history/index.js';
 
 // URL grammar codec (`cpt-frontx-feature-routing-navigation-substrate` §3:
 // Grammar Parse, Grammar Serialize, Name Validity And Equality,
