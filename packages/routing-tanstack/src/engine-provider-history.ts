@@ -12,6 +12,7 @@ import type { EntryAddress, NavigationHistory } from '@gears-frontx/routing';
 import type { RouterHistory } from '@tanstack/react-router';
 import { adaptComposedHistory } from './composed-history-source.js';
 import { adaptStandaloneHistory } from './standalone-history-source.js';
+import type { AdaptHistoryOptions } from './history-adaptation.js';
 
 /**
  * Adapts `navigationHistory` into a `RouterHistory`, projecting from
@@ -28,12 +29,16 @@ import { adaptStandaloneHistory } from './standalone-history-source.js';
 // this function represents — the default provider's own is marked here.
 // @cpt-flow:cpt-frontx-flow-routing-engine-provider-swap-engine:p1
 // @cpt-begin:cpt-frontx-flow-routing-engine-provider-swap-engine:p1:inst-adapt-history
-export function adaptProviderHistory(navigationHistory: NavigationHistory, entryAddress: EntryAddress | undefined): RouterHistory {
+export function adaptProviderHistory(
+  navigationHistory: NavigationHistory,
+  entryAddress: EntryAddress | undefined,
+  options?: AdaptHistoryOptions,
+): RouterHistory {
   // @cpt-begin:cpt-frontx-algo-routing-engine-provider-standalone-deployment:p2:inst-if-standalone
   if (entryAddress === undefined) {
-    return adaptStandaloneHistory(navigationHistory);
+    return adaptStandaloneHistory(navigationHistory, options);
   }
   // @cpt-end:cpt-frontx-algo-routing-engine-provider-standalone-deployment:p2:inst-if-standalone
-  return adaptComposedHistory(navigationHistory, entryAddress);
+  return adaptComposedHistory(navigationHistory, entryAddress, options);
 }
 // @cpt-end:cpt-frontx-flow-routing-engine-provider-swap-engine:p1:inst-adapt-history

@@ -23,7 +23,7 @@
 // whether the consumer has created a route-ownership-signal observer").
 import type { HistoryVerb, NavigationHistory } from '@gears-frontx/routing';
 import type { RouterHistory } from '@tanstack/react-router';
-import { adaptVirtualLocationHistory, type VirtualLocationSource } from './history-adaptation.js';
+import { adaptVirtualLocationHistory, type AdaptHistoryOptions, type VirtualLocationSource } from './history-adaptation.js';
 import { projectVirtualLocationToParams } from './virtual-location.js';
 
 /**
@@ -88,6 +88,10 @@ export function createStandaloneVirtualLocationSource(navigationHistory: Navigat
  * standalone counterpart of `adaptComposedHistory`
  * (`./composed-history-source.js`).
  */
-export function adaptStandaloneHistory(navigationHistory: NavigationHistory): RouterHistory {
-  return adaptVirtualLocationHistory(navigationHistory, createStandaloneVirtualLocationSource(navigationHistory));
+// `options` (F6, review round 16-re) is forwarded straight through to
+// `adaptVirtualLocationHistory`, exactly as `adaptComposedHistory` forwards
+// it — `reportError` in particular, so a consumer building standalone
+// history through this entry point gets the same seam.
+export function adaptStandaloneHistory(navigationHistory: NavigationHistory, options?: AdaptHistoryOptions): RouterHistory {
+  return adaptVirtualLocationHistory(navigationHistory, createStandaloneVirtualLocationSource(navigationHistory), options);
 }

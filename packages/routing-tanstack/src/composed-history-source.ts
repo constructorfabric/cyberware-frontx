@@ -17,7 +17,7 @@ import {
   type NavigationHistory,
   type HistoryVerb,
 } from '@gears-frontx/routing';
-import { adaptVirtualLocationHistory, type VirtualLocationSource } from './history-adaptation.js';
+import { adaptVirtualLocationHistory, type AdaptHistoryOptions, type VirtualLocationSource } from './history-adaptation.js';
 import { projectVirtualLocationToParams } from './virtual-location.js';
 import type { RouterHistory } from '@tanstack/react-router';
 
@@ -79,33 +79,28 @@ export function createComposedVirtualLocationSource(
     // changes nothing (FEATURE §3, step 7.1: "no write-back runs, because
     // there is no longer an entry of this occupant's own to write to").
     //
-    // F7: a caller-supplied `hash` is applied to the page's own hash, never
-    // to this entry — the core's own `backProjectEntries` always preserves
-    // whatever hash is *currently* in the URL verbatim (FEATURE
-    // (route-ownership-signal) §3, URL Back-Projection Helper), so
-    // overriding it needs its own direct grammar-codec round trip here
-    // rather than going through that helper, while still landing in
-    // exactly one history write.
+    // F7/D2 (review round 16-re): a caller-supplied `hash` is applied to the
+    // page's own hash, never to this entry. The core's own
+    // `backProjectEntries` now takes an optional page-hash parameter for
+    // exactly this — this call passes `hash` straight through instead of
+    // running its own parse → serialize → push sequence, so the single
+    // history write both operations need stays inside the helper's own
+    // "never through a separate parse/serialize/push sequence of this
+    // provider's own" guarantee (FEATURE (engine-provider) §3, step 2).
+    // `hash === undefined` omits the parameter so the helper preserves
+    // whatever hash is currently in the URL, matching this source's own
+    // given-versus-absent convention.
     write: (pathname: string, search: string, verb: HistoryVerb, hash?: string): void => {
       if (resolveOwnEntry(navigationHistory, entryAddress) === undefined) {
         return;
       }
       const params = projectVirtualLocationToParams(pathname, search);
-      if (hash === undefined) {
-        backProjectEntries(entryAddress.domainKey, { payloadChanged: [{ extension: entryAddress.extension, params }] }, verb);
-        return;
-      }
-      const { shellSubroute, entries } = parseGrammar({
-        shellSubroute: navigationHistory.location.path,
-        search: navigationHistory.location.search,
-        hash: navigationHistory.location.hash,
-      });
-      const updatedEntries = entries.map((entry) =>
-        namesEqual(entry.domainKey, entryAddress.domainKey) && namesEqual(entry.extension, entryAddress.extension)
-          ? { domainKey: entry.domainKey, extension: entry.extension, params }
-          : entry,
+      backProjectEntries(
+        entryAddress.domainKey,
+        { payloadChanged: [{ extension: entryAddress.extension, params }] },
+        verb,
+        hash,
       );
-      navigationHistory[verb](serializeGrammar({ shellSubroute, hash, entries: updatedEntries }));
     },
     // @cpt-end:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-expose-direct-members
 
@@ -141,7 +136,17 @@ export function createComposedVirtualLocationSource(
  * supplied). The standalone case (no entry address) is a different
  * algorithm this package does not yet implement
  * (`cpt-frontx-algo-routing-engine-provider-standalone-deployment`).
+ *
+ * `options` (F6, review round 16-re) is forwarded straight through to
+ * `adaptVirtualLocationHistory` — `reportError` in particular, so a
+ * consumer building composed history through this entry point can set its
+ * own error-reporting channel exactly as one calling
+ * `adaptVirtualLocationHistory` directly could.
  */
-export function adaptComposedHistory(navigationHistory: NavigationHistory, entryAddress: EntryAddress): RouterHistory {
-  return adaptVirtualLocationHistory(navigationHistory, createComposedVirtualLocationSource(navigationHistory, entryAddress));
+export function adaptComposedHistory(
+  navigationHistory: NavigationHistory,
+  entryAddress: EntryAddress,
+  options?: AdaptHistoryOptions,
+): RouterHistory {
+  return adaptVirtualLocationHistory(navigationHistory, createComposedVirtualLocationSource(navigationHistory, entryAddress), options);
 }

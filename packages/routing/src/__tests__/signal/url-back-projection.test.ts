@@ -393,3 +393,61 @@ describe('url-back-projection — reordered must be a permutation of the survivi
     expect(adapter.lastWrite).toBe('/en?widgets=line-c;range=1d&widgets=line-a;range=7d&widgets=line-b;range=30d');
   });
 });
+
+// D2 (review round 16-re): the optional fourth `pageHash` parameter — the
+// single write path for the page hash. Given (including `''`), it
+// overrides whatever hash is currently in the URL; absent, the current
+// hash is preserved verbatim, the pre-existing behaviour every other
+// describe block in this file already exercises implicitly.
+describe('url-back-projection — optional pageHash parameter (D2)', () => {
+  it('given, replaces the current page hash in the same single write', () => {
+    const adapter = resetRealm('/en?screen=dashboard#old-hash');
+
+    backProjectEntries(
+      'screen' as DomainKey,
+      { payloadChanged: [{ extension: 'dashboard' as ExtensionToken, params: [] }] },
+      'push',
+      'new-hash',
+    );
+
+    expect(adapter.lastWrite).toBe('/en?screen=dashboard#new-hash');
+  });
+
+  it('absent, preserves the current page hash verbatim', () => {
+    const adapter = resetRealm('/en?screen=dashboard#kept-hash');
+
+    backProjectEntries(
+      'screen' as DomainKey,
+      { payloadChanged: [{ extension: 'dashboard' as ExtensionToken, params: [] }] },
+      'push',
+    );
+
+    expect(adapter.lastWrite).toBe('/en?screen=dashboard#kept-hash');
+  });
+
+  it('an empty string clears the current page hash', () => {
+    const adapter = resetRealm('/en?screen=dashboard#old-hash');
+
+    backProjectEntries(
+      'screen' as DomainKey,
+      { payloadChanged: [{ extension: 'dashboard' as ExtensionToken, params: [] }] },
+      'push',
+      '',
+    );
+
+    expect(adapter.lastWrite).toBe('/en?screen=dashboard');
+  });
+
+  it('given on a URL that carries no hash yet, adds it in the same single write', () => {
+    const adapter = resetRealm('/en?screen=dashboard');
+
+    backProjectEntries(
+      'screen' as DomainKey,
+      { payloadChanged: [{ extension: 'dashboard' as ExtensionToken, params: [] }] },
+      'push',
+      'fresh-hash',
+    );
+
+    expect(adapter.lastWrite).toBe('/en?screen=dashboard#fresh-hash');
+  });
+});

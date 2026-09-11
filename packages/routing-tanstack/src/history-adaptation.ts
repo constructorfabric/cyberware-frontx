@@ -128,6 +128,20 @@ function defaultReportError(error: unknown): void {
 }
 
 /**
+ * Options `adaptVirtualLocationHistory` accepts, and every entry point that
+ * builds history through it forwards straight through unchanged (F6,
+ * review round 16-re): `adaptComposedHistory`, `adaptStandaloneHistory`,
+ * `adaptProviderHistory`. `reportError` in particular gives a consumer at
+ * any of those entry points the same error-reporting channel this file's
+ * own `dispatchToSubscribers`/blocker handling already routes through —
+ * `defaultReportError` above otherwise.
+ */
+export interface AdaptHistoryOptions {
+  readonly canGoBackFallback?: () => boolean;
+  readonly reportError?: (error: unknown) => void;
+}
+
+/**
  * Fans `args` out to every currently-registered subscriber, isolating each
  * one's own error the way the core's own `FanOutDispatcher` isolates a
  * history subscriber's error (F5): snapshotting the registry before
@@ -214,7 +228,7 @@ function toSubscriberAction(kind: 'push' | 'replace' | 'history'): RouterSubscri
 export function adaptVirtualLocationHistory(
   navigationHistory: NavigationHistory,
   source: VirtualLocationSource,
-  options: { canGoBackFallback?: () => boolean; reportError?: (error: unknown) => void } = {},
+  options: AdaptHistoryOptions = {},
 ): RouterHistory {
   const canGoBackFallback = options.canGoBackFallback ?? defaultCanGoBackFallback;
   const reportError = options.reportError ?? defaultReportError;

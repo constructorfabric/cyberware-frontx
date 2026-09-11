@@ -583,9 +583,23 @@ export type CreateObserver = <TRouteOwner = unknown>(
   onTransition: (transition: Transition<TRouteOwner>) => void,
 ) => ObserverHandle;
 
-/** `cpt-frontx-algo-routing-route-ownership-signal-url-back-projection`. */
+/**
+ * `cpt-frontx-algo-routing-route-ownership-signal-url-back-projection`.
+ *
+ * `pageHash` is optional and governs the page hash the helper's single
+ * history write carries, independent of the domain-key rewrite the other
+ * three parameters describe (D2, review round 16-re): given (including
+ * `''`), that value replaces whatever hash is currently in the URL —
+ * `''` clears it, matching `serializeGrammar`'s own `hash !== ''` check
+ * (`../grammar/serialize.js`); absent, the helper preserves the current
+ * hash verbatim, the pre-existing behaviour. This keeps a page-hash write
+ * inside the helper's own "exactly one write" guarantee instead of forcing
+ * a caller to run its own parse → serialize → push sequence just to carry
+ * a hash alongside a domain-key rewrite.
+ */
 export type BackProjectEntries = (
   domainKey: DomainKey,
   delta: BackProjectionDelta,
   verb: HistoryVerb,
+  pageHash?: string,
 ) => void;

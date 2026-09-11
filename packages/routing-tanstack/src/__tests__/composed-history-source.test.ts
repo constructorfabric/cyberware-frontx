@@ -62,11 +62,14 @@ describe('createComposedVirtualLocationSource', () => {
   });
 });
 
-// F7: a hash given to a navigation is applied to the page's own hash, never
-// to this occupant's own entry — the core's own `backProjectEntries` always
-// preserves whatever hash is currently in the URL verbatim, so a given hash
-// takes a separate direct grammar-codec round trip inside `write` (still
-// exactly one history call).
+// F7/D2 (review round 16-re): a hash given to a navigation is applied to
+// the page's own hash, never to this occupant's own entry. `write` now
+// passes the hash straight through to the core's own `backProjectEntries`,
+// which since D2 accepts an optional fourth `pageHash` parameter for
+// exactly this — no separate grammar-codec round trip of this provider's
+// own, still exactly one history call either way. `createHref` never
+// writes to history, so it keeps composing the hash directly via the
+// grammar serializer (FEATURE §3, step 4).
 describe('composed hash on write/createHref (F7)', () => {
   it('applies a given hash to the page, leaving every entry exactly as payloadChanged would have', () => {
     const adapter = resetRealm(`${URL}#old`);
@@ -105,6 +108,22 @@ describe('composed hash on write/createHref (F7)', () => {
 
     expect(source.createHref('/contacts', '?tenantId=999')).toBe(
       '/en?screen=dashboard;route=settings/general;orientation=left&sheet=tenant-details;route=contacts;tenantId=999#current',
+    );
+  });
+
+  // D2: an explicit empty-string hash clears the page's own current hash,
+  // through the same single `backProjectEntries` write — the core helper's
+  // own `''` convention (serializeGrammar drops it), reached here through
+  // `write`'s pass-through rather than a codec round trip of this
+  // provider's own.
+  it('an explicit empty-string hash clears the current hash', () => {
+    const adapter = resetRealm(`${URL}#old`);
+    const source = createComposedVirtualLocationSource(resolveNavigationHistory(), SHEET_ENTRY_ADDRESS);
+
+    source.write('/contacts', '?tenantId=999', 'push', '');
+
+    expect(adapter.lastWrite).toBe(
+      '/en?screen=dashboard;route=settings/general;orientation=left&sheet=tenant-details;route=contacts;tenantId=999',
     );
   });
 });

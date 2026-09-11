@@ -91,12 +91,12 @@ function validateBackProjectionInput(
  * unbound public shape exists to keep in sync with this one.
  */
 export function createBackProjectEntries(history: NavigationHistory): BackProjectEntries {
-  return (domainKey, delta, verb) => {
+  return (domainKey, delta, verb, pageHash) => {
     // @cpt-begin:cpt-frontx-algo-routing-route-ownership-signal-url-back-projection:p2:inst-consumer-calls-helper
     validateBackProjectionInput(domainKey, delta);
     // @cpt-end:cpt-frontx-algo-routing-route-ownership-signal-url-back-projection:p2:inst-consumer-calls-helper
 
-    runBackProjection(history, domainKey, delta, verb);
+    runBackProjection(history, domainKey, delta, verb, pageHash);
   };
 }
 
@@ -105,6 +105,7 @@ function runBackProjection(
   domainKey: DomainKey,
   delta: BackProjectionDelta,
   verb: Parameters<BackProjectEntries>[2],
+  pageHash: Parameters<BackProjectEntries>[3],
 ): void {
   // @cpt-begin:cpt-frontx-algo-routing-route-ownership-signal-url-back-projection:p2:inst-parse-current
   const location = history.location;
@@ -250,9 +251,14 @@ function runBackProjection(
   // @cpt-end:cpt-frontx-algo-routing-route-ownership-signal-url-back-projection:p2:inst-compose-full-list
 
   // @cpt-begin:cpt-frontx-algo-routing-route-ownership-signal-url-back-projection:p2:inst-serialize
+  // D2 (review round 16-re): an explicit `pageHash` (including `''`, which
+  // `serializeGrammar` drops per its own `hash !== ''` check) overrides
+  // whatever hash the current URL carries; `undefined` preserves it — this
+  // is the one place the write's hash is decided, so a caller never has to
+  // run its own parse/serialize/push sequence just to carry a hash.
   const serialized = serializeGrammar({
     shellSubroute: parsed.shellSubroute,
-    hash: parsed.hash,
+    hash: pageHash !== undefined ? pageHash : parsed.hash,
     entries: composed,
   });
   // @cpt-end:cpt-frontx-algo-routing-route-ownership-signal-url-back-projection:p2:inst-serialize

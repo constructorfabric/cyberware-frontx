@@ -184,4 +184,18 @@ describe('standalone source with a malformed query string (F2)', () => {
       { name: 'b', value: 'hello world' },
     ]);
   });
+
+  // F2 (review round 16-re): the raw, kept-as-is value does not survive a
+  // write unchanged — `buildSearchString` re-encodes every value on write
+  // regardless of where it came from, so the malformed escape becomes its
+  // own percent-encoded form (`%` -> `%25`) on the next history call, with
+  // no signal of that mutation beyond the URL itself changing.
+  it('re-encodes a kept-raw malformed pair on the next write', () => {
+    resetRealm('/settings/general?a=%');
+    const history = adaptStandaloneHistory(resolveNavigationHistory());
+
+    history.push('/settings/general?a=%');
+
+    expect(history.location.search).toBe('?a=%25');
+  });
 });

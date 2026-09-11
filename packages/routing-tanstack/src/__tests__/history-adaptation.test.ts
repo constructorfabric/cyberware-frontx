@@ -493,6 +493,30 @@ describe('rejected/throwing blocker (F6)', () => {
     expect(reported).toHaveLength(1);
   });
 
+  // F6 (review round 16-re): `reportError` must reach a blocker failure
+  // through the public wrapper a consumer actually calls, not only through
+  // `adaptVirtualLocationHistory` directly — proving the forwarding chain
+  // `adaptComposedHistory` -> `adaptVirtualLocationHistory` end to end.
+  it('a wrapper entry point (adaptComposedHistory) forwards reportError to a throwing blocker', async () => {
+    const adapter = resetRealm(EXAMPLE_7_3_URL);
+    const reported: unknown[] = [];
+    const history = adaptComposedHistory(resolveNavigationHistory(), DASHBOARD_ENTRY_ADDRESS, {
+      reportError: (error) => reported.push(error),
+    });
+    history.block({
+      blockerFn: () => {
+        throw new Error('wrapper-forwarded blocker failure');
+      },
+    });
+
+    history.push('/settings/profile?orientation=left');
+    await flushMicrotasks();
+
+    expect(adapter.lastWrite).toBeUndefined();
+    expect(reported).toHaveLength(1);
+    expect((reported[0] as Error).message).toBe('wrapper-forwarded blocker failure');
+  });
+
   it('an async blocker that genuinely awaits still gates the navigation correctly', async () => {
     const adapter = resetRealm(EXAMPLE_7_3_URL);
     const history = adaptComposedHistory(resolveNavigationHistory(), DASHBOARD_ENTRY_ADDRESS);

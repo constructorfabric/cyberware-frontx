@@ -121,6 +121,13 @@ function buildSearchString(params: readonly Param[]): string {
  * still-percent-encoded value is still a usable (if unlovely) string for
  * whatever reads it next, where dropping it would silently lose a
  * parameter the URL visibly still carries.
+ *
+ * The raw text does not stay raw indefinitely: `buildSearchString` runs
+ * every value through `encodeURIComponent` on the next write regardless of
+ * where it came from, so a value kept raw here because it failed to decode
+ * is re-encoded on that write like any other — a bare `%` becomes `%25`,
+ * for instance. The URL's own text changes without this adapter raising a
+ * signal of its own (DESIGN §3.3, "Virtual location").
  */
 function decodeComponentOrRaw(value: string): string {
   try {

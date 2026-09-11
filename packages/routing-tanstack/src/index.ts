@@ -20,7 +20,7 @@ export type { EngineProviderInput, EngineProviderPort, EntryAddress } from '@gea
 export { projectParamsToVirtualLocation, projectVirtualLocationToParams, ROUTE_PARAM_NAME } from './virtual-location.js';
 export type { VirtualLocationParts } from './virtual-location.js';
 
-export type { VirtualLocationSource } from './history-adaptation.js';
+export type { AdaptHistoryOptions, VirtualLocationSource } from './history-adaptation.js';
 export { adaptVirtualLocationHistory } from './history-adaptation.js';
 
 export { createComposedVirtualLocationSource, adaptComposedHistory } from './composed-history-source.js';
