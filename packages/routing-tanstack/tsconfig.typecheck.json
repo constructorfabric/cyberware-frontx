@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // F4 (review scope): this package's own `type-check` script needs to
+    // resolve `@gears-frontx/routing` straight to its sibling's source on a
+    // fresh clone, before `packages/routing/dist` exists — the `paths`
+    // override below does that. It cannot live in `tsconfig.json` itself:
+    // that file is also what `tsup` reads to build this package's own
+    // declaration output, and once a `paths` override resolves an
+    // ecosystem import outside this package's own `src/`, `tsconfig.json`'s
+    // own `rootDir: "./src"` (required for `tsup`'s own output layout)
+    // rejects every file the override pulls in (TS6059) — on every build,
+    // not only a fresh clone. Widening `rootDir` here, for this
+    // `noEmit`-only variant alone, is what keeps the override from ever
+    // reaching the build: `".."` (this package's own parent, `packages/`)
+    // is the narrowest ancestor that still contains every file the
+    // override can pull in, since both this package's own `src/` and the
+    // sibling's live under it.
+    "rootDir": "..",
+    "baseUrl": ".",
+    "paths": {
+      "@gears-frontx/routing": ["../routing/src/index.ts"],
+      "@gears-frontx/routing/*": ["../routing/src/*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "src/__tests__"]
+}

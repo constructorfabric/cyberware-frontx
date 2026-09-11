@@ -5,9 +5,15 @@
  * (navigation-substrate) §3 (Domain-Key Composition, Grammar Serialize)
  * specify a *thrown* error at a handful of synchronous input paths; FEATURE
  * (route-ownership-signal) §3 (URL Back-Projection Helper) adds a sixth.
+ * `resolveNavigationHistory`'s own default adapter adds a seventh (F1 of the
+ * review scope this file's `noNavigationHistoryInRealm` factory closed):
+ * resolving the realm-shared singleton with no adapter override, in a realm
+ * with no `window` at all (an SSR render, most commonly), is a recognized,
+ * clearly-named failure rather than a raw `ReferenceError` reaching the
+ * caller from deep inside the default `HistoryAdapter`'s own construction.
  * This module supplies the single runtime value every one of those `throw`
  * statements constructs — see `RoutingErrorCode`'s own doc comment for the
- * six shapes, documented in `src/types/index.ts`.
+ * seven shapes, documented in `src/types/index.ts`.
  *
  * A single `RoutingError` class, not one subclass per code, because every
  * variant is a plain data-carrying error with no behaviour of its own beyond
@@ -23,7 +29,7 @@
 
 import type { DomainKey, Entry, ExtensionToken } from './types/index.js';
 
-/** The six codes a thrown `RoutingError` carries — see `src/types/index.ts`
+/** The seven codes a thrown `RoutingError` carries — see `src/types/index.ts`
  * for the field shape each one populates. */
 export type RoutingErrorCode =
   | 'invalid-domain-key'
@@ -31,7 +37,8 @@ export type RoutingErrorCode =
   | 'invalid-name'
   | 'duplicate-param-name'
   | 'duplicate-extension'
-  | 'reordered-not-permutation';
+  | 'reordered-not-permutation'
+  | 'no-navigation-history-in-realm';
 
 export class RoutingError extends Error {
   readonly code: RoutingErrorCode;
@@ -131,6 +138,22 @@ export class RoutingError extends Error {
       'reordered-not-permutation',
       `"${domainKey}" back-projection reordered list is not a permutation of its surviving entries: [${reordered.join(', ')}]`,
       { domainKey, reordered },
+    );
+  }
+
+  /**
+   * `resolveNavigationHistory` was called with no adapter override in a
+   * realm carrying no `window` at all (an SSR render, most commonly) — the
+   * default `HistoryAdapter` has no browser API to construct itself over.
+   * Thrown instead of letting a raw `ReferenceError: window is not defined`
+   * surface from deep inside that construction, so an SSR caller gets a
+   * recognizable, `instanceof RoutingError` failure naming the actual cause
+   * instead of an unrelated-looking crash.
+   */
+  static noNavigationHistoryInRealm(): RoutingError {
+    return new RoutingError(
+      'no-navigation-history-in-realm',
+      'resolveNavigationHistory() was called with no adapter override in a realm with no `window` — pass an explicit HistoryAdapter (an SSR-safe one, or a test double) instead of relying on the default browser adapter.',
     );
   }
 }

@@ -53,23 +53,32 @@ export function createStandaloneVirtualLocationSource(navigationHistory: Navigat
     // 1.2). `NavigationHistory`'s own `push`/`replace` already are the
     // page's own `history.pushState`/`replaceState` at the adapter layer
     // (`cpt-frontx-algo-routing-navigation-substrate-singleton-resolution`);
-    // no separate `window.history` call is made here. The page's own
-    // current hash is carried forward verbatim (A4; matches the composed
-    // source, whose write-back re-serializes the current hash it never
-    // touches) — a virtual location carries no hash of its own (DESIGN
-    // §3.1), so leaving it off here would silently clear the page's own
-    // fragment on every standalone navigation, a parity break the AC
-    // (composed/standalone identical result) forbids.
-    write: (pathname: string, search: string, verb: HistoryVerb): void => {
-      const { hash } = navigationHistory.location;
-      const hashSuffix = hash === '' ? '' : `#${hash}`;
+    // no separate `window.history` call is made here.
+    //
+    // The hash written is `hash` when the caller gave one (F7: a hash
+    // passed to a navigation is applied to the page's own hash) — otherwise
+    // the page's own current hash is carried forward verbatim (A4; matches
+    // the composed source, whose write-back re-serializes the current hash
+    // it never touches) — a virtual location carries no hash of its own
+    // (DESIGN §3.1), so leaving it off here on an unspecified-hash call
+    // would silently clear the page's own fragment on every standalone
+    // navigation, a parity break the AC (composed/standalone identical
+    // result) forbids.
+    write: (pathname: string, search: string, verb: HistoryVerb, hash?: string): void => {
+      const effectiveHash = hash ?? navigationHistory.location.hash;
+      const hashSuffix = effectiveHash === '' ? '' : `#${effectiveHash}`;
       navigationHistory[verb](`${pathname}${search}${hashSuffix}`);
     },
     // @cpt-end:cpt-frontx-algo-routing-engine-provider-standalone-deployment:p2:inst-standalone-write-back
 
     // Composes the page's own full address directly — no composed URL and
-    // no grammar serializer exist to call in this mode.
-    createHref: (pathname: string, search: string): string => `${pathname}${search}`,
+    // no grammar serializer exist to call in this mode. `hash` follows the
+    // identical given-versus-absent convention `write` documents above.
+    createHref: (pathname: string, search: string, hash?: string): string => {
+      const effectiveHash = hash ?? navigationHistory.location.hash;
+      const hashSuffix = effectiveHash === '' ? '' : `#${effectiveHash}`;
+      return `${pathname}${search}${hashSuffix}`;
+    },
   };
 }
 

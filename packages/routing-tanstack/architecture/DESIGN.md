@@ -149,7 +149,7 @@ A router engine renders routes and matches search parameters, and engines evolve
 
 - **Contracts**: `createRouter`, `RouterProvider`, `useNavigate`, `useParams`, `useSearch`, `useRouterState`, `Link`, `Outlet`, `redirect`, `notFound`, `createHref`, a location-preserving navigation helper; the engine-provider port this package implements, owned by the navigation substrate's own PRD and DESIGN.
 - **Technology**: TypeScript library API, single entry point.
-- **Location**: Not authored yet — no source exists for this package. The entry (e.g. `src/index.ts`) carries this package's default TanStack Router adapter's contract.
+- **Location**: `src/index.ts` — the entry point, carrying this package's default TanStack Router adapter's contract (history adaptation, router creation, the composed/standalone virtual-location sources, the mode-selecting dispatch between them, the location-preserving navigation helper, and teardown).
 
 | Public surface | Purpose |
 |----------------|---------|

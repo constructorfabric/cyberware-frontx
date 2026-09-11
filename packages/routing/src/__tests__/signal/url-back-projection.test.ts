@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { backProjectEntries } from '../../signal/url-back-projection.js';
 import type { FakeHistoryAdapter } from '../history/fake-history-adapter.js';
-import { expectRoutingError, resetRealm } from '../helpers.js';
+import { backProjectEntries, expectRoutingError, resetRealm } from '../helpers.js';
 import type { DomainKey, ExtensionToken } from '../../types/index.js';
 
 // FEATURE (route-ownership-signal) §3, "URL Back-Projection Helper Via

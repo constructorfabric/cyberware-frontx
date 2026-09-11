@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createObserver } from '../../signal/observe-change.js';
 import { resolveNavigationHistory } from '../../history/singleton.js';
 import { RoutingError } from '../../errors.js';
-import { expectRoutingError, resetRealm, staticSource, mutableSource } from '../helpers.js';
+import { createObserver, expectRoutingError, resetRealm, staticSource, mutableSource } from '../helpers.js';
 import type { DomainKey, Transition } from '../../types/index.js';
 
 // FEATURE (route-ownership-signal) §3, Observable Transition Signal

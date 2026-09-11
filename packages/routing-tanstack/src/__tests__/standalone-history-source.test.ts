@@ -100,3 +100,88 @@ describe('standalone write-back preserves the page hash (A4, composed/standalone
     expect(adapter.lastWrite).toBe('/settings/profile?orientation=left');
   });
 });
+
+// F7: a hash passed to a navigation is applied to the page's own hash in
+// both modes, never carried into an entry — this mode has no entry to carry
+// it into at all, but the given-versus-absent distinction still governs
+// whether the page's own existing hash survives.
+describe('standalone hash on push/replace/createHref (F7)', () => {
+  it('applies a caller-given hash to the page, replacing whatever hash was there before', () => {
+    const adapter = resetRealm('/settings/general?orientation=left#old');
+    const history = adaptStandaloneHistory(resolveNavigationHistory());
+
+    history.push('/settings/profile?orientation=left#new');
+
+    expect(adapter.lastWrite).toBe('/settings/profile?orientation=left#new');
+  });
+
+  it('applies a caller-given hash on replace the same way', () => {
+    const adapter = resetRealm('/settings/general?orientation=left#old');
+    const history = adaptStandaloneHistory(resolveNavigationHistory());
+
+    history.replace('/settings/profile?orientation=left#new');
+
+    expect(adapter.lastWrite).toBe('/settings/profile?orientation=left#new');
+  });
+
+  it('createHref includes a caller-given hash', () => {
+    resetRealm('/settings/general?orientation=left#old');
+    const history = adaptStandaloneHistory(resolveNavigationHistory());
+
+    expect(history.createHref('/settings/profile?orientation=left#new')).toBe(
+      '/settings/profile?orientation=left#new',
+    );
+  });
+
+  it('createHref preserves the page own current hash when none is given', () => {
+    resetRealm('/settings/general?orientation=left#current');
+    const history = adaptStandaloneHistory(resolveNavigationHistory());
+
+    expect(history.createHref('/settings/profile?orientation=left')).toBe(
+      '/settings/profile?orientation=left#current',
+    );
+  });
+});
+
+// F2: `decodeURIComponent` throws `URIError` on a bare `%` or any other
+// malformed percent-escape — a real possibility for a page's own query
+// string, which this adapter never controls. Construction (and every read
+// through it) must stay total rather than throwing.
+describe('standalone source with a malformed query string (F2)', () => {
+  it('does not throw at construction on a bare "%"', () => {
+    resetRealm('/settings/general?a=%');
+    expect(() => adaptStandaloneHistory(resolveNavigationHistory())).not.toThrow();
+  });
+
+  it('keeps the malformed pair as raw text rather than dropping it or throwing on read', () => {
+    resetRealm('/settings/general?a=%');
+    const source = createStandaloneVirtualLocationSource(resolveNavigationHistory());
+
+    expect(source.readParams()).toEqual([
+      { name: 'route', value: 'settings/general' },
+      { name: 'a', value: '%' },
+    ]);
+  });
+
+  it('does not throw on an invalid escape sequence ("%zz")', () => {
+    resetRealm('/settings/general?a=%zz');
+    const source = createStandaloneVirtualLocationSource(resolveNavigationHistory());
+
+    expect(() => source.readParams()).not.toThrow();
+    expect(source.readParams()).toEqual([
+      { name: 'route', value: 'settings/general' },
+      { name: 'a', value: '%zz' },
+    ]);
+  });
+
+  it('still decodes every well-formed pair alongside a malformed one', () => {
+    resetRealm('/settings/general?a=%&b=hello%20world');
+    const source = createStandaloneVirtualLocationSource(resolveNavigationHistory());
+
+    expect(source.readParams()).toEqual([
+      { name: 'route', value: 'settings/general' },
+      { name: 'a', value: '%' },
+      { name: 'b', value: 'hello world' },
+    ]);
+  });
+});

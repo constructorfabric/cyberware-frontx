@@ -13,7 +13,6 @@
 import { RoutingError } from '../errors.js';
 import { isValidDomainKey, validateName } from '../grammar/name.js';
 import { parseGrammar } from '../grammar/parse.js';
-import { resolveNavigationHistory } from '../history/singleton.js';
 import type {
   CreateObserver,
   DomainKey,
@@ -137,14 +136,21 @@ function diffIsEmpty(diff: TransitionDiff): boolean {
 // @cpt-flow:cpt-frontx-flow-routing-route-ownership-signal-deep-link-cold-mount:p1
 // @cpt-dod:cpt-frontx-dod-routing-route-ownership-signal-resolution-and-observation:p1
 // @cpt-dod:cpt-frontx-dod-routing-route-ownership-signal-release:p1
-export const createObserver: CreateObserver = (domainKey, source, onTransition) => {
+/**
+ * Builds a `CreateObserver` function bound to `history` (F1 of the review
+ * scope this factory closed) rather than resolving the realm-shared
+ * singleton internally — the identical seam `./url-back-projection.js`'s
+ * `createBackProjectEntries` adds for the same reason. Not exported
+ * directly; `createRouteSignal` (`./route-signal.js`) is this package's own
+ * public construction path for a `history`-bound instance.
+ */
+export function createObserverBoundTo(history: NavigationHistory): CreateObserver {
+  return (domainKey, source, onTransition) => {
   // @cpt-begin:cpt-frontx-algo-routing-route-ownership-signal-observe-change:p2:inst-when-create
   // @cpt-begin:cpt-frontx-flow-routing-route-ownership-signal-deep-link-cold-mount:p1:inst-create-observer
   // @cpt-begin:cpt-frontx-algo-routing-route-ownership-signal-observe-change:p2:inst-initial-resolve
   // @cpt-begin:cpt-frontx-flow-routing-route-ownership-signal-deep-link-cold-mount:p1:inst-resolve-entries-at-creation
   validateDomainKeyAndRegistrations(domainKey, source);
-
-  const history = resolveNavigationHistory();
 
   // @cpt-begin:cpt-frontx-algo-routing-route-ownership-signal-observe-change:p2:inst-record-initial-state
   // This observer's own initial state — `reresolveAndReport` (below) reads
@@ -281,4 +287,5 @@ export const createObserver: CreateObserver = (domainKey, source, onTransition) 
   return release;
   // @cpt-end:cpt-frontx-algo-routing-route-ownership-signal-observe-change:p2:inst-return-release
   // @cpt-end:cpt-frontx-algo-routing-route-ownership-signal-observe-change:p2:inst-when-create
-};
+  };
+}

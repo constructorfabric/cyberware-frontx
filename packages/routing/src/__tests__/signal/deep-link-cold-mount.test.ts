@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { composeDomainKey } from '../../grammar/compose.js';
 import { resolveNavigationHistory } from '../../history/singleton.js';
-import { createObserver } from '../../signal/observe-change.js';
-import { resetRealm, staticSource as source } from '../helpers.js';
+import { createObserver, resetRealm, staticSource as source } from '../helpers.js';
 import type { DomainKey, ExtensionToken } from '../../types/index.js';
 
 // FEATURE (route-ownership-signal) §2, "Deep Link Resolves Through The Route

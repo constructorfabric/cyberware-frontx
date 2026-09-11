@@ -69,10 +69,18 @@ export function projectVirtualLocationToParams(pathname: string, search: string)
  * and first `#` is enough and keeps this package independent of the exact
  * encoding TanStack's own internals choose for that argument.
  */
-export function splitHref(path: string): { pathname: string; search: string; hash: string } {
+export function splitHref(path: string): { pathname: string; search: string; hash: string | undefined } {
   const hashIndex = path.indexOf('#');
   const withoutHash = hashIndex === -1 ? path : path.slice(0, hashIndex);
-  const hash = hashIndex === -1 ? '' : path.slice(hashIndex + 1);
+  // `undefined` — not `''` — when `path` carries no `#` at all: a caller
+  // that never named a hash and a caller that explicitly named an empty one
+  // are two different inputs (FEATURE (engine-provider) §3, "a hash passed
+  // to a navigation is applied to the page hash and never enters an
+  // entry"; "no hash given" preserves whatever the page's own hash already
+  // is, which an explicit empty string would instead clear) — collapsing
+  // them to the same `''` would make that distinction unrecoverable by the
+  // time it reaches `write`/`createHref` below.
+  const hash = hashIndex === -1 ? undefined : path.slice(hashIndex + 1);
 
   const searchIndex = withoutHash.indexOf('?');
   const pathname = searchIndex === -1 ? withoutHash : withoutHash.slice(0, searchIndex);
@@ -97,6 +105,31 @@ function buildSearchString(params: readonly Param[]): string {
   return `?${params.map((param) => `${encodeURIComponent(param.name)}=${encodeURIComponent(param.value)}`).join('&')}`;
 }
 
+/**
+ * `decodeURIComponent` throws `URIError` on a bare `%` or any other
+ * malformed percent-escape — a real possibility for a page's own query
+ * string, which this adapter never controls (a hand-typed URL, a bookmark
+ * from an older version of the app, a third party's own link). Letting that
+ * throw escape `parseSearchString` would fail the whole adaptation at
+ * construction over one bad pair; falling back to the raw, still-encoded
+ * text for that one pair keeps every other pair intact and keeps this
+ * adapter's own construction total, mirroring the navigation substrate's
+ * own grammar parse, which never throws on a malformed token either — it
+ * downgrades to a warning instead (`ParseWarningCode`, 'malformed-entry').
+ * This adapter has no warning channel of its own to report through, so it
+ * keeps the raw text rather than dropping the pair outright: a raw,
+ * still-percent-encoded value is still a usable (if unlovely) string for
+ * whatever reads it next, where dropping it would silently lose a
+ * parameter the URL visibly still carries.
+ */
+function decodeComponentOrRaw(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 /** The reverse of `buildSearchString`, applied to whatever search string
  * TanStack's own router handed this adapter back (via `push`/`replace`'s
  * `path` argument, itself built by TanStack's own search serializer) —
@@ -109,8 +142,8 @@ function parseSearchString(search: string): readonly Param[] {
   return trimmed.split('&').map((pair) => {
     const eq = pair.indexOf('=');
     if (eq === -1) {
-      return { name: decodeURIComponent(pair), value: '' };
+      return { name: decodeComponentOrRaw(pair), value: '' };
     }
-    return { name: decodeURIComponent(pair.slice(0, eq)), value: decodeURIComponent(pair.slice(eq + 1)) };
+    return { name: decodeComponentOrRaw(pair.slice(0, eq)), value: decodeComponentOrRaw(pair.slice(eq + 1)) };
   });
 }

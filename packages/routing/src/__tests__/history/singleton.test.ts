@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { NAVIGATION_HISTORY_KEY, resolveNavigationHistory } from '../../history/singleton.js';
+import { RoutingError } from '../../errors.js';
 import { FakeHistoryAdapter } from './fake-history-adapter.js';
 
 // FEATURE (navigation-substrate) §3, Realm-Global Singleton Resolution.
@@ -83,6 +84,35 @@ describe('resolveNavigationHistory', () => {
       const history = resolveNavigationHistory();
 
       expect(history.location).toEqual({ path: '/en', search: 'screen=dashboard', hash: '' });
+    });
+
+    // F1 (review scope): resolving with no adapter override, in a realm with
+    // no `window` at all, used to fail deep inside the default adapter's own
+    // construction with a raw `ReferenceError: window is not defined` — a
+    // real SSR realm never defines `window`, so this is the actual failure
+    // path an SSR caller that forgot to pass its own adapter would hit.
+    it('throws a RoutingError, not a raw ReferenceError, when called with no argument and no window', () => {
+      expect(typeof window).toBe('undefined');
+      delete (globalThis as Record<PropertyKey, unknown>)[NAVIGATION_HISTORY_KEY as unknown as string];
+
+      let caught: unknown;
+      try {
+        resolveNavigationHistory();
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(RoutingError);
+      expect((caught as RoutingError).code).toBe('no-navigation-history-in-realm');
+      // Nothing was stored under the well-known key for a failed resolution.
+      expect((globalThis as Record<PropertyKey, unknown>)[NAVIGATION_HISTORY_KEY as unknown as string]).toBeUndefined();
+    });
+
+    it('does not throw when a custom adapter override is given, even with no window', () => {
+      expect(typeof window).toBe('undefined');
+      delete (globalThis as Record<PropertyKey, unknown>)[NAVIGATION_HISTORY_KEY as unknown as string];
+
+      expect(() => resolveNavigationHistory(() => new FakeHistoryAdapter('/en'))).not.toThrow();
     });
   });
 });

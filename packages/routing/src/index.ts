@@ -39,8 +39,10 @@ export * from './grammar/serialize.js';
 // DoD `cpt-frontx-dod-routing-route-ownership-signal-resolution-and-observation`
 // / `cpt-frontx-dod-routing-route-ownership-signal-release` /
 // `cpt-frontx-dod-routing-route-ownership-signal-url-back-projection`) —
-// entry resolution, the observable transition signal (with its release
-// function), and the URL back-projection helper.
+// entry resolution, and `createRouteSignal` (F1: the `history`-bound
+// construction path for the observable transition signal and the URL
+// back-projection helper — see `./signal/route-signal.js` for why the
+// previous unbound `createObserver`/`backProjectEntries` exports are gone,
+// with no compatibility shim left in their place).
 export * from './signal/entry-resolution.js';
-export * from './signal/observe-change.js';
-export * from './signal/url-back-projection.js';
+export * from './signal/route-signal.js';

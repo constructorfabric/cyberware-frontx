@@ -488,8 +488,8 @@ export type EngineProviderPort<TRouteTree = unknown, TRouter = unknown> = (
 // ---------------------------------------------------------------------------
 
 /**
- * The six shapes a thrown `RoutingError` (`../errors.js`) can carry, one per
- * `code`. Documented here as prose, not as exported interfaces: no value
+ * The seven shapes a thrown `RoutingError` (`../errors.js`) can carry, one
+ * per `code`. Documented here as prose, not as exported interfaces: no value
  * ever satisfies one of these shapes on its own — `RoutingError` is a
  * single flat runtime class whose static factories populate only the
  * field(s) a given code declares, leaving the rest `undefined` — so a
@@ -520,6 +520,11 @@ export type EngineProviderPort<TRouteTree = unknown, TRouter = unknown> = (
  *   duplicate. None of the other five codes names this case: it is neither
  *   a lexical failure (`invalid-*`) nor a serialize-input shape violation
  *   (`duplicate-*`), so it is its own code.
+ * - `no-navigation-history-in-realm` — no fields set; `resolveNavigationHistory`
+ *   (`../history/singleton.js`) was called with no adapter override in a
+ *   realm carrying no `window` at all (an SSR render, most commonly) — the
+ *   one code this package throws from resolving the realm-shared singleton
+ *   itself, rather than from a grammar/back-projection/observer input.
  */
 
 // ---------------------------------------------------------------------------

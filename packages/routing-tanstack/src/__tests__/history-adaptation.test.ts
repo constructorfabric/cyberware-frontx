@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   parseGrammar,
   resolveNavigationHistory,
@@ -397,6 +397,217 @@ describe('attachAdaptedHistory re-projects location after a real detach gap (L1)
     attachAdaptedHistory(history);
 
     expect(history.location.pathname).toBe('/settings/profile');
+  });
+});
+
+// F5: subscriber fan-out isolates each subscriber's own error, mirroring
+// the core's own `FanOutDispatcher` — a throwing subscriber must not stop
+// delivery to the subscribers registered after it in the same round.
+describe('subscriber error isolation (F5)', () => {
+  it('a throwing subscriber does not stop delivery to the next one', async () => {
+    resetRealm(EXAMPLE_7_3_URL);
+    const navigationHistory = resolveNavigationHistory();
+    const reported: unknown[] = [];
+    const secondCalled = { value: false };
+    const history = adaptVirtualLocationHistory(
+      navigationHistory,
+      createComposedVirtualLocationSource(navigationHistory, DASHBOARD_ENTRY_ADDRESS),
+      { reportError: (error) => reported.push(error) },
+    );
+
+    history.subscribe(() => {
+      throw new Error('first subscriber exploded');
+    });
+    history.subscribe(() => {
+      secondCalled.value = true;
+    });
+
+    history.push('/settings/profile?orientation=left');
+    await flushMicrotasks();
+
+    expect(secondCalled.value).toBe(true);
+    expect(reported).toHaveLength(1);
+    expect((reported[0] as Error).message).toBe('first subscriber exploded');
+  });
+
+  it('reports through the default reportError channel (console.error) when none is supplied', async () => {
+    resetRealm(EXAMPLE_7_3_URL);
+    const navigationHistory = resolveNavigationHistory();
+    const history = adaptComposedHistory(navigationHistory, DASHBOARD_ENTRY_ADDRESS);
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    history.subscribe(() => {
+      throw new Error('boom');
+    });
+    history.push('/settings/profile?orientation=left');
+    await flushMicrotasks();
+
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+});
+
+// F6: a rejecting or throwing blocker must not become a genuine unhandled
+// promise rejection — treated as blocking the navigation, and reported
+// rather than silently swallowed.
+describe('rejected/throwing blocker (F6)', () => {
+  it('a rejected blocker blocks the navigation and is reported, not left as an unhandled rejection', async () => {
+    const adapter = resetRealm(EXAMPLE_7_3_URL);
+    const navigationHistory = resolveNavigationHistory();
+    const reported: unknown[] = [];
+    const history = adaptVirtualLocationHistory(
+      navigationHistory,
+      createComposedVirtualLocationSource(navigationHistory, DASHBOARD_ENTRY_ADDRESS),
+      { reportError: (error) => reported.push(error) },
+    );
+    const failure = new Error('blocker exploded');
+    history.block({ blockerFn: () => Promise.reject(failure) });
+
+    history.push('/settings/profile?orientation=left');
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(adapter.lastWrite).toBeUndefined();
+    expect(reported).toEqual([failure]);
+  });
+
+  it('a synchronously throwing blocker blocks the navigation and is reported', async () => {
+    const adapter = resetRealm(EXAMPLE_7_3_URL);
+    const navigationHistory = resolveNavigationHistory();
+    const reported: unknown[] = [];
+    const history = adaptVirtualLocationHistory(
+      navigationHistory,
+      createComposedVirtualLocationSource(navigationHistory, DASHBOARD_ENTRY_ADDRESS),
+      { reportError: (error) => reported.push(error) },
+    );
+    history.block({
+      blockerFn: () => {
+        throw new Error('synchronous blocker failure');
+      },
+    });
+
+    history.push('/settings/profile?orientation=left');
+    await flushMicrotasks();
+
+    expect(adapter.lastWrite).toBeUndefined();
+    expect(reported).toHaveLength(1);
+  });
+
+  it('an async blocker that genuinely awaits still gates the navigation correctly', async () => {
+    const adapter = resetRealm(EXAMPLE_7_3_URL);
+    const history = adaptComposedHistory(resolveNavigationHistory(), DASHBOARD_ENTRY_ADDRESS);
+    history.block({
+      blockerFn: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return true;
+      },
+    });
+
+    history.push('/settings/profile?orientation=left');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(adapter.lastWrite).toBeUndefined();
+  });
+
+  it('an async blocker that genuinely awaits and resolves false lets the navigation through', async () => {
+    const adapter = resetRealm(EXAMPLE_7_3_URL);
+    const history = adaptComposedHistory(resolveNavigationHistory(), DASHBOARD_ENTRY_ADDRESS);
+    history.block({
+      blockerFn: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return false;
+      },
+    });
+
+    history.push('/settings/profile?orientation=left');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(adapter.lastWrite).toBe(
+      '/en?screen=dashboard;route=settings/profile;orientation=left&sheet=tenant-details;route=contacts;tenantId=456',
+    );
+  });
+});
+
+// F7: a hash given to `navigate`/`Link`/`createHref` is applied to the
+// page's own hash, never to this entry.
+describe('hash on push/createHref (F7)', () => {
+  it('applies a given hash to the page hash on push', () => {
+    const adapter = resetRealm(`${EXAMPLE_7_3_URL}#old`);
+    const history = adaptComposedHistory(resolveNavigationHistory(), DASHBOARD_ENTRY_ADDRESS);
+
+    history.push('/settings/profile?orientation=left#new');
+
+    expect(adapter.lastWrite).toBe(
+      '/en?screen=dashboard;route=settings/profile;orientation=left&sheet=tenant-details;route=contacts;tenantId=456#new',
+    );
+  });
+
+  it('preserves the current page hash when none is given', () => {
+    const adapter = resetRealm(`${EXAMPLE_7_3_URL}#current`);
+    const history = adaptComposedHistory(resolveNavigationHistory(), DASHBOARD_ENTRY_ADDRESS);
+
+    history.push('/settings/profile?orientation=left');
+
+    expect(adapter.lastWrite).toBe(
+      '/en?screen=dashboard;route=settings/profile;orientation=left&sheet=tenant-details;route=contacts;tenantId=456#current',
+    );
+  });
+
+  it('createHref includes a given hash', () => {
+    resetRealm(EXAMPLE_7_3_URL);
+    const history = adaptComposedHistory(resolveNavigationHistory(), DASHBOARD_ENTRY_ADDRESS);
+
+    expect(history.createHref('/settings/profile?orientation=left#new')).toBe(
+      '/en?screen=dashboard;route=settings/profile;orientation=left&sheet=tenant-details;route=contacts;tenantId=456#new',
+    );
+  });
+});
+
+// F8: `length`/`canGoBack` track a real virtual index across push/back/
+// forward/go sequences, not a monotonic counter.
+describe('virtual stack index across push/back/forward/go (F8)', () => {
+  it('advances on push, retreats on back, advances on forward, follows go', () => {
+    resetRealm(EXAMPLE_7_3_URL);
+    const history = adaptComposedHistory(resolveNavigationHistory(), DASHBOARD_ENTRY_ADDRESS);
+
+    expect(history.length).toBe(0);
+    expect(history.canGoBack()).toBe(false);
+
+    history.push('/settings/a?orientation=left');
+    expect(history.length).toBe(1);
+    expect(history.canGoBack()).toBe(true);
+
+    history.push('/settings/b?orientation=left');
+    expect(history.length).toBe(2);
+
+    history.back();
+    expect(history.length).toBe(1);
+    expect(history.canGoBack()).toBe(true);
+
+    history.back();
+    expect(history.length).toBe(0);
+    expect(history.canGoBack()).toBe(false);
+
+    // Past the start: clamped at 0, never negative.
+    history.back();
+    expect(history.length).toBe(0);
+
+    history.forward();
+    expect(history.length).toBe(1);
+
+    history.go(1);
+    expect(history.length).toBe(2);
+  });
+
+  it('replace does not move the index', () => {
+    resetRealm(EXAMPLE_7_3_URL);
+    const history = adaptComposedHistory(resolveNavigationHistory(), DASHBOARD_ENTRY_ADDRESS);
+
+    history.push('/settings/a?orientation=left');
+    expect(history.length).toBe(1);
+
+    history.replace('/settings/b?orientation=left');
+    expect(history.length).toBe(1);
   });
 });
 

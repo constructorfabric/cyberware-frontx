@@ -11,7 +11,7 @@ import {
   namesEqual,
   parseGrammar,
   serializeGrammar,
-  backProjectEntries,
+  createRouteSignal,
   type Entry,
   type EntryAddress,
   type NavigationHistory,
@@ -53,6 +53,13 @@ export function createComposedVirtualLocationSource(
   navigationHistory: NavigationHistory,
   entryAddress: EntryAddress,
 ): VirtualLocationSource {
+  // F1: bound to the identical `navigationHistory` this source was itself
+  // constructed with, never the realm singleton — the seam that lets a
+  // caller supply its own `NavigationHistory` (a test double, an SSR
+  // instance) and have both reads (`resolveOwnEntry`, `createHref` below)
+  // and this write path observe it consistently.
+  const { backProjectEntries } = createRouteSignal(navigationHistory);
+
   return {
     // @cpt-begin:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-expose-direct-members
     readParams: () => resolveOwnEntry(navigationHistory, entryAddress)?.params,
@@ -71,12 +78,34 @@ export function createComposedVirtualLocationSource(
     // fan-out round for every other subscriber over a navigation that
     // changes nothing (FEATURE §3, step 7.1: "no write-back runs, because
     // there is no longer an entry of this occupant's own to write to").
-    write: (pathname: string, search: string, verb: HistoryVerb): void => {
+    //
+    // F7: a caller-supplied `hash` is applied to the page's own hash, never
+    // to this entry — the core's own `backProjectEntries` always preserves
+    // whatever hash is *currently* in the URL verbatim (FEATURE
+    // (route-ownership-signal) §3, URL Back-Projection Helper), so
+    // overriding it needs its own direct grammar-codec round trip here
+    // rather than going through that helper, while still landing in
+    // exactly one history write.
+    write: (pathname: string, search: string, verb: HistoryVerb, hash?: string): void => {
       if (resolveOwnEntry(navigationHistory, entryAddress) === undefined) {
         return;
       }
       const params = projectVirtualLocationToParams(pathname, search);
-      backProjectEntries(entryAddress.domainKey, { payloadChanged: [{ extension: entryAddress.extension, params }] }, verb);
+      if (hash === undefined) {
+        backProjectEntries(entryAddress.domainKey, { payloadChanged: [{ extension: entryAddress.extension, params }] }, verb);
+        return;
+      }
+      const { shellSubroute, entries } = parseGrammar({
+        shellSubroute: navigationHistory.location.path,
+        search: navigationHistory.location.search,
+        hash: navigationHistory.location.hash,
+      });
+      const updatedEntries = entries.map((entry) =>
+        namesEqual(entry.domainKey, entryAddress.domainKey) && namesEqual(entry.extension, entryAddress.extension)
+          ? { domainKey: entry.domainKey, extension: entry.extension, params }
+          : entry,
+      );
+      navigationHistory[verb](serializeGrammar({ shellSubroute, hash, entries: updatedEntries }));
     },
     // @cpt-end:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-expose-direct-members
 
@@ -85,10 +114,11 @@ export function createComposedVirtualLocationSource(
     // substrate's own grammar serializer over the current entry list with
     // this occupant's own entry replaced by the one the target virtual
     // location projects back to — never by concatenating path fragments
-    // (FEATURE §3, step 4).
-    createHref: (pathname: string, search: string): string => {
+    // (FEATURE §3, step 4). `hash` follows `write`'s own given-versus-absent
+    // convention above.
+    createHref: (pathname: string, search: string, hash?: string): string => {
       const newParams = projectVirtualLocationToParams(pathname, search);
-      const { shellSubroute, hash, entries } = parseGrammar({
+      const { shellSubroute, hash: currentHash, entries } = parseGrammar({
         shellSubroute: navigationHistory.location.path,
         search: navigationHistory.location.search,
         hash: navigationHistory.location.hash,
@@ -98,7 +128,7 @@ export function createComposedVirtualLocationSource(
           ? { domainKey: entry.domainKey, extension: entry.extension, params: newParams }
           : entry,
       );
-      return serializeGrammar({ shellSubroute, hash, entries: updatedEntries });
+      return serializeGrammar({ shellSubroute, hash: hash ?? currentHash, entries: updatedEntries });
     },
     // @cpt-end:cpt-frontx-algo-routing-engine-provider-history-adaptation:p2:inst-derive-create-href
   };

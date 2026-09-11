@@ -19,4 +19,15 @@ describe('@gears-frontx/routing entry point', () => {
     expect((routing as Record<string, unknown>).createNavigationHistory).toBeUndefined();
     expect((routing as Record<string, unknown>).createWindowHistoryAdapter).toBeUndefined();
   });
+
+  // F1 (review scope): `createRouteSignal` is the one public construction
+  // path for the route ownership signal's write/observe surfaces — the
+  // free, realm-singleton-defaulting `backProjectEntries`/`createObserver`
+  // exports this package used to carry are gone, with no compatibility
+  // shim left in their place.
+  it('re-exports createRouteSignal, and no longer re-exports the unbound backProjectEntries/createObserver', () => {
+    expect(routing.createRouteSignal).toBeTypeOf('function');
+    expect((routing as Record<string, unknown>).backProjectEntries).toBeUndefined();
+    expect((routing as Record<string, unknown>).createObserver).toBeUndefined();
+  });
 });

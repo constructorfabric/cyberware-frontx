@@ -301,7 +301,14 @@ module.exports = {
       name: 'frontx-routing-1-no-template-content',
       severity: 'error',
       from: { path: '^packages/routing/src/', pathNot: '__tests__' },
-      to: { path: '^(?!packages/|node_modules/|internal/|scripts/).+' },
+      // F14: an unresolvable `to` (e.g. a workspace sibling before its own
+      // `dist` is built) keeps its bare specifier as `resolved`
+      // (`couldNotResolve: true`), which also fails to start with any of
+      // the four known-safe prefixes below — misdiagnosing "not yet built"
+      // as "imports template territory". `couldNotResolve: false` excludes
+      // that case from this rule; a genuinely resolved import outside these
+      // prefixes still trips it, which is the rule's actual intent.
+      to: { path: '^(?!packages/|node_modules/|internal/|scripts/).+', couldNotResolve: false },
       comment:
         'ecosystem-boundaries: @gears-frontx/routing is an ecosystem package and must not import template territory at the source level.',
     },
@@ -340,7 +347,13 @@ module.exports = {
       name: 'frontx-routing-tanstack-1-no-template-content',
       severity: 'error',
       from: { path: '^packages/routing-tanstack/src/', pathNot: '__tests__' },
-      to: { path: '^(?!packages/|node_modules/|internal/|scripts/).+' },
+      // F14: this package's own sole intra-ecosystem edge, `@gears-frontx/routing`
+      // (`cpt-frontx-routing-tanstack-nfr-single-ecosystem-edge`), resolves
+      // to `couldNotResolve: true` before that package's own `dist` is
+      // built — see `frontx-routing-1-no-template-content`'s own comment
+      // above for the general condition this same `couldNotResolve: false`
+      // excludes.
+      to: { path: '^(?!packages/|node_modules/|internal/|scripts/).+', couldNotResolve: false },
       comment:
         'ecosystem-boundaries: @gears-frontx/routing-tanstack is an ecosystem package and must not import template territory at the source level.',
     },

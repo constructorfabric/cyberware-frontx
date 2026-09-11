@@ -1,3 +1,4 @@
+import { RoutingError } from '../errors.js';
 import type { NavigationHistory } from '../types/index.js';
 import { createWindowHistoryAdapter, type HistoryAdapter } from './adapter.js';
 import { createNavigationHistory } from './navigation-history.js';
@@ -51,6 +52,17 @@ export function resolveNavigationHistory(
 
   // @cpt-begin:cpt-frontx-algo-routing-navigation-substrate-singleton-resolution:p2:inst-if-absent
   if (existing === undefined) {
+    // F1 (review scope): the default browser adapter has nothing to
+    // construct itself over in a realm with no `window` — an SSR render
+    // that never passed its own adapter override. Checked here, ahead of
+    // `createAdapter()`, rather than inside `createWindowHistoryAdapter`
+    // itself, so the check applies exactly to "the default was left in
+    // place", never to a caller's own SSR-safe adapter that happens to
+    // read `window` too (`createAdapter !== createWindowHistoryAdapter`
+    // always skips this branch, whatever that adapter does internally).
+    if (createAdapter === createWindowHistoryAdapter && typeof window === 'undefined') {
+      throw RoutingError.noNavigationHistoryInRealm();
+    }
     const instance = createNavigationHistory(createAdapter());
     // @cpt-begin:cpt-frontx-algo-routing-navigation-substrate-singleton-resolution:p2:inst-store-global
     realm[NAVIGATION_HISTORY_KEY] = instance;

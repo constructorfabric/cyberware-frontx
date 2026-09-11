@@ -16,13 +16,13 @@ import { RoutingError } from '../errors.js';
 import { isValidDomainKey, validateName } from '../grammar/name.js';
 import { parseGrammar } from '../grammar/parse.js';
 import { serializeGrammar } from '../grammar/serialize.js';
-import { resolveNavigationHistory } from '../history/singleton.js';
 import type {
   BackProjectEntries,
   BackProjectionDelta,
   DomainKey,
   Entry,
   ExtensionToken,
+  NavigationHistory,
 } from '../types/index.js';
 
 /**
@@ -77,13 +77,35 @@ function validateBackProjectionInput(
 
 // @cpt-algo:cpt-frontx-algo-routing-route-ownership-signal-url-back-projection:p2
 // @cpt-dod:cpt-frontx-dod-routing-route-ownership-signal-url-back-projection:p1
-export const backProjectEntries: BackProjectEntries = (domainKey, delta, verb) => {
-  // @cpt-begin:cpt-frontx-algo-routing-route-ownership-signal-url-back-projection:p2:inst-consumer-calls-helper
-  validateBackProjectionInput(domainKey, delta);
-  // @cpt-end:cpt-frontx-algo-routing-route-ownership-signal-url-back-projection:p2:inst-consumer-calls-helper
+/**
+ * Builds a `BackProjectEntries` function bound to `history` — for both
+ * reading the current location and issuing the resulting `push`/`replace`
+ * call — rather than resolving the realm-shared singleton internally (F1 of
+ * the review scope this factory closed: the previous top-level export
+ * always called `resolveNavigationHistory()` itself, so a caller that had
+ * gone to the trouble of constructing its own `NavigationHistory` — a test
+ * double, an SSR instance — still had every one of its writes routed to the
+ * real singleton instead). Not exported directly; `createRouteSignal`
+ * (`./route-signal.js`) is this package's own public construction path for
+ * a `history`-bound instance, so a consumer never has to know a second,
+ * unbound public shape exists to keep in sync with this one.
+ */
+export function createBackProjectEntries(history: NavigationHistory): BackProjectEntries {
+  return (domainKey, delta, verb) => {
+    // @cpt-begin:cpt-frontx-algo-routing-route-ownership-signal-url-back-projection:p2:inst-consumer-calls-helper
+    validateBackProjectionInput(domainKey, delta);
+    // @cpt-end:cpt-frontx-algo-routing-route-ownership-signal-url-back-projection:p2:inst-consumer-calls-helper
 
-  const history = resolveNavigationHistory();
+    runBackProjection(history, domainKey, delta, verb);
+  };
+}
 
+function runBackProjection(
+  history: NavigationHistory,
+  domainKey: DomainKey,
+  delta: BackProjectionDelta,
+  verb: Parameters<BackProjectEntries>[2],
+): void {
   // @cpt-begin:cpt-frontx-algo-routing-route-ownership-signal-url-back-projection:p2:inst-parse-current
   const location = history.location;
   const parsed = parseGrammar({
@@ -242,4 +264,4 @@ export const backProjectEntries: BackProjectEntries = (domainKey, delta, verb) =
   // @cpt-begin:cpt-frontx-algo-routing-route-ownership-signal-url-back-projection:p2:inst-return-reflected
   return;
   // @cpt-end:cpt-frontx-algo-routing-route-ownership-signal-url-back-projection:p2:inst-return-reflected
-};
+}

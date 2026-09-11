@@ -91,6 +91,10 @@ describe('splitHref', () => {
   });
 
   it('handles a path with no search and no hash', () => {
-    expect(splitHref('/settings/general')).toEqual({ pathname: '/settings/general', search: '', hash: '' });
+    expect(splitHref('/settings/general')).toEqual({ pathname: '/settings/general', search: '', hash: undefined });
+  });
+
+  it('reports an explicit empty hash (`#` with nothing after it) as the empty string, distinct from no hash at all', () => {
+    expect(splitHref('/settings/general#')).toEqual({ pathname: '/settings/general', search: '', hash: '' });
   });
 });

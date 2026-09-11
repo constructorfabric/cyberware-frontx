@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveNavigationHistory, type DomainKey, type EntryAddress, type ExtensionToken } from '@gears-frontx/routing';
-import { createComposedVirtualLocationSource } from '../composed-history-source.js';
+import { adaptComposedHistory, createComposedVirtualLocationSource } from '../composed-history-source.js';
 import { resetRealm } from './helpers/index.js';
 
 const SHEET_ENTRY_ADDRESS: EntryAddress = { domainKey: 'sheet' as DomainKey, extension: 'tenant-details' as ExtensionToken };
@@ -59,5 +59,85 @@ describe('createComposedVirtualLocationSource', () => {
     source.write('/contacts', '?tenantId=999', 'push');
 
     expect(adapter.lastWrite).toBeUndefined();
+  });
+});
+
+// F7: a hash given to a navigation is applied to the page's own hash, never
+// to this occupant's own entry — the core's own `backProjectEntries` always
+// preserves whatever hash is currently in the URL verbatim, so a given hash
+// takes a separate direct grammar-codec round trip inside `write` (still
+// exactly one history call).
+describe('composed hash on write/createHref (F7)', () => {
+  it('applies a given hash to the page, leaving every entry exactly as payloadChanged would have', () => {
+    const adapter = resetRealm(`${URL}#old`);
+    const source = createComposedVirtualLocationSource(resolveNavigationHistory(), SHEET_ENTRY_ADDRESS);
+
+    source.write('/contacts', '?tenantId=999', 'push', 'new');
+
+    expect(adapter.lastWrite).toBe(
+      '/en?screen=dashboard;route=settings/general;orientation=left&sheet=tenant-details;route=contacts;tenantId=999#new',
+    );
+  });
+
+  it('preserves the current hash verbatim when no hash is given, exactly as before', () => {
+    const adapter = resetRealm(`${URL}#current`);
+    const source = createComposedVirtualLocationSource(resolveNavigationHistory(), SHEET_ENTRY_ADDRESS);
+
+    source.write('/contacts', '?tenantId=999', 'push');
+
+    expect(adapter.lastWrite).toBe(
+      '/en?screen=dashboard;route=settings/general;orientation=left&sheet=tenant-details;route=contacts;tenantId=999#current',
+    );
+  });
+
+  it('createHref includes a given hash', () => {
+    resetRealm(URL);
+    const source = createComposedVirtualLocationSource(resolveNavigationHistory(), SHEET_ENTRY_ADDRESS);
+
+    expect(source.createHref('/contacts', '?tenantId=999', 'new')).toBe(
+      '/en?screen=dashboard;route=settings/general;orientation=left&sheet=tenant-details;route=contacts;tenantId=999#new',
+    );
+  });
+
+  it('createHref preserves the current hash when none is given', () => {
+    resetRealm(`${URL}#current`);
+    const source = createComposedVirtualLocationSource(resolveNavigationHistory(), SHEET_ENTRY_ADDRESS);
+
+    expect(source.createHref('/contacts', '?tenantId=999')).toBe(
+      '/en?screen=dashboard;route=settings/general;orientation=left&sheet=tenant-details;route=contacts;tenantId=999#current',
+    );
+  });
+});
+
+// Missing-tests audit: "two routers over one shared history (both receive
+// the change, exactly once each)" — two independently constructed
+// `RouterHistory` objects, each addressed at a different occupant, both
+// wired to the identical realm-shared `NavigationHistory`.
+describe('two routers over one shared history', () => {
+  it('both receive a navigation the other one issued, exactly once each', () => {
+    resetRealm(URL);
+    const navigationHistory = resolveNavigationHistory();
+    const dashboardHistory = adaptComposedHistory(navigationHistory, {
+      domainKey: 'screen' as DomainKey,
+      extension: 'dashboard' as ExtensionToken,
+    });
+    const sheetHistory = adaptComposedHistory(navigationHistory, SHEET_ENTRY_ADDRESS);
+
+    const dashboardReceived: unknown[] = [];
+    const sheetReceived: unknown[] = [];
+    dashboardHistory.subscribe((args) => dashboardReceived.push(args));
+    sheetHistory.subscribe((args) => sheetReceived.push(args));
+
+    // A write through the sheet occupant's own history is observed by the
+    // dashboard occupant's own history too (both share the identical
+    // underlying `NavigationHistory`), even though only the sheet entry's
+    // own payload changed.
+    sheetHistory.push('/contacts?tenantId=999');
+
+    expect(dashboardReceived).toHaveLength(1);
+    expect(sheetReceived).toHaveLength(1);
+    expect(sheetHistory.location.search).toBe('?tenantId=999');
+    // The dashboard occupant's own entry is untouched by the sheet's own write.
+    expect(dashboardHistory.location.pathname).toBe('/settings/general');
   });
 });
