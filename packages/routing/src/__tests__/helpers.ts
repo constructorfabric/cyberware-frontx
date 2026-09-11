@@ -1,24 +1,55 @@
 // Shared test scaffolding for `packages/routing`. Not part of the package's
 // own public surface — imported only by files under `__tests__/`.
 
-// DESIGN §3.3 public surface (N3, review round 16-re4): the runtime
-// values and the type-only names `src/index.ts` exports, pinned once here
-// so `package.test.ts` (the runtime `import * as routing` pin) and
-// `dist-internal.test.ts` (the built `dist/index.d.ts` presence/consumer
-// checks) assert against the identical name list rather than two lists
-// that could silently drift apart. `HistoryAdapter`/`AdapterLocation` are
-// the adapter seam FEATURE §3 calls "the `HistoryAdapter` seam"; `Location`/
-// `NavigationHistory` are the `NavigationHistory` contract's own shapes
-// (both `export type * from './types/index.js'`, `src/index.ts`).
-export const ROUTING_RUNTIME_SURFACE = [
-  'resolveNavigationHistory',
-  'createRouteSignal',
-  'RoutingError',
-  'parseGrammar',
-  'serializeGrammar',
-] as const;
+// DESIGN §3.3 public surface (N3, review round 16-re4; MEDIUM, review round
+// 16-re5): the runtime values and the type-only names `src/index.ts`
+// exports, pinned once here so `package.test.ts` (the runtime
+// `import * as routing` pin) and `dist-internal.test.ts` (the built
+// `dist/index.d.ts` presence/consumer checks) assert against the identical
+// name list rather than two lists that could silently drift apart.
+//
+// MEDIUM (review round 16-re5): the runtime half used to be a hand-listed
+// subset (5 of the 10 actual runtime exports) — a literal `@internal` in a
+// `//` comment above `export { deriveExtensionToken, namesEqual,
+// validateName }` (`../index.ts`) would have dropped all three from
+// `dist/index.d.ts` with no test failing, exactly N3's own class of defect,
+// because the hand list never claimed to cover them. It is now derived from
+// `../index.js`'s own actual runtime exports (`Object.keys`, sorted) rather
+// than maintained by hand, so a future export this package's own entry point
+// adds or removes changes this list automatically instead of silently
+// falling out of sync with it.
+export const ROUTING_RUNTIME_SURFACE = Object.keys(routingIndex).sort();
 
-export const ROUTING_TYPE_ONLY_SURFACE = ['HistoryAdapter', 'AdapterLocation', 'Location', 'NavigationHistory'] as const;
+// Type-only exports cannot be derived the same way — `export type *`/
+// `export type { ... }` erase entirely at compile time, so there is no
+// runtime object to call `Object.keys` on. This list is instead
+// cross-checked by hand against every DESIGN §3.3 public-surface row that
+// names a type rather than a function: the `NavigationHistory` contract
+// (`NavigationHistory`, `Location`); the `resolveNavigationHistory`/
+// `HistoryAdapter` seam (`HistoryAdapter`, `AdapterLocation`); the
+// engine-provider port (`EngineProviderInput`, `EngineProviderPort`,
+// `EntryAddress`); the registered-extensions source
+// (`RegisteredExtensionsSource`); `createRouteSignal`'s own return shape
+// (`RouteSignal`); the transition notification (`Transition`); and
+// `RoutingError`'s own discriminant (`RoutingErrorCode`). Missing one of
+// these here would silently reopen the same class of gap the runtime half
+// above just closed — `helpers/surface-check.test.ts` proves the presence
+// check this list feeds (`dist-internal.test.ts`) actually fails on a
+// fixture missing a declared name, so an incomplete list is the only way
+// left for a name to go unverified.
+export const ROUTING_TYPE_ONLY_SURFACE = [
+  'AdapterLocation',
+  'EngineProviderInput',
+  'EngineProviderPort',
+  'EntryAddress',
+  'HistoryAdapter',
+  'Location',
+  'NavigationHistory',
+  'RegisteredExtensionsSource',
+  'RouteSignal',
+  'RoutingErrorCode',
+  'Transition',
+] as const;
 
 // Internal building blocks DESIGN §3.3 explicitly excludes from the public
 // surface (`./history/index.ts`'s own module comment) — asserted absent
@@ -26,6 +57,7 @@ export const ROUTING_TYPE_ONLY_SURFACE = ['HistoryAdapter', 'AdapterLocation', '
 // slipping one of these back in fails the same pin that catches a missing
 // public name.
 export const ROUTING_EXCLUDED_BUILDING_BLOCKS = ['createNavigationHistory', 'createWindowHistoryAdapter'] as const;
+import * as routingIndex from '../index.js';
 import { NAVIGATION_HISTORY_KEY, resolveNavigationHistory } from '../history/singleton.js';
 import { RoutingError } from '../errors.js';
 import { createRouteSignal } from '../signal/route-signal.js';

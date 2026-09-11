@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ROUTING_EXCLUDED_BUILDING_BLOCKS, ROUTING_RUNTIME_SURFACE, ROUTING_TYPE_ONLY_SURFACE } from './helpers.js';
 import { buildFreshDts, cleanupBuiltDts } from './helpers/build-dts.js';
+import { declaresRuntimeExport, declaresType } from './helpers/surface-check.js';
 
 // N2 (review round 16-re3): `stripInternal` (`../../tsconfig.json`, the same
 // config `tsup` reads to build this package's own published declarations)
@@ -70,13 +71,11 @@ describe('published dist/index.d.ts strips @internal declarations (N2)', () => {
 
 describe('published dist/index.d.ts declares the full DESIGN §3.3 public surface (N3)', () => {
   it.each(ROUTING_RUNTIME_SURFACE)('exports %s', (name) => {
-    expect(dts, `${name} missing from the export list`).toMatch(new RegExp(`^export\\s*\\{[^}]*\\b${name}\\b`, 'm'));
+    expect(declaresRuntimeExport(dts, name), `${name} missing from the export list`).toBe(true);
   });
 
   it.each(ROUTING_TYPE_ONLY_SURFACE)('declares %s', (name) => {
-    const declared = new RegExp(`\\b(?:declare\\s+(?:type|interface)|type)\\s+${name}\\b`).test(dts);
-    const exported = new RegExp(`^export\\s*\\{[^}]*\\btype\\s+${name}\\b`, 'm').test(dts) || new RegExp(`^export\\s*\\{[^}]*\\b${name}\\b`, 'm').test(dts);
-    expect(declared || exported, `${name} missing from the emitted declarations`).toBe(true);
+    expect(declaresType(dts, name), `${name} missing from the emitted declarations`).toBe(true);
   });
 
   it('a consumer importing every surface name from the emitted d.ts type-checks cleanly', () => {

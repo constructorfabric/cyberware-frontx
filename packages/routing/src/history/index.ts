@@ -28,8 +28,11 @@ export { resolveNavigationHistory } from './singleton.js';
 // *own* leading JSDoc, and a `@param` carrying that same tag inside that
 // JSDoc is enough to strip the function it documents, not just the
 // parameter. (This file's own prose avoids spelling that tag literally —
-// `tsup`'s declaration bundler scans every comment in this module, not only
-// JSDoc, and drops whatever a literal mention of it precedes.) Both types
+// TypeScript's own `stripInternal` compiler option, which `tsup`'s
+// declaration step invokes rather than implementing itself, tests every
+// leading comment range of a declaration — including a plain `//` block, not
+// only JSDoc — as a plain substring match, and drops whatever declaration a
+// literal mention of it precedes.) Both types
 // are re-exported here as types only (`export type`, never a runtime value
 // — neither carries one) so a caller can name `HistoryAdapter`'s shape when
 // supplying its own `createAdapter`.

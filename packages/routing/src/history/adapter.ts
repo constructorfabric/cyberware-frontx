@@ -33,8 +33,9 @@ export type AdapterLocation = Omit<Location, 'position'>;
  * read one, since the default `createWindowHistoryAdapter` below already
  * builds one over `window`. Public (N3, review round 16-re4) because it sits
  * in that public function's own signature — see `../history/index.js`'s own
- * comment for why tagging either declaration as internal is what strips the
- * whole thing from the published `dist/index.d.ts`, not just the tag. */
+ * comment for why TypeScript's own `stripInternal` compiler option strips
+ * the whole declaration either type sits on when a leading comment merely
+ * mentions the tag, not just the parameter or field carrying it. */
 export interface HistoryAdapter {
   /** Reads the current location fresh — never cached by the adapter itself. */
   getLocation(): AdapterLocation;

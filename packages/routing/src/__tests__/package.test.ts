@@ -1,7 +1,6 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import * as routing from '../index';
 import { ROUTING_EXCLUDED_BUILDING_BLOCKS, ROUTING_RUNTIME_SURFACE } from './helpers.js';
-import { buildFreshDts, cleanupBuiltDts } from './helpers/build-dts.js';
 
 // This test pins the entry point's history-half runtime surface — see
 // `__tests__/history/*.test.ts` for the history module's actual behaviour,
@@ -45,40 +44,14 @@ describe('@gears-frontx/routing entry point', () => {
   });
 });
 
-// LOW (review round 16-re4): this suite pins the runtime surface above
-// against `import * as routing` — `../index` (src), never the emitted
-// `dist/index.d.ts`. That is exactly the gap N3 fell through: a JSDoc
-// change that drops a declaration from the built output leaves this file's
-// own assertions untouched, because they never look at the build. This
-// describe block closes it by asserting the *emitted* declarations declare
-// the identical `ROUTING_RUNTIME_SURFACE`/`ROUTING_TYPE_ONLY_SURFACE` names
-// this file already pins at runtime — reusing `dist-internal.test.ts`'s own
-// build helper (`./helpers/build-dts.js`) rather than a second `tsup`
-// invocation of its own, so a real "dist equals src" comparison exists
-// without either file drifting from what the other one runs.
-describe('dist/index.d.ts declares the same public surface as src/index.ts (LOW)', () => {
-  let dts: string;
-  let outDir: string;
-
-  beforeAll(() => {
-    const built = buildFreshDts();
-    dts = built.dts;
-    outDir = built.outDir;
-  });
-
-  afterAll(() => {
-    cleanupBuiltDts(outDir);
-  });
-
-  it.each(ROUTING_RUNTIME_SURFACE)('%s: exported at runtime and declared in dist', (name) => {
-    expect((routing as Record<string, unknown>)[name]).toBeDefined();
-    expect(dts, `${name} missing from dist/index.d.ts`).toMatch(new RegExp(`^export\\s*\\{[^}]*\\b${name}\\b`, 'm'));
-  });
-
-  it.each(ROUTING_EXCLUDED_BUILDING_BLOCKS)('%s: absent at runtime and absent from dist', (name) => {
-    expect((routing as Record<string, unknown>)[name]).toBeUndefined();
-    expect(dts, `${name} unexpectedly declared in dist/index.d.ts`).not.toMatch(
-      new RegExp(`\\bdeclare\\s+function\\s+${name}\\b`),
-    );
-  });
-});
+// LOW (review round 16-re5): the "dist/index.d.ts declares the same public
+// surface as src/index.ts" describe block that used to live here (added LOW,
+// review round 16-re4) duplicated `dist-internal.test.ts`'s own "published
+// dist/index.d.ts declares the full DESIGN §3.3 public surface (N3)" block
+// assertion-for-assertion — both ran an independent `tsup` build in
+// `beforeAll` just to re-check names `dist-internal.test.ts` already checks
+// against the identical build. Removed rather than deduplicated into a
+// shared cache: with only `dist-internal.test.ts` left calling
+// `buildFreshDts`, this package's test suite now runs `tsup` once per test
+// run instead of twice, and every "is this name declared in dist" assertion
+// lives in exactly one place.

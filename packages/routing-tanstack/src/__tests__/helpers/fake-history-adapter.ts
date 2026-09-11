@@ -4,8 +4,8 @@
 // public entry point (N3, review round 16-re4): both `AdapterLocation` and
 // `HistoryAdapter` are public types again — they sit in
 // `resolveNavigationHistory`'s own `createAdapter` parameter's signature
-// (see `packages/routing/src/history/index.ts`'s own comment for why an
-// `@internal` tag could not be relied on to strip them) — so this test
+// (see `packages/routing/src/history/index.ts`'s own comment for why a
+// compiler-internal tag could not be relied on to strip them) — so this test
 // double reaches them the same way any other consumer of the package would,
 // never through a relative path into the sibling package's own `src/`.
 import type { AdapterLocation } from '@gears-frontx/routing';
