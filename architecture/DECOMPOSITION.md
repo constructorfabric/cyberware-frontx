@@ -322,7 +322,7 @@ The installed SDLC kit currently defines feature-entry identifiers only in DECOM
 
 - [ ] `p2` - **ID**: `cpt-frontx-feature-routing-engine-provider`
 
-**Owner**: Member-owned compatibility anchor only; behavior is defined in [FEATURE.md](../packages/routing-tanstack/architecture/features/engine-provider/FEATURE.md). This feature moved from `@gears-frontx/routing` to the separately published `@gears-frontx/routing-tanstack` under the package split recorded in `cpt-frontx-adr-core-package-boundaries`; its own identifiers (feature, featstatus, component, and every flow/algo/dod) kept their names unchanged across the move.
+**Owner**: Member-owned compatibility anchor only; behavior is defined in [FEATURE.md](../packages/routing-tanstack/architecture/features/engine-provider/FEATURE.md). This feature lives in the separately published `@gears-frontx/routing-tanstack`, under the package split recorded in `cpt-frontx-adr-core-package-boundaries`.
 
 **Installed-kit coverage references**:
 - `cpt-frontx-component-routing-engine-provider`
