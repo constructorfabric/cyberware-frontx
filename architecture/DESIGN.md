@@ -134,7 +134,9 @@ The ecosystem is partitioned into three layers — **published libraries**, **te
 
 A candidate satisfying more than one of these is a defect in the candidate, not an ambiguity in the partition: the three roles are how a unit reaches a consumer, and a unit that both ships as a dependency and is copied as content should be split.
 
-**Within published libraries, two independent properties.** A library is **core** if it must remain UI-framework-agnostic; a library is **standalone** if it declares no intra-ecosystem package dependency, with the single exception of the type-substrate port. A library may hold either, both, or neither. Keeping them separate lets the agnostic-substrate guarantee (`cpt-frontx-principle-agnostic-core`, `cpt-frontx-fr-ui-framework-agnostic`) apply to a library that legitimately depends on another library, and permits a UI-committed library — a React component library, say — to be a full layer member that is simply not core. Reading "not core" as "neither property" is the conflation the two properties are kept apart to prevent.
+**Within published libraries, two independent properties.** A library is **core** if it must remain UI-framework-agnostic; a library is **standalone** if it declares no intra-ecosystem package dependency, with the single exception of the type-substrate port. A library may hold either, both, or neither. Keeping them separate lets the agnostic-substrate guarantee (`cpt-frontx-principle-agnostic-core`, `cpt-frontx-fr-ui-framework-agnostic`) apply to a library that legitimately depends on another library, and permits a member bound to a concrete UI framework or engine to still be a full layer member that is simply not core.
+
+These are general properties every member is checked against; which current members hold them is illustration, not part of either definition. The `mfes` runtime depends on `@gears-frontx/gts-plugin` through the type-substrate port — the one edge the standalone definition's stated exception covers (`cpt-frontx-adr-runtime-type-system-coupling`) — so it holds both properties. The navigation substrate (`@gears-frontx/routing`) is core and standalone at once: it declares no intra-ecosystem package dependency, and it carries no dependency on any UI framework or router engine — every such dependency is confined to a separate published member. That member, `@gears-frontx/routing-tanstack`, is the one that is not core, and also not standalone: it is bound to a concrete UI framework and a concrete routing engine, so it fails the core property, and it depends on `@gears-frontx/routing`, so it fails the standalone property too — a member can fail both properties at once, which is exactly why the two are kept independent rather than collapsed into a single "not core" label.
 
 **Two categories outside the layers, both stated positively.** **Build internals** are packages that exist only to configure the build, are never published, and belong to no layer; they remain subject to the dependency-edge guard and are exempt from the member artifact chain and the publication gate. **Non-package code** — repository scripts and in-package demonstrations — has no package identity to carry layer membership; it remains scanned for traceability and holds no layer membership. Both are exemptions with a stated scope, not ignores.
 
@@ -153,12 +155,15 @@ graph TD
         GTS["Type System provider (@gears-frontx/gts-plugin)"]
         MFES["MFE Runtime substrate (@gears-frontx/mfes)"]
         TEL["Telemetry SDK (@gears-frontx/telemetry)"]
+        ROUTING["Routing substrate (@gears-frontx/routing)"]
+        ROUTINGTS["Routing TanStack provider (@gears-frontx/routing-tanstack)"]
     end
     subgraph Tmpl[Templates layer]
         T["externally hosted templates (resolved by source-spec)"]
     end
     KIT -- "orchestrates command surface" --> CLI
     GTS -- "type-substrate port" --> MFES
+    ROUTINGTS -- "engine-provider port of" --> ROUTING
     CLI -. "applies / upgrades" .-> T
     T -. "produce projects composing" .-> Libs
 ```
@@ -167,7 +172,7 @@ graph TD
 
 | Layer | Responsibility | Technology |
 |-------|---------------|------------|
-| Published libraries | Runtime substrate, type-system provider, protocol surface, telemetry — consumed as versioned dependencies; the core subset stays UI-framework- and type-format-agnostic | TypeScript npm packages; module-federation runtime with lazy import (`@gears-frontx/mfes`); concrete type-definition specification confined to `@gears-frontx/gts-plugin`; transport as a peer dependency of `@gears-frontx/api` |
+| Published libraries | Runtime substrate, type-system provider, protocol surface, telemetry, a navigation substrate with a pluggable routing-engine-provider port, and its default routing-engine provider — consumed as versioned dependencies; the core subset stays UI-framework- and type-format-agnostic | TypeScript npm packages; module-federation runtime with lazy import (`@gears-frontx/mfes`); concrete type-definition specification confined to `@gears-frontx/gts-plugin`; transport as a peer dependency of `@gears-frontx/api`; navigation substrate declaring an engine-provider port with no concrete engine dependency of its own (`@gears-frontx/routing`); concrete routing-engine dependency confined to its default provider (`@gears-frontx/routing-tanstack`) |
 | Templates | Producing and extending project content the receiving project owns | Externally hosted template repositories resolved by versioned source-spec; manifest publication contract |
 | Projects orchestration | Template and repository lifecycle (install, apply, assemble, upgrade) and AI-agent orchestration over it | Node.js CLI (`@gears-frontx/cli`); Constructor Studio kit (`cyber-pilot-kit-frontx`); GitHub source registry; npm package registry |
 | Outside the layers | Build internals (never published) and non-package repository code | Private `@gears-frontx/*` configuration packages; `scripts/` tooling |
@@ -259,7 +264,7 @@ The installed SDLC kit requires feature-entry definitions in root DECOMPOSITION 
 
 ### 3.2 Component Model
 
-The ecosystem is composed of independently published, independently versioned artifacts partitioned into the three layers of §1.3. Under federated artifact ownership each member's component model is owned by its member DESIGN: the [MFE Runtime](../packages/mfes/architecture/DESIGN.md), the [Type System plugin](../packages/gts-plugin/architecture/DESIGN.md), the [API Protocol Surface](../packages/api/architecture/DESIGN.md), and the [Telemetry SDK](../packages/telemetry/architecture/DESIGN.md) in the published-libraries layer; the [CLI](../packages/cli/architecture/DESIGN.md) and the [AI Tooling Framework](../packages/cyber-pilot-kit-frontx/architecture/DESIGN.md) in the projects-orchestration layer. Templates are hosted outside this repository and own their artifacts there. What this section holds are the two components the root itself owns — the cross-member distribution and version policy, and the ecosystem governance guard — which belong to no single member because they bind the edges and the membership rules between members.
+The ecosystem is composed of independently published, independently versioned artifacts partitioned into the three layers of §1.3. Under federated artifact ownership each member's component model is owned by its member DESIGN: the [MFE Runtime](../packages/mfes/architecture/DESIGN.md), the [Type System plugin](../packages/gts-plugin/architecture/DESIGN.md), the [API Protocol Surface](../packages/api/architecture/DESIGN.md), the [Telemetry SDK](../packages/telemetry/architecture/DESIGN.md), the [Routing substrate](../packages/routing/architecture/DESIGN.md), and the [Routing TanStack provider](../packages/routing-tanstack/architecture/DESIGN.md) in the published-libraries layer; the [CLI](../packages/cli/architecture/DESIGN.md) and the [AI Tooling Framework](../packages/cyber-pilot-kit-frontx/architecture/DESIGN.md) in the projects-orchestration layer. Templates are hosted outside this repository and own their artifacts there. What this section holds are the two components the root itself owns — the cross-member distribution and version policy, and the ecosystem governance guard — which belong to no single member because they bind the edges and the membership rules between members.
 
 ```mermaid
 graph TD
@@ -272,9 +277,12 @@ graph TD
         GTS[gears-frontx/gts-plugin]
         API[gears-frontx/api]
         TEL[gears-frontx/telemetry]
+        ROUTING[gears-frontx/routing]
+        ROUTINGTS[gears-frontx/routing-tanstack]
     end
     POL[ecosystem version policy - root-owned]
     GTS -- "implements type-substrate port of" --> MFES
+    ROUTINGTS -- "implements engine-provider port of" --> ROUTING
     KIT -- "orchestrates command surface of" --> CLI
     POL -. "governs every published edge and release line" .-> Libs
     POL -. "governs" .-> Orch
@@ -417,6 +425,8 @@ Root capacity is expressed as an absence of structural caps. Concrete runtime or
 | `@gears-frontx/gts-plugin` | Published libraries | [packages/gts-plugin/architecture/DESIGN.md](../packages/gts-plugin/architecture/DESIGN.md) |
 | `@gears-frontx/api` | Published libraries | [packages/api/architecture/DESIGN.md](../packages/api/architecture/DESIGN.md) |
 | `@gears-frontx/telemetry` | Published libraries | [packages/telemetry/architecture/DESIGN.md](../packages/telemetry/architecture/DESIGN.md) |
+| `@gears-frontx/routing` | Published libraries | [packages/routing/architecture/DESIGN.md](../packages/routing/architecture/DESIGN.md) |
+| `@gears-frontx/routing-tanstack` | Published libraries | [packages/routing-tanstack/architecture/DESIGN.md](../packages/routing-tanstack/architecture/DESIGN.md) |
 | `@gears-frontx/ui-kit` | Published libraries | Artifact chain pending; registry ignore records debt. |
 | `@gears-frontx/cli` | Projects orchestration | [packages/cli/architecture/DESIGN.md](../packages/cli/architecture/DESIGN.md) |
 | `cyber-pilot-kit-frontx` | Projects orchestration | [packages/cyber-pilot-kit-frontx/architecture/DESIGN.md](../packages/cyber-pilot-kit-frontx/architecture/DESIGN.md) |

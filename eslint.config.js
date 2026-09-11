@@ -177,6 +177,11 @@ export default [
               message:
                 'PACKAGE VIOLATION: Use relative imports within packages. @/ aliases are only for app code (src/).',
             },
+            {
+              group: ['@tanstack/*', '!@tanstack/react-table'],
+              message:
+                'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine. The routing-tanstack block below re-enables this import for its own files.',
+            },
           ],
         },
       ],
@@ -199,6 +204,11 @@ export default [
               group: ['@gears-frontx/*'],
               message:
                 'SDK VIOLATION: @gears-frontx/mfes is the SDK foundation and cannot import other @gears-frontx packages.',
+            },
+            {
+              group: ['@tanstack/*', '!@tanstack/react-table'],
+              message:
+                'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine.',
             },
             {
               group: ['react', 'react-dom', 'react/*'],
@@ -242,6 +252,11 @@ export default [
                 'SDK VIOLATION: SDK packages cannot import other @gears-frontx packages (except @gears-frontx/mfes).',
             },
             {
+              group: ['@tanstack/*', '!@tanstack/react-table'],
+              message:
+                'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine.',
+            },
+            {
               group: ['react', 'react-dom', 'react/*'],
               message:
                 'SDK VIOLATION: SDK packages cannot import React.',
@@ -279,6 +294,11 @@ export default [
                 'SDK VIOLATION: @gears-frontx/telemetry holds no intra-ecosystem package dependency.',
             },
             {
+              group: ['@tanstack/*', '!@tanstack/react-table'],
+              message:
+                'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine.',
+            },
+            {
               group: ['react', 'react-dom', 'react-dom/*', 'react/*'],
               message:
                 'SDK VIOLATION: SDK packages cannot import React.',
@@ -299,9 +319,113 @@ export default [
     },
   },
 
+  // @gears-frontx/routing: framework-agnostic navigation substrate — no
+  // intra-ecosystem edge, no React (cpt-frontx-constraint-routing-no-engine-leak
+  // forbids importing a concrete router engine at all). Modelled on the
+  // telemetry block above; depcruise's `frontx-routing-2-no-intra-ecosystem-
+  // dependency` and `arch:edges` already cover this edge at the module-graph
+  // level — this block gives the identical parity telemetry has at lint time.
+  {
+    files: ['packages/routing/src/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@gears-frontx/*', '@gears-frontx/*/*'],
+              message:
+                'SDK VIOLATION: @gears-frontx/routing holds no intra-ecosystem package dependency.',
+            },
+            {
+              group: ['@tanstack/*'],
+              message:
+                'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine — the engine-free core allows no @tanstack/* import at all.',
+            },
+            {
+              group: ['react', 'react-dom', 'react-dom/*', 'react/*'],
+              message:
+                'SDK VIOLATION: SDK packages cannot import React.',
+            },
+            {
+              group: ['@gears-frontx/*/src/**'],
+              message:
+                'MONOREPO VIOLATION: Import from package root, not internal paths.',
+            },
+            {
+              group: ['@/*'],
+              message:
+                'PACKAGE VIOLATION: Use relative imports within packages.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  // @gears-frontx/routing-tanstack: the default engine-provider package — a React
+  // component library bound to a concrete router engine (routing DESIGN §3.2 split,
+  // cpt-frontx-adr-core-package-boundaries). Unlike the routing block above, React and
+  // `@tanstack/*` are its raison d'etre; its one permitted intra-ecosystem edge is the
+  // navigation substrate it adapts (cpt-frontx-routing-tanstack-nfr-single-ecosystem-edge).
+  // Modelled on the routing block above; depcruise's
+  // `frontx-routing-tanstack-2-single-ecosystem-edge` and `arch:edges` already cover this
+  // edge at the module-graph and manifest levels — this block gives the identical parity
+  // at lint time.
+  {
+    // `.tsx` included alongside `.ts`: this package's raison d'etre is a React
+    // component bound to `@tanstack/react-router` (the router-creation
+    // module below), which lives in `.tsx`. Without it, `.tsx` sources fall
+    // through to the `packages/**/*` catch-all, whose ecosystem-wide
+    // `@tanstack/*` guard (added for
+    // cpt-frontx-constraint-routing-tanstack-sole-engine-import) would wrongly
+    // forbid the one package meant to import it.
+    files: ['packages/routing-tanstack/src/**/*.ts', 'packages/routing-tanstack/src/**/*.tsx'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@gears-frontx/*',
+                '@gears-frontx/*/*',
+                '!@gears-frontx/routing',
+              ],
+              message:
+                'ECOSYSTEM VIOLATION: @gears-frontx/routing-tanstack imports exactly one ecosystem package — @gears-frontx/routing — and no other.',
+            },
+            {
+              group: ['@gears-frontx-templates/*', '@gears-frontx-templates/*/*'],
+              message:
+                'ECOSYSTEM VIOLATION: @gears-frontx/routing-tanstack must not import template territory.',
+            },
+            {
+              group: ['@gears-frontx/*/src/**'],
+              message:
+                'MONOREPO VIOLATION: Import from package root, not internal paths.',
+            },
+            {
+              group: ['@/*'],
+              message:
+                'PACKAGE VIOLATION: Use relative imports within packages.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // @gears-frontx/ui-kit: a React component library — React is its raison d'etre, so the
   // SDK no-React rule does not apply. Boundary: no intra-ecosystem edge, no reach into
   // template territory, package-root imports only.
+  //
+  // `!@tanstack/react-table` carves the data-table component's headless table
+  // library out of the router-engine ban below: `@tanstack/*` is not itself a
+  // router engine, it is the npm scope TanStack publishes several unrelated
+  // libraries under, and `cpt-frontx-constraint-routing-tanstack-sole-engine-import`
+  // only reserves "a concrete router engine or its packages" for
+  // @gears-frontx/routing-tanstack — react-table is neither.
   {
     files: ['packages/ui-kit/**/*.ts', 'packages/ui-kit/**/*.tsx'],
     rules: {
@@ -314,6 +438,11 @@ export default [
               group: ['@gears-frontx/*', '@gears-frontx/*/*'],
               message:
                 'ECOSYSTEM VIOLATION: @gears-frontx/ui-kit holds no intra-ecosystem package dependency.',
+            },
+            {
+              group: ['@tanstack/*', '!@tanstack/react-table'],
+              message:
+                'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine.',
             },
             {
               group: ['@gears-frontx/*/src/**'],
@@ -353,6 +482,11 @@ export default [
               group: ['@/*'],
               message:
                 'PACKAGE VIOLATION: Use relative imports within packages.',
+            },
+            {
+              group: ['@tanstack/*', '!@tanstack/react-table'],
+              message:
+                'ECOSYSTEM VIOLATION (cpt-frontx-constraint-routing-tanstack-sole-engine-import): only @gears-frontx/routing-tanstack may import a concrete router engine.',
             },
           ],
         },

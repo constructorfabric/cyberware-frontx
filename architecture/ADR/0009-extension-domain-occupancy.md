@@ -97,6 +97,8 @@ The present concrete instantiation ships three strategy classes — `ConcurrentM
 
 **Review trigger.** Revisit if an extension domain requires an occupancy behavior that none of the named strategies expresses, or if the action–behavior consistency rule needs to vary by domain beyond a fixed per-strategy matrix row.
 
+**URL projection of domain occupancy (present detail, non-binding).** The query string carries one entry per mounted extension, written as `domain=extension;param=value`; a domain holding several extensions at once repeats its own key, once per extension; a domain nested inside another extension's own zone gets a dotted key built from that enclosing entry. The shell alone owns the path. The concrete grammar — token alphabet, escaping, ordering, and the signal a consuming domain reads its own entries from — is recorded by the routing package's own architecture decision on addressing, not restated here. This decision continues to own the mount strategies and the cardinality matrix. Updated 2026-09-09.
+
 **Checklist applicability.**
 
 * ARCH — applicable and addressed above (a runtime placement decision affecting every extension domain and the microfrontends that occupy it, and hard to reverse once domains depend on the strategy catalog).

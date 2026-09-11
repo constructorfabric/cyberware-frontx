@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "isolatedModules": true,
+    // N2 (review round 16-re3): this is the config `tsup` reads to build
+    // this package's own published declarations — without `stripInternal`,
+    // a compiler-internal-tagged export (`NAVIGATION_HISTORY_KEY`,
+    // `./src/history/singleton.ts`; `HistoryAdapter`/`AdapterLocation` were
+    // the concrete case until N3, review round 16-re4, made them public —
+    // see `./src/history/index.ts`'s own doc comment for why) ships in
+    // `dist/index.d.ts` anyway, defeating the tag. Test typecheck
+    // (`tsconfig.test.json`) is unaffected: it resolves this package by
+    // `rootDir`, never through the built `dist/`.
+    "stripInternal": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "src/__tests__"]
+}

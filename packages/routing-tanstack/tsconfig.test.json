@@ -1,0 +1,15 @@
+{
+  // F4 (review scope): extends `tsconfig.typecheck.json`, not the base
+  // `tsconfig.json`, so this file's own `type-check:test`
+  // (`tsc -p tsconfig.test.json`) resolves `@gears-frontx/routing` to its
+  // sibling's source on a fresh clone too, exactly like `type-check` does —
+  // see that file's own doc comment for why the override lives there
+  // rather than in the base config `tsup` also reads.
+  "extends": "./tsconfig.typecheck.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["vitest/globals", "node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

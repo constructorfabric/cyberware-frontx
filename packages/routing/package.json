@@ -1,0 +1,51 @@
+{
+  "name": "@gears-frontx/routing",
+  "version": "0.3.0-alpha.0",
+  "description": "FrontX navigation library - a framework-agnostic navigation substrate sharing one browser history across independently bundled microfrontends, plus a route ownership signal, with no dependency on any concrete router engine",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "type-check": "tsc --noEmit",
+    "type-check:test": "tsc -p tsconfig.test.json",
+    "test": "npm run test:unit",
+    "test:unit": "vitest --run --passWithNoTests=false",
+    "test:unit:watch": "vitest --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@vitest/coverage-v8": "4.1.4",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.2",
+    "vitest": "4.1.4"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "frontx",
+    "routing",
+    "navigation",
+    "router",
+    "url",
+    "typescript"
+  ],
+  "author": "Cyber Fabric",
+  "license": "Apache-2.0"
+}
