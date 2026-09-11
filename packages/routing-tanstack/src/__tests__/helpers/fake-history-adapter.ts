@@ -1,12 +1,14 @@
 // Test-only double for `@gears-frontx/routing`'s own `HistoryAdapter`.
 // Copied from that package's own `src/__tests__/history/fake-history-adapter.ts`
-// pattern. `AdapterLocation` is imported straight from that sibling
-// package's own `./adapter.ts` (N2, review round 16-re3) rather than
-// through `@gears-frontx/routing`'s public entry point: neither
-// `AdapterLocation` nor `HistoryAdapter` is re-exported there any more (see
-// `packages/routing/src/history/index.ts`'s own comment for why), exactly
-// as that package's module comment already directs a test to do.
-import type { AdapterLocation } from '../../../../routing/src/history/adapter.js';
+// pattern. `AdapterLocation` is imported from `@gears-frontx/routing`'s
+// public entry point (N3, review round 16-re4): both `AdapterLocation` and
+// `HistoryAdapter` are public types again — they sit in
+// `resolveNavigationHistory`'s own `createAdapter` parameter's signature
+// (see `packages/routing/src/history/index.ts`'s own comment for why an
+// `@internal` tag could not be relied on to strip them) — so this test
+// double reaches them the same way any other consumer of the package would,
+// never through a relative path into the sibling package's own `src/`.
+import type { AdapterLocation } from '@gears-frontx/routing';
 
 function splitPath(path: string): AdapterLocation {
   const hashIndex = path.indexOf('#');

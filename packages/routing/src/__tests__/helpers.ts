@@ -1,5 +1,31 @@
 // Shared test scaffolding for `packages/routing`. Not part of the package's
 // own public surface — imported only by files under `__tests__/`.
+
+// DESIGN §3.3 public surface (N3, review round 16-re4): the runtime
+// values and the type-only names `src/index.ts` exports, pinned once here
+// so `package.test.ts` (the runtime `import * as routing` pin) and
+// `dist-internal.test.ts` (the built `dist/index.d.ts` presence/consumer
+// checks) assert against the identical name list rather than two lists
+// that could silently drift apart. `HistoryAdapter`/`AdapterLocation` are
+// the adapter seam FEATURE §3 calls "the `HistoryAdapter` seam"; `Location`/
+// `NavigationHistory` are the `NavigationHistory` contract's own shapes
+// (both `export type * from './types/index.js'`, `src/index.ts`).
+export const ROUTING_RUNTIME_SURFACE = [
+  'resolveNavigationHistory',
+  'createRouteSignal',
+  'RoutingError',
+  'parseGrammar',
+  'serializeGrammar',
+] as const;
+
+export const ROUTING_TYPE_ONLY_SURFACE = ['HistoryAdapter', 'AdapterLocation', 'Location', 'NavigationHistory'] as const;
+
+// Internal building blocks DESIGN §3.3 explicitly excludes from the public
+// surface (`./history/index.ts`'s own module comment) — asserted absent
+// alongside `ROUTING_RUNTIME_SURFACE`'s presence, so a future re-export
+// slipping one of these back in fails the same pin that catches a missing
+// public name.
+export const ROUTING_EXCLUDED_BUILDING_BLOCKS = ['createNavigationHistory', 'createWindowHistoryAdapter'] as const;
 import { NAVIGATION_HISTORY_KEY, resolveNavigationHistory } from '../history/singleton.js';
 import { RoutingError } from '../errors.js';
 import { createRouteSignal } from '../signal/route-signal.js';

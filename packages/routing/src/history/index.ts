@@ -17,17 +17,20 @@
 // package's own public entry point.
 export { resolveNavigationHistory } from './singleton.js';
 
-// N2 (review round 16-re3): `AdapterLocation`/`HistoryAdapter` used to be
-// re-exported here under an `@internal` tag, relying on `tsup`'s dts bundler
-// to strip the tag from the published `dist/index.d.ts`. It never did —
-// `stripInternal` only strips a declaration where it is itself written, and
-// a multi-file re-export chain (`./adapter.js` -> here -> `../index.ts`)
-// carries no tag of its own at either hop, so enabling `stripInternal`
-// (`tsconfig.json`) does not touch it; it also produces an unrelated rollup
-// break once the upstream declaration IS stripped from a mid-chain file
-// (`AdapterLocation is not exported by src/history/index.ts`). The fix is
-// the one this file's own module comment above already prescribes for the
-// same reason: neither type is part of this package's public surface, so
-// they are not re-exported here or from `../index.ts` at all — a test
-// (`packages/routing-tanstack`'s own `FakeHistoryAdapter` included) imports
-// `./adapter.js` directly.
+// N3 (review round 16-re4): `AdapterLocation`/`HistoryAdapter` are
+// `resolveNavigationHistory`'s own `createAdapter` parameter and its return
+// type — the `HistoryAdapter` seam (FEATURE §3) — so they cannot be marked
+// compiler-internal at all: N2 (review round 16-re3) tagged them that way
+// instead of leaving them untagged and unexported, on the theory that
+// neither type was part of this package's public surface; `stripInternal`
+// then dropped `resolveNavigationHistory`'s own declaration wholesale,
+// because TypeScript's internal-declaration handling tests a declaration's
+// *own* leading JSDoc, and a `@param` carrying that same tag inside that
+// JSDoc is enough to strip the function it documents, not just the
+// parameter. (This file's own prose avoids spelling that tag literally —
+// `tsup`'s declaration bundler scans every comment in this module, not only
+// JSDoc, and drops whatever a literal mention of it precedes.) Both types
+// are re-exported here as types only (`export type`, never a runtime value
+// — neither carries one) so a caller can name `HistoryAdapter`'s shape when
+// supplying its own `createAdapter`.
+export type { AdapterLocation, HistoryAdapter } from './adapter.js';

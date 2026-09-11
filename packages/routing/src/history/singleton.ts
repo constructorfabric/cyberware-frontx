@@ -36,9 +36,10 @@ interface RealmGlobal {
  * browser `window` adapter; a test or an SSR entry point passes its own to
  * avoid touching `window` at all.
  *
- * @param createAdapter @internal Test/SSR seam — a conforming consumer never
- * passes this; it exists so a test can resolve the singleton against a
- * `HistoryAdapter` double instead of `window`.
+ * @param createAdapter Test/SSR seam — a conforming consumer never passes
+ * this; it exists so a test can resolve the singleton against a
+ * `HistoryAdapter` double instead of `window`, and so an SSR entry point can
+ * resolve it without ever touching `window`.
  */
 // @cpt-algo:cpt-frontx-algo-routing-navigation-substrate-singleton-resolution:p2
 // @cpt-flow:cpt-frontx-flow-routing-navigation-substrate-imperative-navigation:p1

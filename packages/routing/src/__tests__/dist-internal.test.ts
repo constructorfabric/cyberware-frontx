@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ROUTING_EXCLUDED_BUILDING_BLOCKS, ROUTING_RUNTIME_SURFACE, ROUTING_TYPE_ONLY_SURFACE } from './helpers.js';
+import { buildFreshDts, cleanupBuiltDts } from './helpers/build-dts.js';
 
 // N2 (review round 16-re3): `stripInternal` (`../../tsconfig.json`, the same
 // config `tsup` reads to build this package's own published declarations)
@@ -15,51 +17,113 @@ import { afterEach, describe, expect, it } from 'vitest';
 // the flag alone was not enough either — a multi-file re-export chain
 // carries no `@internal` tag of its own at any hop, so `stripInternal`
 // (which only strips a declaration where the tag is itself written) left
-// it untouched regardless. This test runs the real build (`tsup`, not a
-// bare `tsc` declaration emit — the rollup-dts bundling step is exactly
-// where that chain either does or does not survive) into a throwaway
-// output directory on every run, so it exercises today's `tsconfig.json` +
-// `src/index.ts` combination rather than a possibly-stale committed
-// `dist/`, and fails if `@internal` (or a symbol it once marked) leaks
-// into the published surface again.
-const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const repoRoot = path.resolve(packageRoot, '..', '..');
-const tsupBin = path.join(repoRoot, 'node_modules/.bin/tsup');
+// it untouched regardless.
+//
+// N3 (review round 16-re4): the fix above regressed the other direction —
+// `resolveNavigationHistory`'s own leading JSDoc carried an `@internal`-
+// tagged `@param`, and TypeScript's `stripInternal` tests a declaration's
+// *whole* leading comment range, so it silently dropped the entire function
+// (the package's sole public construction path) from `dist/index.d.ts`
+// while the runtime `dist/index.js` still exported it — invisible to N2's
+// own absence-only assertions below. `HistoryAdapter`/`AdapterLocation` are
+// now public types instead (they sit in that function's own signature), so
+// this file also asserts their *presence*, and runs a real consumer
+// type-check against the emitted declarations so a name TypeScript cannot
+// resolve fails loudly here instead of at a real consumer's own build.
+//
+// This test runs the real build (`tsup`, not a bare `tsc` declaration emit —
+// the rollup-dts bundling step is exactly where a re-export chain either
+// does or does not survive) into a throwaway output directory once for the
+// whole file (LOW, review round 16-re4 — it used to rebuild per `it`), so it
+// exercises today's `tsconfig.json` + `src/index.ts` combination rather than
+// a possibly-stale committed `dist/`.
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+const tscBin = path.join(repoRoot, 'node_modules/.bin/tsc');
 
-let outDir: string | undefined;
+let dts: string;
+let outDir: string;
 
-afterEach(() => {
-  if (outDir !== undefined) {
-    rmSync(outDir, { recursive: true, force: true });
-    outDir = undefined;
-  }
+beforeAll(() => {
+  const built = buildFreshDts();
+  dts = built.dts;
+  outDir = built.outDir;
 });
 
-function buildFreshDts(): string {
-  outDir = mkdtempSync(path.join(tmpdir(), 'routing-dist-internal-'));
-  try {
-    execFileSync(tsupBin, ['--out-dir', outDir, '--clean'], { cwd: packageRoot, stdio: 'pipe' });
-  } catch (error) {
-    const stdout = error && typeof error === 'object' && 'stdout' in error ? String((error as { stdout?: Buffer | string }).stdout ?? '') : '';
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`tsup failed: ${message}\n${stdout}`, { cause: error });
-  }
-  return readFileSync(path.join(outDir, 'index.d.ts'), 'utf-8');
-}
+afterAll(() => {
+  cleanupBuiltDts(outDir);
+});
 
 describe('published dist/index.d.ts strips @internal declarations (N2)', () => {
   it('carries no @internal tag', () => {
-    const dts = buildFreshDts();
     expect(dts).not.toMatch(/@internal/);
   });
 
-  it('does not declare or export the internal test-seam types it used to leak', () => {
-    const dts = buildFreshDts();
-    // A loose substring check would false-fail on prose (this package's own
-    // `RoutingError` doc comments mention "HistoryAdapter" by name without
-    // declaring it) — what actually matters is that neither type is
-    // *declared* or *exported* here.
-    expect(dts).not.toMatch(/\bdeclare\s+(?:type|interface)\s+(?:AdapterLocation|HistoryAdapter)\b/);
-    expect(dts).not.toMatch(/^export\s*\{[^}]*\b(?:AdapterLocation|HistoryAdapter)\b/m);
+  it('does not declare or export the internal construction building blocks', () => {
+    for (const name of ROUTING_EXCLUDED_BUILDING_BLOCKS) {
+      expect(dts, `unexpected declaration of ${name}`).not.toMatch(
+        new RegExp(`\\bdeclare\\s+function\\s+${name}\\b`),
+      );
+      expect(dts, `unexpected export of ${name}`).not.toMatch(new RegExp(`^export\\s*\\{[^}]*\\b${name}\\b`, 'm'));
+    }
+  });
+});
+
+describe('published dist/index.d.ts declares the full DESIGN §3.3 public surface (N3)', () => {
+  it.each(ROUTING_RUNTIME_SURFACE)('exports %s', (name) => {
+    expect(dts, `${name} missing from the export list`).toMatch(new RegExp(`^export\\s*\\{[^}]*\\b${name}\\b`, 'm'));
+  });
+
+  it.each(ROUTING_TYPE_ONLY_SURFACE)('declares %s', (name) => {
+    const declared = new RegExp(`\\b(?:declare\\s+(?:type|interface)|type)\\s+${name}\\b`).test(dts);
+    const exported = new RegExp(`^export\\s*\\{[^}]*\\btype\\s+${name}\\b`, 'm').test(dts) || new RegExp(`^export\\s*\\{[^}]*\\b${name}\\b`, 'm').test(dts);
+    expect(declared || exported, `${name} missing from the emitted declarations`).toBe(true);
+  });
+
+  it('a consumer importing every surface name from the emitted d.ts type-checks cleanly', () => {
+    const consumerDir = mkdtempSync(path.join(tmpdir(), 'routing-dist-consumer-'));
+    try {
+      const valueImports = ROUTING_RUNTIME_SURFACE.join(', ');
+      const typeImports = ROUTING_TYPE_ONLY_SURFACE.map((name) => `type ${name}`).join(', ');
+      writeFileSync(
+        path.join(consumerDir, 'consumer.ts'),
+        [
+          `import { ${valueImports}, ${typeImports} } from '@gears-frontx/routing';`,
+          '',
+          `export const _values = { ${valueImports} };`,
+          `export type _types = [${ROUTING_TYPE_ONLY_SURFACE.join(', ')}];`,
+          '',
+        ].join('\n'),
+      );
+      writeFileSync(
+        path.join(consumerDir, 'tsconfig.json'),
+        JSON.stringify(
+          {
+            compilerOptions: {
+              target: 'ES2022',
+              module: 'ESNext',
+              moduleResolution: 'Bundler',
+              strict: true,
+              skipLibCheck: false,
+              noEmit: true,
+              baseUrl: consumerDir,
+              paths: { '@gears-frontx/routing': [path.join(outDir, 'index.d.ts')] },
+            },
+            include: ['consumer.ts'],
+          },
+          null,
+          2,
+        ),
+      );
+      execFileSync(tscBin, ['-p', path.join(consumerDir, 'tsconfig.json')], { cwd: consumerDir, stdio: 'pipe' });
+    } catch (error) {
+      const stdout =
+        error !== null && typeof error === 'object' && 'stdout' in error
+          ? String((error as { stdout?: Buffer | string }).stdout ?? '')
+          : '';
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`consumer type-check failed: ${message}\n${stdout}`, { cause: error });
+    } finally {
+      rmSync(consumerDir, { recursive: true, force: true });
+    }
   });
 });

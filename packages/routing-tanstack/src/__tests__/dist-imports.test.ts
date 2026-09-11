@@ -3,8 +3,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { classifySpecifier, collectModuleSpecifiers } from './helpers/module-specifiers.js';
+import { TANSTACK_RUNTIME_SURFACE, TANSTACK_TYPE_ONLY_SURFACE } from './helpers/public-surface.js';
 
 // F3 (review round 16-re): the published `dist/index.d.ts` must never
 // import a module specifier this package does not declare as a dependency
@@ -24,12 +25,12 @@ import { classifySpecifier, collectModuleSpecifiers } from './helpers/module-spe
 // build itself failed there (`TS2307`), and a *present* `dist/` was read
 // stale, checking whatever a previous build happened to leave behind rather
 // than the change under test. Both are closed the same way: this test
-// builds its own throwaway declaration output into a temp directory on
-// every run, via `tsc --declaration --emitDeclarationOnly` (not `tsup`,
-// whose dts step is a slower, less-composable rollup-dts bundle this test
-// has no need for) — `packages/routing` first, then `packages/routing-tanstack`
-// against it through a `paths` override pointing at that temp declaration
-// output rather than `packages/routing`'s own `dist` or `src`. The `paths`
+// builds its own throwaway declaration output into a temp directory, via
+// `tsc --declaration --emitDeclarationOnly` (not `tsup`, whose dts step is a
+// slower, less-composable rollup-dts bundle this test has no need for) —
+// `packages/routing` first, then `packages/routing-tanstack` against it
+// through a `paths` override pointing at that temp declaration output
+// rather than `packages/routing`'s own `dist` or `src`. The `paths`
 // override changes only how the specifier resolves for type-checking; the
 // specifier text preserved in the emitted `.d.ts` is exactly what the
 // source wrote (`from '@gears-frontx/routing'`), so this still exercises
@@ -48,18 +49,17 @@ import { classifySpecifier, collectModuleSpecifiers } from './helpers/module-spe
 // every `*.d.ts` file the build produces and matches both import forms
 // (`./helpers/module-specifiers.ts`, unit-tested on its own in
 // `module-specifiers.test.ts`).
+//
+// N3 (review round 16-re4): the build this file already produces — one
+// throwaway declaration output for `packages/routing`, one for
+// `packages/routing-tanstack` compiled against it — is also exactly what a
+// presence/consumer-type-check pair needs, mirroring
+// `packages/routing`'s own `dist-internal.test.ts`. Built once in
+// `beforeAll` (this file used to build fresh per `it`, and now has more than
+// one) rather than once per assertion.
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const repoRoot = path.resolve(packageRoot, '../..');
 const tscBin = path.join(repoRoot, 'node_modules/.bin/tsc');
-
-let workDir: string | undefined;
-
-afterEach(() => {
-  if (workDir !== undefined) {
-    rmSync(workDir, { recursive: true, force: true });
-    workDir = undefined;
-  }
-});
 
 // LOW (review round 16-re3): `stdio: 'pipe'` swallows `tsc`'s own
 // diagnostics — a failing compile used to surface here as a bare
@@ -80,8 +80,14 @@ function runTsc(args: string[], cwd: string): void {
   }
 }
 
-function buildFreshTanstackDtsDir(): string {
-  workDir = mkdtempSync(path.join(tmpdir(), 'routing-tanstack-dist-imports-'));
+interface BuiltTanstackDts {
+  workDir: string;
+  routingOutDir: string;
+  tanstackOutDir: string;
+}
+
+function buildFreshTanstackDtsDir(): BuiltTanstackDts {
+  const workDir = mkdtempSync(path.join(tmpdir(), 'routing-tanstack-dist-imports-'));
   const routingOutDir = path.join(workDir, 'routing');
   const tanstackOutDir = path.join(workDir, 'routing-tanstack');
 
@@ -127,13 +133,26 @@ function buildFreshTanstackDtsDir(): string {
   mkdirSync(tanstackOutDir, { recursive: true });
   runTsc(['-p', tmpConfigPath], packageRoot);
 
-  return tanstackOutDir;
+  return { workDir, routingOutDir, tanstackOutDir };
 }
 
-describe('published dist/index.d.ts module specifiers (F3)', () => {
+let built: BuiltTanstackDts;
+
+beforeAll(() => {
+  built = buildFreshTanstackDtsDir();
+});
+
+afterAll(() => {
+  rmSync(built.workDir, { recursive: true, force: true });
+});
+
+// LOW (review round 16-re4): this describe title used to read
+// "dist/index.d.ts module specifiers" while the test scanned every emitted
+// `.d.ts` file (N1's own fix, above) — corrected to say what it actually
+// checks.
+describe('published declarations: module specifiers (F3) and public surface (N3)', () => {
   it('every non-relative import, across every emitted .d.ts, is a declared dependency or peerDependency', () => {
-    const tanstackOutDir = buildFreshTanstackDtsDir();
-    const specifiers = collectModuleSpecifiers(tanstackOutDir);
+    const specifiers = collectModuleSpecifiers(built.tanstackOutDir);
     expect(specifiers.size).toBeGreaterThan(0);
 
     const packageJson = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf-8')) as {
@@ -148,6 +167,87 @@ describe('published dist/index.d.ts module specifiers (F3)', () => {
     for (const specifier of specifiers) {
       const specifierClass = classifySpecifier(specifier, declared);
       expect(specifierClass, `undeclared module specifier: ${specifier}`).not.toBe('undeclared');
+    }
+  });
+
+  const indexDts = () => readFileSync(path.join(built.tanstackOutDir, 'index.d.ts'), 'utf-8');
+
+  it.each(TANSTACK_RUNTIME_SURFACE)('exports %s', (name) => {
+    expect(indexDts(), `${name} missing from the export list`).toMatch(new RegExp(`^export\\s*\\{[^}]*\\b${name}\\b`, 'm'));
+  });
+
+  it.each(TANSTACK_TYPE_ONLY_SURFACE)('declares %s', (name) => {
+    const dts = indexDts();
+    const declaredOrReExported =
+      new RegExp(`\\b(?:declare\\s+(?:type|interface)|type)\\s+${name}\\b`).test(dts) ||
+      new RegExp(`^export\\s*(?:type\\s*)?\\{[^}]*\\b${name}\\b`, 'm').test(dts);
+    expect(declaredOrReExported, `${name} missing from the emitted declarations`).toBe(true);
+  });
+
+  it('a consumer importing every surface name from the emitted d.ts type-checks cleanly', () => {
+    const consumerDir = mkdtempSync(path.join(tmpdir(), 'routing-tanstack-dist-consumer-'));
+    try {
+      const valueImports = TANSTACK_RUNTIME_SURFACE.join(', ');
+      const typeImports = TANSTACK_TYPE_ONLY_SURFACE.map((name) => `type ${name}`).join(', ');
+      // `EngineProviderProps`/`EngineProviderFromRouterProps` are generic
+      // over the concrete route tree/router type a consumer's own router
+      // module supplies — referencing the bare name here (with no consumer
+      // router to infer one from) needs an explicit type argument, same as
+      // any other generic interface would.
+      const typeArgs: Partial<Record<(typeof TANSTACK_TYPE_ONLY_SURFACE)[number], string>> = {
+        EngineProviderProps: '<any>',
+        EngineProviderFromRouterProps: '<any>',
+      };
+      writeFileSync(
+        path.join(consumerDir, 'consumer.ts'),
+        [
+          `import { ${valueImports}, ${typeImports} } from '@gears-frontx/routing-tanstack';`,
+          '',
+          `export const _values = { ${valueImports} };`,
+          `export type _types = [${TANSTACK_TYPE_ONLY_SURFACE.map((name) => `${name}${typeArgs[name] ?? ''}`).join(', ')}];`,
+          '',
+        ].join('\n'),
+      );
+      // The tmp consumer directory sits outside the monorepo tree, so
+      // TypeScript's own upward `node_modules` walk (from wherever
+      // `consumer.ts` lives) never reaches `repoRoot/node_modules` — unlike
+      // the build above, whose `cwd` is `packageRoot` and so resolves
+      // `react`/`@tanstack/react-router`/`@tanstack/router-core` normally.
+      // Pointing `paths` at those packages' own declaration entry points
+      // directly sidesteps that without moving this test's temp output
+      // into the tracked package tree (the residue LOW review round 16-re3
+      // already closed once for this same test file).
+      writeFileSync(
+        path.join(consumerDir, 'tsconfig.json'),
+        JSON.stringify(
+          {
+            compilerOptions: {
+              target: 'ES2022',
+              module: 'ESNext',
+              moduleResolution: 'Bundler',
+              jsx: 'react-jsx',
+              strict: true,
+              skipLibCheck: false,
+              noEmit: true,
+              baseUrl: consumerDir,
+              paths: {
+                '@gears-frontx/routing-tanstack': [path.join(built.tanstackOutDir, 'index.d.ts')],
+                '@gears-frontx/routing': [path.join(built.routingOutDir, 'index.d.ts')],
+                react: [path.join(repoRoot, 'node_modules/@types/react/index.d.ts')],
+                'react/jsx-runtime': [path.join(repoRoot, 'node_modules/@types/react/jsx-runtime.d.ts')],
+                '@tanstack/react-router': [path.join(repoRoot, 'node_modules/@tanstack/react-router/dist/esm/index.d.ts')],
+                '@tanstack/router-core': [path.join(repoRoot, 'node_modules/@tanstack/router-core/dist/esm/index.d.ts')],
+              },
+            },
+            include: ['consumer.ts'],
+          },
+          null,
+          2,
+        ),
+      );
+      runTsc(['-p', path.join(consumerDir, 'tsconfig.json')], consumerDir);
+    } finally {
+      rmSync(consumerDir, { recursive: true, force: true });
     }
   });
 });

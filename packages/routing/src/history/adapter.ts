@@ -19,16 +19,22 @@ import type { Location } from '../types/index.js';
  * per-entry state that bookkeeping is stored in (`getState`/`pushState`/
  * `replaceState` below), never the position number itself.
  *
- * @internal Exists only as `HistoryAdapter`'s own return/parameter type
- * (below) — the same test seam, not part of this package's own public
- * surface (see `../history/index.js`); a conforming consumer never
- * constructs or reads one directly.
+ * Exists only as `HistoryAdapter`'s own return/parameter type (below) — a
+ * conforming consumer never constructs or reads one directly; it is public
+ * only because `HistoryAdapter` is (N3, review round 16-re4): a caller
+ * supplying `resolveNavigationHistory`'s `createAdapter` parameter (the
+ * `HistoryAdapter` seam, FEATURE §3) needs this shape to satisfy it.
  */
 export type AdapterLocation = Omit<Location, 'position'>;
 
-/** @internal Test seam — not part of this package's own public surface (see
- * `../history/index.js`); a conforming consumer never constructs or reads
- * one, only `resolveNavigationHistory`'s own default builds it. */
+/** The `HistoryAdapter` seam (FEATURE §3) — the shape a caller's own adapter
+ * must satisfy to pass as `resolveNavigationHistory`'s `createAdapter`
+ * parameter (`./singleton.js`); most conforming consumers never construct or
+ * read one, since the default `createWindowHistoryAdapter` below already
+ * builds one over `window`. Public (N3, review round 16-re4) because it sits
+ * in that public function's own signature — see `../history/index.js`'s own
+ * comment for why tagging either declaration as internal is what strips the
+ * whole thing from the published `dist/index.d.ts`, not just the tag. */
 export interface HistoryAdapter {
   /** Reads the current location fresh — never cached by the adapter itself. */
   getLocation(): AdapterLocation;
