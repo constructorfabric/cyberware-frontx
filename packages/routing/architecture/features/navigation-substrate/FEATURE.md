@@ -27,10 +27,10 @@
 
 <!-- /toc -->
 
-- [ ] `p1` - **ID**: `cpt-frontx-featstatus-routing-navigation-substrate`
+- [x] `p1` - **ID**: `cpt-frontx-featstatus-routing-navigation-substrate`
 ## 1. Feature Context
 
-- [ ] `p2` - `cpt-frontx-feature-routing-navigation-substrate`
+- [x] `p2` - `cpt-frontx-feature-routing-navigation-substrate`
 
 ### 1.1 Overview
 

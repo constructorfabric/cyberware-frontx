@@ -110,6 +110,9 @@ The same microfrontend runs under two deployment modes without a change to its r
 - The router engine is never a dependency of the navigation substrate itself: every engine-specific dependency is confined to whichever separately published engine-provider package implements this library's engine-provider port (`cpt-frontx-routing-fr-engine-provider-port`).
 - Standalone by construction: no intra-ecosystem package dependency; the binding to route owners is expressed only through a consumer-supplied registered-extensions source, passed as a plain argument, and the binding to mounting only through the observable signal this library publishes — never through an import of the runtime that manages either one. The composed and standalone modes differ only in whether a route-ownership-signal observer is created and in where a microfrontend's virtual location comes from, not in any port supplied to the package.
 - Third-party code on the page may call the browser's own navigation-history API directly, bypassing the shared navigation history. This is an environmental condition the library does not prevent, not a supported way to navigate: a call that bypasses the shared instance leaves its `location` stale and its fan-out silent for that change (see DESIGN §4 failure modes).
+- **Locale prefix ownership**: the shell subroute segment carrying the active locale (for example a leading `/en`) is owned by the shell alone; the navigation substrate and the URL back-projection helper copy it forward verbatim and never interpret it. A locale change the shell makes by rewriting that segment through the one realm-shared navigation history — a `push` or `replace`, exactly like any other navigation — is observed by every occupant exactly as any other navigation is, because every occupant reads that same shared history; every occupant's own entries are preserved by construction across that rewrite, since they live in the query string under their own domain keys, never inside the shell subroute segment being rewritten. A locale change the shell makes outside the shared history is the same unsupported, environment-level condition the bullet above already documents for any third-party bypass of the shared instance, not a locale-specific gap: this library makes no promise about what an occupant observes when the URL changes through a channel it does not read.
+- **URL length budget**: the composed URL — the shell subroute, the hash, and every domain's own entries together — **MUST** stay under 2000 characters, the widely cited de facto ceiling for compatibility across browsers and the proxies and load balancers many deployments sit behind, rather than any single browser's own documented limit. The URL back-projection helper **MUST** refuse to write a reflection that would carry the composed URL over that budget: it leaves the URL exactly as it was before the call and reports the refusal through the same warning channel the URL grammar already reports a dropped or overwritten entry through (DESIGN §1.1, URL Grammar), rather than truncating an entry or writing a URL a consumer's own back-projection call asked for only part of. This keeps the helper's "exactly one write, or none" guarantee intact either way, instead of writing a truncated, silently incomplete reflection.
+- **Reload and server-side rewrite**: a full reload and a server-side rewrite that lands the browser on the shell's own entry point **MUST** resolve to the identical mounted state a client-side navigation to that same URL would have produced — every occupant's own state reconstructs from the URL alone, through the same per-domain resolution path an ordinary navigation uses (`cpt-frontx-routing-fr-route-ownership-signal`); a cold mount is not a degraded case this library resolves differently from any other. Producing that URL in the first place — rendering the mounted screens on the server, or generating the rewritten URL itself — is out of scope for this library (§4.2): the guarantee here is that whatever URL the browser ends up presenting on that first paint resolves exactly as it would on any later navigation, not that this library renders anything for that first response.
 
 ## 4. Scope
 
@@ -135,7 +138,7 @@ The same microfrontend runs under two deployment modes without a change to its r
 
 #### Single navigation substrate shared across independently bundled units
 
-- [ ] `p1` - **ID**: `cpt-frontx-routing-fr-single-navigation-substrate`
+- [x] `p1` - **ID**: `cpt-frontx-routing-fr-single-navigation-substrate`
 
 The system **MUST** expose exactly one navigation-history instance per realm, reachable by the host and by every independently bundled microfrontend, and **MUST** fan out one underlying browser-history subscription to every listener that subscribes to it.
 
@@ -165,7 +168,7 @@ The system **MUST** resolve, at each domain independently, every entry currently
 
 #### Imperative navigation outside the UI tree
 
-- [ ] `p2` - **ID**: `cpt-frontx-routing-fr-imperative-navigation`
+- [x] `p2` - **ID**: `cpt-frontx-routing-fr-imperative-navigation`
 
 The system **MUST** expose `push`, `replace`, `go`, `location`, and `subscribe` against the shared navigation history for use outside any UI component tree.
 
@@ -236,7 +239,7 @@ The system **MUST** import no other package in this ecosystem, and **MUST** call
 
 #### Agnostic Navigation Core
 
-- [ ] `p1` - **ID**: `cpt-frontx-routing-nfr-agnostic-core`
+- [x] `p1` - **ID**: `cpt-frontx-routing-nfr-agnostic-core`
 
 The navigation substrate **MUST** carry no dependency on any router engine or UI framework whatsoever; every dependency on a concrete engine **MUST** live in a separately published engine-provider package that implements the engine-provider port, never inside this package.
 
@@ -286,7 +289,7 @@ None owned here. The package is distributed under the root PRD's package-registr
 
 ## 9. Acceptance Criteria
 
-- [ ] A single navigation-history instance answers `push`/`replace`/`go`/`location`/`subscribe` for the host and for every independently bundled microfrontend registered in the same realm, and every one of those five members is callable by a caller with no mounted router or UI-framework component tree in its call path — verifiable via `cpt-frontx-routing-fr-single-navigation-substrate` and `cpt-frontx-routing-fr-imperative-navigation`.
+- [x] A single navigation-history instance answers `push`/`replace`/`go`/`location`/`subscribe` for the host and for every independently bundled microfrontend registered in the same realm, and every one of those five members is callable by a caller with no mounted router or UI-framework component tree in its call path — verifiable via `cpt-frontx-routing-fr-single-navigation-substrate` and `cpt-frontx-routing-fr-imperative-navigation`.
 - [ ] Replacing the engine-provider package used by one microfrontend changes no file outside that microfrontend's own route tree, search-parameter handling, and its own imports of its provider package — verifiable via `cpt-frontx-routing-fr-engine-provider-port`.
 - [ ] A cold load, a reload, and a back/forward step all resolve the same declared route owner from a domain's own entries through the same resolution path, at every domain a consumer holds an observer for, reported as an observable transition to that domain's own consumer — verifiable via `cpt-frontx-routing-fr-route-ownership-signal`.
 - [ ] For a domain whose own occupancy strategy admits more than one occupant at once, every concurrently mounted occupant is projected into the URL and its own transition is reported independently through the route ownership signal — verifiable via `cpt-frontx-routing-fr-concurrent-occupant-projection`.
