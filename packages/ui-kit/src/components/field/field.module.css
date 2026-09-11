@@ -67,7 +67,12 @@
 }
 
 .field[data-invalid='true'] {
-  color: var(--destructive);
+  /* --danger, not --destructive: this paints TEXT (inherited by
+   * FieldLabel/FieldError alike), and --danger is the status token
+   * theme.css corrected to clear 4.5:1 as label text over --card and
+   * --background in both themes, unlike --destructive, which is only
+   * verified as a solid fill under --destructive-foreground. */
+  color: var(--danger);
 }
 
 .orientationVertical {
@@ -172,7 +177,7 @@
 }
 
 .fieldDescription a:hover {
-  color: var(--primary);
+  color: var(--link-foreground);
 }
 
 .fieldSeparator {
@@ -205,7 +210,10 @@
   line-height: var(--text-label-line-height);
   font-weight: var(--text-body-weight);
   letter-spacing: var(--text-label-tracking);
-  color: var(--destructive);
+  /* --danger, not --destructive — see the --field[data-invalid] comment
+   * above: at this 12px size, --destructive only measures 4.29:1 on the
+   * page / 3.80:1 on --card, both under the 4.5:1 text floor. */
+  color: var(--danger);
 }
 
 .fieldErrorList {

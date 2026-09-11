@@ -119,12 +119,22 @@
  * pair per cell. Its API note names the axes verbatim — "treatment: solid |
  * soft; tone: neutral | accent | info | success | warning | danger".
  *
- * `solid` paints the tone at full strength and labels it with
- * --primary-foreground. That is not a shortcut for a missing per-tone
- * on-color: the mockup binds that one on-primary variable for all six solid
- * tones, so following it keeps the kit off six invented foreground tokens.
- * `soft` inverts the pair — the tone's own -soft surface carries the tone
- * itself as the label color.
+ * `solid` paints the tone at full strength; `soft` inverts the pair — the
+ * tone's own -soft surface carries the tone itself as the label color.
+ *
+ * The solid label DEVIATES from the mockup, which binds --primary-foreground
+ * for all six solid tones: in dark mode the status tones are light tints,
+ * so --primary-foreground initials on them land around 1.5–2:1 — far under
+ * the 4.5:1 AA floor — and per the kit's standing WCAG ruling (theme.css
+ * header) a drawn color failing its floor gets corrected, not footnoted.
+ * The correction invents no tokens: each status tone's solid label is that
+ * tone's own -soft value — the exact inverse of the `soft` treatment below,
+ * and dark ink on light fills / light ink on dark fills by construction in
+ * both themes (worst case 4.59:1, light info; the rest measure
+ * 4.67–10.03:1). `neutral` inverts its borrowed pair the same way (--muted
+ * on --muted-foreground, 8.40:1 light / 5.71:1 dark). `accent` alone keeps
+ * the mockup's binding: --primary-foreground on --primary measures 5.29:1
+ * in both modes, so the drawn pair passes as-is.
  *
  * `neutral` has no --neutral family to draw from and borrows the muted one,
  * which is why neutral+soft resolves to precisely the
@@ -142,7 +152,7 @@
  */
 .variantSolid.toneNeutral {
   background-color: var(--muted-foreground);
-  color: var(--primary-foreground);
+  color: var(--muted);
 }
 
 .variantSolid.toneAccent {
@@ -152,22 +162,22 @@
 
 .variantSolid.toneInfo {
   background-color: var(--info);
-  color: var(--primary-foreground);
+  color: var(--info-soft);
 }
 
 .variantSolid.toneSuccess {
   background-color: var(--success);
-  color: var(--primary-foreground);
+  color: var(--success-soft);
 }
 
 .variantSolid.toneWarning {
   background-color: var(--warning);
-  color: var(--primary-foreground);
+  color: var(--warning-soft);
 }
 
 .variantSolid.toneDanger {
   background-color: var(--danger);
-  color: var(--primary-foreground);
+  color: var(--danger-soft);
 }
 
 .variantSoft.toneNeutral {

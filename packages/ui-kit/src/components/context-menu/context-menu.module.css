@@ -196,23 +196,21 @@
 }
 
 /*
- * Text mixes a little --foreground in rather than reading --destructive raw,
- * same deviation from the registry (and same reasoning) as
- * badge.module.css's destructive variant. Measured on the highlighted state,
- * where this item is at its worst: --destructive text over its own 10% tint
- * on --popover is 3.97:1 in light mode, under the 4.5:1 floor — the tint
- * pulls the surface toward the text it has to contrast with. The mix moves
- * the text away from it in both themes, since --foreground flips with the
- * theme: 4.82:1 light / 6.09:1 dark highlighted, 5.78:1 / 6.92:1 at rest.
+ * --danger text over a 12% --danger tint of --popover — same seat, same
+ * fix, same reasoning and same measured ratios as
+ * dropdown-menu.module.css's destructive item (see the full rationale
+ * there): --destructive is the fill red, --danger the AA-corrected text
+ * red, and the popover-anchored tint is the focus cue --danger-soft was
+ * too faint to carry.
  */
 .variantDestructive {
-  color: color-mix(in oklab, var(--destructive) 90%, var(--foreground) 10%);
+  color: var(--danger);
 }
 
 .variantDestructive:focus,
 .variantDestructive[data-highlighted] {
-  background-color: color-mix(in oklab, var(--destructive) 10%, transparent);
-  color: color-mix(in oklab, var(--destructive) 90%, var(--foreground) 10%);
+  background-color: color-mix(in oklab, var(--danger) 12%, var(--popover));
+  color: var(--danger);
 }
 
 .checkboxItem,

@@ -2,7 +2,7 @@
  * Tabs styles — structure translated from shadcn/ui (MIT), visuals per the
  * F-mockups' Tabs/Segment spec (Figma frame 196:382, Kind=tab): trackless
  * list, the active tab raised on --surface-elevated, the drawn 13/18
- * medium labels (shipped at the ramp's 13/16 — see .trigger below),
+ * medium labels (shipped at the ramp's 12/16 — see .trigger below),
  * disabled at 0.42. The spec's Kind=segment (bordered items on
  * --border-strong) is NOT a Tabs variant — the design file's own component
  * description says "shadcn Tabs and Toggle Group segment states", i.e. the
@@ -105,8 +105,8 @@
   /*
    * The plain token is enough now: with the --muted track gone (see
    * .variantDefault), inactive labels sit on the page surfaces, where
-   * --muted-foreground clears AA in both themes — measured 4.55:1 on
-   * --background / 4.76:1 on --card in light, 6.62:1 / 6.04:1 in dark.
+   * --muted-foreground clears AA in both themes — measured 9.45:1 on
+   * --background / 10.35:1 on --card in light, 7.68:1 / 6.96:1 in dark.
    * The old translation needed a foreground/muted mix here only because
    * its own track was the backdrop; that reasoning left with the track.
    */

@@ -575,6 +575,132 @@ describe('theme tokens', () => {
           ).toBeGreaterThanOrEqual(4.5);
         }
       });
+
+      // The status tokens are 12px label text in the kit — Badge's tone
+      // variants and Avatar's soft treatment paint them over their own
+      // -soft fill, and Field/Alert/Toast/Attachment/Bubble/Questionnaire
+      // error text paints --danger over whatever page/card/panel the
+      // component sits on — so each status color must clear the 4.5:1 AA
+      // floor against ALL of those backdrops, not only the one a single
+      // component happens to test. This is the guard the original Studio
+      // values shipped without: they cleared their own -soft fills but not
+      // every page/panel seat, and --destructive doubled as a text color
+      // (see design-notes.md's "Post-review contrast pass" entry) — a hue
+      // that only works as a dot or solid fill can no longer pass for a
+      // text color. (--popover is included even though it currently equals
+      // --card in both modes: Toast paints its error icon on --popover, and
+      // the two tokens are free to diverge later.)
+      it('status label text clears 4.5:1 on its soft fill and every surface it sits on', () => {
+        for (const [themeName, tokens] of themes) {
+          for (const status of ['--success', '--warning', '--danger', '--info']) {
+            const label = token(tokens, status);
+            for (const backdrop of [
+              `${status}-soft`,
+              '--background',
+              '--surface',
+              '--card',
+              '--popover',
+            ]) {
+              expect(
+                contrastRatio(label, token(tokens, backdrop)),
+                `${themeName} ${status} on ${backdrop}`,
+              ).toBeGreaterThanOrEqual(4.5);
+            }
+          }
+        }
+      });
+
+      // The brand-tinted pair: menus' hover/active rows, Badge's accent
+      // tone and Bubble all paint --accent-foreground as label text over
+      // the --accent fill.
+      it('accent-foreground clears 4.5:1 on the accent fill', () => {
+        for (const [themeName, tokens] of themes) {
+          expect(
+            contrastRatio(token(tokens, '--accent-foreground'), token(tokens, '--accent')),
+            themeName,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+      });
+
+      // Solid-fill on-colors, at rest AND on the hover fills: Button and
+      // Badge keep the same fixed label while swapping the fill under it
+      // on hover (--primary -> --primary-hover; --destructive ->
+      // --destructive-hover on Badge), so the hover fill needs the same
+      // 4.5:1 the resting fill does — the exact case the old
+      // mix-toward-foreground hover recipe failed in dark mode (see
+      // badge.module.css's destructive-hover comment).
+      it('solid-fill labels clear 4.5:1 at rest and on the hover fills', () => {
+        const pairs: Array<[string, string[]]> = [
+          ['--primary-foreground', ['--primary', '--primary-hover']],
+          ['--destructive-foreground', ['--destructive', '--destructive-hover']],
+        ];
+        for (const [themeName, tokens] of themes) {
+          for (const [label, fills] of pairs) {
+            for (const fill of fills) {
+              expect(
+                contrastRatio(token(tokens, label), token(tokens, fill)),
+                `${themeName} ${label} on ${fill}`,
+              ).toBeGreaterThanOrEqual(4.5);
+            }
+          }
+        }
+      });
+
+      // Link text away from the bare page: FieldDescription, EmptyDescription
+      // and ItemDescription links (and Badge's link variant on a card) sit on
+      // --surface/--card rather than --background, which the link-button case
+      // above already covers. Widened deliberately when those consumers moved
+      // off --primary (whose dark value fails AA as text) onto
+      // --link-foreground (design-notes.md's "Post-review contrast pass") —
+      // the button-only scoping note on that case still holds for BUTTON,
+      // but the token now has seats on every panel fill.
+      it('link text clears 4.5:1 against surface and card', () => {
+        for (const [themeName, tokens] of themes) {
+          for (const backdrop of ['--surface', '--card']) {
+            expect(
+              contrastRatio(token(tokens, '--link-foreground'), token(tokens, backdrop)),
+              `${themeName} --link-foreground on ${backdrop}`,
+            ).toBeGreaterThanOrEqual(4.5);
+          }
+        }
+      });
+
+      // Not a WCAG floor — a visibility floor. --muted is the kit's
+      // workhorse fill (Skeleton, outline/ghost Button hover, Calendar's
+      // outside days, …) and the rebrand frame draws it AT the light page
+      // value and AT the dark card value, which makes every one of those
+      // fills vanish against its own backdrop; theme.css steps it off
+      // deliberately (see --muted's comment there). 1.1 is below the
+      // shipped separations (1.13 light page / 1.22 dark card are the
+      // tightest) but far above the ~1.0 a re-collapse would produce, so
+      // this pins the intent without hard-coding the palette.
+      it('the muted fill stays visibly separate from the page and card it fills on', () => {
+        for (const [themeName, tokens] of themes) {
+          for (const backdrop of ['--background', '--card']) {
+            expect(
+              contrastRatio(token(tokens, '--muted'), token(tokens, backdrop)),
+              `${themeName} --muted on ${backdrop}`,
+            ).toBeGreaterThanOrEqual(1.1);
+          }
+        }
+      });
+
+      // Same visibility floor for the sidebar's own hairline: --sidebar
+      // follows --muted (see theme.css), and the first derivation of the
+      // block put --border's value on --sidebar-border — which is the
+      // panel fill itself in light mode, erasing SidebarSeparator, the
+      // menu-sub rail and the floating variant's outline at 1.00:1. The
+      // border now follows --border-strong (1.20 light / 1.41 dark against
+      // the panel); this pins the pair the way the muted guard above pins
+      // muted against its backdrops.
+      it('the sidebar border stays visibly separate from the sidebar panel', () => {
+        for (const [themeName, tokens] of themes) {
+          expect(
+            contrastRatio(token(tokens, '--sidebar-border'), token(tokens, '--sidebar')),
+            `${themeName} --sidebar-border on --sidebar`,
+          ).toBeGreaterThanOrEqual(1.1);
+        }
+      });
     });
   });
 });

@@ -50,6 +50,10 @@
   font-weight: var(--text-label-weight);
   letter-spacing: var(--text-meta-tracking);
   white-space: nowrap;
+  /* One offset for every underline this file draws (link's rest style and
+   * the tone hovers alike), so hover underlines sit at the same height
+   * across variants. */
+  text-underline-offset: 4px;
   /*
    * Colour and box-shadow crossfades only, no transform/geometry — not
    * motion under WCAG 2.3.3, so deliberately left unguarded under
@@ -69,14 +73,22 @@
 }
 
 /*
- * Focus ring: the same inset idiom as Input/Textarea (border color swap +
- * inset box-shadow, geometry-stable — see input.module.css), not Button's
- * outside outline — Badge is a bordered pill, not Button's shape. Only
- * reachable at all once rendered as a link via `render`; a plain span is
- * never in the tab order.
+ * Focus ring: the inset border/box-shadow idiom Input/Textarea use (color
+ * swap + inset box-shadow, geometry-stable — see input.module.css), PLUS an
+ * outside outline in the same tone, Button's own idiom (see
+ * button.module.css). The inset half alone isn't enough here: it borders
+ * the badge's own FILL, not just the page, and --ring equals --primary in
+ * light mode — a default-variant link Badge's inset ring then paints the
+ * exact color it's already sitting on and disappears. The outline sits
+ * clear of the fill (offset outside the border box), so its only WCAG
+ * 1.4.11 neighbor is ever the page/card background, never the badge's own
+ * color, the same guarantee button.module.css documents for its own ring.
+ * Only reachable at all once rendered as a link via `render`; a plain span
+ * is never in the tab order.
  */
 .badge:focus-visible {
-  outline: none;
+  outline: var(--border-width-focus) solid var(--ring);
+  outline-offset: 2px;
   border-color: var(--ring);
   box-shadow: inset 0 0 0 var(--ring-inset) var(--ring);
 }
@@ -123,13 +135,16 @@ a.variantSecondary:hover {
 }
 
 /*
- * Mixes toward --foreground rather than a flat opacity fade — same
- * reasoning and idiom as button.module.css's destructive hover: fading an
- * already-marginal fill toward the page pulls it *toward* the label it has
- * to contrast with.
+ * --destructive-hover, not a color-mix toward --foreground: that recipe
+ * (which button.module.css's destructive hover shared until the same fix)
+ * darkens correctly in light mode, where --foreground is dark, but LIGHTENS
+ * in dark mode instead, since --foreground flips near-white there — against
+ * the fixed --destructive-foreground label, that drops dark-mode hover
+ * to about 3.90:1. --destructive-hover is a literal, same hex both modes
+ * (see theme.css), so the direction never depends on which theme is active.
  */
 a.variantDestructive:hover {
-  background-color: color-mix(in oklab, var(--destructive) 90%, var(--foreground) 10%);
+  background-color: var(--destructive-hover);
 }
 
 .variantOutline {
@@ -151,9 +166,16 @@ a.variantGhost:hover {
   color: var(--accent-foreground);
 }
 
+/*
+ * --link-foreground, not --primary, for the same reason as Button's link
+ * variant (see button.module.css): this is 12px text sitting directly on
+ * the page/card, and the dark --primary misses the 4.5:1 AA floor there
+ * (3.72:1 against --background) while --link-foreground is the text-safe
+ * token theme.css carries for exactly this seat (4.95:1 light / 7.75:1
+ * dark).
+ */
 .variantLink {
-  color: var(--primary);
-  text-underline-offset: 4px;
+  color: var(--link-foreground);
 }
 
 a.variantLink:hover {
@@ -168,20 +190,30 @@ a.variantLink:hover {
  * them". This is that surface. Accent is the same shape over the
  * --accent/--accent-foreground pair, matching the mockup's Accent badge.
  *
- * KNOWN CONTRAST DEBT, not an oversight: at 12px/500 these labels need
- * 4.5:1 (WCAG 1.4.3) and four pairs miss it — light success 3.43:1,
- * warning 2.90:1, danger 4.28:1, info 3.73:1, and dark danger 3.80:1.
- * The shortfall is in the token pairs themselves, which the mockup defines
- * and this file may not redefine, so it is raised for a design decision
- * rather than papered over with a local literal. Every other pair clears
- * AA (light accent 6.02:1, dark success 8.05:1 / warning 9.16:1 /
- * info 8.80:1 / accent 12.83:1), as does Neutral via --secondary.
+ * Contrast: at 12px/500 these labels need 4.5:1 (WCAG 1.4.3). The debt
+ * this comment used to record ("four pairs miss it, raised for a design
+ * decision") was resolved BY that decision, at the token level: the Studio
+ * blue rebrand ruled that a drawn status color failing AA gets a corrected
+ * value in theme.css (see its header and the --success/--warning/--danger
+ * comments there), so every pair this file paints now clears the floor on
+ * its own fill — light success 5.00:1 / warning 4.67:1 / danger 5.72:1 /
+ * info 4.59:1 / accent 4.68:1, dark success 8.05:1 / warning 10.03:1 /
+ * danger 6.34:1 / info 6.62:1 / accent 13.77:1 — as does Neutral via
+ * --secondary. Nothing here needed a local literal, which is the point of
+ * fixing the pair where it is defined.
  *
- * Hover is the color-mix-toward-foreground idiom `a.variantDestructive`
- * uses above, for the same reason: fading a tint toward transparent pulls
- * it toward the label it has to contrast with. The mockup draws no badge
- * hover state, so this is the file's own existing recipe applied for
- * consistency, not a drawn spec.
+ * Hover used to mix the fill toward --foreground, the idiom
+ * `a.variantDestructive` above once used — wrong here for a different
+ * reason than that one's dark-mode flip: the tightest of these labels sit
+ * on their own tint at a bare 4.59:1–4.68:1 (info has 0.09 of headroom,
+ * warning 0.17), so ANY darkening of the fill toward the label's own
+ * darker luminance shrinks that margin, and
+ * standard OKLab interpolation puts every one of them under the floor
+ * (light success 3.97:1, warning 3.70:1, info 3.65:1, accent 3.72:1) well
+ * before the mix reaches 10%. Recoloring the fill on hover isn't safe at
+ * this headroom, so hover instead underlines the label — the mockup draws
+ * no badge hover state, and Link's own hover (above) already establishes
+ * underline as this file's affordance for "hover, no color change".
  */
 .variantSuccess {
   background-color: var(--success-soft);
@@ -189,7 +221,7 @@ a.variantLink:hover {
 }
 
 a.variantSuccess:hover {
-  background-color: color-mix(in oklab, var(--success-soft) 90%, var(--foreground) 10%);
+  text-decoration: underline;
 }
 
 .variantWarning {
@@ -198,7 +230,7 @@ a.variantSuccess:hover {
 }
 
 a.variantWarning:hover {
-  background-color: color-mix(in oklab, var(--warning-soft) 90%, var(--foreground) 10%);
+  text-decoration: underline;
 }
 
 .variantDanger {
@@ -207,7 +239,7 @@ a.variantWarning:hover {
 }
 
 a.variantDanger:hover {
-  background-color: color-mix(in oklab, var(--danger-soft) 90%, var(--foreground) 10%);
+  text-decoration: underline;
 }
 
 .variantInfo {
@@ -216,7 +248,7 @@ a.variantDanger:hover {
 }
 
 a.variantInfo:hover {
-  background-color: color-mix(in oklab, var(--info-soft) 90%, var(--foreground) 10%);
+  text-decoration: underline;
 }
 
 .variantAccent {
@@ -225,5 +257,5 @@ a.variantInfo:hover {
 }
 
 a.variantAccent:hover {
-  background-color: color-mix(in oklab, var(--accent) 90%, var(--foreground) 10%);
+  text-decoration: underline;
 }

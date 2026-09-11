@@ -175,10 +175,12 @@
    * Its column labels are the one place the drawn table leaves Inter: they
    * are set in JetBrains Mono, uppercase, at 10/14 regular. That is the
    * Mono role, so the role is applied whole (family/size/line-height/
-   * weight/tracking) and the drawn 10/14 rides up to the ramp's 11/16
-   * under the tokens-win ruling (see theme.css) — the alternative, keeping
-   * Meta's Inter and hand-setting a weight, drops the deliberate mono
-   * column-label voice that runs through every variant of the frame.
+   * weight/tracking) under the tokens-win ruling (see theme.css) — since
+   * the Studio blue rebrand moved the ramp's own Mono step to 10/14, the
+   * drawn spec and the role now coincide exactly, with nothing left to
+   * round. The alternative, keeping Meta's Inter and hand-setting a
+   * weight, drops the deliberate mono column-label voice that runs
+   * through every variant of the frame.
    *
    * The label color stays --subtle-foreground, the token theme.css names
    * for exactly this consumer. The frame draws these labels in its own
@@ -293,7 +295,7 @@
   /*
    * Source: text-muted-foreground, against --background (a caption sits
    * outside any row tint, so no mixed-tint approximation is needed):
-   * 4.73:1 light, 7.63:1 dark — clears the 4.5:1 AA floor for normal text
+   * 9.45:1 light, 7.68:1 dark — clears the 4.5:1 AA floor for normal text
    * in both themes.
    */
   color: var(--muted-foreground);

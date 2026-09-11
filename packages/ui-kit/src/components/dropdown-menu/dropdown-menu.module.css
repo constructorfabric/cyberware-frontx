@@ -168,23 +168,34 @@
 }
 
 /*
- * Text mixes a little --foreground in rather than reading --destructive raw,
- * same deviation from the registry (and same reasoning) as
- * badge.module.css's destructive variant. Measured on the highlighted state,
- * where this item is at its worst: --destructive text over its own 10% tint
- * on --popover is 3.97:1 in light mode, under the 4.5:1 floor — the tint
- * pulls the surface toward the text it has to contrast with. The mix moves
- * the text away from it in both themes, since --foreground flips with the
- * theme: 4.82:1 light / 6.09:1 dark highlighted, 5.78:1 / 6.92:1 at rest.
+ * --danger text, not --destructive-based mixes. This is a TEXT seat, and
+ * --destructive is the kit's fill red, verified only under
+ * --destructive-foreground; the mix-toward---foreground recipe this rule
+ * used to share with the old Badge darkens correctly in light mode but
+ * LIGHTENS in dark (--foreground flips near-white there), landing the
+ * highlighted state under the 4.5:1 floor on the rebrand palette. --danger
+ * is the AA-corrected text red every other destructive TEXT seat already
+ * moved to (FieldError, Alert, Toast — see theme.css), and tokens.test.ts's
+ * status matrix holds it ≥ 4.5:1 against --popover.
+ *
+ * The highlight fill is a 12% tint of --danger over --popover, NOT
+ * --danger-soft: the text keeps one color at rest and highlighted, so the
+ * fill change is the only focus cue, and --danger-soft sits too close to
+ * the popover for that job (1.10:1 light / 1.05:1 dark — weaker than the
+ * sibling rows' --accent highlight at 1.16/1.12). The 12% tint measures
+ * 1.20:1 light / 1.17:1 dark against --popover, and --danger stays clear
+ * on it (5.26:1 / 5.68:1). Unlike the removed recipe, this mix is anchored
+ * to --popover, not --foreground, so its direction never flips with the
+ * theme.
  */
 .variantDestructive {
-  color: color-mix(in oklab, var(--destructive) 90%, var(--foreground) 10%);
+  color: var(--danger);
 }
 
 .variantDestructive:focus,
 .variantDestructive[data-highlighted] {
-  background-color: color-mix(in oklab, var(--destructive) 10%, transparent);
-  color: color-mix(in oklab, var(--destructive) 90%, var(--foreground) 10%);
+  background-color: color-mix(in oklab, var(--danger) 12%, var(--popover));
+  color: var(--danger);
 }
 
 .checkboxItem,

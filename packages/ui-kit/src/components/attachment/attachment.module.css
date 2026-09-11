@@ -175,7 +175,10 @@
 
 .attachment[data-state='error'] .attachmentMedia {
   background-color: color-mix(in oklab, var(--destructive) 10%, transparent);
-  color: var(--destructive);
+  /* --danger, not --destructive — see attachmentDescription below, the
+   * same foreground-vs-fill distinction theme.css draws between the two
+   * tokens. */
+  color: var(--danger);
 }
 
 /* Deliberately empty — do not delete as dead CSS. Kept so `variant="icon"`
@@ -230,7 +233,16 @@
 }
 
 .attachment[data-state='error'] .attachmentDescription {
-  color: color-mix(in oklab, var(--destructive) 80%, transparent);
+  /*
+   * --danger at full strength, not a color-mix of --destructive toward
+   * transparent: fading an already-marginal red toward whatever backdrop
+   * sits behind it (near-white in light mode) only pulls it CLOSER to that
+   * backdrop, shrinking contrast further below the already-failing 4.29:1
+   * (light) / 3.80:1 (dark) --destructive measures at this 12px size.
+   * --danger is the token theme.css corrected to clear 4.5:1 as label text
+   * over --card and --background in both themes.
+   */
+  color: var(--danger);
 }
 
 .attachmentActions {

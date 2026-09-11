@@ -260,7 +260,10 @@
 }
 
 .iconDestructive {
-  color: var(--destructive);
+  /* --danger, not --destructive — the Toast sits on --popover (== --card
+   * both modes), where --destructive is only verified as a fill under
+   * --destructive-foreground, not as a foreground color itself. */
+  color: var(--danger);
 }
 
 .iconSpin {

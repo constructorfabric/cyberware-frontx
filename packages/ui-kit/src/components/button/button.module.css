@@ -151,17 +151,20 @@
 }
 
 /*
- * Mixes toward --foreground rather than the registry's `destructive/90`
- * fade to transparent. Fading an already-marginal fill toward the page
- * pulls it *toward* the label it has to contrast with — measured 4.57:1 at
- * rest but 4.34:1 on hover in light mode, i.e. the hover state alone fails
- * AA. Mixing with --foreground moves it away from the label in both themes
- * (the token flips with the theme, so light darkens and dark lightens):
- * 5.54:1 light / 7.64:1 dark. Same idiom and reasoning as
- * badge.module.css's destructive variant.
+ * --destructive-hover, not the registry's `destructive/90` fade to
+ * transparent and not the mix-toward---foreground recipe this rule used
+ * to share with Badge. The fade pulls an already-marginal fill toward the
+ * page and fails AA on hover in light mode; the mix darkens correctly in
+ * light but LIGHTENS in dark (where --foreground flips near-white),
+ * dropping the fixed --destructive-foreground label to 3.90:1 under the
+ * rebrand palette.
+ * --destructive-hover is a literal, same hex both modes (see theme.css),
+ * so the direction never depends on the theme — same fix, same reasoning
+ * as badge.module.css's destructive hover, and tokens.test.ts holds the
+ * label ≥ 4.5:1 on it in both themes.
  */
 .variantDestructive:hover {
-  background-color: var(--button-bg-hover, var(--button-bg, color-mix(in oklab, var(--destructive) 90%, var(--foreground) 10%)));
+  background-color: var(--button-bg-hover, var(--button-bg, var(--destructive-hover)));
   color: var(--button-fg-hover, var(--button-fg, var(--destructive-foreground)));
 }
 
@@ -205,8 +208,8 @@
  * Rest text is --muted-foreground, per the drawn spec (the hover fill below
  * is what promotes it to --foreground) — measured against the page
  * background it actually sits on, since ghost has no fill of its own:
- * 4.55:1 light / 6.62:1 dark, both clearing the 4.5:1 AA floor for this
- * 13px label text, so the alignment carries no WCAG cost.
+ * 9.45:1 light / 7.68:1 dark, both clearing the 4.5:1 AA floor for this
+ * 12px label text, so the alignment carries no WCAG cost.
  */
 .variantGhost {
   background-color: var(--button-bg, transparent);
@@ -223,13 +226,11 @@
 
 /*
  * --link-foreground, not --primary: measured on the page background this
- * borderless variant actually sits on, --primary itself is 4.51:1 light
- * (barely over the 4.5:1 AA floor — 0.005 of headroom) and only 3.78:1
- * dark (a clear fail). Link has no drawn counterpart to match, so
- * --link-foreground is a text-safe token of its own — --primary-hover's
- * value in light (same violet family, real headroom at 4.98:1 instead of a
- * borderline pass), a lighter tint of the same hue in dark (see
- * theme.css).
+ * borderless variant actually sits on, --primary is 4.83:1 light but only
+ * 3.72:1 dark (a clear fail for 12px text). Link has no drawn counterpart
+ * to match, so --link-foreground is a text-safe token of its own —
+ * --primary-hover's value in light (same blue family, 4.95:1), a lighter
+ * tint of the same hue in dark (7.75:1 — see theme.css).
  */
 .variantLink {
   background-color: var(--button-bg, transparent);
@@ -248,7 +249,7 @@
  * above), so it only ever borders the page — the one surface every
  * variant needs to clear WCAG 1.4.11's 3:1 floor against. That single
  * surface is what makes a single tone per variant enough: default and
- * destructive keep a family color of their own (a violet a shade darker/
+ * destructive keep a family color of their own (a blue a shade darker/
  * lighter than --primary would otherwise be, and the destructive red's
  * equivalent — see theme.css's --primary-ring/--destructive-ring), because
  * their own accent reads better against the page than the plain kit-wide

@@ -27,14 +27,13 @@ are the semantic-ish colors available — pick the one that best matches the
 status, but keep the label text itself explicit; color alone is not a
 substitute for a state machine.
 
-> **Accessibility caveat on tones.** At Badge's 12px/500 label, WCAG 1.4.3
-> asks 4.5:1. Four of the drawn tone pairs currently fall short — light
-> `success` 3.43:1, `warning` 2.90:1, `danger` 4.28:1, `info` 3.73:1, and
-> dark `danger` 3.80:1 — because the shortfall is in the theme's status
-> token pairs, not in this component. Until those pairs are re-pinned, do
-> not let a tone's color be the only thing carrying the meaning: keep the
-> label text itself explicit. `accent` and `secondary` clear AA in both
-> themes, as do `success`, `warning` and `info` in dark.
+> **Accessibility of tones.** At Badge's 12px/500 label, WCAG 1.4.3 asks
+> 4.5:1, and every tone pair now clears it in both themes: the Studio blue
+> rebrand re-pinned the status tokens that used to fall short at the theme
+> level (see theme.css and the "Studio blue rebrand" entry in
+> design-notes.md), and tokens.test.ts holds each status color to the
+> floor against its own soft fill and every surface it sits on. Color is
+> still not a substitute for text: keep the label itself explicit.
 
 ## When to use
 

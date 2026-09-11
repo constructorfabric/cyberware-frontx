@@ -1,5 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { declarationMap, extractRules } from '../../__test-utils__/css-rules';
 
 import {
   DropdownMenu,
@@ -261,5 +267,42 @@ describe('DropdownMenu', () => {
     const menu = screen.getByRole('menu');
     expect(container.contains(menu)).toBe(true);
     container.remove();
+  });
+});
+
+/*
+ * Guards the destructive item's paint. --destructive is the kit's FILL
+ * red, verified only under --destructive-foreground; as menu TEXT it needs
+ * the AA-corrected --danger (held ≥ 4.5:1 against --popover by
+ * tokens.test.ts's status matrix). The highlight fill is a 12% tint of
+ * --danger over --popover — anchored to the popover so its direction
+ * never flips with the theme, unlike the removed mix toward --foreground
+ * that fell under the floor in dark mode; this guard notices if a
+ * foreground-anchored mix ever comes back. Reads the raw module CSS
+ * (jsdom computes no styles), same as badge.test.tsx.
+ */
+describe('DropdownMenu destructive item paint', () => {
+  const css = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'dropdown-menu.module.css'),
+    'utf8',
+  );
+  const menuRules = extractRules(css);
+
+  it('paints --danger text and a popover-anchored danger tint, never a foreground mix', () => {
+    const rest = menuRules.find((rule) => rule.selector === '.variantDestructive');
+    expect(rest, '.variantDestructive rule missing').toBeDefined();
+    expect(declarationMap(rest?.body ?? '').get('color')).toBe('var(--danger)');
+
+    const highlighted = menuRules.find((rule) =>
+      rule.selector.replace(/\s+/g, ' ').includes('.variantDestructive[data-highlighted]'),
+    );
+    expect(highlighted, 'highlighted .variantDestructive rule missing').toBeDefined();
+    const decls = declarationMap(highlighted?.body ?? '');
+    expect(decls.get('background-color')).toBe(
+      'color-mix(in oklab, var(--danger) 12%, var(--popover))',
+    );
+    expect(decls.get('color')).toBe('var(--danger)');
+    expect(highlighted?.body).not.toContain('--foreground');
+    expect(highlighted?.body).not.toContain('--destructive');
   });
 });

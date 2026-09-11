@@ -37,18 +37,27 @@ import { Row, Section } from '../shared';
  * from the ChartConfig below. The palette entries themselves are kit theme
  * tokens: the kit defines no --chart-1..5 ramp, and a literal hex would only
  * hold for one theme.
+ *
+ * No --info slot: after the rebrand --primary and --info are near-identical
+ * blues in light mode (~1.02:1 apart), so a palette carrying both would let
+ * one chart draw two indistinguishable series. The neutral fifth slot is
+ * --foreground, NOT --muted-foreground: the latter is the charts' own
+ * chrome color (axes, ticks, legend and tooltip labels — see
+ * chart.module.css), and a data series in the chrome color reads as
+ * furniture. Ink separates from that chrome in both themes (1.72:1 light /
+ * 2.56:1 dark) and from every other slot.
  */
 const PALETTE = {
-  violet: 'var(--primary)',
-  blue: 'var(--info)',
+  brand: 'var(--primary)',
+  ink: 'var(--foreground)',
   green: 'var(--success)',
   amber: 'var(--warning)',
   rose: 'var(--destructive)',
 } as const;
 
 const chartConfig = {
-  desktop: { label: 'Desktop', color: 'var(--primary)' },
-  mobile: { label: 'Mobile', color: 'var(--info)' },
+  desktop: { label: 'Desktop', color: PALETTE.brand },
+  mobile: { label: 'Mobile', color: PALETTE.green },
 } satisfies ChartConfig;
 
 const themedChartConfig = {
@@ -69,10 +78,10 @@ const data = [
 /* ------------------------------------------------------------------ */
 
 const stageConfig = {
-  prospect: { label: 'Prospect', color: PALETTE.blue },
+  prospect: { label: 'Prospect', color: PALETTE.ink },
   engaged: { label: 'Engaged', color: PALETTE.green },
   customer: { label: 'Customer', color: PALETTE.amber },
-  'at-risk': { label: 'At risk', color: PALETTE.violet },
+  'at-risk': { label: 'At risk', color: PALETTE.brand },
   churned: { label: 'Churned', color: PALETTE.rose },
 } satisfies ChartConfig;
 
@@ -149,7 +158,7 @@ function DonutChartExample() {
 /* ------------------------------------------------------------------ */
 
 const resolvedConfig = {
-  chat: { label: 'Chat', color: PALETTE.blue },
+  chat: { label: 'Chat', color: PALETTE.ink },
   mail: { label: 'Mail', color: PALETTE.green },
   tasks: { label: 'Tasks', color: PALETTE.amber },
 } satisfies ChartConfig;
@@ -169,7 +178,7 @@ const resolvedPerDay = [
 /* ------------------------------------------------------------------ */
 
 const recordsConfig = {
-  companies: { label: 'Companies', color: PALETTE.blue },
+  companies: { label: 'Companies', color: PALETTE.ink },
   opportunities: { label: 'Opportunities', color: PALETTE.amber },
   people: { label: 'People', color: PALETTE.green },
 } satisfies ChartConfig;
@@ -188,8 +197,8 @@ const recordsCreated = [
 /* ------------------------------------------------------------------ */
 
 const newContactsConfig = {
-  inbound: { label: 'Inbound', color: PALETTE.blue },
-  total: { label: 'Total', color: PALETTE.violet },
+  inbound: { label: 'Inbound', color: PALETTE.ink },
+  total: { label: 'Total', color: PALETTE.brand },
 } satisfies ChartConfig;
 
 const newContacts = [
@@ -255,7 +264,7 @@ function AreaSparkline() {
 /* ------------------------------------------------------------------ */
 
 const trafficConfig = {
-  visits: { label: 'Visits', color: PALETTE.violet },
+  visits: { label: 'Visits', color: PALETTE.brand },
 } satisfies ChartConfig;
 
 const traffic = [

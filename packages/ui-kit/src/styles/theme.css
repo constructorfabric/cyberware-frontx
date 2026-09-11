@@ -8,30 +8,49 @@
  * own surface from these same tokens is what makes the rest of the page
  * match. The token structure derives from shadcn/ui (MIT,
  * https://ui.shadcn.com; see the repository NOTICE file for attribution);
- * the values implement the Studio palette from the F-mockups Figma file
- * (variable collection "Studio / shadcn", modes Light + Dark). Figma
- * namespaces the same tokens under a `color/` folder (`color/background`);
- * the CSS names stay unprefixed per the shadcn convention the collection
- * itself is named after. A handful of collection entries are drawn by no
- * mockup node, so their per-mode values are unreadable via the Figma API;
- * those carry a `derived:` comment with the reasoning, and are the ones to
+ * the values implement the Studio BLUE rebrand recorded on the mockups'
+ * token spec frame "02 · Tokens, type & elevation" (node 40001232:5254),
+ * which superseded the violet "Studio / shadcn" collection this file
+ * previously carried. That frame's swatches label their WEB syntax with a
+ * `color/` prefix (`var(--color-background)`); the CSS names here stay
+ * unprefixed per the shadcn convention regardless — renaming the public
+ * token surface would break every consumer for zero semantic gain, and the
+ * `color/<name>` ↔ `--<name>` mapping is 1:1 either way. Entries the frame
+ * does not draw (card, popover, secondary, destructive, the sidebar block)
+ * carry a `derived:` comment with the reasoning, and are the ones to
  * re-check when the design file pins them down.
  *
- * Deliberately not here: the `color/workflow/*` and `color/scenario-canvas`
- * entries from the same collection. Figma itself exports them under its own
- * `--studio-*` namespace, which is the line this file follows — they name
- * one consumer's workflow surfaces rather than any kit semantic, and belong
- * to that app's own stylesheet.
+ * WCAG ruling (2026-08-31, standing): a drawn value that fails its
+ * contrast floor gets a corrected value in code — the deviation is recorded
+ * at the token, never shipped as a "kept as drawn" footnote. This pass
+ * deviates from the frame in exactly four places, all status colors used as
+ * 12px badge/avatar labels over their own -soft fills: light --success
+ * #059669→#047857, light --warning #f59e0b→#b45309, light --danger
+ * #e11d48→#be123c, dark --danger #e11d48→#fb7185 (per-token comments carry
+ * the measured ratios). Open designer question: pin AA-passing status
+ * values in the Figma file.
  *
- * The line is namespace, not "is a component reading it today": a few groups
- * here (Sidebar Navigation, the code pair, --blue, the four *-soft fills)
- * are unread by any current component. They are part of the collection's
- * unprefixed palette and are carried so a consumer painting a page around
- * the kit — or a later kit component — brands them from the same surface as
- * everything else, instead of finding a hole. Each such group says so at its
- * own declaration; app LAYOUT itself stays a non-goal (see design-notes),
- * so the sidebar tokens are colors for a consumer's own chrome, not a
- * promise of a Sidebar component.
+ * Deliberately not here: the `--studio-color-*` entries the same frame
+ * draws (progress-value/track, icon-subtle/icon-selected, and the studio
+ * copy of selection-subtle), plus `scenario-canvas` and
+ * `artifact-accent-icon`. The first group Figma exports under its own
+ * `--studio-*` namespace; the last two sit in the `color/` namespace since
+ * the rebrand, but all of them name one consumer's workflow surfaces
+ * (Studio's scenario canvas, its artifact cards) rather than any kit
+ * semantic, and belong to that app's own stylesheet. Ownership, not
+ * namespace, is what admits a token here — a Figma folder move alone does
+ * not put a product-domain name into the kit's public API.
+ *
+ * Being unread is NOT what excludes them, though: a few groups here (the
+ * code pair, --blue) are unread by any current component. They are part of
+ * the collection's unprefixed palette, carry kit-generic names, and are
+ * kept so a consumer painting a page around the kit — or a later kit
+ * component — brands them from the same surface as everything else,
+ * instead of finding a hole. Each such group says so at
+ * its own declaration. The Sidebar Navigation block is NOT one of them:
+ * sidebar.module.css consumes all five --sidebar-* tokens, so that group is
+ * component-consumed like any other pair — it merely doubles as the
+ * branding surface for a consumer's own navigation chrome.
  *
  * Basic branding happens on the consumer side by overriding these variables.
  * Dark mode: set data-theme="dark" on <html>/<body> for explicit control, or
@@ -61,34 +80,37 @@
 
   /*
    * Popover chrome shared by every card-like popup (Dialog/DropdownMenu/
-   * Select/Toast): a 1px ring plus a two-layer drop shadow, declared once
-   * here rather than hand-duplicated in each module. All
-   * four consumers already paint their surface from the --popover/
+   * Select/Toast): a 1px ring plus a drop shadow, declared once here rather
+   * than hand-duplicated in each module. The geometry and strength follow
+   * the rebrand frame's "Studio/Elevation/200" spec (0 8 24 at a 12% tint
+   * of the light foreground #0F172A1F), which is the elevation the drawn
+   * overlays sit on; the frame's other elevation steps (100/300/Dock top)
+   * have no kit consumer yet and are not carried as tokens until one does.
+   * All four consumers already paint their surface from the --popover/
    * --popover-foreground pair, so this chrome takes the same family name
    * rather than "--overlay-*", which would read as a variant of --overlay
    * above (the modal *scrim*, an unrelated concept — a popover has no
    * backdrop) and reversed word order from it besides. --popover-shadow is
-   * COMPOSED from --popover-border (both its layers are that same color),
-   * not just co-located with it: rebranding the hairline recolors the
-   * shadow along with it, by construction, not as a separate edit anyone
-   * has to remember to make. Same rationale as --overlay above for living
-   * here un-redefined regardless: both are mixed from --foreground, so the
-   * computed value already flips correctly per theme without a separate
-   * light/dark declaration.
+   * COMPOSED from --popover-border (its layer is that same color), not just
+   * co-located with it: rebranding the hairline recolors the shadow along
+   * with it, by construction, not as a separate edit anyone has to remember
+   * to make. Same rationale as --overlay above for living here un-redefined
+   * regardless: both are mixed from --foreground, so the computed value
+   * already flips correctly per theme without a separate light/dark
+   * declaration.
    */
-  --popover-border: color-mix(in oklab, var(--foreground) 10%, transparent);
-  --popover-shadow:
-    0 4px 6px -1px var(--popover-border),
-    0 2px 4px -2px var(--popover-border);
+  --popover-border: color-mix(in oklab, var(--foreground) 12%, transparent);
+  --popover-shadow: 0 8px 24px 0 var(--popover-border);
 
   /*
    * Radius scale. Components consume only the derived steps; consumers
    * rebrand by overriding --radius alone and the whole scale follows. The
-   * offsets place the Studio scale (sm 6 / md 8 / lg 12 / xl 16) on the
-   * 8px base — note md, not lg, sits at the base value, unlike shadcn v4's
-   * derivation. --radius-xs has no Figma counterpart; it predates the
-   * Studio scale and keeps its 4px slot. Corner shape isn't a light/dark
-   * concern, so none of this is redefined per-theme.
+   * offsets place the Studio scale (sm 6 / md 8 / lg 12 / xl 16, unchanged
+   * by the blue rebrand) on the 8px base — note md, not lg, sits at the
+   * base value, unlike shadcn v4's derivation. --radius-xs has no Figma
+   * counterpart; it predates the Studio scale and keeps its 4px slot.
+   * Corner shape isn't a light/dark concern, so none of this is redefined
+   * per-theme.
    */
   --radius: 0.5rem;
   --radius-xs: calc(var(--radius) - 4px);
@@ -112,8 +134,9 @@
    * Heights follow the DRAWN control specimens (32/36/40) — the design
    * file's "Token architecture" text says 32/40/44, but the drawn mockups
    * are the source of truth for that discrepancy (a standing ruling; see
-   * design-notes.md). Buttons sit on sm/md/lg directly; the drawn fields are
-   * 40px (the lg step) and the filter chip 36px (md).
+   * design-notes.md). The rebrand frame's layout panel confirms 32/36/40.
+   * Buttons sit on sm/md/lg directly; the drawn fields are 40px (the lg
+   * step) and the filter chip 36px (md).
    */
   --control-height-sm: 2rem;
   --control-height-md: 2.25rem;
@@ -142,71 +165,104 @@
   --ring-inset: calc(var(--border-width-focus) - var(--border-width));
 
   /*
-   * Typography (Figma "Typography / Specimens", frame 175:371 — the Studio
-   * text styles, recorded verbatim). The kit ships no font FILES: loading
-   * Inter/JetBrains Mono (@font-face, preload, subsetting) is the
-   * consumer's build concern; until they load, the fallback stacks keep
-   * metrics close. "Body Medium"/"Mono Medium" are not separate roles —
-   * the same metrics at weight 500.
+   * Typography — the Studio blue rebrand's "Studio/Type" ramp (the
+   * "02 · Tokens, type & elevation" frame, node 40001232:5254), carried on
+   * the kit's existing role names: the roles are the public API and the
+   * NEW ramp's styles map onto them rather than renaming them —
+   *   display   <- Page Title (26/32 semibold)
+   *   heading-2 <- Section Title (16/24 semibold — same metrics the role
+   *                already had)
+   *   body      <- UI Primary Regular (14/20)
+   *   label     <- UI Secondary Medium (12/16) — the drawn Tabs trigger's
+   *                own binding; Badge (UI Secondary Medium in the spec
+   *                sheet) already sat on exactly these numbers via its
+   *                meta-size + label-weight mix
+   *   meta      <- UI Secondary Regular (12/16 — same metrics as before)
+   *   mono      <- System Micro (10/14, --font-mono)
+   * All Studio/Type styles carry letter-spacing 0, so every role's
+   * tracking is normalized to 0 with them. heading-1 (20/28) has NO
+   * counterpart in the new ramp — the kit keeps it as an interpolated step
+   * between Page Title and Section Title rather than collapsing two
+   * heading roles onto one size. Also deliberately not carried: Display
+   * Metric (36/40), Foundation Hero (56/64) and Avatar Micro (10/14
+   * semibold) — no kit component consumes a role at those slots (Avatar's
+   * sm fallback sits on meta). Open at the component level, not the ramp:
+   * the drawn compact Button binds UI Secondary SEMI BOLD (600) while
+   * Button reads --text-label-weight (500) — a per-component weight
+   * question for the components pass, since label's 500 also dresses
+   * menus, tooltips and table headers.
+   *
+   * The kit ships no font FILES: loading Inter/JetBrains Mono (@font-face,
+   * preload, subsetting) is the consumer's build concern; until they load,
+   * the fallback stacks keep metrics close.
    *
    * The specimens-vs-ramp conflict is settled: the drawn component
-   * specimens hand-set line-heights the ramp doesn't have (13/18, 12/17,
-   * plus a 10px table header with no role at all), and the ruling is that
-   * the token system wins — component text sits on these roles, off-ramp
-   * drawn metrics were normalized to the nearest role, and the same ruling
-   * snapped off-grid spacing onto --space-*. A tokens.test.ts guard enforces
-   * it; design-notes.md records it.
+   * specimens hand-set line-heights the ramp doesn't have, and the ruling
+   * is that the token system wins — component text sits on these roles,
+   * off-ramp drawn metrics were normalized to the nearest role, and the
+   * same ruling snapped off-grid spacing onto --space-*. A tokens.test.ts
+   * guard enforces it; design-notes.md records it.
    */
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  /* Display: 28/34 semibold. */
-  --text-display-size: 1.75rem;
-  --text-display-line-height: 2.125rem;
+  /* Display: 26/32 semibold (Studio/Type/Page Title). */
+  --text-display-size: 1.625rem;
+  --text-display-line-height: 2rem;
   --text-display-weight: 600;
-  --text-display-tracking: -0.4px;
-  /* Heading 1: 20/28 semibold. */
+  --text-display-tracking: 0px;
+  /* Heading 1: 20/28 semibold (kit interpolation, no ramp counterpart —
+   * see the header comment above). */
   --text-heading-1-size: 1.25rem;
   --text-heading-1-line-height: 1.75rem;
   --text-heading-1-weight: 600;
-  --text-heading-1-tracking: -0.2px;
-  /* Heading 2: 16/24 semibold. */
+  --text-heading-1-tracking: 0px;
+  /* Heading 2: 16/24 semibold (Studio/Type/Section Title). */
   --text-heading-2-size: 1rem;
   --text-heading-2-line-height: 1.5rem;
   --text-heading-2-weight: 600;
-  --text-heading-2-tracking: -0.1px;
-  /* Body: 15/20 regular (Body Medium = weight 500). */
-  --text-body-size: 0.9375rem;
+  --text-heading-2-tracking: 0px;
+  /* Body: 14/20 regular (Studio/Type/UI Primary Regular; the Medium and
+   * Semi Bold cuts are the same metrics at 500/600). */
+  --text-body-size: 0.875rem;
   --text-body-line-height: 1.25rem;
   --text-body-weight: 400;
   --text-body-tracking: 0px;
-  /* Label: 13/16 medium. */
-  --text-label-size: 0.8125rem;
+  /* Label: 12/16 medium (Studio/Type/UI Secondary Medium). */
+  --text-label-size: 0.75rem;
   --text-label-line-height: 1rem;
   --text-label-weight: 500;
-  --text-label-tracking: 0.1px;
-  /* Meta: 12/16 regular. */
+  --text-label-tracking: 0px;
+  /* Meta: 12/16 regular (Studio/Type/UI Secondary Regular). */
   --text-meta-size: 0.75rem;
   --text-meta-line-height: 1rem;
   --text-meta-weight: 400;
-  --text-meta-tracking: 0.1px;
-  /* Mono: 11/16 regular, --font-mono (Mono Medium = weight 500). */
-  --text-mono-size: 0.6875rem;
-  --text-mono-line-height: 1rem;
+  --text-meta-tracking: 0px;
+  /* Mono: 10/14 regular, --font-mono (Studio/Type/System Micro; System
+   * Micro Medium = the same metrics at 500). */
+  --text-mono-size: 0.625rem;
+  --text-mono-line-height: 0.875rem;
   --text-mono-weight: 400;
   --text-mono-tracking: 0px;
 }
 
 :root,
 [data-theme='light'] {
-  --background: #f8fafc;
+  --background: #f1f5f9;
   --foreground: #0f172a;
 
   /* Flat and raised panel fills. Both are white in light mode — the pair
-   * only separates visually in dark mode — but components must still pick
-   * the semantically right one so the dark theme comes out layered. */
+   * only separates visually against the (now slate-tinted) page behind
+   * them — but components must still pick the semantically right one so a
+   * future re-split of the dark pair comes out layered. The rebrand frame
+   * draws the dark pair COLLAPSED onto one value too (see the dark block);
+   * both entries stay because the seam is the token name, not today's
+   * value. */
   --surface: #ffffff;
   --surface-elevated: #ffffff;
 
+  /* derived: the frame draws no card/* entries; card keeps mirroring
+   * --surface (white over the slate page), with hover one step toward the
+   * page tint. */
   --card: #ffffff;
   --card-hover: #f8fafc;
   --card-foreground: #0f172a;
@@ -216,143 +272,197 @@
   --popover: #ffffff;
   --popover-foreground: #0f172a;
 
-  --primary: #8257e6;
-  /* derived (light only): the dark mode's hover is the light primary, so
-   * the light hover takes the dark primary — one step down the same ramp.
-   * The dark value is Figma's own. */
-  --primary-hover: #7c4fde;
+  /* The Studio brand blue ("blue-bright" in the frame's primitive ramp).
+   * White text on it measures 5.29:1 in both modes (same hex both modes,
+   * per the frame). */
+  --primary: #0065e3;
+  --primary-hover: #2668c5;
   --primary-foreground: #ffffff;
   /* Button default variant's focus-ring tone, measured against
-   * --background: 6.79:1 light / 7.23:1 dark (the dark values below carry
-   * no comment of their own — per this file's convention, a token's
-   * comment lives in the light block only). Literal hexes, not var()
-   * aliases, because the contrast tests parse hex directly (see
-   * src/__test-utils__/contrast.ts). A dedicated token, not --primary
-   * itself: the ring is drawn OUTSIDE the button (see button.module.css),
-   * so it only ever borders the page, and a violet a shade darker than
-   * --primary reads more clearly there than --primary's own value would. */
-  --primary-ring: #6d28d9;
-  --secondary: #f1f5f9;
+   * --background: 4.95:1 light / 7.75:1 dark against the 3:1 floor (the
+   * dark values below carry no comment of their own — per this file's
+   * convention, a token's comment lives in the light block only). Literal
+   * hexes, not var() aliases, because the contrast tests parse hex
+   * directly (see src/__test-utils__/contrast.ts). derived: the frame
+   * draws no ring-family entries beyond --ring itself; light takes the
+   * brand ramp's next step down (--primary-hover's own hex, duplicated as
+   * a literal on purpose), dark the ramp's light "blue-sky" tint — the
+   * ring is drawn OUTSIDE the button (see button.module.css), so it only
+   * ever borders the page. */
+  --primary-ring: #2668c5;
+  /* derived: the old light secondary equalled --muted, but the rebrand
+   * moved --background onto that same slate-50 — a secondary fill equal to
+   * the page would vanish. One step down the frame's neutral ramp
+   * (neutral-100) keeps it a visible fill (1.13:1 against the page) the
+   * way the old value was against the old page. Dark mirrors the move one
+   * step the OTHER way from its (card-equal) drawn muted — see the dark
+   * block. */
+  --secondary: #e2e8f0;
   --secondary-foreground: #0f172a;
-  /* derived (dark only): light muted equals light secondary in the
-   * collection, so dark muted follows dark secondary the same way. */
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
+  /* derived: the frame draws muted at slate-50 — the exact value the
+   * rebrand made the page itself — and its dark muted at the card surface.
+   * Muted is the kit's workhorse FILL (Skeleton, outline/ghost Button
+   * hover, Calendar's outside days, a dozen more), and a fill equal to its
+   * own backdrop vanishes: the same argument --secondary above already
+   * applies, so muted takes the same one-step correction and lands ON
+   * secondary's value — which is also upstream shadcn's own arrangement
+   * (its default theme ships muted == secondary). 1.13:1 against the page
+   * / 1.23:1 against the card in light, 1.22 / 1.35 in dark; every text
+   * seat stays clear (--muted-foreground on this fill is 8.40:1 light /
+   * 5.71:1 dark). tokens.test.ts pins the separation so a later value
+   * move cannot silently re-collapse it. */
+  --muted: #e2e8f0;
+  /* The frame collapses muted-foreground, subtle-foreground and
+   * code-foreground onto one slate-600 in light (and one slate-400 in
+   * dark). Adopted as drawn — the collapse is the design's own, and every
+   * pair still clears its floor (see --subtle-foreground below). */
+  --muted-foreground: #334155;
   /*
    * Table's header row is the only consumer (tokens.test.ts's leading-class
    * guard doesn't reach theme.css itself, but a grep confirms it — see
-   * table.module.css). Not the drawn value: each mode's drawn value failed
-   * the 4.5:1 AA floor against the header's own --surface fill (light
-   * #94a3b8 at 2.56:1, dark #667085 at 3.74:1), so both were replaced.
-   * AA leaves this token no room to read lighter than --muted-foreground in
-   * light mode (anything less saturated than ~this value fails against
-   * --surface's near-white), so light converges close to it; dark keeps a
-   * visibly dimmer, genuinely "subtler" step since --surface is dark enough
-   * to leave headroom. The ratios and the open designer question — pin
-   * AA-passing values in the Figma file — are in design-notes.md.
+   * table.module.css). The previous design's drawn values failed the 4.5:1
+   * AA floor against the header's own --surface fill and were replaced in
+   * code; the rebrand frame resolved that open question itself — its drawn
+   * values measure 10.35:1 light / 6.96:1 dark against --surface, so both
+   * modes are the frame's own again (they happen to converge with
+   * --muted-foreground; that collapse is the design's, see above).
    */
-  --subtle-foreground: #5f6f88;
-  --accent: #f3e8ff;
-  --accent-foreground: #6d28d9;
+  --subtle-foreground: #334155;
+  /* The brand-tinted fill+text pair (menus' hover/active rows, Badge's
+   * accent tone, Bubble). The drawn pair measures 4.68:1 light / 13.77:1
+   * dark — clears the 4.5:1 AA floor as drawn. */
+  --accent: #e6effa;
+  --accent-foreground: #2668c5;
   /*
    * The tint a row carries while it is selected. Table's row-state hooks
    * are the only consumer (see table.module.css). Its own token rather
    * than --muted or --accent because the Studio Data Table frame
-   * (40001455:6353) draws selection in neither: --accent is the violet
-   * brand tint, and --muted is a neutral slate the drawn value is visibly
+   * (40001455:6353) draws selection in neither: --accent is the brand
+   * tint, and --muted is a neutral slate the drawn value is visibly
    * bluer and one step stronger than — selection has to read as a state at
    * a glance across a column of rows, which a fill that close to the
    * page's own neutrals does not.
-   * Light is the frame's own drawn value. derived (dark only): the frame
-   * has no dark specimen, so dark takes the same hue and saturation at the
-   * lightness that puts it one clear step above --card-hover, the fill it
-   * has to stay distinguishable from. --foreground clears AA on both
-   * (14.2:1 light, 13.1:1 dark).
+   * Both modes are now drawn values: light from the Data Table frame, dark
+   * from the rebrand frame's studio-namespaced copy of the same token
+   * (--studio-color-selection-subtle — the only place a dark specimen
+   * exists; the kit-side name stays unprefixed like everything else).
+   * --foreground clears AA on both (14.2:1 light, 12.0:1 dark).
    */
   --selection-subtle: #dce7f2;
 
-  /* derived: no mockup node draws with destructive/*, so it aliases danger —
-   * one red, two names, both overridable separately. White text clears AA
-   * on both modes' reds (4.7:1 light, 4.6:1 dark). */
+  /* derived: no mockup node draws with destructive/*, so it aliases the
+   * frame's danger red — one red, two names, both overridable separately.
+   * The alias tracks the DRAWN danger (#e11d48 both modes), not the
+   * AA-corrected --danger below: destructive is a solid fill under white
+   * text (4.70:1, passes in both modes), so the label-driven correction
+   * that moved --danger does not apply to it. */
   --destructive: #e11d48;
   --destructive-foreground: #ffffff;
+  /* Badge's destructive-variant hover tone (see badge.module.css) — darker
+   * than --destructive so white text never drops under 4.5:1 on hover. Same
+   * hex both modes on purpose: a hover recipe that darkens by mixing toward
+   * --foreground works in light (foreground is dark) but LIGHTENS in dark
+   * mode instead (foreground flips to white there), so this token sidesteps
+   * that by not depending on --foreground at all. #be123c is the same
+   * literal --destructive-ring/--danger already carry — white on it
+   * measures 6.29:1 in both modes. */
+  --destructive-hover: #be123c;
   /* Button destructive variant's focus-ring tone, measured against
-   * --background: 6.01:1 light / 7.89:1 dark. Literal hexes, not var()
+   * --background: 5.74:1 light / 7.89:1 dark. Literal hexes, not var()
    * aliases, for the same reason as --primary-ring above: the contrast
    * tests parse hex directly (see src/__test-utils__/contrast.ts). The
    * ring is drawn outside the button, so it only ever borders the page. */
   --destructive-ring: #be123c;
 
   /*
-   * Link text token — Button's `link` variant, which has no drawn
-   * counterpart to align to: the mockups' Button panel draws no borderless
-   * text variant, so there is no specimen color to take. --primary itself
-   * measured 4.51:1 light
-   * (barely over the 4.5:1 AA floor for this 13px text — 0.005 of headroom,
-   * so close that a future one-step nudge to --background could silently
-   * fail it again) and 3.78:1 dark (a clear fail) against the page
-   * background the borderless variant sits on. derived: light takes
-   * --primary-hover's value instead of --primary's own (still the same
-   * violet family, one step darker) for real headroom — 4.98:1, not a
-   * borderline pass; dark takes a lighter tint of the same hue.
+   * Link text token — Button's `link` variant and Badge's, which have no
+   * drawn counterpart to align to. --primary itself passes the 4.5:1 AA
+   * floor against the page in light (4.83:1) but the convention set when
+   * this token was introduced stands: take the ramp's next step for real
+   * headroom rather than ride a value that a one-step nudge to
+   * --background could push under the floor. derived: light duplicates
+   * --primary-hover's hex (4.95:1) as a literal (the contrast tests parse
+   * hex, see above); dark takes the ramp's light "blue-sky" tint
+   * (7.75:1).
    */
-  --link-foreground: #7c4fde;
+  --link-foreground: #2668c5;
 
   /* Status colors with their -soft fills. The status colors themselves are
-   * consumed — Badge's dot and label text, Table's stale/restricted row
-   * rings; the four -soft fills are read by Badge's tone variants
-   * (success/warning/danger/info backgrounds, badge.module.css) and by
-   * Avatar's tone-by-variant fill matrix (avatar.module.css) - both paint a
-   * tinted surface: the -soft fill as background, the base status token as
-   * foreground text. Dark warning-soft and info-soft are corroborated by
-   * the workflow aliases that resolve to the same values; dark danger-soft
-   * and light warning-soft are drawn nowhere — derived: chosen to sit in
-   * the same tint family as their corroborated siblings, not from one
-   * reproducible mix recipe (the four -soft values don't share a single
-   * formula against their base hue). */
-  --success: #059669;
+   * consumed as 12px label text over the -soft fills (Badge's tone
+   * variants, Avatar's soft treatment) and as solid Avatar fills; the
+   * -soft fills also carry Table's stale/restricted row tints. Because
+   * they are label text, each base value must clear 4.5:1 over its own
+   * -soft fill, --card and --background — and four drawn values don't,
+   * which is where this file's WCAG ruling (see header) deviates from the
+   * frame:
+   *   - light success: drawn #059669 is 3.43:1 on its soft fill →
+   *     #047857, one step down the same green ramp (5.00/5.48/5.01 on
+   *     soft/card/bg);
+   *   - light warning: drawn #f59e0b is 1.96–2.15:1 everywhere → #b45309
+   *     (4.67/5.02/4.58) — amber simply has no AA-passing tone brighter
+   *     than this over near-white fills;
+   *   - light danger: drawn #e11d48 is 4.28:1 on its soft fill → #be123c
+   *     (5.72/6.29/5.74), the same hex the destructive ring already
+   *     carries;
+   *   - light info: drawn #2563eb PASSES (4.59:1 worst case) and is kept
+   *     as drawn — the floor is met, though with little headroom;
+   *   - dark: success #34d399, warning #f6c453 and info #60a5fa all pass
+   *     as drawn (8.05/10.03/6.62 worst case); danger #e11d48 fails
+   *     (3.63:1 on its soft fill) → #fb7185, the light rose tint one step
+   *     up (6.34:1 worst case).
+   * The -soft fills are the frame's own in both modes. */
+  --success: #047857;
   --success-soft: #e8f8f1;
-  --warning: #d97706;
-  --warning-soft: #fdf3e2;
-  --danger: #e11d48;
+  --warning: #b45309;
+  --warning-soft: #fff7d6;
+  --danger: #be123c;
   --danger-soft: #fff1f2;
-  --info: #0284c7;
-  --info-soft: #eaf6ff;
+  --info: #2563eb;
+  --info-soft: #eaf2ff;
   /* A palette entry, not a semantic: --info is the token a component reaches
    * for, and nothing in the kit reads this one. Kept because the collection
-   * names it separately from --info.
-   * derived (light only): dark is Figma's blue-400; light takes the same
-   * Tailwind ramp one step down (blue-500). */
-  --blue: #3b82f6;
+   * names it separately from --info; the rebrand pointed it at the brand
+   * ramp's mid blue (the frame's own `--blue` primitive). derived (dark
+   * only): the frame's primitives are mode-invariant, but a mid blue that
+   * reads on white doesn't on near-black, so dark takes the ramp's
+   * "blue-sky" tint, same move as --link-foreground. */
+  --blue: #2668c5;
 
   --border: #e2e8f0;
   --border-strong: #cbd5e1;
-  /* Field-control borders. Not derived: the mockups' Field set (frame
-   * 193:433) strokes every input/textarea/select with the border-strong
-   * value, so input carries it in both modes. */
+  /* Field-control borders. Not derived: the mockups' Field set strokes
+   * every input/textarea/select with the border-strong value, so input
+   * carries it in both modes (the rebrand frame collapses the dark border
+   * pair — see the dark block). */
   --input: #cbd5e1;
-  /* Focus color. Light from the MVP Foundations frame; dark is drawn by
-   * the Field focus specimens (frame 193:383 strokes focus with the dark
-   * primary value), so neither mode is derived. */
-  --ring: #8b5cf6;
+  /* Focus color, per the rebrand frame: the brand blue in light, the
+   * "blue-sky" tint in dark. 4.83:1 / 7.75:1 against the page — clears the
+   * 3:1 non-text floor the shared focus rings need. */
+  --ring: #0065e3;
 
-  /* Sidebar Navigation block. Palette only — no kit component reads these
-   * (app layout is a non-goal; see design-notes), they brand a consumer's
-   * own navigation chrome from the same surface as the rest.
-   * --sidebar/--sidebar-accent are each drawn by their own dark-mode mockup
-   * node; the other three are not — named individually below, per this
-   * file's derived-marker convention. */
-  --sidebar: #f1f5f9;
-  /* derived (dark only): follows dark --muted-foreground. */
-  --sidebar-foreground: #64748b;
+  /* Sidebar Navigation block. Read by the kit's Sidebar parts and offered
+   * for a consumer's own navigation chrome alike. The rebrand frame draws
+   * no sidebar entries, so the whole block is derived from the same-role
+   * tokens above: sidebar follows --muted, its foreground follows
+   * --muted-foreground, the active-item fill takes --surface (light) /
+   * --selection-subtle's value (dark), its foreground follows --foreground,
+   * and the border follows --border-strong — NOT --border, whose light
+   * value is the panel fill itself, which would erase SidebarSeparator,
+   * the menu-sub rail and the floating variant's outline (1.20:1 against
+   * the panel instead; dark's collapsed border family is border-strong
+   * already). tokens.test.ts pins the border/panel separation. */
+  --sidebar: #e2e8f0;
+  --sidebar-foreground: #334155;
   --sidebar-accent: #ffffff;
-  /* derived (dark only): follows dark --foreground. */
   --sidebar-accent-foreground: #0f172a;
-  /* derived (dark only): follows dark --border. */
-  --sidebar-border: #e2e8f0;
+  --sidebar-border: #cbd5e1;
 
   /* Also palette-only: the kit ships no code/pre component, so these exist
-   * for a consumer rendering code blocks beside kit parts. */
+   * for a consumer rendering code blocks beside kit parts. The foreground
+   * is the frame's own (the light collapse onto slate-600, see
+   * --muted-foreground); derived (both modes): the fill takes the page
+   * --background value, which reads one step darker than any surface a
+   * code block sits on. */
   --code-background: #f1f5f9;
   --code-foreground: #334155;
 
@@ -367,49 +477,55 @@
 
 [data-theme='dark'] {
   --background: #090b10;
-  --foreground: #f6f7f9;
-  --surface: #0f131b;
-  --surface-elevated: #131824;
-  --card: #111722;
-  --card-hover: #151c29;
-  --card-foreground: #f6f7f9;
-  --popover: #131824;
-  --popover-foreground: #f6f7f9;
-  --primary: #7c4fde;
-  --primary-hover: #8257e6;
+  --foreground: #ffffff;
+  /* The rebrand frame draws surface and surface-elevated COLLAPSED onto
+   * one slate-900 (overlays separate via --popover-border/-shadow, not
+   * fill) — adopted as drawn; see the light block's comment. */
+  --surface: #0f172a;
+  --surface-elevated: #0f172a;
+  --card: #0f172a;
+  --card-hover: #182338;
+  --card-foreground: #ffffff;
+  --popover: #0f172a;
+  --popover-foreground: #ffffff;
+  --primary: #0065e3;
+  --primary-hover: #2668c5;
   --primary-foreground: #ffffff;
-  --primary-ring: #a78bfa;
+  --primary-ring: #6ba5f0;
   --secondary: #1e293b;
-  --secondary-foreground: #f8fafc;
+  --secondary-foreground: #ffffff;
   --muted: #1e293b;
-  --muted-foreground: #8d96a8;
-  --subtle-foreground: #7a8396;
-  --accent: #2e1065;
-  --accent-foreground: #ede9fe;
-  --selection-subtle: #1c2d3f;
-  --destructive: #d63853;
+  --muted-foreground: #94a3b8;
+  --subtle-foreground: #94a3b8;
+  --accent: #00204d;
+  --accent-foreground: #e6effa;
+  --selection-subtle: #26384b;
+  --destructive: #e11d48;
   --destructive-foreground: #ffffff;
+  --destructive-hover: #be123c;
   --destructive-ring: #f87f8f;
-  --link-foreground: #a78bfa;
+  --link-foreground: #6ba5f0;
   --success: #34d399;
   --success-soft: #0d2921;
-  --warning: #fbbf24;
-  --warning-soft: #2e240a;
-  --danger: #d63853;
-  --danger-soft: #2b1119;
-  --info: #22d3ee;
-  --info-soft: #06262b;
-  --blue: #60a5fa;
-  --border: #222a38;
-  --border-strong: #303a4d;
-  --input: #303a4d;
-  --ring: #7c4fde;
-  --sidebar: #0c0f15;
-  --sidebar-foreground: #8d96a8;
-  --sidebar-accent: #172033;
-  --sidebar-accent-foreground: #f6f7f9;
-  --sidebar-border: #222a38;
-  --code-background: #0b1220;
+  --warning: #f6c453;
+  --warning-soft: #2b1e04;
+  --danger: #fb7185;
+  --danger-soft: #32111b;
+  --info: #60a5fa;
+  --info-soft: #111e2d;
+  --blue: #6ba5f0;
+  /* The frame draws border and border-strong collapsed onto one slate-600
+   * in dark; --input follows border-strong as in light. */
+  --border: #334155;
+  --border-strong: #334155;
+  --input: #334155;
+  --ring: #6ba5f0;
+  --sidebar: #1e293b;
+  --sidebar-foreground: #94a3b8;
+  --sidebar-accent: #26384b;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #334155;
+  --code-background: #090b10;
   --code-foreground: #e2e8f0;
 
   /* See the light block's color-scheme comment above for why this exists. */
@@ -419,49 +535,50 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --background: #090b10;
-    --foreground: #f6f7f9;
-    --surface: #0f131b;
-    --surface-elevated: #131824;
-    --card: #111722;
-    --card-hover: #151c29;
-    --card-foreground: #f6f7f9;
-    --popover: #131824;
-    --popover-foreground: #f6f7f9;
-    --primary: #7c4fde;
-    --primary-hover: #8257e6;
+    --foreground: #ffffff;
+    --surface: #0f172a;
+    --surface-elevated: #0f172a;
+    --card: #0f172a;
+    --card-hover: #182338;
+    --card-foreground: #ffffff;
+    --popover: #0f172a;
+    --popover-foreground: #ffffff;
+    --primary: #0065e3;
+    --primary-hover: #2668c5;
     --primary-foreground: #ffffff;
-    --primary-ring: #a78bfa;
+    --primary-ring: #6ba5f0;
     --secondary: #1e293b;
-    --secondary-foreground: #f8fafc;
+    --secondary-foreground: #ffffff;
     --muted: #1e293b;
-    --muted-foreground: #8d96a8;
-    --subtle-foreground: #7a8396;
-    --accent: #2e1065;
-    --accent-foreground: #ede9fe;
-    --selection-subtle: #1c2d3f;
-    --destructive: #d63853;
+    --muted-foreground: #94a3b8;
+    --subtle-foreground: #94a3b8;
+    --accent: #00204d;
+    --accent-foreground: #e6effa;
+    --selection-subtle: #26384b;
+    --destructive: #e11d48;
     --destructive-foreground: #ffffff;
+    --destructive-hover: #be123c;
     --destructive-ring: #f87f8f;
-    --link-foreground: #a78bfa;
+    --link-foreground: #6ba5f0;
     --success: #34d399;
     --success-soft: #0d2921;
-    --warning: #fbbf24;
-    --warning-soft: #2e240a;
-    --danger: #d63853;
-    --danger-soft: #2b1119;
-    --info: #22d3ee;
-    --info-soft: #06262b;
-    --blue: #60a5fa;
-    --border: #222a38;
-    --border-strong: #303a4d;
-    --input: #303a4d;
-    --ring: #7c4fde;
-    --sidebar: #0c0f15;
-    --sidebar-foreground: #8d96a8;
-    --sidebar-accent: #172033;
-    --sidebar-accent-foreground: #f6f7f9;
-    --sidebar-border: #222a38;
-    --code-background: #0b1220;
+    --warning: #f6c453;
+    --warning-soft: #2b1e04;
+    --danger: #fb7185;
+    --danger-soft: #32111b;
+    --info: #60a5fa;
+    --info-soft: #111e2d;
+    --blue: #6ba5f0;
+    --border: #334155;
+    --border-strong: #334155;
+    --input: #334155;
+    --ring: #6ba5f0;
+    --sidebar: #1e293b;
+    --sidebar-foreground: #94a3b8;
+    --sidebar-accent: #26384b;
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: #334155;
+    --code-background: #090b10;
     --code-foreground: #e2e8f0;
 
     /* See the light block's color-scheme comment above for why this exists. */
