@@ -103,7 +103,7 @@ Internal system functions and procedures that do not interact with actors direct
 
 - [x] `p1` - **ID**: `cpt-frontx-algo-mfe-loading-manifest-discovery`
 
-**Input**: `MfeEntry` with a resolved `MfManifest` (fields: `metaData.publicPath`, `shared[]` in the manifest's published enumeration order, `exposeAssets` per entry)
+**Input**: `MfeEntry` with a resolved `MfManifest` (fields: `metaData.publicPath`, `shared[]` in the manifest's published enumeration order — a given entry may optionally declare a content hash of its emitted chunk — `exposeAssets` per entry)
 
 **Output**: asset base URL, expose chunk filename, stylesheet paths, shared-dependency blob URLs
 

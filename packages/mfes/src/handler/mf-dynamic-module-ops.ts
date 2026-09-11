@@ -49,6 +49,39 @@ export function sourceImports(source: string, packageName: string): boolean {
 }
 
 /**
+ * Build the regex that matches the exactly two import forms this trust
+ * kernel handles, for one exact package name: `from "x"` (static imports/
+ * re-exports) and `import "x"` (bare side-effect imports). Quote style is
+ * captured (group 2) so callers can preserve it, and the specifier text is
+ * captured (group 3). Deliberately does not match `import("x")` (dynamic
+ * import) — neither this function's callers rewrite that form, so nothing
+ * may assert against it either.
+ *
+ * `rewriteBareSpecifier` and `findSurvivingDeclaredSharedDepSpecifier` both
+ * build on this single per-name pattern so the two can never drift apart:
+ * whatever the rewriter can rewrite for a given declared name is exactly
+ * what the assertion checks for that name's survival. A generic (no package
+ * name) form of this matcher intentionally does not live here — see
+ * `findUndeclaredWellFormedSpecifiers` in `mf-shared-dep-specifier-scan.ts`,
+ * which needs no interpolation and so carries no trust-kernel residency
+ * requirement.
+ *
+ * @safety-reviewed 2026-04-20
+ * @why `packageName` is regex-escaped before interpolation (same escaping
+ *      argument as `sourceImports`), so the constructed RegExp cannot be
+ *      exploited by adversarial inputs.
+ * @inputs `packageName` is a shared dep name from the resolved `MfManifest`
+ *         contract — bounded, author-declared, not user input.
+ */
+export function bareSpecifierPattern(packageName: string): RegExp {
+  const specifierPart = packageName.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+  return new RegExp(
+    String.raw`(from|import)(\s*["'])(${specifierPart})(["'])`,
+    'g',
+  );
+}
+
+/**
  * Rewrite a single bare specifier in source text. Handles both static
  * (`from "pkg"`) and side-effect (`import "pkg"`) import forms. Preserves
  * quote style (single or double). Matches exact package names only.
@@ -68,20 +101,54 @@ export function rewriteBareSpecifier(
   replacement: string,
 ): string {
   // @cpt-begin:cpt-frontx-algo-mfe-isolation-blob-url-chain:p1:inst-rewrite-shared
-  const escaped = packageName.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
-  const fromPattern = new RegExp(
-    String.raw`(from\s*["'])${escaped}(["'])`,
-    'g',
+  return source.replace(
+    bareSpecifierPattern(packageName),
+    `$1$2${replacement}$4`,
   );
-  let result = source.replace(fromPattern, `$1${replacement}$2`);
-  const sideEffectPattern = new RegExp(
-    String.raw`(import\s*["'])${escaped}(["'])`,
-    'g',
-  );
-  result = result.replace(sideEffectPattern, `$1${replacement}$2`);
-  return result;
   // @cpt-end:cpt-frontx-algo-mfe-isolation-blob-url-chain:p1:inst-rewrite-shared
 }
+
+/**
+ * Return the first shared-dependency name the manifest declares that still
+ * survives, as a bare specifier, a rewrite of `source` — checked in exactly
+ * the same two import forms the rewrite handles, `from "x"` and
+ * `import "x"`. This is the exact inverse of a rewrite performed per
+ * declared name (see `rewriteBareSpecifier` / `bareSpecifierPattern`), so it
+ * cannot mistake ordinary code for an import: it only ever tests for the
+ * literal declared names it is given, using the same escaped per-name
+ * pattern the rewriter itself uses. A dynamically imported specifier
+ * (`import("x")`) is outside this surface and is never matched, because the
+ * rewrite does not handle that form either.
+ *
+ * Undeclared specifiers are out of scope here by construction — only names
+ * `declaredNames` supplies are ever tested — see
+ * `findUndeclaredWellFormedSpecifiers` in `mf-shared-dep-specifier-scan.ts`
+ * for the separate, heuristic, warn-only scan over specifiers the manifest
+ * never declared.
+ *
+ * @safety-reviewed 2026-04-20
+ * @why Delegates to `sourceImports`, which regex-escapes each declared name
+ *      before interpolation (same escaping argument as `sourceImports`
+ *      itself), so the constructed RegExp cannot be exploited by
+ *      adversarial inputs.
+ * @inputs `source` is shared-dep chunk text already fetched from a
+ *         manifest-declared chunk URL — not user input. `declaredNames` is
+ *         the set of shared dep names declared on the resolved `MfManifest`
+ *         contract — bounded, author-declared, not user input.
+ */
+// @cpt-begin:cpt-frontx-algo-mfe-isolation-build-shared-dep-blob-urls:p1:inst-assert-shared-dep-no-bare-specifier
+export function findSurvivingDeclaredSharedDepSpecifier(
+  source: string,
+  declaredNames: Iterable<string>,
+): string | undefined {
+  for (const name of declaredNames) {
+    if (sourceImports(source, name)) {
+      return name;
+    }
+  }
+  return undefined;
+}
+// @cpt-end:cpt-frontx-algo-mfe-isolation-build-shared-dep-blob-urls:p1:inst-assert-shared-dep-no-bare-specifier
 
 /**
  * Dynamically import a blob URL and return the evaluated ES module record.

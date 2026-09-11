@@ -70,8 +70,8 @@
   },
   "dependencies": {
     "@gears-frontx/api": "0.3.0-alpha.2",
-    "@gears-frontx/gts-plugin": "0.3.0-alpha.5",
-    "@gears-frontx/mfes": "0.3.0-alpha.5",
+    "@gears-frontx/gts-plugin": "0.3.0-alpha.6",
+    "@gears-frontx/mfes": "0.3.0-alpha.6",
     "@gears-frontx/ui-kit": "0.4.0-alpha.2",
     "@hookform/resolvers": "5.2.2",
     "@iconify/react": "6.0.2",

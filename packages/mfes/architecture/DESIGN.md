@@ -57,7 +57,7 @@ Everything downstream of that boundary follows the same discipline. Extension-do
 
 | NFR ID | NFR Summary | Allocated To | Design Response | Verification Approach |
 |--------|-------------|--------------|-----------------|-----------------------|
-| `cpt-frontx-nfr-runtime-performance` | Runtime response-time and throughput targets | `cpt-frontx-component-mfe-runtime` | The lazy-import ABI resolver defers a chunk's fetch and evaluation until it is first exercised rather than eagerly at parent-load time, and shared-dependency source text is deduplicated across MFE loads through a cross-MFE LRU cache keyed by `name@version`, keeping the eager working set small without duplicating a singleton dependency. | Load-time benchmarks asserting the runtime's share of the PRD's p95 registration and on-demand-load thresholds, and that a lazy chunk is fetched only on first exercise. |
+| `cpt-frontx-nfr-runtime-performance` | Runtime response-time and throughput targets | `cpt-frontx-component-mfe-runtime` | The lazy-import ABI resolver defers a chunk's fetch and evaluation until it is first exercised rather than eagerly at parent-load time, and shared-dependency source text is deduplicated across MFE loads through a cross-MFE LRU cache keyed by an identifier for the producing build — a declared content hash of the emitted chunk when available, otherwise the resolved absolute chunk URL, which confines reuse to loads of the same microfrontend — so an already-loaded build is not refetched, keeping the eager working set small without duplicating a singleton dependency. | Load-time benchmarks asserting the runtime's share of the PRD's p95 registration and on-demand-load thresholds, and that a lazy chunk is fetched only on first exercise. |
 | `cpt-frontx-nfr-security` | Default-deny posture; validated admission | `cpt-frontx-component-mfe-runtime` | Every extension is denied admission until subset-rule contract matching and cardinality validation both succeed; every loaded unit evaluates inside its own module graph behind an audited trust-kernel file whose dynamic-import primitive rejects any URL that is not `blob:` or `data:`, confined there by a custom lint rule. | Admission audit asserting no extension is mounted without passing the full admission sequence, and a CI boundary check confirming dynamic-code primitives appear only in the trust-kernel file. |
 
 **ADR coverage references:**
@@ -73,6 +73,7 @@ Everything downstream of that boundary follows the same discipline. Extension-do
 - `cpt-frontx-adr-mfe-load-isolation`
 - `cpt-frontx-adr-lazy-import-resolution`
 - `cpt-frontx-adr-mfe-asset-discovery`
+- `cpt-frontx-adr-shared-dep-dedup-key`
 
 ### 1.3 Architecture Layers
 

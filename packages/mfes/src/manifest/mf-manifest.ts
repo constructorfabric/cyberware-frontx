@@ -48,6 +48,15 @@ export interface MfManifestShared {
    * Null when the chunk exports the module directly (no unwrap needed).
    */
   unwrapKey: string | null;
+  /**
+   * Optional content hash of this entry's emitted chunk, published by the
+   * producing build. When present, the runtime's cross-MFE shared-dep
+   * source-text cache keys reuse on this hash rather than on name@version
+   * alone, so reuse only ever happens between loads that agree on the
+   * identity of the emitted build (see `cpt-frontx-adr-shared-dep-dedup-key`).
+   * Absent for producing builds that have not adopted it.
+   */
+  contentHash?: string;
 }
 
 /**

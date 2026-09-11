@@ -310,8 +310,18 @@ describe('MfeHandlerMF — unresolved publicPath placeholder guard', () => {
 
 const PUBLIC_PATH = 'http://localhost:3099/';
 
-function sharedDep(name: string, chunkPath: string): MfManifestShared {
-  return { name, version: '1.0.0', chunkPath, unwrapKey: null };
+function sharedDep(
+  name: string,
+  chunkPath: string,
+  opts: { version?: string; contentHash?: string } = {}
+): MfManifestShared {
+  return {
+    name,
+    version: opts.version ?? '1.0.0',
+    chunkPath,
+    unwrapKey: null,
+    ...(opts.contentHash !== undefined ? { contentHash: opts.contentHash } : {}),
+  };
 }
 
 /**
@@ -1393,5 +1403,848 @@ describe('LruCache — capacity eviction and MRU re-insertion', () => {
   it('rejects a non-positive capacity', () => {
     expect(() => new LruCache<string, number>(0)).toThrow(RangeError);
     expect(() => new LruCache<string, number>(-1)).toThrow(RangeError);
+  });
+});
+
+/**
+ * Regression coverage for issue #621 / `cpt-frontx-adr-shared-dep-dedup-key`.
+ *
+ * The cross-MFE shared-dep source-text cache used to key solely on
+ * `name@version`. A shared-dep chunk is built per consuming microfrontend,
+ * so two manifests can legitimately declare the same name and version while
+ * shipping structurally different chunk bytes; whichever manifest's load
+ * reached the cache first served its chunk's text to every later manifest
+ * declaring the same name and version, leaving the later manifest with an
+ * unrewritten bare specifier baked into a `blob:` module and a silent mount
+ * failure. The fix (not implemented by these tests) keys reuse on a
+ * declared content hash when the manifest provides one, falls back to the
+ * resolved absolute chunk URL (which is unique per microfrontend) when it
+ * does not — emitting a one-time adoption notice per `name@version` and
+ * manifest id in that case — and asserts no bare specifier survives a
+ * shared-dep chunk's rewrite before minting its blob.
+ */
+describe('MfeHandlerMF — shared-dep cross-MFE cache key (issue #621)', () => {
+  const PUBLIC_PATH_A = 'http://localhost:4101/mfe-a/';
+  const PUBLIC_PATH_B = 'http://localhost:4102/mfe-b/';
+
+  function stubSuccessfulImport(): void {
+    blobModuleStub.current = {
+      default: { mount: (): void => {}, unmount: (): void => {} },
+    };
+  }
+
+  it('does not let a second manifest declaring the same name@version reuse the first manifest\'s shared-dep chunk text', async () => {
+    // dep-x@1.0.0 is built differently by each consuming microfrontend:
+    // MFE A's build externalizes 'helper-a', MFE B's build externalizes
+    // 'helper-b' — disjoint dependencies a name@version-only key cannot
+    // distinguish between.
+    const routes = {
+      [`${PUBLIC_PATH_A}assets/lifecycle.js`]: {
+        body: 'import "dep-x";\nexport default {};',
+      },
+      [`${PUBLIC_PATH_A}shared/dep-x.js`]: {
+        body: 'import "helper-a";\nexport const depx = 1;',
+      },
+      [`${PUBLIC_PATH_A}shared/helper-a.js`]: {
+        body: 'export const helpera = 1;',
+      },
+      [`${PUBLIC_PATH_B}assets/lifecycle.js`]: {
+        body: 'import "dep-x";\nexport default {};',
+      },
+      [`${PUBLIC_PATH_B}shared/dep-x.js`]: {
+        body: 'import "helper-b";\nexport const depx = 1;',
+      },
+      [`${PUBLIC_PATH_B}shared/helper-b.js`]: {
+        body: 'export const helperb = 1;',
+      },
+    };
+    const { fetchImpl } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    const minted = captureMintedSources();
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const manifestA = {
+      ...buildManifest(PUBLIC_PATH_A, [
+        sharedDep('dep-x', 'shared/dep-x.js'),
+        sharedDep('helper-a', 'shared/helper-a.js'),
+      ]),
+      id: 'mock.mfe.mf_manifest.v1~test.manifest-a.v1',
+    };
+    const manifestB = {
+      ...buildManifest(PUBLIC_PATH_B, [
+        sharedDep('dep-x', 'shared/dep-x.js'),
+        sharedDep('helper-b', 'shared/helper-b.js'),
+      ]),
+      id: 'mock.mfe.mf_manifest.v1~test.manifest-b.v1',
+    };
+
+    try {
+      await handler.load(buildEntry(manifestA), 'ext-dedup-a');
+      await handler.load(buildEntry(manifestB), 'ext-dedup-b');
+
+      // The whole point: every minted module, across BOTH loads, must be
+      // rewritten against its own manifest's declared shared[] — never
+      // another manifest's. Today, B's dep-x chunk is served A's cached
+      // text (which externalizes 'helper-a', a package B never declared),
+      // so 'helper-a' survives unrewritten inside B's dep-x blob.
+      const sources = await minted.sources();
+      const allForeign = sources.flatMap(foreignSpecifiers);
+      expect(allForeign).toEqual([]);
+    } finally {
+      blobModuleStub.current = undefined;
+      minted.restore();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('reuses cached shared-dep text across manifests when their declared contentHash matches', async () => {
+    const routes = {
+      [`${PUBLIC_PATH_A}assets/lifecycle.js`]: {
+        body: 'import "dep-x";\nexport default {};',
+      },
+      [`${PUBLIC_PATH_A}shared/dep-x.js`]: {
+        body: 'export const depx = 1;',
+      },
+      [`${PUBLIC_PATH_B}assets/lifecycle.js`]: {
+        body: 'import "dep-x";\nexport default {};',
+      },
+      [`${PUBLIC_PATH_B}shared/dep-x.js`]: {
+        body: 'export const depx = 1;',
+      },
+    };
+    const { fetchImpl, callCounts } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const manifestA = buildManifest(PUBLIC_PATH_A, [
+      sharedDep('dep-x', 'shared/dep-x.js', { contentHash: 'same-hash' }),
+    ]);
+    const manifestB = buildManifest(PUBLIC_PATH_B, [
+      sharedDep('dep-x', 'shared/dep-x.js', { contentHash: 'same-hash' }),
+    ]);
+
+    try {
+      await handler.load(buildEntry(manifestA), 'ext-hash-match-a');
+      await handler.load(buildEntry(manifestB), 'ext-hash-match-b');
+
+      expect(fetchesFor(callCounts, `${PUBLIC_PATH_A}shared/dep-x.js`)).toBe(
+        1
+      );
+      // B's load must take the cache hit: no second fetch for its own
+      // resolved chunk URL.
+      expect(fetchesFor(callCounts, `${PUBLIC_PATH_B}shared/dep-x.js`)).toBe(
+        0
+      );
+    } finally {
+      blobModuleStub.current = undefined;
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('does not reuse cached shared-dep text across manifests when their declared contentHash differs', async () => {
+    const routes = {
+      [`${PUBLIC_PATH_A}assets/lifecycle.js`]: {
+        body: 'import "dep-x";\nexport default {};',
+      },
+      [`${PUBLIC_PATH_A}shared/dep-x.js`]: {
+        body: 'export const depx = 1;',
+      },
+      [`${PUBLIC_PATH_B}assets/lifecycle.js`]: {
+        body: 'import "dep-x";\nexport default {};',
+      },
+      [`${PUBLIC_PATH_B}shared/dep-x.js`]: {
+        body: 'export const depx = 1;',
+      },
+    };
+    const { fetchImpl, callCounts } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const manifestA = buildManifest(PUBLIC_PATH_A, [
+      sharedDep('dep-x', 'shared/dep-x.js', { contentHash: 'hash-a' }),
+    ]);
+    const manifestB = buildManifest(PUBLIC_PATH_B, [
+      sharedDep('dep-x', 'shared/dep-x.js', { contentHash: 'hash-b' }),
+    ]);
+
+    try {
+      await handler.load(buildEntry(manifestA), 'ext-hash-mismatch-a');
+      await handler.load(buildEntry(manifestB), 'ext-hash-mismatch-b');
+
+      // Each manifest's declared hash disagrees with the other's, so each
+      // load must fetch its own text rather than reuse the other's.
+      expect(fetchesFor(callCounts, `${PUBLIC_PATH_A}shared/dep-x.js`)).toBe(
+        1
+      );
+      expect(fetchesFor(callCounts, `${PUBLIC_PATH_B}shared/dep-x.js`)).toBe(
+        1
+      );
+    } finally {
+      blobModuleStub.current = undefined;
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('falls back to the resolved chunk URL and emits exactly one adoption notice per name@version + manifest id when contentHash is absent', async () => {
+    const routes = {
+      [`${PUBLIC_PATH_A}assets/lifecycle.js`]: {
+        body: 'import "dep-y";\nexport default {};',
+      },
+      [`${PUBLIC_PATH_A}shared/dep-y.js`]: {
+        body: 'export const depy = 1;',
+      },
+      [`${PUBLIC_PATH_B}assets/lifecycle.js`]: {
+        body: 'import "dep-y";\nexport default {};',
+      },
+      [`${PUBLIC_PATH_B}shared/dep-y.js`]: {
+        body: 'export const depy = 1;',
+      },
+    };
+    const { fetchImpl, callCounts } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const manifestA = {
+      ...buildManifest(PUBLIC_PATH_A, [sharedDep('dep-y', 'shared/dep-y.js')]),
+      id: 'mock.mfe.mf_manifest.v1~test.notice-a.v1',
+    };
+    const manifestB = {
+      ...buildManifest(PUBLIC_PATH_B, [sharedDep('dep-y', 'shared/dep-y.js')]),
+      id: 'mock.mfe.mf_manifest.v1~test.notice-b.v1',
+    };
+
+    try {
+      // Two loads of the SAME manifest: same resolved chunk URL, so the
+      // fallback key reuses text — only the FIRST load's population should
+      // ever emit the notice for this name@version + manifest id.
+      await handler.load(buildEntry(manifestA), 'ext-notice-a-1');
+      await handler.load(buildEntry(manifestA), 'ext-notice-a-2');
+      expect(fetchesFor(callCounts, `${PUBLIC_PATH_A}shared/dep-y.js`)).toBe(
+        1
+      );
+
+      // A load of a DIFFERENT manifest: different resolved chunk URL, so
+      // the fallback key does NOT reuse A's text, and gets its own
+      // one-time notice keyed on its own manifest id.
+      await handler.load(buildEntry(manifestB), 'ext-notice-b-1');
+      expect(fetchesFor(callCounts, `${PUBLIC_PATH_B}shared/dep-y.js`)).toBe(
+        1
+      );
+
+      const depYNotices = warnSpy.mock.calls.filter((args) =>
+        args.some((arg) => String(arg).includes('dep-y'))
+      );
+      // Exactly one notice per (name@version, manifest id) pair — two
+      // distinct manifests declared dep-y, so exactly two notices total,
+      // never one per load (which would be three).
+      expect(depYNotices.length).toBe(2);
+    } finally {
+      blobModuleStub.current = undefined;
+      warnSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('bounds the adoption-notice ledger: once more distinct pairs than its capacity have been observed, the earliest pair is renotified', async () => {
+    // The ledger's capacity is an implementation detail (not exported), so
+    // this drives enough distinct (name@version, manifest id) pairs to
+    // guarantee eviction regardless of the exact number chosen, then
+    // re-triggers the FIRST pair and asserts it is renotified — behaviour
+    // that is only possible if its ledger entry was evicted.
+    const PAIR_COUNT = 100;
+    const routes: Record<string, { body: string }> = {};
+    for (let i = 0; i < PAIR_COUNT; i++) {
+      const publicPath = `http://localhost:5${String(i).padStart(3, '0')}/mfe/`;
+      routes[`${publicPath}assets/lifecycle.js`] = {
+        body: `import "dep-bound-${i}";\nexport default {};`,
+      };
+      routes[`${publicPath}shared/dep-bound-${i}.js`] = {
+        body: `export const v = ${i};`,
+      };
+    }
+    const { fetchImpl } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const manifestFor = (i: number): MfManifest => ({
+      ...buildManifest(`http://localhost:5${String(i).padStart(3, '0')}/mfe/`, [
+        sharedDep(`dep-bound-${i}`, `shared/dep-bound-${i}.js`),
+      ]),
+      id: `mock.mfe.mf_manifest.v1~test.notice-bound-${i}.v1`,
+    });
+
+    const noticeCountFor = (i: number): number =>
+      warnSpy.mock.calls.filter((args) =>
+        args.some((arg) => String(arg).includes(`dep-bound-${i}@`))
+      ).length;
+
+    try {
+      for (let i = 0; i < PAIR_COUNT; i++) {
+        await handler.load(buildEntry(manifestFor(i)), `ext-notice-bound-${i}`);
+      }
+      expect(noticeCountFor(0)).toBe(1);
+
+      // Re-load pair 0. If the ledger were unbounded, this would still be
+      // deduplicated (no second notice). Because it is LRU-bounded well
+      // under PAIR_COUNT, pair 0's entry has been evicted by the later
+      // pairs, so it is renotified.
+      await handler.load(buildEntry(manifestFor(0)), 'ext-notice-bound-0-again');
+      expect(noticeCountFor(0)).toBe(2);
+    } finally {
+      blobModuleStub.current = undefined;
+      warnSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('fails the load when a DECLARED shared-dependency name survives rewriting, naming the chunk, the specifier, and the microfrontend', async () => {
+    // Under normal operation this path is unreachable: dependency-order
+    // resolution (`createBlobUrlsInDependencyOrder`) guarantees every
+    // shared dep a chunk imports already has a blob URL by the time that
+    // chunk is rewritten, so `rewriteBareSpecifiers` always removes a
+    // declared name. The only way to exercise the "declared name survives"
+    // branch is to simulate the rewrite step itself failing — a defect this
+    // assertion exists specifically to catch, per
+    // `inst-assert-shared-dep-no-bare-specifier` (the exact inverse of the
+    // per-name rewrite).
+    const routes = {
+      [`${PUBLIC_PATH}assets/lifecycle.js`]: {
+        body: 'import "dep-b";\nexport default {};',
+      },
+      [`${PUBLIC_PATH}shared/dep-a.js`]: {
+        body: 'export const a = 1;',
+      },
+      [`${PUBLIC_PATH}shared/dep-b.js`]: {
+        body: 'import "dep-a";\nexport const b = 1;',
+      },
+    };
+    const { fetchImpl } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    stubSuccessfulImport();
+
+    const rewriteSpy = vi
+      .spyOn(
+        MfeHandlerMF.prototype as unknown as {
+          rewriteBareSpecifiers: (
+            source: string,
+            blobUrls: Map<string, string>
+          ) => string;
+        },
+        'rewriteBareSpecifiers'
+      )
+      .mockImplementation((source: string) => source);
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const entry = buildEntry(
+      buildManifest(PUBLIC_PATH, [
+        sharedDep('dep-a', 'shared/dep-a.js'),
+        sharedDep('dep-b', 'shared/dep-b.js'),
+      ])
+    );
+
+    let thrown: unknown;
+    try {
+      await handler.load(entry, 'ext-declared-bare-specifier-survives');
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(MfeLoadError);
+    const message = (thrown as Error).message;
+    expect(message).toContain('dep-b');
+    expect(message).toContain('dep-a');
+    expect(message).toContain('ext-declared-bare-specifier-survives');
+
+    blobModuleStub.current = undefined;
+    rewriteSpy.mockRestore();
+    fetchSpy.mockRestore();
+  });
+
+  it('does not trip the bare-specifier detector on a dynamic import()', async () => {
+    // `rewriteBareSpecifier` does not handle the `import("x")` form, so the
+    // assertion must not either — otherwise a chunk using dynamic import
+    // for an undeclared, genuinely-external package would fail a load that
+    // was never broken.
+    const routes = {
+      [`${PUBLIC_PATH}assets/lifecycle.js`]: {
+        body: 'import "dep-w";\nexport default {};',
+      },
+      [`${PUBLIC_PATH}shared/dep-w.js`]: {
+        body: 'export const w = () => import("some-pkg");',
+      },
+    };
+    const { fetchImpl } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const entry = buildEntry(
+      buildManifest(PUBLIC_PATH, [sharedDep('dep-w', 'shared/dep-w.js')])
+    );
+
+    await expect(
+      handler.load(entry, 'ext-dynamic-import-untouched')
+    ).resolves.toBeDefined();
+
+    blobModuleStub.current = undefined;
+    fetchSpy.mockRestore();
+  });
+});
+
+/**
+ * `findUndeclaredWellFormedSpecifiers` (`mf-shared-dep-specifier-scan.ts`) —
+ * the heuristic, warn-only half of the amended
+ * `cpt-frontx-algo-mfe-isolation-build-shared-dep-blob-urls` algorithm
+ * (`inst-if-undeclared-specifier` / `inst-warn-undeclared-specifier`).
+ *
+ * This half must NEVER fail a load: it reads chunk text without parsing it,
+ * so it cannot distinguish an ordinary string literal from an actual
+ * import. That is exactly the defect the REJECTED prior design had — it
+ * called the generic (no-package-name) form of the trust kernel's
+ * `bareSpecifierPattern` and failed the load on whatever it matched,
+ * which took down every microfrontend on ordinary code containing the word
+ * "import" inside a string (issue reproduced below). The decided design
+ * keeps the generic scan, but demotes it to a `console.warn` and adds a
+ * well-formed-specifier filter (no whitespace, quote, parenthesis, colon,
+ * or line break) that rejects everything the reproducer would have matched.
+ */
+describe('MfeHandlerMF — undeclared shared-dep specifier diagnostic (warn, never fail)', () => {
+  function stubSuccessfulImport(): void {
+    blobModuleStub.current = {
+      default: { mount: (): void => {}, unmount: (): void => {} },
+    };
+  }
+
+  /**
+   * Fixtures in this block declare no `contentHash`, so every load also
+   * emits the unrelated one-time "carries no contentHash" adoption notice
+   * (`inst-emit-adoption-notice`) through the same `console.warn` spy. Only
+   * calls naming the undeclared-specifier diagnostic itself
+   * (`inst-warn-undeclared-specifier`) are relevant here.
+   */
+  function undeclaredSpecifierWarnings(warnSpy: {
+    mock: { calls: unknown[][] };
+  }): string[] {
+    return warnSpy.mock.calls
+      .map((args: unknown[]) => String(args[0]))
+      .filter((message: string) => message.includes('not declared in manifest.shared[]'));
+  }
+
+  it('warns naming the chunk, specifier, and microfrontend when an undeclared specifier survives — the issue #621 symptom (react-redux surviving where only @reduxjs/toolkit is declared)', async () => {
+    const routes = {
+      [`${PUBLIC_PATH}assets/lifecycle.js`]: {
+        body: 'import "dep-toolkit";\nexport default {};',
+      },
+      [`${PUBLIC_PATH}shared/dep-toolkit.js`]: {
+        body: 'import { createSlice } from "react-redux";\nexport const t = 1;',
+      },
+    };
+    const { fetchImpl } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const entry = buildEntry(
+      buildManifest(PUBLIC_PATH, [
+        sharedDep('@reduxjs/toolkit', 'shared/dep-toolkit.js'),
+      ])
+    );
+
+    await expect(
+      handler.load(entry, 'ext-undeclared-react-redux')
+    ).resolves.toBeDefined();
+
+    const undeclaredWarning = undeclaredSpecifierWarnings(warnSpy).find((message) =>
+      message.includes('react-redux')
+    );
+    expect(undeclaredWarning).toBeDefined();
+    expect(undeclaredWarning).toContain('@reduxjs/toolkit');
+    expect(undeclaredWarning).toContain('react-redux');
+    expect(undeclaredWarning).toContain('ext-undeclared-react-redux');
+
+    blobModuleStub.current = undefined;
+    warnSpy.mockRestore();
+    fetchSpy.mockRestore();
+  });
+
+  it('warns on an undeclared side-effect import — import "some-polyfill"', async () => {
+    const routes = {
+      [`${PUBLIC_PATH}assets/lifecycle.js`]: {
+        body: 'import "dep-poly";\nexport default {};',
+      },
+      [`${PUBLIC_PATH}shared/dep-poly.js`]: {
+        body: 'import "some-polyfill";\nexport const p = 1;',
+      },
+    };
+    const { fetchImpl } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const entry = buildEntry(
+      buildManifest(PUBLIC_PATH, [sharedDep('dep-poly', 'shared/dep-poly.js')])
+    );
+
+    await expect(
+      handler.load(entry, 'ext-undeclared-side-effect')
+    ).resolves.toBeDefined();
+
+    const undeclaredWarning = warnSpy.mock.calls.find((args) =>
+      String(args[0]).includes('some-polyfill')
+    );
+    expect(undeclaredWarning).toBeDefined();
+
+    blobModuleStub.current = undefined;
+    warnSpy.mockRestore();
+    fetchSpy.mockRestore();
+  });
+
+  it('warns on an undeclared scoped specifier with a subpath — from "@scope/pkg/sub"', async () => {
+    const routes = {
+      [`${PUBLIC_PATH}assets/lifecycle.js`]: {
+        body: 'import "dep-scoped";\nexport default {};',
+      },
+      [`${PUBLIC_PATH}shared/dep-scoped.js`]: {
+        body: 'import { helper } from "@scope/pkg/sub";\nexport const s = 1;',
+      },
+    };
+    const { fetchImpl } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const entry = buildEntry(
+      buildManifest(PUBLIC_PATH, [
+        sharedDep('dep-scoped', 'shared/dep-scoped.js'),
+      ])
+    );
+
+    await expect(
+      handler.load(entry, 'ext-undeclared-scoped-subpath')
+    ).resolves.toBeDefined();
+
+    const undeclaredWarning = warnSpy.mock.calls.find((args) =>
+      String(args[0]).includes('@scope/pkg/sub')
+    );
+    expect(undeclaredWarning).toBeDefined();
+
+    blobModuleStub.current = undefined;
+    warnSpy.mockRestore();
+    fetchSpy.mockRestore();
+  });
+
+  it('does not warn and does not fail on the exact issue reproducer — the word "import" occurring inside ordinary string literals', async () => {
+    // This is the REJECTED design's failure mode, reproduced verbatim: none
+    // of these lines contain an actual import of an unresolved package —
+    // "import" and "from" only ever appear as substrings of string VALUES.
+    // The old generic `findSurvivingBareSharedDepSpecifiers` matched the
+    // keyword-then-quote adjacency regardless of context and took the load
+    // down; the well-formedness filter here rejects every resulting
+    // "specifier" candidate (multi-word text containing spaces, parens, and
+    // newlines is never well-formed as a package module specifier).
+    const reproducerSource = [
+      "const KEY = 'import';",
+      "function f(a) { return a.indexOf('import', 0); }",
+      "const msg = 'use A instead of B';",
+      'export const q = 1;',
+    ].join('\n');
+    const routes = {
+      [`${PUBLIC_PATH}assets/lifecycle.js`]: {
+        body: 'import "dep-repro";\nexport default {};',
+      },
+      [`${PUBLIC_PATH}shared/dep-repro.js`]: {
+        body: reproducerSource,
+      },
+    };
+    const { fetchImpl } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const entry = buildEntry(
+      buildManifest(PUBLIC_PATH, [sharedDep('dep-repro', 'shared/dep-repro.js')])
+    );
+
+    await expect(
+      handler.load(entry, 'ext-reproducer-no-false-positive')
+    ).resolves.toBeDefined();
+
+    expect(undeclaredSpecifierWarnings(warnSpy)).toEqual([]);
+
+    blobModuleStub.current = undefined;
+    warnSpy.mockRestore();
+    fetchSpy.mockRestore();
+  });
+
+  it('does not warn and does not fail on real bundled chunk excerpts containing @reduxjs/toolkit and a @gears-frontx/* package as DECLARED shared deps', async () => {
+    // Excerpts are copied verbatim from real, already-built dist output —
+    // not hand-written — precisely because a synthetic fixture is what let
+    // the rejected design's false-positive bug through undetected:
+    //  - '@reduxjs/toolkit' import line: node_modules/recharts/es6/state/mouseEventsMiddleware.js:1
+    //  - '@gears-frontx/api' + '@gears-frontx/state' import lines:
+    //    template-shell/packages/framework/dist/index.js:15-16
+    // Each excerpt is the chunk of a CONSUMER dep, distinct from the
+    // package it imports, so declaring the imported names does not create a
+    // self-import.
+    const rechartsExcerpt =
+      "import { createAction, createListenerMiddleware } from '@reduxjs/toolkit';\nexport const mw = 1;";
+    const frameworkExcerpt =
+      '// src/createFrontX.ts\nimport { getStore, registerSlice } from "@gears-frontx/state";\nimport { apiRegistry } from "@gears-frontx/api";\nexport const useApi = 1;';
+    const routes = {
+      [`${PUBLIC_PATH}assets/lifecycle.js`]: {
+        body: 'import "consumer-recharts";\nimport "consumer-framework";\nexport default {};',
+      },
+      [`${PUBLIC_PATH}shared/toolkit.js`]: { body: 'export const rtk = 1;' },
+      [`${PUBLIC_PATH}shared/state.js`]: { body: 'export const st = 1;' },
+      [`${PUBLIC_PATH}shared/api.js`]: { body: 'export const api = 1;' },
+      [`${PUBLIC_PATH}shared/consumer-recharts.js`]: { body: rechartsExcerpt },
+      [`${PUBLIC_PATH}shared/consumer-framework.js`]: { body: frameworkExcerpt },
+    };
+    const { fetchImpl } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const entry = buildEntry(
+      buildManifest(PUBLIC_PATH, [
+        sharedDep('@reduxjs/toolkit', 'shared/toolkit.js'),
+        sharedDep('@gears-frontx/state', 'shared/state.js'),
+        sharedDep('@gears-frontx/api', 'shared/api.js'),
+        sharedDep('consumer-recharts', 'shared/consumer-recharts.js'),
+        sharedDep('consumer-framework', 'shared/consumer-framework.js'),
+      ])
+    );
+
+    await expect(
+      handler.load(entry, 'ext-real-bundle-excerpts')
+    ).resolves.toBeDefined();
+
+    expect(undeclaredSpecifierWarnings(warnSpy)).toEqual([]);
+
+    blobModuleStub.current = undefined;
+    warnSpy.mockRestore();
+    fetchSpy.mockRestore();
+  });
+
+  it('does not warn and does not fail on a fully rewritten source where every specifier is already a blob: URL', async () => {
+    const routes = {
+      [`${PUBLIC_PATH}assets/lifecycle.js`]: {
+        body: 'import "dep-leaf";\nimport "dep-top";\nexport default {};',
+      },
+      [`${PUBLIC_PATH}shared/dep-leaf.js`]: {
+        body: 'export const leaf = 1;',
+      },
+      [`${PUBLIC_PATH}shared/dep-top.js`]: {
+        // Genuinely rewritten by the time `dep-top` is processed — `dep-leaf`
+        // already has a blob URL, and the resulting source's only surviving
+        // specifier is that minted blob: URL.
+        body: 'import "dep-leaf";\nexport const top = 1;',
+      },
+    };
+    const { fetchImpl } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const entry = buildEntry(
+      buildManifest(PUBLIC_PATH, [
+        sharedDep('dep-leaf', 'shared/dep-leaf.js'),
+        sharedDep('dep-top', 'shared/dep-top.js'),
+      ])
+    );
+
+    await expect(
+      handler.load(entry, 'ext-fully-rewritten-no-warn')
+    ).resolves.toBeDefined();
+
+    expect(undeclaredSpecifierWarnings(warnSpy)).toEqual([]);
+
+    blobModuleStub.current = undefined;
+    warnSpy.mockRestore();
+    fetchSpy.mockRestore();
+  });
+
+  it('does not warn and does not fail on a dynamic import() of an undeclared package — outside the rewrite/assert/warn surface entirely', async () => {
+    const routes = {
+      [`${PUBLIC_PATH}assets/lifecycle.js`]: {
+        body: 'import "dep-dynamic";\nexport default {};',
+      },
+      [`${PUBLIC_PATH}shared/dep-dynamic.js`]: {
+        body: 'export const d = () => import("react-redux");',
+      },
+    };
+    const { fetchImpl } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const entry = buildEntry(
+      buildManifest(PUBLIC_PATH, [
+        sharedDep('dep-dynamic', 'shared/dep-dynamic.js'),
+      ])
+    );
+
+    await expect(
+      handler.load(entry, 'ext-dynamic-import-silent')
+    ).resolves.toBeDefined();
+
+    expect(undeclaredSpecifierWarnings(warnSpy)).toEqual([]);
+
+    blobModuleStub.current = undefined;
+    warnSpy.mockRestore();
+    fetchSpy.mockRestore();
+  });
+
+  it('does not fail when a DECLARED specifier appears textually as "from \\"react\\"" inside a string literal — the rewriter already substituted the real import, so nothing bare survives', async () => {
+    const routes = {
+      [`${PUBLIC_PATH}assets/lifecycle.js`]: {
+        body: 'import "dep-quoted";\nexport default {};',
+      },
+      [`${PUBLIC_PATH}shared/react.js`]: {
+        body: 'export const r = 1;',
+      },
+      [`${PUBLIC_PATH}shared/dep-quoted.js`]: {
+        // The real import of 'react' is textually identical to the string
+        // literal below, so the rewrite step — which is purely textual —
+        // substitutes BOTH occurrences once 'react' has a blob URL. Nothing
+        // bare survives either the per-name assertion or the
+        // undeclared-specifier scan.
+        body: 'import "react";\nconst s = \'from "react"\';\nexport const q = 1;',
+      },
+    };
+    const { fetchImpl } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const entry = buildEntry(
+      buildManifest(PUBLIC_PATH, [
+        sharedDep('react', 'shared/react.js'),
+        sharedDep('dep-quoted', 'shared/dep-quoted.js'),
+      ])
+    );
+
+    await expect(
+      handler.load(entry, 'ext-quoted-declared-name')
+    ).resolves.toBeDefined();
+
+    expect(undeclaredSpecifierWarnings(warnSpy)).toEqual([]);
+
+    blobModuleStub.current = undefined;
+    warnSpy.mockRestore();
+    fetchSpy.mockRestore();
+  });
+
+  it('does not warn on a relative specifier like "./local-thing" — not a package module specifier', async () => {
+    const routes = {
+      [`${PUBLIC_PATH}assets/lifecycle.js`]: {
+        body: 'import "dep-relative";\nexport default {};',
+      },
+      [`${PUBLIC_PATH}shared/dep-relative.js`]: {
+        body: 'import "./local-thing";\nexport const rel = 1;',
+      },
+    };
+    const { fetchImpl } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const entry = buildEntry(
+      buildManifest(PUBLIC_PATH, [
+        sharedDep('dep-relative', 'shared/dep-relative.js'),
+      ])
+    );
+
+    await expect(
+      handler.load(entry, 'ext-relative-no-warn')
+    ).resolves.toBeDefined();
+
+    expect(undeclaredSpecifierWarnings(warnSpy)).toEqual([]);
+
+    blobModuleStub.current = undefined;
+    warnSpy.mockRestore();
+    fetchSpy.mockRestore();
+  });
+
+  it('does not warn on a bare comma fragment — not a package module specifier', async () => {
+    const routes = {
+      [`${PUBLIC_PATH}assets/lifecycle.js`]: {
+        body: 'import "dep-fragment";\nexport default {};',
+      },
+      [`${PUBLIC_PATH}shared/dep-fragment.js`]: {
+        body: 'import ",";\nexport const frag = 1;',
+      },
+    };
+    const { fetchImpl } = createFetchRouter(routes);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(fetchImpl as typeof fetch);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubSuccessfulImport();
+
+    const handler = new MfeHandlerMF(ENTRY_BASE_ID, { retries: 0 });
+    const entry = buildEntry(
+      buildManifest(PUBLIC_PATH, [
+        sharedDep('dep-fragment', 'shared/dep-fragment.js'),
+      ])
+    );
+
+    await expect(
+      handler.load(entry, 'ext-fragment-no-warn')
+    ).resolves.toBeDefined();
+
+    expect(undeclaredSpecifierWarnings(warnSpy)).toEqual([]);
+
+    blobModuleStub.current = undefined;
+    warnSpy.mockRestore();
+    fetchSpy.mockRestore();
   });
 });

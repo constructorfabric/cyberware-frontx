@@ -51,7 +51,7 @@
           "version": {
             "type": "string",
             "minLength": 1,
-            "description": "Concrete version resolved from node_modules (e.g. '19.2.4'). Same name+version across MFEs means same source text — the handler's sourceTextCache deduplicates."
+            "description": "Concrete version resolved from node_modules (e.g. '19.2.4'). Identifies the package input only — it does not imply identical source text across MFEs, since each MFE builds its own chunk. Cross-MFE reuse of that chunk's text is governed by 'contentHash', not by 'version' alone."
           },
           "chunkPath": {
             "type": "string",
@@ -64,6 +64,11 @@
               { "type": "string", "minLength": 1 },
               { "type": "null" }
             ]
+          },
+          "contentHash": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional content hash of this entry's emitted chunk, published by the producing build. Identifies the producing build so the handler's cross-MFE shared-dep source-text cache can key reuse on it rather than on name+version alone."
           }
         },
         "required": ["name", "version", "chunkPath", "unwrapKey"]

@@ -1,6 +1,6 @@
 {
   "name": "@gears-frontx/mfes",
-  "version": "0.3.0-alpha.5",
+  "version": "0.3.0-alpha.6",
   "description": "MFE runtime substrate for FrontX — registration, loading, extension-domain governance, mediation, and isolation",
   "type": "module",
   "main": "./dist/index.cjs",

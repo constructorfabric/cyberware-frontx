@@ -1,8 +1,10 @@
 import * as esbuild from 'esbuild';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import type { Plugin } from 'vite';
+import type { MfManifestShared as PublishedMfManifestShared } from '@gears-frontx/mfes';
 
 /**
  * Extract the root npm package name from a shared-dep entry that may include
@@ -162,12 +164,11 @@ interface EnrichedMetaData {
   globalName: string;
 }
 
-interface EnrichedSharedEntry {
-  name: string;
-  version: string;
-  chunkPath: string;
-  unwrapKey: string | null;
-}
+// `PublishedMfManifestShared` is `@gears-frontx/mfes`' `MfManifestShared`
+// (name/version/chunkPath/unwrapKey/contentHash?) — imported rather than
+// redeclared so the producer-local shape cannot drift from the published
+// consumer contract the runtime actually reads.
+type EnrichedSharedEntry = PublishedMfManifestShared;
 
 type EnrichedManifest = MfeJsonManifest & {
   name: string;
@@ -198,10 +199,11 @@ class MfeJsonEnricher {
   enrich(
     mfeJson: MfeJson,
     mfManifest: MfManifest,
-    sharedDeps: string[]
+    sharedDeps: string[],
+    sharedOutputDir: string
   ): EnrichedMfeJson {
     const metaData = this.buildMetaData(mfManifest);
-    const shared = this.buildSharedEntries(sharedDeps);
+    const shared = this.buildSharedEntries(sharedDeps, sharedOutputDir);
     const entries = this.buildEntries(mfeJson.entries, mfManifest.exposes);
 
     return {
@@ -228,14 +230,42 @@ class MfeJsonEnricher {
   }
 
   private buildSharedEntries(
-    declaredDeps: string[]
+    declaredDeps: string[],
+    sharedOutputDir: string
   ): EnrichedSharedEntry[] {
-    return declaredDeps.map((name) => ({
-      name,
-      version: this.resolvePackageVersion(name),
-      chunkPath: `shared/${StandaloneEsmBuilder.normalizeDepName(name)}.js`,
-      unwrapKey: null,
-    }));
+    return declaredDeps.map((name) => {
+      const fileName = `${StandaloneEsmBuilder.normalizeDepName(name)}.js`;
+      const contentHash = this.computeContentHash(
+        path.join(sharedOutputDir, fileName)
+      );
+      return {
+        name,
+        version: this.resolvePackageVersion(name),
+        chunkPath: `shared/${fileName}`,
+        unwrapKey: null,
+        ...(contentHash !== undefined ? { contentHash } : {}),
+      };
+    });
+  }
+
+  /**
+   * sha256 (hex, full 64 chars — well past the 16-char collision-safety
+   * floor) of a shared dep's emitted chunk, computed over the file's final
+   * on-disk bytes: after every post-process pass, including path
+   * normalization, so the hash is stable across package-manager layout and
+   * build-depth differences that would otherwise make two builds of the
+   * same dependency at the same version hash differently. Returns
+   * `undefined` when the chunk is missing rather than emitting a hash for
+   * bytes that were never actually published — an absent `contentHash` is a
+   * valid, well-handled manifest state; a wrong one is not.
+   */
+  private computeContentHash(chunkFilePath: string): string | undefined {
+    try {
+      const bytes = fs.readFileSync(chunkFilePath);
+      return createHash('sha256').update(bytes).digest('hex');
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -611,6 +641,15 @@ class StandaloneEsmBuilder {
     // re-exports so `import { createContext } from "react"` works in blob URLs.
     this.patchCjsNamedExports(outfile, dep.name);
 
+    // Canonicalize embedded module paths so identical (dep, version,
+    // externals) inputs emit byte-identical output regardless of
+    // package-manager layout (pnpm vs npm-flat) or build depth relative to
+    // cwd. Must run last, after both patches above, and before anything
+    // hashes this file's bytes (see `MfeJsonEnricher.computeContentHash`,
+    // which runs later in `closeBundle` once every chunk on this list is
+    // final).
+    StandaloneEsmBuilder.normalizeEmbeddedModulePaths(outfile);
+
     const label =
       dep.externals.length > 0
         ? `(external: ${dep.externals.join(', ')})`
@@ -763,6 +802,54 @@ class StandaloneEsmBuilder {
    */
   static normalizeDepName(name: string): string {
     return name.replace(/^@/, '').replace(/\//g, '-');
+  }
+
+  /**
+   * Canonicalizes the embedded `node_modules` source paths esbuild writes
+   * into non-minified output, so the same dependency/version/externals
+   * combination produces byte-identical output regardless of package
+   * manager layout or the build's depth relative to `cwd`.
+   *
+   * esbuild never bundles a minified path, comment, or absolute prefix into
+   * these outputs — only two path-bearing forms occur, both derived from the
+   * same cwd-relative path per module: the `// <path>` provenance comment
+   * above each `__commonJS`-wrapped module, and that same path repeated as
+   * the object key esbuild uses to name/register the wrapper (e.g.
+   * `"node_modules/react-dom/cjs/react-dom.development.js"(exports, module) {`).
+   * A single textual substitution handles both, since neither form needs to
+   * be located independently — whichever regex matches, matches in either
+   * context.
+   *
+   * Two layout-dependent variations are collapsed to one canonical form:
+   *   - pnpm's content-addressed store segment, e.g.
+   *     `node_modules/.pnpm/react-dom@19.2.8_react@19.2.8/node_modules/` →
+   *     `node_modules/` (npm's flat layout never has this segment, so this
+   *     only fires on pnpm output; the peer suffix after `_` is optional and
+   *     part of the same segment; the enclosing `node_modules/` on both
+   *     sides collapses to the single flat-layout one).
+   *   - leading `../` hops before `node_modules/`, produced when esbuild's
+   *     cwd sits at a different depth than the dependency's install path,
+   *     e.g. `../../node_modules/` → `node_modules/`.
+   *
+   * Must run after `patchCjsExternals`/`patchCjsNamedExports` (both can
+   * rewrite surrounding source, though neither touches these path strings)
+   * and before anything hashes the file's bytes.
+   */
+  private static normalizeEmbeddedModulePaths(outfile: string): void {
+    const source = fs.readFileSync(outfile, 'utf-8');
+    const normalized = source
+      // pnpm's store-path segment (with its enclosing node_modules/ on
+      // both sides), with or without leading '../' hops.
+      .replace(
+        /(?:\.\.\/)*(?:node_modules\/)?\.pnpm\/[^/"'\s]+\/node_modules\//g,
+        'node_modules/'
+      )
+      // Remaining depth-only '../' hops immediately preceding node_modules.
+      .replace(/(?:\.\.\/)+node_modules\//g, 'node_modules/');
+
+    if (normalized !== source) {
+      fs.writeFileSync(outfile, normalized, 'utf-8');
+    }
   }
 }
 
@@ -1245,8 +1332,8 @@ export function frontxMfGts(): Plugin {
         // ── Build standalone ESMs for shared deps ───────────────────────────
 
         const sharedDeps = resolvedExternals;
+        const sharedOutputDir = path.join(distDir, 'shared');
         if (sharedDeps.length > 0) {
-          const sharedOutputDir = path.join(distDir, 'shared');
           const esmBuilder = new StandaloneEsmBuilder(
             sharedDeps,
             sharedOutputDir,
@@ -1260,9 +1347,18 @@ export function frontxMfGts(): Plugin {
         }
 
         // ── Write enriched build-output manifest ─────────────────────────────
+        // `sharedOutputDir` lets the enricher hash each shared dep's final
+        // emitted bytes (post every post-process pass, including path
+        // normalization) — hashing cannot live in `buildSharedEntries`
+        // above because that runs before the chunks exist on disk.
 
         const enricher = new MfeJsonEnricher(packageRoot);
-        const enrichedMfeJson = enricher.enrich(mfeJson, mfManifest, sharedDeps);
+        const enrichedMfeJson = enricher.enrich(
+          mfeJson,
+          mfManifest,
+          sharedDeps,
+          sharedOutputDir
+        );
 
         fs.writeFileSync(
           mfeJsonManifestPath,
