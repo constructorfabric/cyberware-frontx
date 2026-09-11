@@ -340,7 +340,18 @@ export function adaptVirtualLocationHistory(
     }
     if (typeof document !== 'undefined' && blockers.length > 0) {
       const { hash, ...pathnameAndSearch } = splitHref(path);
-      const nextLocation = buildHistoryLocation(pathnameAndSearch, navigationHistory.location.position);
+      // LOW (review round 16-re2): `@tanstack/history`'s own `tryNavigation`
+      // builds the blocked-navigation's `next` location with
+      // `currentIndex + 1` for a push (a push always lands one entry past
+      // the current one) and `currentIndex` for a replace (a replace
+      // overwrites the current entry in place) — see
+      // `node_modules/@tanstack/history/dist/esm/index.js`. `write` below
+      // mirrors that same push/replace distinction on the substrate side
+      // (`composed-history-source.ts`'s own `push`/`replace`), so the
+      // blocker's own preview of `__TSR_index` has to branch on `verb`
+      // too, not read the pre-write position for both.
+      const nextPosition = verb === 'push' ? navigationHistory.location.position + 1 : navigationHistory.location.position;
+      const nextLocation = buildHistoryLocation(pathnameAndSearch, nextPosition);
       const action: RouterBlockerAction = verb === 'push' ? 'PUSH' : 'REPLACE';
       for (const blocker of blockers) {
         let shouldBlock: boolean;

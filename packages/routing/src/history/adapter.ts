@@ -18,6 +18,11 @@ import type { Location } from '../types/index.js';
  * this adapter's own job is the raw path/search/hash and the opaque
  * per-entry state that bookkeeping is stored in (`getState`/`pushState`/
  * `replaceState` below), never the position number itself.
+ *
+ * @internal Exists only as `HistoryAdapter`'s own return/parameter type
+ * (below) — the same test seam, not part of this package's own public
+ * surface (see `../history/index.js`); a conforming consumer never
+ * constructs or reads one directly.
  */
 export type AdapterLocation = Omit<Location, 'position'>;
 

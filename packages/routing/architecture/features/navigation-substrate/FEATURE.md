@@ -148,7 +148,7 @@ Which declared extension currently owns an entry the caller reads from `location
 
 ## 3. Processes / Business Logic (CDSL)
 
-Internal system functions that do not interact with actors directly. All six are the building blocks the Route Ownership Signal (`cpt-frontx-feature-routing-route-ownership-signal`) and the Engine Provider (`cpt-frontx-feature-routing-engine-provider`) are built on.
+Internal system functions that do not interact with actors directly. All seven are the building blocks the Route Ownership Signal (`cpt-frontx-feature-routing-route-ownership-signal`) and the Engine Provider (`cpt-frontx-feature-routing-engine-provider`) are built on.
 
 ### Realm-Global Singleton Resolution
 
@@ -388,7 +388,7 @@ The system **MUST** expose `push`, `replace`, `go`, `location`, and `subscribe` 
 - [x] A listener that throws during dispatch does not prevent delivery to the remaining listeners in the same fan-out round.
 - [x] A listener that unsubscribes during a dispatch round does not corrupt that round's iteration and receives no further invocation from that round once unsubscribed — the round's snapshot fixes which listeners are eligible for it, but an unsubscribe always wins over a still-pending, not-yet-invoked slot in that same round, without undoing an invocation the round already completed; a listener that triggers a new navigation during a round has that navigation dispatched as a new, later round.
 - [x] `push`, `replace`, `go`, `location`, and `subscribe` are usable from a caller with no mounted router in its call path.
-- [x] The `NavigationHistory` contract's `location` shape (path, search, hash) and its subscriber-notification shape (a `location` plus a navigation kind distinguishing `push`, `replace`, and a third kind covering both a history move and an observed third-party addition such as fragment navigation) are as specified in §1.5, and are what the Engine Provider's own subscriber-notification translation (`cpt-frontx-feature-routing-engine-provider`) consumes as input.
+- [x] The `NavigationHistory` contract's `location` shape (path, search, hash, position) and its subscriber-notification shape (a `location` plus a navigation kind distinguishing `push`, `replace`, and a third kind covering both a history move and an observed third-party addition such as fragment navigation) are as specified in §1.5, and are what the Engine Provider's own subscriber-notification translation (`cpt-frontx-feature-routing-engine-provider`) consumes as input.
 - [x] By the time any subscriber callback executes for a dispatched round, `NavigationHistory`'s own `location` already reflects the navigation that triggered that round, for both dispatch paths in §3 alike, including a history move observed only asynchronously.
 - [x] `Location.position` starts at `0` for a cold mount, advances by one over the previous position on this instance's own `push`, stays unchanged on `replace`, and is restored from the browser's own persisted per-entry state — never a fixed delta — on an externally observed navigation (a real back/forward step, a third-party `go`, a second router sharing the same shared history), defaulting to `0` when that entry carries no position this substrate itself recorded (F8/D3, review round 16-re).
 - [x] The Navigation Substrate's own module carries no import of a router engine or a UI-framework rendering primitive.

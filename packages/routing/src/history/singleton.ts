@@ -10,7 +10,9 @@ import { createNavigationHistory } from './navigation-history.js';
 // and constructs its own instance instead of silently capturing and
 // reusing one whose shape it cannot actually satisfy." `v1` is this
 // contract's current major — bumped only alongside a breaking change to the
-// `NavigationHistory` shape itself, never for an additive change.
+// `NavigationHistory` shape itself, never for an additive change. It stays
+// at `v1` until the package is first published; after that, any
+// incompatible change to `NavigationHistory` or `Location` must bump it.
 /** @internal Test seam — a conforming consumer never reads this key
  * directly; it is exported only so tests can reset the realm-global state
  * between cases without retyping the literal string in every suite. */

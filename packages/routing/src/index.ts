@@ -19,7 +19,8 @@ export type * from './types/index.js';
 // `resolveNavigationHistory` alone — not `createNavigationHistory` or
 // `createWindowHistoryAdapter` — is this package's own public construction
 // path (DESIGN §3.3, public surface); see `./history/index.ts` for why.
-// `HistoryAdapter` stays re-exported as an `@internal` test seam.
+// `HistoryAdapter` and `AdapterLocation` (its own return/parameter type)
+// stay re-exported as an `@internal` test seam.
 export { resolveNavigationHistory } from './history/index.js';
 export type { AdapterLocation, HistoryAdapter } from './history/index.js';
 

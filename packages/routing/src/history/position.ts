@@ -31,8 +31,22 @@ interface PositionState {
   readonly position: number;
 }
 
+// LOW (review round 16-re2): a host-written entry's state is data this
+// substrate does not control — another library sharing the entry, a stale
+// bundle from before `position` existed, or a hand-edited devtools session
+// could carry a negative number, `NaN`, or a non-integer under this
+// namespaced key. Only a non-negative safe integer is a position this
+// substrate itself could have written; anything else is treated exactly
+// like the key being absent (`readPosition`'s own doc comment: cold mount
+// or foreign entry, position `0`, recorded lazily on next write) rather
+// than propagated into `NavigationHistory#length`/`canGoBack` as `NaN` or
+// an impossible negative depth.
 function isPositionState(value: unknown): value is PositionState {
-  return typeof value === 'object' && value !== null && typeof (value as { position?: unknown }).position === 'number';
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const { position } = value as { position?: unknown };
+  return typeof position === 'number' && Number.isInteger(position) && position >= 0;
 }
 
 /**

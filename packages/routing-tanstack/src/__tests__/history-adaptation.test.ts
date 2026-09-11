@@ -400,10 +400,46 @@ describe('block actually enforced on push/replace issued through this same Route
     await flushMicrotasks();
 
     expect(received).toHaveLength(1);
-    const args = received[0] as { currentLocation: { pathname: string }; nextLocation: { pathname: string }; action: string };
+    const args = received[0] as {
+      currentLocation: { pathname: string };
+      nextLocation: { pathname: string; state: { __TSR_index: number } };
+      action: string;
+    };
     expect(args.currentLocation.pathname).toBe('/settings/general');
     expect(args.nextLocation.pathname).toBe('/settings/profile');
     expect(args.action).toBe('PUSH');
+    // LOW (review round 16-re2): a push always lands one entry past the
+    // current one — the blocker's own preview of `__TSR_index` has to
+    // reflect that in advance, mirroring `@tanstack/history`'s own
+    // `currentIndex + 1` for a push (history-adaptation.ts, buildHistoryLocation
+    // callsite in tryNavigation).
+    expect(args.nextLocation.state.__TSR_index).toBe(1);
+  });
+
+  it('a replace previews __TSR_index at the current position, not one past it', async () => {
+    resetRealm(EXAMPLE_7_3_URL);
+    const history = adaptComposedHistory(resolveNavigationHistory(), DASHBOARD_ENTRY_ADDRESS);
+
+    const received: unknown[] = [];
+    history.block({
+      blockerFn: (args) => {
+        received.push(args);
+        return false;
+      },
+    });
+
+    history.replace('/settings/profile?orientation=left');
+    await flushMicrotasks();
+
+    expect(received).toHaveLength(1);
+    const args = received[0] as {
+      nextLocation: { state: { __TSR_index: number } };
+      action: string;
+    };
+    expect(args.action).toBe('REPLACE');
+    // A replace overwrites the current entry in place, so the preview
+    // must carry the *current* position, not `position + 1`.
+    expect(args.nextLocation.state.__TSR_index).toBe(0);
   });
 
   it('does not gate a bare go() call (no blocker check for back/forward)', async () => {
