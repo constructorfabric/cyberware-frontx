@@ -264,13 +264,13 @@ Internal system functions that do not interact with actors directly. All six are
 5. [ ] - `p1` - **ELSE** - `inst-else-nonzero-entries`
    1. [ ] - `p1` - **RETURN** the shell subroute, `"?"`, the joined entry texts, and the hash if one is present - `inst-return-full-url`
 
-**Rationale**: Serialize enforces at write time exactly the invariants parse tolerates at read time, and for the opposite reason: a caller building an entry list controls every entry in it, so a duplicate extension, a duplicate parameter name, or a malformed token is a programming error to surface immediately rather than a stray input to recover from. The zero-entries case emits no trailing `?` (grammar draft example 7.8) because a bare shell subroute is a valid, fully resolved state — every domain at zero occupants — not a partial or error state calling for a placeholder query string.
+**Rationale**: Serialize enforces at write time exactly the invariants parse tolerates at read time, and for the opposite reason: a caller building an entry list controls every entry in it, so a duplicate extension, a duplicate parameter name, or a malformed token is a programming error to surface immediately rather than a stray input to recover from. The zero-entries case emits no trailing `?` (ADR 0003's own example 7.8) because a bare shell subroute is a valid, fully resolved state — every domain at zero occupants — not a partial or error state calling for a placeholder query string.
 
 ### Name Validity And Equality
 
 - [ ] `p2` - **ID**: `cpt-frontx-algo-routing-navigation-substrate-name-validity`
 
-**Input**: Either (a) a candidate string to validate as a `name`; (b) a raw `presentation.route` value to normalize into an extension token; or (c) two candidate `name`-alphabet values to compare for equality.
+**Input**: Either (a) a candidate string to validate as a `name`; (b) a raw route-identity value an extension registration supplies — the concrete field is the `mfes` package's own contract to declare (`cpt-frontx-routing-adr-occupant-identity-stability`), not one this algorithm defines — to normalize into an extension token; or (c) two candidate `name`-alphabet values to compare for equality.
 
 **Output**: (a) a boolean, valid or not; (b) the normalized extension token, or "not routable" when the input carries no route at all or its normalized form is not a valid `name`; (c) a boolean, equal or not.
 
@@ -285,7 +285,7 @@ Internal system functions that do not interact with actors directly. All six are
       1. [ ] - `p1` - **RETURN** "not routable" - `inst-return-not-routable-invalid`
 4. [ ] - `p1` - **Equality (c)**: **RETURN** true only if the two candidates are identical character-by-character; **RETURN** false otherwise — no percent-decoding is applied, because a value satisfying Validity (a) already carries no percent-escape to decode - `inst-name-equality`
 
-**Rationale**: All three operations share one alphabet rule, published together because every caller of one is a caller a domain-key or extension-token decision already reaches: observer creation and the URL back-projection helper validate a consumer-supplied token synchronously with (a); a domain's own consumer derives its own registered extensions from `presentation.route` with (b) before ever handing them to an observer; and a domain's own consumer checks two candidate extension tokens for a same-token conflict at registration time with (c), using the identical rule the parser applies when deciding whether a later entry's extension duplicates an earlier one (`cpt-frontx-routing-adr-occupant-reference-boundary`; PRD §11).
+**Rationale**: All three operations share one alphabet rule, published together because every caller of one is a caller a domain-key or extension-token decision already reaches: observer creation and the URL back-projection helper validate a consumer-supplied token synchronously with (a); a domain's own consumer derives its own registered extensions from each registration's own declared route-identity value with (b) before ever handing them to an observer; and a domain's own consumer checks two candidate extension tokens for a same-token conflict at registration time with (c), using the identical rule the parser applies when deciding whether a later entry's extension duplicates an earlier one (`cpt-frontx-routing-adr-occupant-reference-boundary`; PRD §11).
 
 ### Domain-Key Composition
 

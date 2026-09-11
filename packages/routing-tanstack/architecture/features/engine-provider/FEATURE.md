@@ -68,7 +68,7 @@ The engine-provider port's normative schema — what a conforming provider **MUS
 
 This package accepts the navigation substrate's `NavigationHistory` instance, the entry address this occupant was mounted at — its own domain key and extension — or its absence when the occupant runs standalone, and the microfrontend's own route tree exactly as the port requires (linked above). It produces a constructed, mounted router in two steps the port itself does not mandate but that this provider's own worked example follows throughout: first, projecting the given entry's own payload into a **virtual location** — the payload parameter reserved by this package's own convention, `route`, becomes the virtual location's pathname (defaulting to `/` when the entry carries no such parameter), and every other parameter of that same entry becomes the virtual location's search; second, deriving this engine's own history-contract object from that virtual location and the substrate's `NavigationHistory` — deriving the members `RouterHistory` requires beyond `location`/`subscribe`/`push`/`replace`/`go`, and translating `NavigationHistory`'s notification into the `SubscriberArgs` shape (`location`, `action`) `RouterHistory`'s `subscribe` callback expects. The full derivation this worked example follows is §3, History Adaptation, below.
 
-**Reserved parameter `route` — this provider's own convention, verbatim.** Example 7.3 of the navigation substrate's own URL grammar (routing PRD/DESIGN, URL Grammar) is the normative statement of this convention, reproduced here because this package is the provider that implements it — an implementation **MUST** reproduce this example as one of its own acceptance scenarios:
+**Reserved parameter `route` — this provider's own convention, verbatim.** The navigation substrate treats this reserved parameter only as a convention a provider adopts, never a rule the substrate itself imposes (`packages/routing/architecture/DESIGN.md`, "Navigation Substrate"). This provider's own PRD states the convention normatively and gives its own worked examples (`packages/routing-tanstack/architecture/PRD.md` §9, Examples 1 and 2); Example 1 is reproduced here because this package is the provider that implements it — an implementation **MUST** reproduce this example as one of its own acceptance scenarios:
 
 > **A microfrontend's own router.** Under the default engine provider, an occupant's internal route is the reserved parameter `route`; its remaining parameters are its router's search.
 >
@@ -280,7 +280,7 @@ The system **MUST** unsubscribe a constructed router's adapted `RouterHistory` f
 - [ ] Mode selection by presence of an entry address: given an entry address, the constructed history projects its virtual location from that entry's own payload; given none, it projects the identical convention onto the page's own pathname and search — the same route tree and the same adaptation logic run in both cases, differing only in where the projected pathname and search come from.
 - [ ] One navigation sequence performed against the constructed router produces the identical resulting virtual location — the same reserved `route` parameter and the same remaining search parameters — whether the microfrontend is running composed, with the virtual location backed by one entry, or standalone, with the virtual location backed by the page's own address.
 - [ ] The provider never writes to a sibling occupant's own entry, another domain's own entry, or the shell subroute, for any navigation the constructed router performs, in either mode.
-- [ ] An implementation **MUST** reproduce example 7.3 of the navigation substrate's own URL grammar as one of its own acceptance scenarios (§1.5):
+- [ ] An implementation **MUST** reproduce this provider's own Example 1 (`packages/routing-tanstack/architecture/PRD.md` §9) as one of its own acceptance scenarios (§1.5):
 
   ```
   /en?screen=dashboard;route=settings/general;orientation=left
@@ -289,7 +289,7 @@ The system **MUST** unsubscribe a constructed router's adapted `RouterHistory` f
 
   The dashboard's router sees pathname `/settings/general` and search `orientation=left`.
 
-- [ ] An implementation **MUST** reproduce example 7.4 of the navigation substrate's own URL grammar as one of its own acceptance scenarios — the same microfrontend served standalone, virtual location projected onto the page's own address:
+- [ ] An implementation **MUST** reproduce this provider's own Example 2 (`packages/routing-tanstack/architecture/PRD.md` §9) as one of its own acceptance scenarios — the same microfrontend served standalone, virtual location projected onto the page's own address:
 
   ```
   /settings/general?orientation=left
